@@ -30,7 +30,10 @@ data class RoomItem(
     val hostPhotoUrl: String = "",
     val category: String = "",
     val nowPlayingTitle: String = "",
+    val nowPlayingArtist: String = "",
     val nowPlayingUrl: String = "",
+    val currentPlayingTrack: String = "",
+    val playbackPosition: Long = 0L,
     val isPlaying: Boolean = false,
     val isCustom: Boolean = false,
     val createdAt: Long = System.currentTimeMillis()
@@ -265,19 +268,46 @@ data class MessageRequest(
     val timestamp: Long = System.currentTimeMillis()
 )
 
+data class LiveRoomComment(
+    val id: String = "",
+    val roomId: String = "",
+    val userId: String = "",
+    val userName: String = "",
+    val userPhoto: String = "",
+    val tier: String = "Standard",
+    val message: String = "",
+    val timestamp: Long = System.currentTimeMillis()
+)
+
 data class HangoutTrack(
     val id: String = "",
     val title: String = "",
     val artist: String = "",
+    val category: String = "Lo-Fi Chill",
     val url: String = ""
 )
 
 val CURATED_HANGOUT_TRACKS = listOf(
-    HangoutTrack("track_1", "Chill Lo-Fi Beats", "Tokyo Sunset", "https://assets.mixkit.co/music/preview/mixkit-chill-bro-494.mp3"),
-    HangoutTrack("track_2", "Lounge Deep Groove", "Velvet Night", "https://assets.mixkit.co/music/preview/mixkit-serene-view-443.mp3"),
-    HangoutTrack("track_3", "Ambient Soul", "Aura Harmony", "https://assets.mixkit.co/music/preview/mixkit-sleepy-cat-135.mp3"),
-    HangoutTrack("track_4", "Party Warmup", "Neon Rhythm", "https://assets.mixkit.co/music/preview/mixkit-tech-house-vibes-130.mp3"),
-    HangoutTrack("track_5", "Late Night Drive", "Synth Dream", "https://assets.mixkit.co/music/preview/mixkit-driving-ambition-32.mp3")
+    // 1. Lo-Fi Chill
+    HangoutTrack("track_1", "Tokyo Sunset Beat", "Tokyo Sunset", "Lo-Fi Chill", "https://assets.mixkit.co/music/preview/mixkit-chill-bro-494.mp3"),
+    HangoutTrack("track_2", "Sleepy Cat Dreams", "Lo-Fi Dreamer", "Lo-Fi Chill", "https://assets.mixkit.co/music/preview/mixkit-sleepy-cat-135.mp3"),
+    HangoutTrack("track_3", "Sunday Coffee Mellow", "Chillhop Cafe", "Lo-Fi Chill", "https://assets.mixkit.co/music/preview/mixkit-serene-view-443.mp3"),
+
+    // 2. Acoustic Romantic
+    HangoutTrack("track_4", "Velvet Night Acoustic", "Velvet Guitar", "Acoustic Romantic", "https://assets.mixkit.co/music/preview/mixkit-serene-view-443.mp3"),
+    HangoutTrack("track_5", "Aura of Harmony", "Aura Harmony", "Acoustic Romantic", "https://assets.mixkit.co/music/preview/mixkit-sleepy-cat-135.mp3"),
+
+    // 3. Cafe Jazz & Lounge
+    HangoutTrack("track_6", "Midnight Espresso Groove", "Espresso Lounge", "Cafe Jazz", "https://assets.mixkit.co/music/preview/mixkit-chill-bro-494.mp3"),
+    HangoutTrack("track_7", "Paris Morning Sax", "Smooth Sax Quartet", "Cafe Jazz", "https://assets.mixkit.co/music/preview/mixkit-serene-view-443.mp3"),
+
+    // 4. Party Beats
+    HangoutTrack("track_8", "Tech House Warmup", "Neon Rhythm", "Party Beats", "https://assets.mixkit.co/music/preview/mixkit-tech-house-vibes-130.mp3"),
+    HangoutTrack("track_9", "Sunset Rooftop Groove", "Miami Beats", "Party Beats", "https://assets.mixkit.co/music/preview/mixkit-driving-ambition-32.mp3"),
+
+    // 5. EDM Club
+    HangoutTrack("track_10", "Driving Ambition Synth", "Synth Dream", "EDM Club", "https://assets.mixkit.co/music/preview/mixkit-driving-ambition-32.mp3"),
+    HangoutTrack("track_11", "Cyber Club Afterhours", "Electro Drift", "EDM Club", "https://assets.mixkit.co/music/preview/mixkit-tech-house-vibes-130.mp3")
 )
 
 data class RoomThemePreset(

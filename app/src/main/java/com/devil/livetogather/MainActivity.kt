@@ -258,6 +258,8 @@ fun LiveTogatherApp() {
     var activeRoomDeck by remember { mutableStateOf<RoomItem?>(null) }
     var activeAudioRoom by remember { mutableStateOf<RoomItem?>(null) }
     var showCreateRoomDialog by remember { mutableStateOf(false) }
+    var createRoomInitialCategory by remember { mutableStateOf("free_tonight") }
+    var activeCategoryHub by remember { mutableStateOf<IntentCategory?>(null) }
     var matchedPartner by remember { mutableStateOf<UserProfile?>(null) }
     var activeChatPartner by remember { mutableStateOf<UserProfile?>(null) }
 
@@ -430,7 +432,12 @@ fun LiveTogatherApp() {
             val matchesCategory = selectedCategory == "all" || profile.activeIntent == selectedCategory
             val matchesDistance = currentUser.showFurtherAway || profile.distanceKm <= currentUser.maxDistanceKm
             val matchesAge = currentUser.showOutsideAge || (profile.age in currentUser.minAge..currentUser.maxAge)
-            val matchesGender = currentUser.interestedIn == "Everyone" || profile.gender.equals(currentUser.interestedIn, ignoreCase = true)
+            val matchesGender = when (currentUser.interestedIn.lowercase().trim()) {
+                "everyone", "all" -> true
+                "women", "female", "woman" -> profile.gender.lowercase().trim() in listOf("women", "female", "woman")
+                "men", "male", "man" -> profile.gender.lowercase().trim() in listOf("men", "male", "man")
+                else -> profile.gender.equals(currentUser.interestedIn, ignoreCase = true)
+            }
             matchesCategory && matchesDistance && matchesAge && matchesGender
         }
     }
@@ -635,11 +642,15 @@ fun LiveTogatherApp() {
                                     }
                                 )
                             } else {
-                                // 2-Column Intent Rooms Grid Layout
+                                // 2-Column Clean Intent Category Hubs Grid Layout
                                 IntentRoomsGrid(
+                                    categories = CATEGORY_LIST.filter { it.id != "all" },
+                                    catalogRooms = INTENT_ROOMS_CATALOG,
                                     rooms = roomsList,
                                     allUsers = discoverProfiles + currentUser,
-                                    onCreateRoom = { showCreateRoomDialog = true },
+                                    onOpenCategoryHub = { category ->
+                                        activeCategoryHub = category
+                                    },
                                     onJoinRoom = { room ->
                                         // 1. Register presence in rooms/{roomId}/members/{userId}
                                         val isHost = room.hostId == currentUserId || (room.hostId.isEmpty() && room.isCustom)
@@ -790,6 +801,12 @@ fun LiveTogatherApp() {
                     db.collection("rooms").document(room.id)
                         .collection("members").document(currentUserId)
                         .delete()
+                    if (room.category.isNotBlank()) {
+                        db.collection("intent_categories").document(room.category)
+                            .collection("rooms").document(room.id)
+                            .collection("members").document(currentUserId)
+                            .delete()
+                    }
                     currentUser = currentUser.copy(current_room = "")
                     saveProfileToPrefs(prefs, currentUser)
                     db.collection("users").document(currentUserId).update("current_room", "")
@@ -802,10 +819,52 @@ fun LiveTogatherApp() {
             )
         }
 
+        // 0.05 Category Hub / Lobby Dialog (Category-Scoped Sub-Rooms Grid)
+        if (activeCategoryHub != null) {
+            val cat = activeCategoryHub!!
+            val bannerUrl = INTENT_ROOMS_CATALOG.find { it.id == cat.id }?.banner_image_url ?: ""
+            CategoryHubLobbyDialog(
+                category = cat,
+                categoryBannerUrl = bannerUrl,
+                allRooms = roomsList,
+                allUsers = discoverProfiles + currentUser,
+                currentUser = currentUser,
+                onDismiss = { activeCategoryHub = null },
+                onCreateRoom = {
+                    createRoomInitialCategory = cat.id
+                    showCreateRoomDialog = true
+                },
+                onJoinRoom = { room ->
+                    val isHost = room.hostId == currentUserId || (room.hostId.isEmpty() && room.isCustom)
+                    val member = RoomMember(
+                        uid = currentUserId,
+                        name = currentUser.name,
+                        photoUrl = currentUser.photo,
+                        joinedAt = System.currentTimeMillis(),
+                        role = if (isHost) "host" else "listener",
+                        tier = if (currentUser.isVipOrPlatinum()) {
+                            if (currentUser.plan.contains("VIP", ignoreCase = true)) "VIP" else "Platinum"
+                        } else "Standard"
+                    )
+                    db.collection("rooms").document(room.id)
+                        .collection("members").document(currentUserId)
+                        .set(member)
+
+                    currentUser = currentUser.copy(current_room = room.id)
+                    saveProfileToPrefs(prefs, currentUser)
+                    db.collection("users").document(currentUserId)
+                        .update("current_room", room.id)
+
+                    activeAudioRoom = room
+                }
+            )
+        }
+
         // 0.1 Create Custom Room Dialog
         if (showCreateRoomDialog) {
             CreateRoomDialog(
                 currentUser = currentUser,
+                initialCategory = createRoomInitialCategory,
                 onDismiss = { showCreateRoomDialog = false },
                 onCreate = { title, categoryId, themeUrl ->
                     val roomId = "custom_" + UUID.randomUUID().toString().take(8)
@@ -820,13 +879,19 @@ fun LiveTogatherApp() {
                         hostName = currentUser.name,
                         hostPhotoUrl = currentUser.photo,
                         nowPlayingTitle = "",
+                        nowPlayingArtist = "",
                         nowPlayingUrl = "",
+                        currentPlayingTrack = "",
+                        playbackPosition = 0L,
                         isPlaying = false,
                         isCustom = true,
                         createdAt = System.currentTimeMillis()
                     )
                     // Save to Firestore rooms/{roomId}
                     db.collection("rooms").document(roomId).set(newRoom)
+                    // Save to intent_categories/{categoryId}/rooms/{roomId}
+                    db.collection("intent_categories").document(categoryId)
+                        .collection("rooms").document(roomId).set(newRoom)
 
                     // Register host member in rooms/{roomId}/members/{userId}
                     val hostMember = RoomMember(
@@ -840,6 +905,9 @@ fun LiveTogatherApp() {
                         } else "Standard"
                     )
                     db.collection("rooms").document(roomId).collection("members").document(currentUserId).set(hostMember)
+                    db.collection("intent_categories").document(categoryId)
+                        .collection("rooms").document(roomId)
+                        .collection("members").document(currentUserId).set(hostMember)
 
                     // Update user's current_room
                     currentUser = currentUser.copy(current_room = roomId)
@@ -1278,10 +1346,13 @@ fun LiveTogatherApp() {
 // -------------------------------------------------------------
 @Composable
 fun IntentRoomsGrid(
-    rooms: List<RoomItem>,
+    categories: List<IntentCategory> = CATEGORY_LIST.filter { it.id != "all" },
+    catalogRooms: List<RoomItem> = INTENT_ROOMS_CATALOG,
+    rooms: List<RoomItem> = emptyList(),
     allUsers: List<UserProfile>,
     onCreateRoom: () -> Unit = {},
-    onJoinRoom: (RoomItem) -> Unit
+    onOpenCategoryHub: (IntentCategory) -> Unit = {},
+    onJoinRoom: (RoomItem) -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -1295,28 +1366,17 @@ fun IntentRoomsGrid(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Live Intent Rooms",
+                    text = "Live Intent Categories",
                     color = BrandGold,
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 0.5.sp
                 )
                 Text(
-                    text = "Join real-time topic rooms to meet active members right now.",
+                    text = "Explore 13 curated category hubs to meet active members and join live rooms.",
                     color = Color.Gray,
                     fontSize = 11.sp
                 )
-            }
-
-            Button(
-                onClick = onCreateRoom,
-                colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
-                shape = RoundedCornerShape(50),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-            ) {
-                Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("+ Create", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
         }
 
@@ -1328,9 +1388,18 @@ fun IntentRoomsGrid(
             verticalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier.fillMaxSize()
         ) {
-            items(rooms) { room ->
-                // Calculate dynamic real-time active users in this room from Firestore users
-                val activeCount = allUsers.count { it.current_room == room.id }
+            items(categories) { category ->
+                val catalog = catalogRooms.find { it.id == category.id }
+                    ?: INTENT_ROOMS_CATALOG.find { it.id == category.id }
+                    ?: RoomItem(id = category.id, title = category.label, banner_image_url = "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3")
+
+                // Dynamic real-time active users in this category
+                val activeCount = allUsers.count {
+                    it.activeIntent == category.id || it.current_room == category.id || it.current_room.startsWith(category.id)
+                }
+
+                // Sub-rooms created under this category
+                val subRoomsCount = rooms.count { it.category == category.id && it.isCustom }
 
                 Box(
                     modifier = Modifier
@@ -1338,11 +1407,12 @@ fun IntentRoomsGrid(
                         .height(200.dp)
                         .clip(RoundedCornerShape(18.dp))
                         .border(1.dp, BrandBorder, RoundedCornerShape(18.dp))
+                        .clickable { onOpenCategoryHub(category) }
                 ) {
-                    // Fixed high-res curated system background image (Read-only, system managed)
+                    // Fixed curated system background image (Read-only, system managed)
                     AsyncImage(
-                        model = room.banner_image_url,
-                        contentDescription = room.title,
+                        model = catalog.banner_image_url,
+                        contentDescription = category.label,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
                     )
@@ -1368,7 +1438,7 @@ fun IntentRoomsGrid(
                             .padding(12.dp),
                         verticalArrangement = Arrangement.SpaceBetween
                     ) {
-                        // Live active users counter chip & Host badge
+                        // Live active users counter chip & Sub-rooms badge
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -1397,13 +1467,12 @@ fun IntentRoomsGrid(
                                 )
                             }
 
-                            if (room.isCustom && room.hostName.isNotBlank()) {
+                            if (subRoomsCount > 0) {
                                 Text(
-                                    text = "👑 ${room.hostName}",
+                                    text = "🔥 $subRoomsCount Rooms",
                                     color = BrandGold,
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
                                     modifier = Modifier
                                         .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(50))
                                         .padding(horizontal = 6.dp, vertical = 2.dp)
@@ -1411,10 +1480,10 @@ fun IntentRoomsGrid(
                             }
                         }
 
-                        // Bottom Title & Join Button
+                        // Bottom Title & Enter Hub Button
                         Column {
                             Text(
-                                text = "${room.title} ${room.emoji}",
+                                text = category.label,
                                 color = Color.White,
                                 fontWeight = FontWeight.ExtraBold,
                                 fontSize = 14.sp,
@@ -1424,13 +1493,13 @@ fun IntentRoomsGrid(
                             Spacer(modifier = Modifier.height(8.dp))
 
                             Button(
-                                onClick = { onJoinRoom(room) },
+                                onClick = { onOpenCategoryHub(category) },
                                 colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
                                 shape = RoundedCornerShape(50),
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                                 modifier = Modifier.fillMaxWidth().height(34.dp)
                             ) {
-                                Text("Join Room", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text("Enter Hub 🚀", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -2218,6 +2287,8 @@ fun ProfileScreenContent(
     var profession by remember(currentUser) { mutableStateOf(currentUser.profession) }
     var education by remember(currentUser) { mutableStateOf(currentUser.education) }
     var photoUrl by remember(currentUser) { mutableStateOf(currentUser.photo) }
+    var gender by remember(currentUser) { mutableStateOf(currentUser.gender) }
+    var interestedIn by remember(currentUser) { mutableStateOf(currentUser.interestedIn) }
 
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
 
@@ -2353,6 +2424,60 @@ fun ProfileScreenContent(
                         modifier = Modifier.fillMaxWidth()
                     )
 
+                    Spacer(modifier = Modifier.height(2.dp))
+
+                    // Gender Selection Pills
+                    Text("Your Gender", color = BrandCoral, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        listOf("Female 👩", "Male 👨", "Non-binary 🧑").forEach { opt ->
+                            val optVal = opt.substringBefore(' ').trim()
+                            val isSelected = gender.equals(optVal, ignoreCase = true) || gender.equals(opt, ignoreCase = true)
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(50))
+                                    .background(
+                                        if (isSelected) Brush.horizontalGradient(listOf(BrandCoral, BrandOrange))
+                                        else Brush.linearGradient(listOf(BrandDark, BrandDark))
+                                    )
+                                    .border(1.dp, if (isSelected) Color.Transparent else BrandBorder, RoundedCornerShape(50))
+                                    .clickable { gender = optVal }
+                                    .padding(vertical = 7.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(opt, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // Interested In Selection Pills
+                    Text("Interested In Meeting", color = BrandCoral, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        listOf("Women 👩", "Men 👨", "Everyone 🌈").forEach { opt ->
+                            val optVal = opt.substringBefore(' ').trim()
+                            val isSelected = interestedIn.equals(optVal, ignoreCase = true) || interestedIn.equals(opt, ignoreCase = true)
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(50))
+                                    .background(
+                                        if (isSelected) Brush.horizontalGradient(listOf(BrandCoral, BrandOrange))
+                                        else Brush.linearGradient(listOf(BrandDark, BrandDark))
+                                    )
+                                    .border(1.dp, if (isSelected) Color.Transparent else BrandBorder, RoundedCornerShape(50))
+                                    .clickable { interestedIn = optVal }
+                                    .padding(vertical = 7.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(opt, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
                     Button(
                         onClick = {
                             val parsedAge = age.toIntOrNull() ?: currentUser.age
@@ -2364,7 +2489,9 @@ fun ProfileScreenContent(
                                 education = education,
                                 hobbies = hobbies,
                                 bio = bio,
-                                photo = photoUrl
+                                photo = photoUrl,
+                                gender = gender,
+                                interestedIn = interestedIn
                             )
                             onUpdateProfile(updated)
                         },

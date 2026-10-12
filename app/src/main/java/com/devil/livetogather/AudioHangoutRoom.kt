@@ -21,9 +21,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import com.google.firebase.firestore.Query
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,11 +50,12 @@ import java.util.UUID
 @Composable
 fun CreateRoomDialog(
     currentUser: UserProfile,
+    initialCategory: String = "free_tonight",
     onDismiss: () -> Unit,
     onCreate: (title: String, categoryId: String, themeUrl: String) -> Unit
 ) {
     var roomTitle by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf(CATEGORY_LIST.getOrNull(1)?.id ?: "free_tonight") }
+    var selectedCategory by remember { mutableStateOf(if (initialCategory.isNotBlank()) initialCategory else CATEGORY_LIST.getOrNull(1)?.id ?: "free_tonight") }
     var selectedTheme by remember { mutableStateOf(ROOM_THEME_PRESETS[0].imageUrl) }
 
     Dialog(onDismissRequest = onDismiss) {
@@ -255,20 +258,27 @@ fun MusicVisualizerWave(isPlaying: Boolean, modifier: Modifier = Modifier) {
 }
 
 // -------------------------------------------------------------
-// 3. TRACK SELECTOR DIALOG (CURATED + LOCAL MP3 PICKER)
+// 3. TRACK SELECTOR DIALOG (CATEGORY & ARTIST WISE CURATED STREAMS)
 // -------------------------------------------------------------
 @Composable
 fun TrackSelectorDialog(
     onDismiss: () -> Unit,
-    onSelectTrack: (title: String, url: String) -> Unit
+    onSelectTrack: (title: String, artist: String, category: String, url: String) -> Unit
 ) {
-    val context = LocalContext.current
+    var selectedGenre by remember { mutableStateOf("All") }
+    val genreList = listOf("All", "Lo-Fi Chill", "Acoustic Romantic", "Cafe Jazz", "Party Beats", "EDM Club")
+
+    val filteredTracks = remember(selectedGenre) {
+        if (selectedGenre == "All") CURATED_HANGOUT_TRACKS
+        else CURATED_HANGOUT_TRACKS.filter { it.category == selectedGenre }
+    }
+
     val audioPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
             val fileName = uri.lastPathSegment?.substringAfterLast('/') ?: "Local Audio Track"
-            onSelectTrack(fileName, uri.toString())
+            onSelectTrack(fileName, "Device Storage", "Local MP3", uri.toString())
             onDismiss()
         }
     }
@@ -287,63 +297,84 @@ fun TrackSelectorDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("🎵 Room Music Engine", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text("🎵 Global Music Engine", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray)
                     }
                 }
 
                 Text(
-                    "Play streaming ambient tracks or pick from your device.",
+                    "Select category & artist-curated streams synced for all room listeners.",
                     color = Color.Gray,
                     fontSize = 11.sp
                 )
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
-                // Pick Local File Button
-                OutlinedButton(
-                    onClick = {
-                        audioPickerLauncher.launch("audio/*")
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = BrandCyan),
-                    border = BorderStroke(1.dp, BrandCyan.copy(alpha = 0.6f))
-                ) {
-                    Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Select Audio from Device (.mp3)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                // Music Genre Filter Pills
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(genreList) { genre ->
+                        val isSelected = selectedGenre == genre
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(
+                                    if (isSelected) Brush.horizontalGradient(listOf(BrandCoral, BrandOrange))
+                                    else Brush.linearGradient(listOf(BrandDark, BrandDark))
+                                )
+                                .border(1.dp, if (isSelected) Color.Transparent else BrandBorder, RoundedCornerShape(50))
+                                .clickable { selectedGenre = genre }
+                                .padding(horizontal = 10.dp, vertical = 5.dp)
+                        ) {
+                            Text(genre, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
-                HorizontalDivider(color = BrandBorder)
-                Spacer(modifier = Modifier.height(10.dp))
 
-                Text("Curated Hangout Streams:", color = BrandGold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                // Pick Local File Button
+                OutlinedButton(
+                    onClick = { audioPickerLauncher.launch("audio/*") },
+                    modifier = Modifier.fillMaxWidth().height(38.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = BrandCyan),
+                    border = BorderStroke(1.dp, BrandCyan.copy(alpha = 0.6f)),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                ) {
+                    Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Select Audio from Device (.mp3)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+                HorizontalDivider(color = BrandBorder)
                 Spacer(modifier = Modifier.height(8.dp))
+
+                Text("Streaming Stations (${filteredTracks.size}):", color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(6.dp))
 
                 LazyColumn(
                     modifier = Modifier.heightIn(max = 240.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(CURATED_HANGOUT_TRACKS) { track ->
+                    items(filteredTracks) { track ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(BrandDark)
                                 .clickable {
-                                    onSelectTrack(track.title, track.url)
+                                    onSelectTrack(track.title, track.artist, track.category, track.url)
                                     onDismiss()
                                 }
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                                .padding(horizontal = 12.dp, vertical = 9.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(track.title, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                Text(track.artist, color = Color.Gray, fontSize = 10.sp)
+                                Text("👤 ${track.artist} • 🏷️ ${track.category}", color = Color.Gray, fontSize = 10.sp)
                             }
                             Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = BrandCoral)
                         }
@@ -682,6 +713,28 @@ fun AudioHangoutRoomDialog(
 
         onDispose {
             membersListener.remove()
+        }
+    }
+
+    var commentInputText by remember { mutableStateOf("") }
+    val liveComments = remember { mutableStateListOf<LiveRoomComment>() }
+
+    // 3. Real-Time Live Comments Listener (Rooms/{roomId}/live_comments)
+    DisposableEffect(room.id) {
+        val commentsListener = db.collection("rooms").document(room.id)
+            .collection("live_comments")
+            .orderBy("timestamp", Query.Direction.ASCENDING)
+            .limitToLast(25)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) return@addSnapshotListener
+                if (snapshot != null) {
+                    val list = snapshot.documents.mapNotNull { it.toObject(LiveRoomComment::class.java) }
+                    liveComments.clear()
+                    liveComments.addAll(list)
+                }
+            }
+        onDispose {
+            commentsListener.remove()
         }
     }
 
@@ -1103,6 +1156,122 @@ fun AudioHangoutRoomDialog(
                         }
                     }
                 }
+
+                // ---------------------------------------------------------
+                // LIVE STREAMING FLOWING COMMENTS OVERLAY & PUBLIC CHAT BAR
+                // ---------------------------------------------------------
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                ) {
+                    // Flowing Comments Overlay (Latest 4 comments)
+                    if (liveComments.isNotEmpty()) {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 120.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            items(liveComments.takeLast(4)) { comment ->
+                                val isVip = comment.tier.contains("VIP", true)
+                                val isPlat = comment.tier.contains("Platinum", true)
+                                val nameColor = if (isVip) BrandGold else if (isPlat) BrandCyan else BrandCoral
+
+                                Row(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(50))
+                                        .background(Color.Black.copy(alpha = 0.75f))
+                                        .border(0.5.dp, BrandBorder, RoundedCornerShape(50))
+                                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    AsyncImage(
+                                        model = comment.userPhoto.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                                        contentDescription = null,
+                                        modifier = Modifier.size(20.dp).clip(CircleShape),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "${comment.userName}: ",
+                                        color = nameColor,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp
+                                    )
+                                    Text(
+                                        text = comment.message,
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // Public Room Chat Bar (Open for all members)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(50))
+                            .background(BrandCard)
+                            .border(1.dp, BrandBorder, RoundedCornerShape(50))
+                            .padding(horizontal = 12.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = commentInputText,
+                            onValueChange = { commentInputText = it },
+                            placeholder = { Text("Say something in room...", color = Color.Gray, fontSize = 11.sp) },
+                            modifier = Modifier.weight(1f),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color.Transparent,
+                                unfocusedBorderColor = Color.Transparent,
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent
+                            ),
+                            singleLine = true
+                        )
+
+                        IconButton(
+                            onClick = {
+                                if (commentInputText.isNotBlank()) {
+                                    val msg = commentInputText.trim()
+                                    val commentDoc = LiveRoomComment(
+                                        id = UUID.randomUUID().toString(),
+                                        roomId = room.id,
+                                        userId = currentUser.uid,
+                                        userName = currentUser.name,
+                                        userPhoto = currentUser.photo,
+                                        tier = if (currentUser.isVipOrPlatinum()) {
+                                            if (currentUser.plan.contains("VIP", true)) "VIP" else "Platinum"
+                                        } else "Standard",
+                                        message = msg,
+                                        timestamp = System.currentTimeMillis()
+                                    )
+                                    db.collection("rooms").document(room.id)
+                                        .collection("live_comments").document(commentDoc.id)
+                                        .set(commentDoc)
+                                    commentInputText = ""
+                                }
+                            },
+                            modifier = Modifier.size(32.dp).background(BrandCoral, CircleShape)
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "Send",
+                                tint = Color.White,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                    }
+                }
             }
         }
 
@@ -1112,16 +1281,19 @@ fun AudioHangoutRoomDialog(
         if (showTrackSelector) {
             TrackSelectorDialog(
                 onDismiss = { showTrackSelector = false },
-                onSelectTrack = { title, url ->
+                onSelectTrack = { title, artist, category, url ->
                     db.collection("rooms").document(room.id).update(
                         mapOf(
+                            "currentPlayingTrack" to title,
                             "nowPlayingTitle" to title,
+                            "nowPlayingArtist" to artist,
                             "nowPlayingUrl" to url,
-                            "isPlaying" to true
+                            "isPlaying" to true,
+                            "playbackPosition" to 0L
                         )
                     )
                     AudioPlayerManager.play(context, url, title)
-                    Toast.makeText(context, "Streaming: $title", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Streaming: $title by $artist", Toast.LENGTH_SHORT).show()
                 }
             )
         }
@@ -1196,3 +1368,356 @@ fun AudioHangoutRoomDialog(
         }
     }
 }
+
+// -------------------------------------------------------------
+// 7. CATEGORY SUB-ROOM CARD
+// -------------------------------------------------------------
+@Composable
+fun CategorySubRoomCard(
+    room: RoomItem,
+    activeCount: Int,
+    onJoin: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(200.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .border(1.dp, BrandBorder, RoundedCornerShape(18.dp))
+    ) {
+        AsyncImage(
+            model = room.banner_image_url.ifEmpty { "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3" },
+            contentDescription = room.title,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop
+        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(Color.Black.copy(alpha = 0.3f), Color.Black.copy(alpha = 0.9f))
+                    )
+                )
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(10.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Live active count & Host chip
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(Color.Black.copy(alpha = 0.65f))
+                        .border(0.5.dp, BrandGreen.copy(alpha = 0.5f), RoundedCornerShape(50))
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(modifier = Modifier.size(5.dp).clip(CircleShape).background(BrandGreen))
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text("$activeCount Active", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                }
+
+                if (room.hostName.isNotBlank()) {
+                    Text(
+                        text = "👑 ${room.hostName}",
+                        color = BrandGold,
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        modifier = Modifier
+                            .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(50))
+                            .padding(horizontal = 5.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            Column {
+                Text(
+                    text = "${room.title} ${room.emoji}",
+                    color = Color.White,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 13.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Text(
+                    text = "Live Audio Lounge 🎙️",
+                    color = BrandOrange,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Button(
+                    onClick = onJoin,
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                    shape = RoundedCornerShape(50),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                    modifier = Modifier.fillMaxWidth().height(32.dp)
+                ) {
+                    Text("Join Room", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// 8. CATEGORY HUB / LOBBY DIALOG (ISOLATED INTENT SUB-ROOMS)
+// -------------------------------------------------------------
+@Composable
+fun CategoryHubLobbyDialog(
+    category: IntentCategory,
+    categoryBannerUrl: String,
+    allRooms: List<RoomItem>,
+    allUsers: List<UserProfile>,
+    currentUser: UserProfile,
+    onDismiss: () -> Unit,
+    onCreateRoom: () -> Unit,
+    onJoinRoom: (RoomItem) -> Unit
+) {
+    // Rooms belonging to this category
+    val categoryRooms = remember(allRooms, category.id) {
+        allRooms.filter { it.category == category.id || it.id == category.id }
+    }
+
+    // Active members in this category across users
+    val activeCategoryCount = remember(allUsers, category.id) {
+        allUsers.count { it.activeIntent == category.id || it.current_room.contains(category.id) }
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Scaffold(
+            containerColor = BrandDark,
+            topBar = {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(140.dp)
+                ) {
+                    AsyncImage(
+                        model = categoryBannerUrl.ifEmpty { "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3" },
+                        contentDescription = category.label,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(Color.Black.copy(alpha = 0.4f), BrandDark)
+                                )
+                            )
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = onDismiss,
+                                modifier = Modifier.background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = category.label,
+                                    color = Color.White,
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Black
+                                )
+                                Text(
+                                    text = "🟢 $activeCategoryCount Active in Category Lobby",
+                                    color = BrandGreen,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        // "+ Create Room" Button inside Lobby
+                        Button(
+                            onClick = onCreateRoom,
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                            shape = RoundedCornerShape(50),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Create Room", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        ) { paddingValues ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .padding(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Active Sub-Rooms (${categoryRooms.size})",
+                            color = BrandGold,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Browse or host rooms dedicated exclusively to this intent.",
+                            color = Color.Gray,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (categoryRooms.isEmpty()) {
+                    // Show default category lounge + invitation card
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        item {
+                            // Official category room card
+                            val defaultRoom = RoomItem(
+                                id = category.id,
+                                title = category.label.substringAfter(' '),
+                                emoji = category.label.take(2).trim(),
+                                banner_image_url = categoryBannerUrl,
+                                category = category.id
+                            )
+                            CategorySubRoomCard(
+                                room = defaultRoom,
+                                activeCount = activeCategoryCount,
+                                onJoin = { onJoinRoom(defaultRoom) }
+                            )
+                        }
+
+                        item {
+                            // Host prompt card
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
+                                shape = RoundedCornerShape(18.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(200.dp)
+                                    .border(1.dp, BrandCoral.copy(alpha = 0.5f), RoundedCornerShape(18.dp))
+                                    .clickable { onCreateRoom() }
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(14.dp),
+                                    verticalArrangement = Arrangement.Center,
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Icon(Icons.Default.AddCircle, contentDescription = null, tint = BrandCoral, modifier = Modifier.size(36.dp))
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = "Host a New Room",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "Be the Host 👑 with music & live chat!",
+                                        color = Color.Gray,
+                                        fontSize = 10.sp,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(categoryRooms) { room ->
+                            val activeCount = allUsers.count { it.current_room == room.id }
+                            CategorySubRoomCard(
+                                room = room,
+                                activeCount = activeCount,
+                                onJoin = { onJoinRoom(room) }
+                            )
+                        }
+
+                        item {
+                            // Host another room card
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
+                                shape = RoundedCornerShape(18.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(200.dp)
+                                    .border(1.dp, BrandBorder, RoundedCornerShape(18.dp))
+                                    .clickable { onCreateRoom() }
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(14.dp),
+                                    verticalArrangement = Arrangement.Center,
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Icon(Icons.Default.Add, contentDescription = null, tint = BrandCoral, modifier = Modifier.size(32.dp))
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = "+ Create Sub-Room",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Text(
+                                        text = "Host another hangout lounge",
+                                        color = Color.Gray,
+                                        fontSize = 10.sp,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
