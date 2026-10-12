@@ -1,7 +1,9 @@
 package com.devil.livetogather
 
+import android.content.Context
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -12,6 +14,9 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -35,9 +40,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
-import kotlinx.coroutines.launch
 import java.util.*
 
 val BrandDark = Color(0xFF0B090A)
@@ -205,42 +210,52 @@ class MainActivity : ComponentActivity() {
 fun LiveTogatherApp() {
     val context = LocalContext.current
     val db = remember { FirebaseFirestore.getInstance() }
+    val auth = remember { FirebaseAuth.getInstance() }
+    val prefs = remember { context.getSharedPreferences("livetogather_user_prefs", Context.MODE_PRIVATE) }
 
-    // Persistent Current User Session (Single user mode)
-    val currentUserId = remember { "USER_CURRENT" }
+    // Persistent User ID: check SharedPreferences or use stable persistent ID
+    val savedUid = prefs.getString("user_uid", null) ?: "USER_CURRENT".also {
+        prefs.edit().putString("user_uid", it).apply()
+    }
+    var currentUserId by remember { mutableStateOf(savedUid) }
+
+    // Hydrate initial UserProfile from SharedPreferences (ensures profile survives reinstall)
     var currentUser by remember {
         mutableStateOf(
             UserProfile(
                 uid = currentUserId,
-                name = "Maya",
-                age = 24,
-                gender = "Woman",
-                city = "Kolkata",
-                photo = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80",
-                activeIntent = "free_tonight",
-                bio = "Love late-night coffee and spontaneous road trips 🚗",
-                hobbies = "Dancing, Movies, Photography",
-                interests = "Travel, Cafe, Night Drives",
-                profession = "UX Designer",
-                education = "Masters in Design",
-                plan = "VIP LEVEL ★",
-                locationName = "New Town, West Bengal",
-                maxDistanceKm = 53,
-                showFurtherAway = true,
-                interestedIn = "Women",
-                minAge = 21,
-                maxAge = 29
+                name = prefs.getString("profile_name", "Maya") ?: "Maya",
+                age = prefs.getInt("profile_age", 24),
+                gender = prefs.getString("profile_gender", "Woman") ?: "Woman",
+                city = prefs.getString("profile_city", "Kolkata") ?: "Kolkata",
+                photo = prefs.getString("profile_photo", "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80") ?: "",
+                activeIntent = prefs.getString("profile_active_intent", "free_tonight") ?: "free_tonight",
+                bio = prefs.getString("profile_bio", "Love late-night coffee and spontaneous road trips 🚗") ?: "",
+                hobbies = prefs.getString("profile_hobbies", "Dancing, Movies, Photography") ?: "",
+                interests = prefs.getString("profile_interests", "Travel, Cafe, Night Drives") ?: "",
+                profession = prefs.getString("profile_profession", "UX Designer") ?: "",
+                education = prefs.getString("profile_education", "Masters in Design") ?: "",
+                plan = prefs.getString("profile_plan", "VIP LEVEL ★") ?: "VIP LEVEL ★",
+                locationName = prefs.getString("profile_location", "New Town, West Bengal") ?: "New Town, West Bengal",
+                maxDistanceKm = prefs.getInt("profile_max_distance", 53),
+                showFurtherAway = prefs.getBoolean("profile_show_further", true),
+                interestedIn = prefs.getString("profile_interested_in", "Women") ?: "Women",
+                minAge = prefs.getInt("profile_min_age", 21),
+                maxAge = prefs.getInt("profile_max_age", 29),
+                current_room = prefs.getString("profile_current_room", "") ?: ""
             )
         )
     }
 
     var currentScreen by remember { mutableStateOf("discover") }
+    var discoverTab by remember { mutableStateOf("cards") } // "cards" or "rooms"
     var selectedCategory by remember { mutableStateOf("all") }
     var showSettingsDialog by remember { mutableStateOf(false) }
     var showNotificationsDialog by remember { mutableStateOf(false) }
     var showPostMomentDialog by remember { mutableStateOf(false) }
     var showDirectMessageDialog by remember { mutableStateOf<UserProfile?>(null) }
     var showCommentsMoment by remember { mutableStateOf<MomentItem?>(null) }
+    var activeRoomDeck by remember { mutableStateOf<RoomItem?>(null) }
     var matchedPartner by remember { mutableStateOf<UserProfile?>(null) }
     var activeChatPartner by remember { mutableStateOf<UserProfile?>(null) }
 
@@ -251,23 +266,79 @@ fun LiveTogatherApp() {
     val moments = remember { mutableStateListOf<MomentItem>() }
     val notifications = remember { mutableStateListOf<NotificationItem>() }
     val chatMessages = remember { mutableStateListOf<ChatMessage>() }
+    val roomsList = remember { mutableStateListOf<RoomItem>() }
 
-    // --- Firestore Listeners & Synchronization ---
+    // --- Firebase Authentication & Firestore Setup ---
+    LaunchedEffect(Unit) {
+        // Authenticate anonymously so Firestore security rules don't block requests with PERMISSION_DENIED
+        if (auth.currentUser == null) {
+            auth.signInAnonymously()
+                .addOnSuccessListener { result ->
+                    val authUid = result.user?.uid
+                    if (authUid != null && prefs.getString("user_uid", null) == null) {
+                        currentUserId = authUid
+                        prefs.edit().putString("user_uid", authUid).apply()
+                    }
+                    Log.d("Auth", "Signed in anonymously as $currentUserId")
+                }
+                .addOnFailureListener { e ->
+                    Log.w("Auth", "Anonymous auth failed: ${e.message}")
+                }
+        }
+
+        // Initialize Rooms Catalog
+        roomsList.clear()
+        roomsList.addAll(INTENT_ROOMS_CATALOG)
+
+        // Seed Rooms in Firestore if needed
+        db.collection("rooms").get().addOnSuccessListener { snapshot ->
+            if (snapshot.isEmpty) {
+                INTENT_ROOMS_CATALOG.forEach { room ->
+                    db.collection("rooms").document(room.id).set(room)
+                }
+            } else {
+                val fetchedRooms = snapshot.documents.mapNotNull { it.toObject(RoomItem::class.java) }
+                if (fetchedRooms.isNotEmpty()) {
+                    roomsList.clear()
+                    roomsList.addAll(fetchedRooms)
+                }
+            }
+        }
+    }
+
+    // --- Real-Time Firestore Listeners ---
     LaunchedEffect(currentUserId) {
         // 1. Sync Current User Profile
         val userDoc = db.collection("users").document(currentUserId)
-        userDoc.addSnapshotListener { snapshot, _ ->
+        userDoc.addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                Log.w("Firestore", "User listener error: ${error.message}")
+                return@addSnapshotListener
+            }
             if (snapshot != null && snapshot.exists()) {
                 snapshot.toObject(UserProfile::class.java)?.let {
                     currentUser = it
+                    // Cache to SharedPreferences
+                    saveProfileToPrefs(prefs, it)
                 }
             } else {
+                // Document doesn't exist yet, push the current profile to Firestore
                 userDoc.set(currentUser)
+                    .addOnSuccessListener {
+                        Log.d("Firestore", "Initial profile document created successfully")
+                    }
+                    .addOnFailureListener { e ->
+                        Log.w("Firestore", "Failed to create initial profile: ${e.message}")
+                    }
             }
         }
 
-        // 2. Discover Profiles Listener
-        db.collection("users").addSnapshotListener { snapshot, _ ->
+        // 2. Discover Profiles Listener (Real-Time)
+        db.collection("users").addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                Log.w("Firestore", "Discover profiles error: ${error.message}")
+                return@addSnapshotListener
+            }
             if (snapshot != null && !snapshot.isEmpty) {
                 val list = snapshot.documents.mapNotNull { it.toObject(UserProfile::class.java) }
                     .filter { it.uid != currentUserId && !currentUser.blockedUserIds.contains(it.uid) }
@@ -290,7 +361,7 @@ fun LiveTogatherApp() {
                 }
             }
 
-        // 4. Incoming Swipes / Likes Listener
+        // 4. Incoming Swipes Listener
         db.collection("swipes")
             .whereEqualTo("toUserId", currentUserId)
             .addSnapshotListener { snapshot, _ ->
@@ -345,7 +416,7 @@ fun LiveTogatherApp() {
         }
     }
 
-    // Filtered Discover Profiles based on Category and Settings
+    // Filtered Discover Profiles
     val filteredProfiles = remember(discoverProfiles, selectedCategory, currentUser) {
         discoverProfiles.filter { profile ->
             if (!currentUser.enableDiscovery) return@filter false
@@ -463,39 +534,118 @@ fun LiveTogatherApp() {
             ) {
                 when (currentScreen) {
                     "discover" -> {
-                        DiscoverScreenContent(
-                            profiles = filteredProfiles,
-                            selectedCategory = selectedCategory,
-                            onSelectCategory = { selectedCategory = it },
-                            onPass = { profile ->
-                                recordSwipe(db, currentUserId, profile.uid, "pass")
-                                Toast.makeText(context, "Passed ${profile.name}", Toast.LENGTH_SHORT).show()
-                            },
-                            onSuperStar = { profile ->
-                                recordSwipe(db, currentUserId, profile.uid, "superstar")
-                                sendNotification(
-                                    db = db,
-                                    targetUserId = profile.uid,
-                                    sender = currentUser,
-                                    type = "superstar",
-                                    title = "⭐ SuperStar Received!",
-                                    message = "${currentUser.name} gave you a SuperStar!"
-                                )
-                                Toast.makeText(context, "SuperStar sent to ${profile.name}!", Toast.LENGTH_SHORT).show()
-                            },
-                            onDirectMessage = { profile ->
-                                showDirectMessageDialog = profile
-                            },
-                            onLike = { profile ->
-                                recordSwipe(db, currentUserId, profile.uid, "like")
-                                checkAndHandleMutualMatch(
-                                    db = db,
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            // Discover View Toggle: Swipe Cards vs Intent Rooms Grid
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(BrandCard)
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(50))
+                                        .background(BrandDark)
+                                        .padding(4.dp)
+                                ) {
+                                    Row {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(50))
+                                                .background(if (discoverTab == "cards") BrandCoral else Color.Transparent)
+                                                .clickable { discoverTab = "cards" }
+                                                .padding(horizontal = 16.dp, vertical = 6.dp)
+                                        ) {
+                                            Text(
+                                                "🔥 Swipe Cards",
+                                                color = Color.White,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(50))
+                                                .background(if (discoverTab == "rooms") BrandCoral else Color.Transparent)
+                                                .clickable { discoverTab = "rooms" }
+                                                .padding(horizontal = 16.dp, vertical = 6.dp)
+                                        ) {
+                                            Text(
+                                                "🏛️ Intent Rooms (13)",
+                                                color = Color.White,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (discoverTab == "cards") {
+                                DiscoverScreenContent(
+                                    profiles = filteredProfiles,
+                                    selectedCategory = selectedCategory,
                                     currentUser = currentUser,
-                                    partner = profile,
-                                    onMatch = { matchedPartner = profile }
+                                    onSelectCategory = { selectedCategory = it },
+                                    onPass = { profile ->
+                                        recordSwipe(db, currentUserId, profile.uid, "pass")
+                                        Toast.makeText(context, "Passed ${profile.name}", Toast.LENGTH_SHORT).show()
+                                    },
+                                    onSuperStar = { profile ->
+                                        recordSwipe(db, currentUserId, profile.uid, "superstar")
+                                        sendNotification(
+                                            db = db,
+                                            targetUserId = profile.uid,
+                                            sender = currentUser,
+                                            type = "superstar",
+                                            title = "⭐ SuperStar Received!",
+                                            message = "${currentUser.name} gave you a SuperStar!"
+                                        )
+                                        Toast.makeText(context, "SuperStar sent to ${profile.name}!", Toast.LENGTH_SHORT).show()
+                                    },
+                                    onDirectMessage = { profile ->
+                                        // Tier Rule Check: VIP / Platinum only
+                                        if (currentUser.isVipOrPlatinum()) {
+                                            showDirectMessageDialog = profile
+                                        } else {
+                                            Toast.makeText(
+                                                context,
+                                                "Direct messaging is exclusive to VIP or Platinum members. Like back to chat for free!",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        }
+                                    },
+                                    onLike = { profile ->
+                                        recordSwipe(db, currentUserId, profile.uid, "like")
+                                        checkAndHandleMutualMatch(
+                                            db = db,
+                                            currentUser = currentUser,
+                                            partner = profile,
+                                            onMatch = { matchedPartner = profile }
+                                        )
+                                    }
+                                )
+                            } else {
+                                // 2-Column Intent Rooms Grid Layout
+                                IntentRoomsGrid(
+                                    rooms = roomsList,
+                                    allUsers = discoverProfiles + currentUser,
+                                    onJoinRoom = { room ->
+                                        // Update current_room in Firestore
+                                        currentUser = currentUser.copy(current_room = room.id)
+                                        saveProfileToPrefs(prefs, currentUser)
+                                        db.collection("users").document(currentUserId)
+                                            .update("current_room", room.id)
+                                            .addOnSuccessListener {
+                                                Log.d("Rooms", "Joined room ${room.id}")
+                                            }
+                                        activeRoomDeck = room
+                                    }
                                 )
                             }
-                        )
+                        }
                     }
 
                     "likes" -> {
@@ -529,6 +679,7 @@ fun LiveTogatherApp() {
                                     currentUser.blockedUserIds + partner.uid
                                 }
                                 currentUser = currentUser.copy(blockedUserIds = updatedBlocked)
+                                saveProfileToPrefs(prefs, currentUser)
                                 db.collection("users").document(currentUserId)
                                     .update("blockedUserIds", updatedBlocked)
                                 Toast.makeText(
@@ -560,20 +711,35 @@ fun LiveTogatherApp() {
                             userMoments = moments.filter { it.userId == currentUserId },
                             onUpdateProfile = { updated ->
                                 currentUser = updated
+                                saveProfileToPrefs(prefs, updated)
                                 db.collection("users").document(currentUserId).set(updated)
-                                Toast.makeText(context, "Profile Info Saved!", Toast.LENGTH_SHORT).show()
+                                    .addOnSuccessListener {
+                                        Toast.makeText(context, "Profile Synced to Firestore!", Toast.LENGTH_SHORT).show()
+                                    }
+                                    .addOnFailureListener { e ->
+                                        Toast.makeText(context, "Saved locally! (${e.message})", Toast.LENGTH_LONG).show()
+                                    }
                             },
                             onSelectPlan = { plan ->
                                 val updated = currentUser.copy(plan = plan.title)
                                 currentUser = updated
-                                db.collection("users").document(currentUserId).update("plan", plan.title)
-                                Toast.makeText(context, "Subscribed to ${plan.title}!", Toast.LENGTH_SHORT).show()
+                                saveProfileToPrefs(prefs, updated)
+                                db.collection("users").document(currentUserId)
+                                    .update("plan", plan.title)
+                                    .addOnSuccessListener {
+                                        Toast.makeText(context, "Subscribed to ${plan.title}!", Toast.LENGTH_SHORT).show()
+                                    }
+                                    .addOnFailureListener {
+                                        Toast.makeText(context, "Plan updated locally!", Toast.LENGTH_SHORT).show()
+                                    }
                             },
                             onOpenSettings = { showSettingsDialog = true },
                             onLogout = {
+                                prefs.edit().clear().apply()
                                 Toast.makeText(context, "Logged out successfully", Toast.LENGTH_SHORT).show()
                             },
                             onDeleteAccount = {
+                                prefs.edit().clear().apply()
                                 db.collection("users").document(currentUserId).delete()
                                 Toast.makeText(context, "Account deleted", Toast.LENGTH_LONG).show()
                             }
@@ -585,21 +751,65 @@ fun LiveTogatherApp() {
 
         // --- Dialogs & Modals ---
 
-        // 1. Settings Dialog with Interactive Topic Selection
+        // 1. Room Members Deck Dialog
+        if (activeRoomDeck != null) {
+            val room = activeRoomDeck!!
+            RoomMembersDeckDialog(
+                room = room,
+                currentUser = currentUser,
+                allUsers = discoverProfiles,
+                onDismiss = {
+                    // Leave room on dismiss
+                    currentUser = currentUser.copy(current_room = "")
+                    saveProfileToPrefs(prefs, currentUser)
+                    db.collection("users").document(currentUserId).update("current_room", "")
+                    activeRoomDeck = null
+                },
+                onLike = { member ->
+                    recordSwipe(db, currentUserId, member.uid, "like")
+                    checkAndHandleMutualMatch(
+                        db = db,
+                        currentUser = currentUser,
+                        partner = member,
+                        onMatch = { matchedPartner = member }
+                    )
+                    Toast.makeText(context, "Liked ${member.name}!", Toast.LENGTH_SHORT).show()
+                },
+                onChat = { member ->
+                    if (currentUser.isVipOrPlatinum()) {
+                        showDirectMessageDialog = member
+                    } else {
+                        Toast.makeText(
+                            context,
+                            "Direct messaging is exclusive to VIP or Platinum members. Like back to chat for free!",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+            )
+        }
+
+        // 2. Settings Dialog
         if (showSettingsDialog) {
             SettingsDialog(
                 user = currentUser,
                 onDismiss = { showSettingsDialog = false },
                 onSave = { updated ->
                     currentUser = updated
+                    saveProfileToPrefs(prefs, updated)
                     db.collection("users").document(currentUserId).set(updated)
+                        .addOnSuccessListener {
+                            Toast.makeText(context, "Settings synced to Firestore!", Toast.LENGTH_SHORT).show()
+                        }
+                        .addOnFailureListener {
+                            Toast.makeText(context, "Settings saved locally!", Toast.LENGTH_SHORT).show()
+                        }
                     showSettingsDialog = false
-                    Toast.makeText(context, "Settings saved!", Toast.LENGTH_SHORT).show()
                 }
             )
         }
 
-        // 2. Real-Time Notification Center Dialog
+        // 3. Real-Time Notification Center Dialog
         if (showNotificationsDialog) {
             NotificationsDialog(
                 notifications = notifications,
@@ -614,7 +824,7 @@ fun LiveTogatherApp() {
             )
         }
 
-        // 3. Post Moment Dialog
+        // 4. Post Moment Dialog
         if (showPostMomentDialog) {
             PostMomentDialog(
                 currentUser = currentUser,
@@ -630,13 +840,18 @@ fun LiveTogatherApp() {
                         timestamp = System.currentTimeMillis()
                     )
                     db.collection("moments").document(newMoment.id).set(newMoment)
+                        .addOnSuccessListener {
+                            Toast.makeText(context, "Moment uploaded successfully!", Toast.LENGTH_SHORT).show()
+                        }
+                        .addOnFailureListener { e ->
+                            Toast.makeText(context, "Moment saved: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
                     showPostMomentDialog = false
-                    Toast.makeText(context, "Moment uploaded successfully!", Toast.LENGTH_SHORT).show()
                 }
             )
         }
 
-        // 4. Direct Message Send Prompt in Discover
+        // 5. Direct Message Dialog
         if (showDirectMessageDialog != null) {
             val target = showDirectMessageDialog!!
             DirectMessageDialog(
@@ -668,7 +883,7 @@ fun LiveTogatherApp() {
             )
         }
 
-        // 5. Comments Sheet for Moments
+        // 6. Comments Sheet for Moments
         if (showCommentsMoment != null) {
             val moment = showCommentsMoment!!
             CommentsDialog(
@@ -679,7 +894,7 @@ fun LiveTogatherApp() {
             )
         }
 
-        // 6. Mutual Match Celebration Dialog
+        // 7. Mutual Match Celebration Dialog
         if (matchedPartner != null) {
             AlertDialog(
                 onDismissRequest = { matchedPartner = null },
@@ -744,7 +959,7 @@ fun LiveTogatherApp() {
             )
         }
 
-        // 7. Active 1-on-1 Chat Room with Inbox Block/Unblock support
+        // 8. Active 1-on-1 Chat Room
         if (activeChatPartner != null) {
             val partner = activeChatPartner!!
             val matchId = listOf(currentUserId, partner.uid).sorted().joinToString("_")
@@ -809,7 +1024,7 @@ fun LiveTogatherApp() {
                             )
                         }
 
-                        // Block / Unblock Toggle Action directly in Chat Header
+                        // Block / Unblock Toggle Action
                         TextButton(
                             onClick = {
                                 val updatedBlocked = if (isBlocked) {
@@ -818,6 +1033,7 @@ fun LiveTogatherApp() {
                                     currentUser.blockedUserIds + partner.uid
                                 }
                                 currentUser = currentUser.copy(blockedUserIds = updatedBlocked)
+                                saveProfileToPrefs(prefs, currentUser)
                                 db.collection("users").document(currentUserId)
                                     .update("blockedUserIds", updatedBlocked)
                                 Toast.makeText(
@@ -865,7 +1081,7 @@ fun LiveTogatherApp() {
                         }
                     }
 
-                    // Bottom Bar: Blocked Banner or Message Input
+                    // Bottom Bar
                     if (isBlocked) {
                         Box(
                             modifier = Modifier
@@ -888,6 +1104,7 @@ fun LiveTogatherApp() {
                                     onClick = {
                                         val updatedBlocked = currentUser.blockedUserIds - partner.uid
                                         currentUser = currentUser.copy(blockedUserIds = updatedBlocked)
+                                        saveProfileToPrefs(prefs, currentUser)
                                         db.collection("users").document(currentUserId)
                                             .update("blockedUserIds", updatedBlocked)
                                         Toast.makeText(context, "${partner.name} unblocked", Toast.LENGTH_SHORT).show()
@@ -955,12 +1172,389 @@ fun LiveTogatherApp() {
 }
 
 // -------------------------------------------------------------
-// DISCOVER SCREEN CONTENT
+// 1. INTENT ROOMS 2-COLUMN GRID (REQUIREMENT 1)
+// -------------------------------------------------------------
+@Composable
+fun IntentRoomsGrid(
+    rooms: List<RoomItem>,
+    allUsers: List<UserProfile>,
+    onJoinRoom: (RoomItem) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(12.dp)
+    ) {
+        Text(
+            text = "Live Intent Rooms",
+            color = BrandGold,
+            fontSize = 17.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.5.sp
+        )
+        Text(
+            text = "Join real-time topic rooms to meet active members right now.",
+            color = Color.Gray,
+            fontSize = 11.sp
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            items(rooms) { room ->
+                // Calculate dynamic real-time active users in this room from Firestore users
+                val activeCount = allUsers.count { it.current_room == room.id }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .border(1.dp, BrandBorder, RoundedCornerShape(18.dp))
+                ) {
+                    // Fixed high-res curated system background image (Read-only, system managed)
+                    AsyncImage(
+                        model = room.banner_image_url,
+                        contentDescription = room.title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+
+                    // Dark gradient overlay
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.Black.copy(alpha = 0.3f),
+                                        Color.Black.copy(alpha = 0.85f)
+                                    )
+                                )
+                            )
+                    )
+
+                    // Card Content
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        // Live active users counter chip
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(Color.Black.copy(alpha = 0.65f))
+                                .border(0.5.dp, BrandGreen.copy(alpha = 0.5f), RoundedCornerShape(50))
+                                .padding(horizontal = 8.dp, vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(BrandGreen)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "$activeCount Active",
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        // Bottom Title & Join Button
+                        Column {
+                            Text(
+                                text = "${room.title} ${room.emoji}",
+                                color = Color.White,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 14.sp,
+                                maxLines = 2
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Button(
+                                onClick = { onJoinRoom(room) },
+                                colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                                shape = RoundedCornerShape(50),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                modifier = Modifier.fillMaxWidth().height(34.dp)
+                            ) {
+                                Text("Join Room", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// 2. ROOM MEMBERS DECK & TIER-BASED MESSAGING (REQUIREMENTS 2 & 3)
+// -------------------------------------------------------------
+@Composable
+fun RoomMembersDeckDialog(
+    room: RoomItem,
+    currentUser: UserProfile,
+    allUsers: List<UserProfile>,
+    onDismiss: () -> Unit,
+    onLike: (UserProfile) -> Unit,
+    onChat: (UserProfile) -> Unit
+) {
+    // Real-time active members inside this room
+    val activeMembers = remember(allUsers, room.id) {
+        allUsers.filter { it.current_room == room.id && it.uid != currentUser.uid }
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Scaffold(
+            containerColor = BrandDark,
+            topBar = {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(130.dp)
+                ) {
+                    AsyncImage(
+                        model = room.banner_image_url,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(Color.Transparent, BrandDark)
+                                )
+                            )
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = onDismiss,
+                                modifier = Modifier.background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "${room.title} ${room.emoji}",
+                                    color = Color.White,
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Black
+                                )
+                                Text(
+                                    text = "🟢 ${activeMembers.size + 1} Active in Room",
+                                    color = BrandGreen,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        Button(
+                            onClick = onDismiss,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.8f)),
+                            shape = RoundedCornerShape(50),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.height(30.dp)
+                        ) {
+                            Text("Leave Room", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        ) { paddingValues ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .padding(14.dp)
+            ) {
+                Text(
+                    text = "Active Room Members Deck",
+                    color = BrandCoral,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Like to match, or VIP/Platinum members can message instantly.",
+                    color = Color.Gray,
+                    fontSize = 11.sp
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                if (activeMembers.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize().weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                "You are currently the only one here! 🙋",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                "Other members joining ${room.title} will appear here in real time.",
+                                color = Color.Gray,
+                                fontSize = 12.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize().weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(activeMembers) { member ->
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = BrandCard),
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    AsyncImage(
+                                        model = member.photo,
+                                        contentDescription = null,
+                                        modifier = Modifier
+                                            .size(54.dp)
+                                            .clip(CircleShape),
+                                        contentScale = ContentScale.Crop
+                                    )
+
+                                    Spacer(modifier = Modifier.width(12.dp))
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = "${member.name}, ${member.age}",
+                                                color = Color.White,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            // Tier Badge
+                                            val isVip = member.plan.contains("VIP", ignoreCase = true)
+                                            val isPlatinum = member.plan.contains("Platinum", ignoreCase = true)
+                                            if (isVip || isPlatinum) {
+                                                Text(
+                                                    text = if (isVip) "VIP ★" else "PLATINUM",
+                                                    color = if (isVip) BrandGold else BrandCyan,
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.ExtraBold,
+                                                    modifier = Modifier
+                                                        .background(
+                                                            (if (isVip) BrandGold else BrandCyan).copy(alpha = 0.15f),
+                                                            RoundedCornerShape(4.dp)
+                                                        )
+                                                        .padding(horizontal = 4.dp, vertical = 1.dp)
+                                                )
+                                            }
+                                        }
+
+                                        Text(
+                                            text = "📍 ${member.city} • ${member.activeIntent.replace('_', ' ')}",
+                                            color = BrandOrange,
+                                            fontSize = 11.sp
+                                        )
+                                        if (member.bio.isNotBlank()) {
+                                            Text(
+                                                text = member.bio,
+                                                color = Color.LightGray,
+                                                fontSize = 11.sp,
+                                                maxLines = 1
+                                            )
+                                        }
+                                    }
+
+                                    // Action Buttons: Chat (Tier restricted) & Like
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        // Chat Button with Tier Lock Check
+                                        val isChatUnlocked = currentUser.isVipOrPlatinum()
+                                        IconButton(
+                                            onClick = { onChat(member) },
+                                            modifier = Modifier
+                                                .size(38.dp)
+                                                .background(
+                                                    if (isChatUnlocked) BrandCyan.copy(alpha = 0.15f)
+                                                    else Color.Gray.copy(alpha = 0.15f),
+                                                    CircleShape
+                                                )
+                                        ) {
+                                            Icon(
+                                                imageVector = if (isChatUnlocked) Icons.Default.Chat else Icons.Default.Lock,
+                                                contentDescription = "Chat",
+                                                tint = if (isChatUnlocked) BrandCyan else Color.Gray,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.width(6.dp))
+
+                                        // Real Like Button
+                                        IconButton(
+                                            onClick = { onLike(member) },
+                                            modifier = Modifier
+                                                .size(38.dp)
+                                                .background(BrandCoral, CircleShape)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Favorite,
+                                                contentDescription = "Like",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// DISCOVER SCREEN CONTENT (CARD VIEW)
 // -------------------------------------------------------------
 @Composable
 fun DiscoverScreenContent(
     profiles: List<UserProfile>,
     selectedCategory: String,
+    currentUser: UserProfile,
     onSelectCategory: (String) -> Unit,
     onPass: (UserProfile) -> Unit,
     onSuperStar: (UserProfile) -> Unit,
@@ -1106,7 +1700,7 @@ fun DiscoverScreenContent(
                             Icon(Icons.Default.Star, contentDescription = "SuperStar", tint = BrandGold)
                         }
 
-                        // 3. Direct Message
+                        // 3. Direct Message (Tier restricted)
                         IconButton(
                             onClick = {
                                 onDirectMessage(currentProfile)
@@ -1114,9 +1708,17 @@ fun DiscoverScreenContent(
                             modifier = Modifier
                                 .size(50.dp)
                                 .background(Color.Black.copy(alpha = 0.7f), CircleShape)
-                                .border(1.5.dp, BrandCyan, CircleShape)
+                                .border(
+                                    1.5.dp,
+                                    if (currentUser.isVipOrPlatinum()) BrandCyan else Color.Gray,
+                                    CircleShape
+                                )
                         ) {
-                            Icon(Icons.Default.Chat, contentDescription = "Direct Message", tint = BrandCyan)
+                            Icon(
+                                imageVector = if (currentUser.isVipOrPlatinum()) Icons.Default.Chat else Icons.Default.Lock,
+                                contentDescription = "Direct Message",
+                                tint = if (currentUser.isVipOrPlatinum()) BrandCyan else Color.Gray
+                            )
                         }
 
                         // 4. Like
@@ -1159,7 +1761,7 @@ fun DiscoverScreenContent(
                         fontSize = 16.sp
                     )
                     Text(
-                        "Try expanding your distance or age filter in Settings.",
+                        "Try expanding your distance or age filter in Settings, or join an Intent Room.",
                         color = Color.Gray,
                         fontSize = 12.sp,
                         textAlign = TextAlign.Center
@@ -1318,7 +1920,6 @@ fun ChatsScreenContent(
                                     Text(match.lastMessage, color = Color.LightGray, fontSize = 12.sp, maxLines = 1)
                                 }
 
-                                // Direct Block / Unblock Action in Inbox
                                 TextButton(
                                     onClick = { onToggleBlock(partner) }
                                 ) {
@@ -1383,7 +1984,6 @@ fun MomentsScreenContent(
                         shape = RoundedCornerShape(16.dp)
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
-                            // User Info Row
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 AsyncImage(
                                     model = item.userPhoto,
@@ -1402,7 +2002,6 @@ fun MomentsScreenContent(
                             Text(item.caption, color = Color.White, fontSize = 13.sp)
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            // Media
                             if (item.mediaUrl.isNotBlank()) {
                                 AsyncImage(
                                     model = item.mediaUrl,
@@ -1417,7 +2016,6 @@ fun MomentsScreenContent(
 
                             Spacer(modifier = Modifier.height(10.dp))
 
-                            // Interaction Row: Like & Comment
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 val isLikedByMe = item.likedByUsers.contains(currentUserId)
                                 Row(
@@ -1459,7 +2057,7 @@ fun MomentsScreenContent(
 }
 
 // -------------------------------------------------------------
-// PROFILE SCREEN CONTENT (Block option removed from profile as requested)
+// PROFILE SCREEN CONTENT
 // -------------------------------------------------------------
 @Composable
 fun ProfileScreenContent(
@@ -1482,7 +2080,6 @@ fun ProfileScreenContent(
 
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
 
-    // Image Picker Launcher
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -1499,7 +2096,6 @@ fun ProfileScreenContent(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
-            // Profile Header with Avatar & Upload
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -1656,13 +2252,13 @@ fun ProfileScreenContent(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         SubscriptionPlanCard(
-                            plan = SUBSCRIPTION_PLANS[0], // Weekly Pass
+                            plan = SUBSCRIPTION_PLANS[0],
                             isSelected = currentUser.plan == SUBSCRIPTION_PLANS[0].title,
                             modifier = Modifier.weight(1f),
                             onClick = { onSelectPlan(SUBSCRIPTION_PLANS[0]) }
                         )
                         SubscriptionPlanCard(
-                            plan = SUBSCRIPTION_PLANS[1], // Monthly Pass
+                            plan = SUBSCRIPTION_PLANS[1],
                             isSelected = currentUser.plan == SUBSCRIPTION_PLANS[1].title,
                             modifier = Modifier.weight(1f),
                             onClick = { onSelectPlan(SUBSCRIPTION_PLANS[1]) }
@@ -1670,13 +2266,13 @@ fun ProfileScreenContent(
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         SubscriptionPlanCard(
-                            plan = SUBSCRIPTION_PLANS[2], // Platinum
+                            plan = SUBSCRIPTION_PLANS[2],
                             isSelected = currentUser.plan == SUBSCRIPTION_PLANS[2].title,
                             modifier = Modifier.weight(1f),
                             onClick = { onSelectPlan(SUBSCRIPTION_PLANS[2]) }
                         )
                         SubscriptionPlanCard(
-                            plan = SUBSCRIPTION_PLANS[3], // VIP Level
+                            plan = SUBSCRIPTION_PLANS[3],
                             isSelected = currentUser.plan == SUBSCRIPTION_PLANS[3].title,
                             modifier = Modifier.weight(1f),
                             onClick = { onSelectPlan(SUBSCRIPTION_PLANS[3]) }
@@ -1716,7 +2312,7 @@ fun ProfileScreenContent(
             }
         }
 
-        // Account & Safety Section (Logout & Delete Account only - Block removed)
+        // Safety & Account
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = BrandCard),
@@ -1844,7 +2440,7 @@ fun SubscriptionPlanCard(
 }
 
 // -------------------------------------------------------------
-// SETTINGS DIALOG WITH INTERACTIVE TOPIC SELECTION DIALOGS
+// SETTINGS DIALOG WITH TOPIC SELECTION
 // -------------------------------------------------------------
 @Composable
 fun SettingsDialog(
@@ -1865,7 +2461,6 @@ fun SettingsDialog(
     var myMove by remember { mutableStateOf(user.myMove) }
     var photoVerifiedChat by remember { mutableStateOf(user.photoVerifiedChat) }
 
-    // Profile attributes
     var interests by remember { mutableStateOf(user.interests.ifBlank { "Travel, Cafe, Night Drives" }) }
     var lookingFor by remember { mutableStateOf(user.lookingFor) }
     var openTo by remember { mutableStateOf(user.openTo) }
@@ -1904,7 +2499,6 @@ fun SettingsDialog(
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold
                     )
-                    // Checkmark Done Button
                     IconButton(
                         onClick = {
                             val updated = user.copy(
@@ -1953,14 +2547,12 @@ fun SettingsDialog(
                     .padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Section 1: Profile Attributes with Selection Dialogs
                 item {
                     Card(
                         colors = CardDefaults.cardColors(containerColor = Color.White),
                         shape = RoundedCornerShape(16.dp)
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            // Has a Bio Switch
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1990,7 +2582,6 @@ fun SettingsDialog(
                     }
                 }
 
-                // Section 2: Discovery
                 item {
                     Text("Discovery", color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(6.dp))
@@ -2000,7 +2591,6 @@ fun SettingsDialog(
                         shape = RoundedCornerShape(16.dp)
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            // Location
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -2015,7 +2605,6 @@ fun SettingsDialog(
 
                             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color(0xFFEEEEEE))
 
-                            // Maximum Distance Slider (10 km to 120 km)
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
@@ -2044,7 +2633,6 @@ fun SettingsDialog(
 
                             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color(0xFFEEEEEE))
 
-                            // Interested In
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -2068,7 +2656,6 @@ fun SettingsDialog(
 
                             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color(0xFFEEEEEE))
 
-                            // Age Range Slider
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
@@ -2098,7 +2685,6 @@ fun SettingsDialog(
                     }
                 }
 
-                // Section 3: Control My Visibility
                 item {
                     Text("Control my visibility", color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(6.dp))
@@ -2108,7 +2694,6 @@ fun SettingsDialog(
                         shape = RoundedCornerShape(16.dp)
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            // Standard
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -2127,7 +2712,6 @@ fun SettingsDialog(
 
                             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color(0xFFEEEEEE))
 
-                            // Incognito
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -2151,7 +2735,6 @@ fun SettingsDialog(
                     }
                 }
 
-                // Section 4: Enable Discovery & Who Messages You
                 item {
                     Text("Enable Discovery", color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(6.dp))
@@ -2377,7 +2960,7 @@ fun SettingsTopicSelectionDialog(
 }
 
 // -------------------------------------------------------------
-// NOTIFICATIONS CENTER DIALOG (REAL TIME BELL)
+// NOTIFICATIONS DIALOG
 // -------------------------------------------------------------
 @Composable
 fun NotificationsDialog(
@@ -2497,7 +3080,6 @@ fun PostMomentDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                // Media Preview / Pick button
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -2549,7 +3131,7 @@ fun PostMomentDialog(
 }
 
 // -------------------------------------------------------------
-// DIRECT MESSAGE DIALOG IN DISCOVER
+// DIRECT MESSAGE DIALOG
 // -------------------------------------------------------------
 @Composable
 fun DirectMessageDialog(
@@ -2576,7 +3158,7 @@ fun DirectMessageDialog(
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text("Message ${targetUser.name}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                        Text("Send a direct note before matching", color = BrandOrange, fontSize = 11.sp)
+                        Text("Send a direct note", color = BrandOrange, fontSize = 11.sp)
                     }
                 }
 
@@ -2689,7 +3271,6 @@ fun CommentsDialog(
                     }
                 }
 
-                // Add comment input
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -2733,8 +3314,33 @@ fun CommentsDialog(
 }
 
 // -------------------------------------------------------------
-// HELPER FUNCTIONS & FIRESTORE ACTIONS
+// HELPER FUNCTIONS, PERSISTENCE & FIRESTORE ACTIONS
 // -------------------------------------------------------------
+fun saveProfileToPrefs(prefs: android.content.SharedPreferences, user: UserProfile) {
+    prefs.edit()
+        .putString("user_uid", user.uid)
+        .putString("profile_name", user.name)
+        .putInt("profile_age", user.age)
+        .putString("profile_gender", user.gender)
+        .putString("profile_city", user.city)
+        .putString("profile_photo", user.photo)
+        .putString("profile_active_intent", user.activeIntent)
+        .putString("profile_bio", user.bio)
+        .putString("profile_hobbies", user.hobbies)
+        .putString("profile_interests", user.interests)
+        .putString("profile_profession", user.profession)
+        .putString("profile_education", user.education)
+        .putString("profile_plan", user.plan)
+        .putString("profile_location", user.locationName)
+        .putInt("profile_max_distance", user.maxDistanceKm)
+        .putBoolean("profile_show_further", user.showFurtherAway)
+        .putString("profile_interested_in", user.interestedIn)
+        .putInt("profile_min_age", user.minAge)
+        .putInt("profile_max_age", user.maxAge)
+        .putString("profile_current_room", user.current_room)
+        .apply()
+}
+
 @Composable
 fun outlinedFieldColors() = OutlinedTextFieldDefaults.colors(
     focusedContainerColor = BrandDark,
@@ -2766,7 +3372,6 @@ fun checkAndHandleMutualMatch(
     db.collection("swipes").document(reverseSwipeId).get().addOnSuccessListener { snapshot ->
         val action = snapshot.getString("action")
         if (action == "like" || action == "superstar") {
-            // Mutual match!
             val matchId = listOf(currentUser.uid, partner.uid).sorted().joinToString("_")
             val match = MatchItem(
                 matchId = matchId,
@@ -2776,7 +3381,6 @@ fun checkAndHandleMutualMatch(
             )
             db.collection("matches").document(matchId).set(match)
 
-            // Notify partner
             sendNotification(
                 db = db,
                 targetUserId = partner.uid,
@@ -2839,7 +3443,9 @@ fun seedInitialCommunityProfiles(db: FirebaseFirestore) {
             profession = "Music Producer",
             education = "Jadavpur University",
             hobbies = "EDM, Guitar, Gym",
-            distanceKm = 4
+            distanceKm = 4,
+            plan = "VIP LEVEL ★",
+            current_room = "free_party"
         ),
         UserProfile(
             uid = "USER_ANANYA",
@@ -2853,7 +3459,9 @@ fun seedInitialCommunityProfiles(db: FirebaseFirestore) {
             profession = "Architect",
             education = "B.Arch",
             hobbies = "Sketching, Specialty Coffee, Poetry",
-            distanceKm = 8
+            distanceKm = 8,
+            plan = "PLATINUM",
+            current_room = "free_tonight"
         ),
         UserProfile(
             uid = "USER_PRIYA",
@@ -2867,7 +3475,9 @@ fun seedInitialCommunityProfiles(db: FirebaseFirestore) {
             profession = "Travel Vlogger",
             education = "Mass Communication",
             hobbies = "Road trips, Photography, Trekking",
-            distanceKm = 14
+            distanceKm = 14,
+            plan = "VIP LEVEL ★",
+            current_room = "ready_travel"
         ),
         UserProfile(
             uid = "USER_SNEHA",
@@ -2881,7 +3491,9 @@ fun seedInitialCommunityProfiles(db: FirebaseFirestore) {
             profession = "Food Blogger",
             education = "St. Xavier's College",
             hobbies = "Baking, Pilates, Fashion",
-            distanceKm = 18
+            distanceKm = 18,
+            plan = "Monthly Pass",
+            current_room = "lets_cafe"
         )
     )
     samples.forEach { p ->

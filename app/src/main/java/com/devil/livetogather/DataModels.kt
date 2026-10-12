@@ -19,6 +19,95 @@ val CATEGORY_LIST = listOf(
     IntentCategory("lets_dinner", "🍽️ Lets Go For Dinner/Lunch")
 )
 
+data class RoomItem(
+    val id: String = "",
+    val title: String = "",
+    val emoji: String = "",
+    val banner_image_url: String = "",
+    val activeUserCount: Int = 0
+)
+
+val INTENT_ROOMS_CATALOG = listOf(
+    RoomItem(
+        id = "free_tonight",
+        title = "Free Tonight",
+        emoji = "🍷",
+        banner_image_url = "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?auto=format&fit=crop&w=800&q=80"
+    ),
+    RoomItem(
+        id = "free_tomorrow",
+        title = "Free Tomorrow",
+        emoji = "🌙",
+        banner_image_url = "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=800&q=80"
+    ),
+    RoomItem(
+        id = "free_weekend",
+        title = "Free in Weekend",
+        emoji = "🎉",
+        banner_image_url = "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=800&q=80"
+    ),
+    RoomItem(
+        id = "ready_travel",
+        title = "Ready for Travelling",
+        emoji = "🧳",
+        banner_image_url = "https://images.unsplash.com/photo-1488646953014-85cb44e25828?auto=format&fit=crop&w=800&q=80"
+    ),
+    RoomItem(
+        id = "travel_partner",
+        title = "Travel Partner",
+        emoji = "✈️",
+        banner_image_url = "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80"
+    ),
+    RoomItem(
+        id = "hangout_partner",
+        title = "Hangout Partner",
+        emoji = "🤝",
+        banner_image_url = "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=800&q=80"
+    ),
+    RoomItem(
+        id = "free_party",
+        title = "Free for Party",
+        emoji = "🥳",
+        banner_image_url = "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=800&q=80"
+    ),
+    RoomItem(
+        id = "join_party",
+        title = "Join Party",
+        emoji = "🍸",
+        banner_image_url = "https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?auto=format&fit=crop&w=800&q=80"
+    ),
+    RoomItem(
+        id = "going_club",
+        title = "Going to Club",
+        emoji = "🕺",
+        banner_image_url = "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=800&q=80"
+    ),
+    RoomItem(
+        id = "plan_trip",
+        title = "Lets Plan Holiday Trip",
+        emoji = "🗺️",
+        banner_image_url = "https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?auto=format&fit=crop&w=800&q=80"
+    ),
+    RoomItem(
+        id = "lets_movie",
+        title = "Lets Go For Movie",
+        emoji = "🍿",
+        banner_image_url = "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=800&q=80"
+    ),
+    RoomItem(
+        id = "lets_cafe",
+        title = "Lets Go Cafe",
+        emoji = "☕",
+        banner_image_url = "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=800&q=80"
+    ),
+    RoomItem(
+        id = "lets_dinner",
+        title = "Lets Go For Dinner/Lunch",
+        emoji = "🍽️",
+        banner_image_url = "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=800&q=80"
+    )
+)
+
 data class SubscriptionPlanItem(
     val id: String = "",
     val title: String = "",
@@ -51,6 +140,9 @@ data class UserProfile(
     val plan: String = "VIP LEVEL ★",
     val distanceKm: Int = 12,
 
+    // Real-time Intent Room tracking
+    val current_room: String = "",
+
     // Settings & Discovery attributes (Screenshots 2, 3, 4)
     val hasBio: Boolean = true,
     val lookingFor: String = "Long-term relationship",
@@ -79,7 +171,11 @@ data class UserProfile(
     val photoVerifiedChat: Boolean = false,
 
     val blockedUserIds: List<String> = emptyList()
-)
+) {
+    fun isVipOrPlatinum(): Boolean {
+        return plan.contains("VIP", ignoreCase = true) || plan.contains("Platinum", ignoreCase = true)
+    }
+}
 
 data class SwipeRecord(
     val fromUserId: String = "",
