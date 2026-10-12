@@ -256,6 +256,8 @@ fun LiveTogatherApp() {
     var showDirectMessageDialog by remember { mutableStateOf<UserProfile?>(null) }
     var showCommentsMoment by remember { mutableStateOf<MomentItem?>(null) }
     var activeRoomDeck by remember { mutableStateOf<RoomItem?>(null) }
+    var activeAudioRoom by remember { mutableStateOf<RoomItem?>(null) }
+    var showCreateRoomDialog by remember { mutableStateOf(false) }
     var matchedPartner by remember { mutableStateOf<UserProfile?>(null) }
     var activeChatPartner by remember { mutableStateOf<UserProfile?>(null) }
 
@@ -286,21 +288,26 @@ fun LiveTogatherApp() {
                 }
         }
 
-        // Initialize Rooms Catalog
+        // Initialize Rooms Catalog & Real-Time Snapshot Listener
         roomsList.clear()
         roomsList.addAll(INTENT_ROOMS_CATALOG)
 
-        // Seed Rooms in Firestore if needed
-        db.collection("rooms").get().addOnSuccessListener { snapshot ->
-            if (snapshot.isEmpty) {
-                INTENT_ROOMS_CATALOG.forEach { room ->
-                    db.collection("rooms").document(room.id).set(room)
-                }
-            } else {
-                val fetchedRooms = snapshot.documents.mapNotNull { it.toObject(RoomItem::class.java) }
-                if (fetchedRooms.isNotEmpty()) {
-                    roomsList.clear()
-                    roomsList.addAll(fetchedRooms)
+        db.collection("rooms").addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                Log.w("Firestore", "Rooms snapshot error: ${error.message}")
+                return@addSnapshotListener
+            }
+            if (snapshot != null) {
+                if (snapshot.isEmpty) {
+                    INTENT_ROOMS_CATALOG.forEach { room ->
+                        db.collection("rooms").document(room.id).set(room)
+                    }
+                } else {
+                    val fetchedRooms = snapshot.documents.mapNotNull { it.toObject(RoomItem::class.java) }
+                    if (fetchedRooms.isNotEmpty()) {
+                        roomsList.clear()
+                        roomsList.addAll(fetchedRooms)
+                    }
                 }
             }
         }
@@ -632,16 +639,35 @@ fun LiveTogatherApp() {
                                 IntentRoomsGrid(
                                     rooms = roomsList,
                                     allUsers = discoverProfiles + currentUser,
+                                    onCreateRoom = { showCreateRoomDialog = true },
                                     onJoinRoom = { room ->
-                                        // Update current_room in Firestore
+                                        // 1. Register presence in rooms/{roomId}/members/{userId}
+                                        val isHost = room.hostId == currentUserId || (room.hostId.isEmpty() && room.isCustom)
+                                        val member = RoomMember(
+                                            uid = currentUserId,
+                                            name = currentUser.name,
+                                            photoUrl = currentUser.photo,
+                                            joinedAt = System.currentTimeMillis(),
+                                            role = if (isHost) "host" else "listener",
+                                            tier = if (currentUser.isVipOrPlatinum()) {
+                                                if (currentUser.plan.contains("VIP", ignoreCase = true)) "VIP" else "Platinum"
+                                            } else "Standard"
+                                        )
+                                        db.collection("rooms").document(room.id)
+                                            .collection("members").document(currentUserId)
+                                            .set(member)
+
+                                        // 2. Update current_room in Firestore user doc
                                         currentUser = currentUser.copy(current_room = room.id)
                                         saveProfileToPrefs(prefs, currentUser)
                                         db.collection("users").document(currentUserId)
                                             .update("current_room", room.id)
                                             .addOnSuccessListener {
-                                                Log.d("Rooms", "Joined room ${room.id}")
+                                                Log.d("Rooms", "Joined room ${room.id} as ${member.role}")
                                             }
-                                        activeRoomDeck = room
+
+                                        // 3. Open Audio Hangout Room Dialog
+                                        activeAudioRoom = room
                                     }
                                 )
                             }
@@ -750,6 +776,82 @@ fun LiveTogatherApp() {
         }
 
         // --- Dialogs & Modals ---
+
+        // 0. Advanced Real-time Audio Hangout Room Dialog
+        if (activeAudioRoom != null) {
+            val room = activeAudioRoom!!
+            AudioHangoutRoomDialog(
+                initialRoom = room,
+                currentUser = currentUser,
+                allProfiles = discoverProfiles,
+                db = db,
+                onDismiss = {
+                    // Remove presence from rooms/{roomId}/members/{currentUserId}
+                    db.collection("rooms").document(room.id)
+                        .collection("members").document(currentUserId)
+                        .delete()
+                    currentUser = currentUser.copy(current_room = "")
+                    saveProfileToPrefs(prefs, currentUser)
+                    db.collection("users").document(currentUserId).update("current_room", "")
+                    AudioPlayerManager.stop()
+                    activeAudioRoom = null
+                },
+                onDirectChat = { partner ->
+                    showDirectMessageDialog = partner
+                }
+            )
+        }
+
+        // 0.1 Create Custom Room Dialog
+        if (showCreateRoomDialog) {
+            CreateRoomDialog(
+                currentUser = currentUser,
+                onDismiss = { showCreateRoomDialog = false },
+                onCreate = { title, categoryId, themeUrl ->
+                    val roomId = "custom_" + UUID.randomUUID().toString().take(8)
+                    val catEmoji = CATEGORY_LIST.find { it.id == categoryId }?.label?.take(2)?.trim() ?: "🎙️"
+                    val newRoom = RoomItem(
+                        id = roomId,
+                        title = title,
+                        category = categoryId,
+                        emoji = catEmoji,
+                        banner_image_url = themeUrl,
+                        hostId = currentUserId,
+                        hostName = currentUser.name,
+                        hostPhotoUrl = currentUser.photo,
+                        nowPlayingTitle = "",
+                        nowPlayingUrl = "",
+                        isPlaying = false,
+                        isCustom = true,
+                        createdAt = System.currentTimeMillis()
+                    )
+                    // Save to Firestore rooms/{roomId}
+                    db.collection("rooms").document(roomId).set(newRoom)
+
+                    // Register host member in rooms/{roomId}/members/{userId}
+                    val hostMember = RoomMember(
+                        uid = currentUserId,
+                        name = currentUser.name,
+                        photoUrl = currentUser.photo,
+                        joinedAt = System.currentTimeMillis(),
+                        role = "host",
+                        tier = if (currentUser.isVipOrPlatinum()) {
+                            if (currentUser.plan.contains("VIP", ignoreCase = true)) "VIP" else "Platinum"
+                        } else "Standard"
+                    )
+                    db.collection("rooms").document(roomId).collection("members").document(currentUserId).set(hostMember)
+
+                    // Update user's current_room
+                    currentUser = currentUser.copy(current_room = roomId)
+                    saveProfileToPrefs(prefs, currentUser)
+                    db.collection("users").document(currentUserId).update("current_room", roomId)
+
+                    showCreateRoomDialog = false
+                    activeAudioRoom = newRoom
+                    Toast.makeText(context, "Room \"$title\" created! You are Host 👑", Toast.LENGTH_SHORT).show()
+                }
+            )
+        }
 
         // 1. Room Members Deck Dialog
         if (activeRoomDeck != null) {
@@ -1178,6 +1280,7 @@ fun LiveTogatherApp() {
 fun IntentRoomsGrid(
     rooms: List<RoomItem>,
     allUsers: List<UserProfile>,
+    onCreateRoom: () -> Unit = {},
     onJoinRoom: (RoomItem) -> Unit
 ) {
     Column(
@@ -1185,18 +1288,37 @@ fun IntentRoomsGrid(
             .fillMaxSize()
             .padding(12.dp)
     ) {
-        Text(
-            text = "Live Intent Rooms",
-            color = BrandGold,
-            fontSize = 17.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 0.5.sp
-        )
-        Text(
-            text = "Join real-time topic rooms to meet active members right now.",
-            color = Color.Gray,
-            fontSize = 11.sp
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Live Intent Rooms",
+                    color = BrandGold,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.5.sp
+                )
+                Text(
+                    text = "Join real-time topic rooms to meet active members right now.",
+                    color = Color.Gray,
+                    fontSize = 11.sp
+                )
+            }
+
+            Button(
+                onClick = onCreateRoom,
+                colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                shape = RoundedCornerShape(50),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("+ Create", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+        }
 
         Spacer(modifier = Modifier.height(12.dp))
 
@@ -1246,28 +1368,47 @@ fun IntentRoomsGrid(
                             .padding(12.dp),
                         verticalArrangement = Arrangement.SpaceBetween
                     ) {
-                        // Live active users counter chip
+                        // Live active users counter chip & Host badge
                         Row(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(50))
-                                .background(Color.Black.copy(alpha = 0.65f))
-                                .border(0.5.dp, BrandGreen.copy(alpha = 0.5f), RoundedCornerShape(50))
-                                .padding(horizontal = 8.dp, vertical = 3.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Box(
+                            Row(
                                 modifier = Modifier
-                                    .size(6.dp)
-                                    .clip(CircleShape)
-                                    .background(BrandGreen)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "$activeCount Active",
-                                color = Color.White,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                                    .clip(RoundedCornerShape(50))
+                                    .background(Color.Black.copy(alpha = 0.65f))
+                                    .border(0.5.dp, BrandGreen.copy(alpha = 0.5f), RoundedCornerShape(50))
+                                    .padding(horizontal = 8.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(BrandGreen)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "$activeCount Active",
+                                    color = Color.White,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            if (room.isCustom && room.hostName.isNotBlank()) {
+                                Text(
+                                    text = "👑 ${room.hostName}",
+                                    color = BrandGold,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    modifier = Modifier
+                                        .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(50))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
                         }
 
                         // Bottom Title & Join Button

@@ -24,7 +24,16 @@ data class RoomItem(
     val title: String = "",
     val emoji: String = "",
     val banner_image_url: String = "",
-    val activeUserCount: Int = 0
+    val activeUserCount: Int = 0,
+    val hostId: String = "",
+    val hostName: String = "",
+    val hostPhotoUrl: String = "",
+    val category: String = "",
+    val nowPlayingTitle: String = "",
+    val nowPlayingUrl: String = "",
+    val isPlaying: Boolean = false,
+    val isCustom: Boolean = false,
+    val createdAt: Long = System.currentTimeMillis()
 )
 
 val INTENT_ROOMS_CATALOG = listOf(
@@ -234,3 +243,55 @@ data class NotificationItem(
     val timestamp: Long = System.currentTimeMillis(),
     val isRead: Boolean = false
 )
+
+data class RoomMember(
+    val uid: String = "",
+    val name: String = "",
+    val photoUrl: String = "",
+    val joinedAt: Long = System.currentTimeMillis(),
+    val role: String = "listener", // "host" or "listener"
+    val tier: String = "Standard" // "VIP", "Platinum", "Standard"
+)
+
+data class MessageRequest(
+    val requestId: String = "",
+    val senderId: String = "",
+    val senderName: String = "",
+    val senderPhoto: String = "",
+    val targetId: String = "",
+    val targetName: String = "",
+    val message: String = "",
+    val status: String = "pending", // "pending", "accepted", "rejected"
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+data class HangoutTrack(
+    val id: String = "",
+    val title: String = "",
+    val artist: String = "",
+    val url: String = ""
+)
+
+val CURATED_HANGOUT_TRACKS = listOf(
+    HangoutTrack("track_1", "Chill Lo-Fi Beats", "Tokyo Sunset", "https://assets.mixkit.co/music/preview/mixkit-chill-bro-494.mp3"),
+    HangoutTrack("track_2", "Lounge Deep Groove", "Velvet Night", "https://assets.mixkit.co/music/preview/mixkit-serene-view-443.mp3"),
+    HangoutTrack("track_3", "Ambient Soul", "Aura Harmony", "https://assets.mixkit.co/music/preview/mixkit-sleepy-cat-135.mp3"),
+    HangoutTrack("track_4", "Party Warmup", "Neon Rhythm", "https://assets.mixkit.co/music/preview/mixkit-tech-house-vibes-130.mp3"),
+    HangoutTrack("track_5", "Late Night Drive", "Synth Dream", "https://assets.mixkit.co/music/preview/mixkit-driving-ambition-32.mp3")
+)
+
+data class RoomThemePreset(
+    val id: String,
+    val name: String,
+    val imageUrl: String
+)
+
+val ROOM_THEME_PRESETS = listOf(
+    RoomThemePreset("theme_neon_lounge", "Neon Velvet Lounge", "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=800&q=80"),
+    RoomThemePreset("theme_rooftop_sunset", "Rooftop Sunset Coral", "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?auto=format&fit=crop&w=800&q=80"),
+    RoomThemePreset("theme_midnight_club", "Midnight Cyber Club", "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=800&q=80"),
+    RoomThemePreset("theme_acoustic_cafe", "Candlelit Acoustic Cafe", "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=800&q=80"),
+    RoomThemePreset("theme_coastal_drive", "Coastal Night Drive", "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80"),
+    RoomThemePreset("theme_party_vibes", "Golden Hour Festival", "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=800&q=80")
+)
+
