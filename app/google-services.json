@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "427307595210",
+    "project_id": "livetogather-ac204",
+    "storage_bucket": "livetogather-ac204.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:427307595210:android:c209c25104e79e6b8a8b33",
+        "android_client_info": {
+          "package_name": "com.devil.livetogather"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyALkKOigqX9nd_Ss8kCKWQRDHoxIpGNmUY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
