@@ -12,9 +12,6 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -41,7 +38,6 @@ import coil.compose.AsyncImage
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
 import java.util.*
 
 val BrandDark = Color(0xFF0B090A)
@@ -54,6 +50,146 @@ val BrandGold = Color(0xFFFFD700)
 val BrandCyan = Color(0xFF00E5FF)
 val BrandBlue = Color(0xFF3897F0)
 val BrandGreen = Color(0xFF00E676)
+
+val SETTINGS_TOPIC_OPTIONS = mapOf(
+    "Interests" to listOf(
+        "Travel, Cafe, Night Drives",
+        "Music, Concerts & Festivals",
+        "Fitness, Gym & Yoga",
+        "Photography & Filmmaking",
+        "Dancing & Clubbing",
+        "Foodie, Cooking & Baking",
+        "Movies, Series & Anime",
+        "Reading, Books & Literature",
+        "Gaming, Tech & Esports",
+        "Trekking, Hiking & Nature",
+        "Art, Painting & Design",
+        "Fashion, Styling & Shopping"
+    ),
+    "Looking for" to listOf(
+        "Long-term relationship",
+        "Short-term relationship",
+        "Long-term, open to short",
+        "Short-term, open to long",
+        "New friends & hangout",
+        "Casual dating & coffee",
+        "Marriage / Life partner",
+        "Still figuring it out"
+    ),
+    "Open to..." to listOf(
+        "New connections",
+        "Serious commitment",
+        "Monogamy",
+        "Open / Non-monogamy",
+        "Travel buddies",
+        "Weekend party partner",
+        "Exploring possibilities"
+    ),
+    "Add languages" to listOf(
+        "English, Hindi, Bengali",
+        "English, Hindi",
+        "Hindi, Punjabi, English",
+        "Hindi, Urdu, English",
+        "Tamil, English, Hindi",
+        "Telugu, English, Hindi",
+        "Marathi, Hindi, English",
+        "Gujarati, Hindi, English",
+        "Bengali, English",
+        "Spanish, English",
+        "French, English",
+        "German, English"
+    ),
+    "Zodiac" to listOf(
+        "Aries ♈",
+        "Taurus ♉",
+        "Gemini ♊",
+        "Cancer ♋",
+        "Leo ♌",
+        "Virgo ♍",
+        "Libra ♎",
+        "Scorpio ♏",
+        "Sagittarius ♐",
+        "Capricorn ♑",
+        "Aquarius ♒",
+        "Pisces ♓"
+    ),
+    "Education" to listOf(
+        "Masters in Design",
+        "Bachelors / Undergraduate",
+        "Postgraduate / Masters",
+        "Doctorate / PhD",
+        "In College / University",
+        "High School",
+        "Trade / Vocational School",
+        "Self-Taught / Entrepreneur"
+    ),
+    "Family Plans" to listOf(
+        "Open to kids",
+        "Want children",
+        "Don't want children",
+        "Have children & want more",
+        "Have children & don't want more",
+        "Not sure yet"
+    ),
+    "Communication Style" to listOf(
+        "Big time texter",
+        "Phone caller",
+        "Video chatter",
+        "Slow replier",
+        "Better in person",
+        "Memes are my love language"
+    ),
+    "Love Style" to listOf(
+        "Quality time",
+        "Words of affirmation",
+        "Physical touch",
+        "Acts of service",
+        "Receiving gifts"
+    ),
+    "Pets" to listOf(
+        "Dog lover",
+        "Cat person",
+        "Have dogs & cats",
+        "Love all animals",
+        "Birds / Reptiles",
+        "Fish",
+        "No pets",
+        "Allergic to pets",
+        "Want pets in future"
+    ),
+    "Drinking" to listOf(
+        "Socially",
+        "Never / Teetotaler",
+        "On special occasions",
+        "Frequently",
+        "Sober / Quit drinking"
+    ),
+    "Smoking" to listOf(
+        "No",
+        "Non-smoker",
+        "Social smoker",
+        "Regular smoker",
+        "Trying to quit",
+        "Vape only"
+    ),
+    "Workout" to listOf(
+        "Active",
+        "Everyday",
+        "Often (3-4 times/wk)",
+        "Sometimes",
+        "Never",
+        "Yoga / Pilates",
+        "Gym & Weightlifting",
+        "Running / Cycling"
+    ),
+    "Social Media" to listOf(
+        "@maya_livetogather",
+        "Instagram: @maya_insta",
+        "Snapchat: @maya_snap",
+        "LinkedIn connected",
+        "Prefer private"
+    )
+)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -69,9 +205,8 @@ class MainActivity : ComponentActivity() {
 fun LiveTogatherApp() {
     val context = LocalContext.current
     val db = remember { FirebaseFirestore.getInstance() }
-    val scope = rememberCoroutineScope()
 
-    // Persistent Current User Session (Single user mode - Dual mode OFF)
+    // Persistent Current User Session (Single user mode)
     val currentUserId = remember { "USER_CURRENT" }
     var currentUser by remember {
         mutableStateOf(
@@ -106,7 +241,6 @@ fun LiveTogatherApp() {
     var showPostMomentDialog by remember { mutableStateOf(false) }
     var showDirectMessageDialog by remember { mutableStateOf<UserProfile?>(null) }
     var showCommentsMoment by remember { mutableStateOf<MomentItem?>(null) }
-    var showBlockedUsersDialog by remember { mutableStateOf(false) }
     var matchedPartner by remember { mutableStateOf<UserProfile?>(null) }
     var activeChatPartner by remember { mutableStateOf<UserProfile?>(null) }
 
@@ -128,7 +262,6 @@ fun LiveTogatherApp() {
                     currentUser = it
                 }
             } else {
-                // Initialize user document if not present
                 userDoc.set(currentUser)
             }
         }
@@ -141,7 +274,6 @@ fun LiveTogatherApp() {
                 discoverProfiles.clear()
                 discoverProfiles.addAll(list)
             } else {
-                // Seed initial community profiles in Firestore if collection is empty
                 seedInitialCommunityProfiles(db)
             }
         }
@@ -213,7 +345,7 @@ fun LiveTogatherApp() {
         }
     }
 
-    // Filtered Discover Profiles based on Category and Settings (Distance, Age, Gender, Discovery enabled)
+    // Filtered Discover Profiles based on Category and Settings
     val filteredProfiles = remember(discoverProfiles, selectedCategory, currentUser) {
         discoverProfiles.filter { profile ->
             if (!currentUser.enableDiscovery) return@filter false
@@ -356,7 +488,6 @@ fun LiveTogatherApp() {
                             },
                             onLike = { profile ->
                                 recordSwipe(db, currentUserId, profile.uid, "like")
-                                // Check mutual like
                                 checkAndHandleMutualMatch(
                                     db = db,
                                     currentUser = currentUser,
@@ -387,8 +518,25 @@ fun LiveTogatherApp() {
                         ChatsScreenContent(
                             matches = matches,
                             currentUserId = currentUserId,
+                            currentUser = currentUser,
                             db = db,
-                            onOpenChat = { partner -> activeChatPartner = partner }
+                            onOpenChat = { partner -> activeChatPartner = partner },
+                            onToggleBlock = { partner ->
+                                val isBlocked = currentUser.blockedUserIds.contains(partner.uid)
+                                val updatedBlocked = if (isBlocked) {
+                                    currentUser.blockedUserIds - partner.uid
+                                } else {
+                                    currentUser.blockedUserIds + partner.uid
+                                }
+                                currentUser = currentUser.copy(blockedUserIds = updatedBlocked)
+                                db.collection("users").document(currentUserId)
+                                    .update("blockedUserIds", updatedBlocked)
+                                Toast.makeText(
+                                    context,
+                                    if (isBlocked) "${partner.name} unblocked" else "${partner.name} blocked",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
                         )
                     }
 
@@ -421,7 +569,6 @@ fun LiveTogatherApp() {
                                 db.collection("users").document(currentUserId).update("plan", plan.title)
                                 Toast.makeText(context, "Subscribed to ${plan.title}!", Toast.LENGTH_SHORT).show()
                             },
-                            onOpenBlockedUsers = { showBlockedUsersDialog = true },
                             onOpenSettings = { showSettingsDialog = true },
                             onLogout = {
                                 Toast.makeText(context, "Logged out successfully", Toast.LENGTH_SHORT).show()
@@ -436,9 +583,9 @@ fun LiveTogatherApp() {
             }
         }
 
-        // --- Dialogs & Full-Screen Modals ---
+        // --- Dialogs & Modals ---
 
-        // 1. Settings Dialog (Screenshots 2, 3, 4)
+        // 1. Settings Dialog with Interactive Topic Selection
         if (showSettingsDialog) {
             SettingsDialog(
                 user = currentUser,
@@ -467,7 +614,7 @@ fun LiveTogatherApp() {
             )
         }
 
-        // 3. Post Moment Dialog (Image/Video Upload with Caption)
+        // 3. Post Moment Dialog
         if (showPostMomentDialog) {
             PostMomentDialog(
                 currentUser = currentUser,
@@ -532,22 +679,7 @@ fun LiveTogatherApp() {
             )
         }
 
-        // 6. Blocked Users Dialog
-        if (showBlockedUsersDialog) {
-            BlockedUsersDialog(
-                blockedUserIds = currentUser.blockedUserIds,
-                db = db,
-                onDismiss = { showBlockedUsersDialog = false },
-                onUnblock = { unblockId ->
-                    val updatedList = currentUser.blockedUserIds - unblockId
-                    currentUser = currentUser.copy(blockedUserIds = updatedList)
-                    db.collection("users").document(currentUserId).update("blockedUserIds", updatedList)
-                    Toast.makeText(context, "User unblocked", Toast.LENGTH_SHORT).show()
-                }
-            )
-        }
-
-        // 7. Mutual Match Celebration Dialog
+        // 6. Mutual Match Celebration Dialog
         if (matchedPartner != null) {
             AlertDialog(
                 onDismissRequest = { matchedPartner = null },
@@ -612,11 +744,12 @@ fun LiveTogatherApp() {
             )
         }
 
-        // 8. Active 1-on-1 Chat Room Screen
+        // 7. Active 1-on-1 Chat Room with Inbox Block/Unblock support
         if (activeChatPartner != null) {
             val partner = activeChatPartner!!
             val matchId = listOf(currentUserId, partner.uid).sorted().joinToString("_")
             var chatInput by remember { mutableStateOf("") }
+            val isBlocked = currentUser.blockedUserIds.contains(partner.uid)
 
             Box(
                 modifier = Modifier
@@ -649,33 +782,56 @@ fun LiveTogatherApp() {
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                partner.name,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    partner.name,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp
+                                )
+                                if (isBlocked) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        "[Blocked]",
+                                        color = Color.Red,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier
+                                            .background(Color.Red.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
+                                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                                    )
+                                }
+                            }
                             Text(
                                 "Intent: ${partner.activeIntent.replace('_', ' ')}",
                                 color = BrandOrange,
                                 fontSize = 11.sp
                             )
                         }
-                        // Block User Action in Chat
-                        IconButton(
+
+                        // Block / Unblock Toggle Action directly in Chat Header
+                        TextButton(
                             onClick = {
-                                val updatedBlocked = currentUser.blockedUserIds + partner.uid
+                                val updatedBlocked = if (isBlocked) {
+                                    currentUser.blockedUserIds - partner.uid
+                                } else {
+                                    currentUser.blockedUserIds + partner.uid
+                                }
                                 currentUser = currentUser.copy(blockedUserIds = updatedBlocked)
                                 db.collection("users").document(currentUserId)
                                     .update("blockedUserIds", updatedBlocked)
-                                activeChatPartner = null
-                                Toast.makeText(context, "${partner.name} blocked", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(
+                                    context,
+                                    if (isBlocked) "${partner.name} unblocked" else "${partner.name} blocked",
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             }
                         ) {
-                            Icon(
-                                Icons.Default.Block,
-                                contentDescription = "Block",
-                                tint = Color.Red.copy(alpha = 0.8f)
+                            Text(
+                                text = if (isBlocked) "Unblock" else "Block",
+                                color = if (isBlocked) BrandGreen else Color.Red,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
                             )
                         }
                     }
@@ -709,52 +865,87 @@ fun LiveTogatherApp() {
                         }
                     }
 
-                    // Message Input Field
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(BrandCard)
-                            .padding(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        TextField(
-                            value = chatInput,
-                            onValueChange = { chatInput = it },
-                            placeholder = {
-                                Text("Type a message...", color = Color.Gray, fontSize = 13.sp)
-                            },
-                            colors = TextFieldDefaults.colors(
-                                focusedContainerColor = Color.Transparent,
-                                unfocusedContainerColor = Color.Transparent,
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White
-                            ),
-                            modifier = Modifier.weight(1f)
-                        )
-                        IconButton(
-                            onClick = {
-                                if (chatInput.isNotBlank()) {
-                                    val text = chatInput.trim()
-                                    chatInput = ""
-                                    val newMsg = ChatMessage(senderId = currentUserId, text = text)
-                                    db.collection("matches").document(matchId).collection("messages").add(newMsg)
-                                    db.collection("matches").document(matchId).update("lastMessage", text)
-                                    sendNotification(
-                                        db = db,
-                                        targetUserId = partner.uid,
-                                        sender = currentUser,
-                                        type = "message",
-                                        title = "New Message",
-                                        message = "${currentUser.name}: $text"
-                                    )
+                    // Bottom Bar: Blocked Banner or Message Input
+                    if (isBlocked) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(BrandCard)
+                                .padding(14.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    "You have blocked ${partner.name}.",
+                                    color = Color.LightGray,
+                                    fontSize = 12.sp
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Button(
+                                    onClick = {
+                                        val updatedBlocked = currentUser.blockedUserIds - partner.uid
+                                        currentUser = currentUser.copy(blockedUserIds = updatedBlocked)
+                                        db.collection("users").document(currentUserId)
+                                            .update("blockedUserIds", updatedBlocked)
+                                        Toast.makeText(context, "${partner.name} unblocked", Toast.LENGTH_SHORT).show()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = BrandGreen),
+                                    shape = RoundedCornerShape(50)
+                                ) {
+                                    Text("Unblock Now", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                                 }
                             }
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(BrandCard)
+                                .padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.Send,
-                                contentDescription = "Send",
-                                tint = BrandCoral
+                            TextField(
+                                value = chatInput,
+                                onValueChange = { chatInput = it },
+                                placeholder = {
+                                    Text("Type a message...", color = Color.Gray, fontSize = 13.sp)
+                                },
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = Color.Transparent,
+                                    unfocusedContainerColor = Color.Transparent,
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White
+                                ),
+                                modifier = Modifier.weight(1f)
                             )
+                            IconButton(
+                                onClick = {
+                                    if (chatInput.isNotBlank()) {
+                                        val text = chatInput.trim()
+                                        chatInput = ""
+                                        val newMsg = ChatMessage(senderId = currentUserId, text = text)
+                                        db.collection("matches").document(matchId).collection("messages").add(newMsg)
+                                        db.collection("matches").document(matchId).update("lastMessage", text)
+                                        sendNotification(
+                                            db = db,
+                                            targetUserId = partner.uid,
+                                            sender = currentUser,
+                                            type = "message",
+                                            title = "New Message",
+                                            message = "${currentUser.name}: $text"
+                                        )
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.Send,
+                                    contentDescription = "Send",
+                                    tint = BrandCoral
+                                )
+                            }
                         }
                     }
                 }
@@ -764,7 +955,7 @@ fun LiveTogatherApp() {
 }
 
 // -------------------------------------------------------------
-// DISCOVER SCREEN CONTENT WITH 4 ACTION BUTTONS
+// DISCOVER SCREEN CONTENT
 // -------------------------------------------------------------
 @Composable
 fun DiscoverScreenContent(
@@ -1052,14 +1243,16 @@ fun LikesScreenContent(
 }
 
 // -------------------------------------------------------------
-// CHATS SCREEN CONTENT
+// CHATS SCREEN CONTENT WITH INBOX BLOCK / UNBLOCK
 // -------------------------------------------------------------
 @Composable
 fun ChatsScreenContent(
     matches: List<MatchItem>,
     currentUserId: String,
+    currentUser: UserProfile,
     db: FirebaseFirestore,
-    onOpenChat: (UserProfile) -> Unit
+    onOpenChat: (UserProfile) -> Unit,
+    onToggleBlock: (UserProfile) -> Unit
 ) {
     val partnerMap = remember { mutableStateMapOf<String, UserProfile>() }
 
@@ -1088,6 +1281,7 @@ fun ChatsScreenContent(
                     val pId = match.users.firstOrNull { it != currentUserId }
                     val partner = partnerMap[pId]
                     if (partner != null) {
+                        val isBlocked = currentUser.blockedUserIds.contains(partner.uid)
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1106,9 +1300,36 @@ fun ChatsScreenContent(
                                 )
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(partner.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(partner.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                        if (isBlocked) {
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                "[Blocked]",
+                                                color = Color.Red,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier
+                                                    .background(Color.Red.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
+                                                    .padding(horizontal = 4.dp, vertical = 1.dp)
+                                            )
+                                        }
+                                    }
                                     Text(match.lastMessage, color = Color.LightGray, fontSize = 12.sp, maxLines = 1)
                                 }
+
+                                // Direct Block / Unblock Action in Inbox
+                                TextButton(
+                                    onClick = { onToggleBlock(partner) }
+                                ) {
+                                    Text(
+                                        text = if (isBlocked) "Unblock" else "Block",
+                                        color = if (isBlocked) BrandGreen else Color.Red.copy(alpha = 0.8f),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
                                 Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray)
                             }
                         }
@@ -1238,7 +1459,7 @@ fun MomentsScreenContent(
 }
 
 // -------------------------------------------------------------
-// PROFILE SCREEN CONTENT (SCREENSHOT 1)
+// PROFILE SCREEN CONTENT (Block option removed from profile as requested)
 // -------------------------------------------------------------
 @Composable
 fun ProfileScreenContent(
@@ -1246,7 +1467,6 @@ fun ProfileScreenContent(
     userMoments: List<MomentItem>,
     onUpdateProfile: (UserProfile) -> Unit,
     onSelectPlan: (SubscriptionPlanItem) -> Unit,
-    onOpenBlockedUsers: () -> Unit,
     onOpenSettings: () -> Unit,
     onLogout: () -> Unit,
     onDeleteAccount: () -> Unit
@@ -1330,7 +1550,7 @@ fun ProfileScreenContent(
             }
         }
 
-        // Editable Form Fields (Screenshot 1)
+        // Editable Form Fields
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = BrandCard),
@@ -1421,7 +1641,7 @@ fun ProfileScreenContent(
             }
         }
 
-        // MEMBERSHIP SUBSCRIPTION PLANS (Screenshot 1)
+        // MEMBERSHIP SUBSCRIPTION PLANS
         item {
             Column {
                 Text(
@@ -1466,7 +1686,7 @@ fun ProfileScreenContent(
             }
         }
 
-        // MY POSTED MOMENTS (Screenshot 1)
+        // MY POSTED MOMENTS
         item {
             Column {
                 Text(
@@ -1496,7 +1716,7 @@ fun ProfileScreenContent(
             }
         }
 
-        // Account & Safety Section (Block/Unblock, Logout, Delete Account)
+        // Account & Safety Section (Logout & Delete Account only - Block removed)
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = BrandCard),
@@ -1504,25 +1724,6 @@ fun ProfileScreenContent(
             ) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Safety & Account", color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-
-                    // Blocked Contacts
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onOpenBlockedUsers() }
-                            .padding(vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Block, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Blocked Users (${currentUser.blockedUserIds.size})", color = Color.White, fontSize = 13.sp)
-                        }
-                        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray)
-                    }
-
-                    HorizontalDivider(color = BrandBorder)
 
                     // Logout Button
                     Button(
@@ -1643,7 +1844,7 @@ fun SubscriptionPlanCard(
 }
 
 // -------------------------------------------------------------
-// SETTINGS DIALOG (SCREENSHOTS 2, 3, 4)
+// SETTINGS DIALOG WITH INTERACTIVE TOPIC SELECTION DIALOGS
 // -------------------------------------------------------------
 @Composable
 fun SettingsDialog(
@@ -1665,7 +1866,7 @@ fun SettingsDialog(
     var photoVerifiedChat by remember { mutableStateOf(user.photoVerifiedChat) }
 
     // Profile attributes
-    var interests by remember { mutableStateOf(user.interests.ifBlank { "Dancing, Movies, Photography" }) }
+    var interests by remember { mutableStateOf(user.interests.ifBlank { "Travel, Cafe, Night Drives" }) }
     var lookingFor by remember { mutableStateOf(user.lookingFor) }
     var openTo by remember { mutableStateOf(user.openTo) }
     var languages by remember { mutableStateOf(user.languages) }
@@ -1685,7 +1886,7 @@ fun SettingsDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Scaffold(
-            containerColor = Color(0xFFF5F5F7), // Light iOS styled container as in Screenshots 2, 3, 4
+            containerColor = Color(0xFFF5F5F7),
             topBar = {
                 Row(
                     modifier = Modifier
@@ -1703,7 +1904,7 @@ fun SettingsDialog(
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold
                     )
-                    // Checkmark Done Button (Top Right as in Screenshot 2)
+                    // Checkmark Done Button
                     IconButton(
                         onClick = {
                             val updated = user.copy(
@@ -1752,7 +1953,7 @@ fun SettingsDialog(
                     .padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Section 1: Profile Attributes (Screenshot 2)
+                // Section 1: Profile Attributes with Selection Dialogs
                 item {
                     Card(
                         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -1771,25 +1972,25 @@ fun SettingsDialog(
 
                             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = Color(0xFFEEEEEE))
 
-                            SettingsAttributeRow("Interests", interests) { interests = it }
-                            SettingsAttributeRow("Looking for", lookingFor) { lookingFor = it }
-                            SettingsAttributeRow("Open to...", openTo) { openTo = it }
-                            SettingsAttributeRow("Add languages", languages) { languages = it }
-                            SettingsAttributeRow("Zodiac", zodiac) { zodiac = it }
-                            SettingsAttributeRow("Education", education) { education = it }
-                            SettingsAttributeRow("Family Plans", familyPlans) { familyPlans = it }
-                            SettingsAttributeRow("Communication Style", communicationStyle) { communicationStyle = it }
-                            SettingsAttributeRow("Love Style", loveStyle) { loveStyle = it }
-                            SettingsAttributeRow("Pets", pets) { pets = it }
-                            SettingsAttributeRow("Drinking", drinking) { drinking = it }
-                            SettingsAttributeRow("Smoking", smoking) { smoking = it }
-                            SettingsAttributeRow("Workout", workout) { workout = it }
-                            SettingsAttributeRow("Social Media", socialMedia) { socialMedia = it }
+                            SettingsAttributeRow("Interests", interests, SETTINGS_TOPIC_OPTIONS["Interests"] ?: emptyList()) { interests = it }
+                            SettingsAttributeRow("Looking for", lookingFor, SETTINGS_TOPIC_OPTIONS["Looking for"] ?: emptyList()) { lookingFor = it }
+                            SettingsAttributeRow("Open to...", openTo, SETTINGS_TOPIC_OPTIONS["Open to..."] ?: emptyList()) { openTo = it }
+                            SettingsAttributeRow("Add languages", languages, SETTINGS_TOPIC_OPTIONS["Add languages"] ?: emptyList()) { languages = it }
+                            SettingsAttributeRow("Zodiac", zodiac, SETTINGS_TOPIC_OPTIONS["Zodiac"] ?: emptyList()) { zodiac = it }
+                            SettingsAttributeRow("Education", education, SETTINGS_TOPIC_OPTIONS["Education"] ?: emptyList()) { education = it }
+                            SettingsAttributeRow("Family Plans", familyPlans, SETTINGS_TOPIC_OPTIONS["Family Plans"] ?: emptyList()) { familyPlans = it }
+                            SettingsAttributeRow("Communication Style", communicationStyle, SETTINGS_TOPIC_OPTIONS["Communication Style"] ?: emptyList()) { communicationStyle = it }
+                            SettingsAttributeRow("Love Style", loveStyle, SETTINGS_TOPIC_OPTIONS["Love Style"] ?: emptyList()) { loveStyle = it }
+                            SettingsAttributeRow("Pets", pets, SETTINGS_TOPIC_OPTIONS["Pets"] ?: emptyList()) { pets = it }
+                            SettingsAttributeRow("Drinking", drinking, SETTINGS_TOPIC_OPTIONS["Drinking"] ?: emptyList()) { drinking = it }
+                            SettingsAttributeRow("Smoking", smoking, SETTINGS_TOPIC_OPTIONS["Smoking"] ?: emptyList()) { smoking = it }
+                            SettingsAttributeRow("Workout", workout, SETTINGS_TOPIC_OPTIONS["Workout"] ?: emptyList()) { workout = it }
+                            SettingsAttributeRow("Social Media", socialMedia, SETTINGS_TOPIC_OPTIONS["Social Media"] ?: emptyList()) { socialMedia = it }
                         }
                     }
                 }
 
-                // Section 2: Discovery (Screenshot 3)
+                // Section 2: Discovery
                 item {
                     Text("Discovery", color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(6.dp))
@@ -1897,7 +2098,7 @@ fun SettingsDialog(
                     }
                 }
 
-                // Section 3: Control My Visibility (Screenshot 3 & 4)
+                // Section 3: Control My Visibility
                 item {
                     Text("Control my visibility", color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(6.dp))
@@ -1950,7 +2151,7 @@ fun SettingsDialog(
                     }
                 }
 
-                // Section 4: Enable Discovery & Who Messages You (Screenshot 4)
+                // Section 4: Enable Discovery & Who Messages You
                 item {
                     Text("Enable Discovery", color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(6.dp))
@@ -2020,57 +2221,155 @@ fun SettingsDialog(
     }
 }
 
+// -------------------------------------------------------------
+// SETTINGS ATTRIBUTE ROW WITH SELECTION DIALOG
+// -------------------------------------------------------------
 @Composable
 fun SettingsAttributeRow(
     title: String,
     currentValue: String,
+    options: List<String> = emptyList(),
     onValueChange: (String) -> Unit
 ) {
-    var isEditing by remember { mutableStateOf(false) }
-    var editValue by remember { mutableStateOf(currentValue) }
+    var showSelectionDialog by remember { mutableStateOf(false) }
 
-    Column {
-        Row(
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { showSelectionDialog = true }
+            .padding(vertical = 10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(title, color = Color.Black, fontSize = 14.sp)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = currentValue.ifBlank { "Select" },
+                color = Color.Gray,
+                fontSize = 13.sp,
+                maxLines = 1
+            )
+            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.LightGray)
+        }
+    }
+
+    if (showSelectionDialog) {
+        SettingsTopicSelectionDialog(
+            title = title,
+            currentValue = currentValue,
+            options = options.ifEmpty { listOf(currentValue) },
+            onDismiss = { showSelectionDialog = false },
+            onSelect = { selected ->
+                onValueChange(selected)
+                showSelectionDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+fun SettingsTopicSelectionDialog(
+    title: String,
+    currentValue: String,
+    options: List<String>,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit
+) {
+    var customText by remember { mutableStateOf("") }
+    var showCustomInput by remember { mutableStateOf(false) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { isEditing = !isEditing }
-                .padding(vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .fillMaxHeight(0.75f),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            shape = RoundedCornerShape(20.dp)
         ) {
-            Text(title, color = Color.Black, fontSize = 14.sp)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = currentValue.ifBlank { "Select" },
-                    color = Color.Gray,
-                    fontSize = 13.sp,
-                    maxLines = 1
-                )
-                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.LightGray)
-            }
-        }
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Select $title",
+                        color = Color.Black,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Black)
+                    }
+                }
 
-        if (isEditing) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = editValue,
-                    onValueChange = { editValue = it },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.Black,
-                        unfocusedTextColor = Color.Black
-                    ),
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(onClick = {
-                    onValueChange(editValue)
-                    isEditing = false
-                }) {
-                    Icon(Icons.Default.Check, contentDescription = "Done", tint = Color.Green)
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = Color(0xFFEEEEEE))
+
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    items(options) { option ->
+                        val isSelected = option.equals(currentValue, ignoreCase = true)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (isSelected) Color(0xFFFFECEE) else Color.Transparent)
+                                .clickable { onSelect(option) }
+                                .padding(horizontal = 12.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = option,
+                                color = if (isSelected) Color.Red else Color.Black,
+                                fontSize = 14.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                            )
+                            if (isSelected) {
+                                Icon(Icons.Default.Check, contentDescription = null, tint = Color.Red, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = Color(0xFFEEEEEE))
+
+                if (showCustomInput) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = customText,
+                            onValueChange = { customText = it },
+                            placeholder = { Text("Enter custom $title...", fontSize = 12.sp) },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.Black,
+                                unfocusedTextColor = Color.Black
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = {
+                                if (customText.isNotBlank()) {
+                                    onSelect(customText.trim())
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                        ) {
+                            Text("Save")
+                        }
+                    }
+                } else {
+                    TextButton(
+                        onClick = { showCustomInput = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("+ Type Custom Option", color = Color.Red, fontWeight = FontWeight.SemiBold)
+                    }
                 }
             }
         }
@@ -2426,84 +2725,6 @@ fun CommentsDialog(
                         }
                     ) {
                         Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Post", tint = BrandCoral)
-                    }
-                }
-            }
-        }
-    }
-}
-
-// -------------------------------------------------------------
-// BLOCKED USERS DIALOG
-// -------------------------------------------------------------
-@Composable
-fun BlockedUsersDialog(
-    blockedUserIds: List<String>,
-    db: FirebaseFirestore,
-    onDismiss: () -> Unit,
-    onUnblock: (String) -> Unit
-) {
-    val blockedProfiles = remember { mutableStateListOf<UserProfile>() }
-
-    LaunchedEffect(blockedUserIds) {
-        blockedProfiles.clear()
-        blockedUserIds.forEach { uid ->
-            db.collection("users").document(uid).get().addOnSuccessListener { doc ->
-                doc.toObject(UserProfile::class.java)?.let { blockedProfiles.add(it) }
-            }
-        }
-    }
-
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            modifier = Modifier.fillMaxWidth().fillMaxHeight(0.6f),
-            colors = CardDefaults.cardColors(containerColor = BrandCard),
-            shape = RoundedCornerShape(20.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Blocked Users", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = null, tint = Color.Gray)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                if (blockedProfiles.isEmpty()) {
-                    Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        Text("No blocked users.", color = Color.Gray, fontSize = 13.sp)
-                    }
-                } else {
-                    LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(blockedProfiles) { user ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(BrandDark, RoundedCornerShape(10.dp))
-                                    .padding(8.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    AsyncImage(
-                                        model = user.photo,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(36.dp).clip(CircleShape),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(user.name, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                }
-                                TextButton(onClick = { onUnblock(user.uid) }) {
-                                    Text("Unblock", color = BrandCoral, fontSize = 12.sp)
-                                }
-                            }
-                        }
                     }
                 }
             }
