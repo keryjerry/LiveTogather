@@ -36,6 +36,12 @@ data class RoomItem(
     val playbackPosition: Long = 0L,
     val isPlaying: Boolean = false,
     val isCustom: Boolean = false,
+    val isHostLive: Boolean = true,
+    val scheduledTime: String = "",
+    val statusMessage: String = "",
+    val privacy: String = "public", // "public", "vip_only", "private"
+    val bannedUserIds: List<String> = emptyList(),
+    val kickedUserIds: List<String> = emptyList(),
     val createdAt: Long = System.currentTimeMillis()
 )
 
@@ -183,12 +189,21 @@ data class UserProfile(
     val myMove: Boolean = false,
     val photoVerifiedChat: Boolean = false,
 
-    val blockedUserIds: List<String> = emptyList()
+    val blockedUserIds: List<String> = emptyList(),
+    val followerCount: Int = 0,
+    val followingCount: Int = 0
 ) {
     fun isVipOrPlatinum(): Boolean {
         return plan.contains("VIP", ignoreCase = true) || plan.contains("Platinum", ignoreCase = true)
     }
 }
+
+data class FollowerRecord(
+    val uid: String = "",
+    val name: String = "",
+    val photo: String = "",
+    val timestamp: Long = System.currentTimeMillis()
+)
 
 data class SwipeRecord(
     val fromUserId: String = "",
@@ -286,7 +301,8 @@ data class HangoutTrack(
     val artist: String = "",
     val category: String = "Lo-Fi Chill",
     val url: String = "",
-    val artworkUrl: String = ""
+    val artworkUrl: String = "",
+    val durationSec: Int = 0
 )
 
 val CURATED_HANGOUT_TRACKS = listOf(

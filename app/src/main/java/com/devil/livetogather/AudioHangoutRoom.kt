@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -467,17 +468,24 @@ fun TrackSelectorDialog(
 
                                         Column {
                                             Text(track.title, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                            Text("👤 ${track.artist} • 🏷️ ${track.category}", color = Color.Gray, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            val durLabel = if (track.durationSec > 0) " • ⏳ ${track.durationSec / 60}:${String.format("%02d", track.durationSec % 60)}" else ""
+                                            Text("👤 ${track.artist} • 🏷️ ${track.category}$durLabel", color = Color.Gray, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         }
                                     }
 
                                     Spacer(modifier = Modifier.width(8.dp))
 
+                                    val isTrackPlaying = AudioPlayerManager.isPlayingState.value && AudioPlayerManager.currentTrackUrlState.value == track.url
                                     Box(
-                                        modifier = Modifier.size(32.dp).clip(CircleShape).background(BrandCoral),
+                                        modifier = Modifier.size(32.dp).clip(CircleShape).background(if (isTrackPlaying) BrandGreen else BrandCoral),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = Color.White, modifier = Modifier.size(18.dp))
+                                        Icon(
+                                            imageVector = if (isTrackPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                            contentDescription = if (isTrackPlaying) "Pause" else "Play",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(18.dp)
+                                        )
                                     }
                                 }
                             }
@@ -571,11 +579,17 @@ fun TrackSelectorDialog(
                                     }
                                 }
 
+                                val isTrackPlaying = AudioPlayerManager.isPlayingState.value && AudioPlayerManager.currentTrackUrlState.value == track.url
                                 Box(
-                                    modifier = Modifier.size(28.dp).clip(CircleShape).background(BrandCoral),
+                                    modifier = Modifier.size(28.dp).clip(CircleShape).background(if (isTrackPlaying) BrandGreen else BrandCoral),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = Color.White, modifier = Modifier.size(16.dp))
+                                    Icon(
+                                        imageVector = if (isTrackPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                        contentDescription = if (isTrackPlaying) "Pause" else "Play",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
                                 }
                             }
                         }
@@ -860,6 +874,420 @@ fun RoomMemberProfileSheet(
 }
 
 // -------------------------------------------------------------
+// HELPER: BROADCAST LIVE NOTIFICATION TO ALL FOLLOWERS
+// -------------------------------------------------------------
+fun broadcastLiveNotificationToFollowers(
+    db: FirebaseFirestore,
+    hostId: String,
+    hostName: String,
+    hostPhoto: String,
+    room: RoomItem
+) {
+    if (hostId.isBlank()) return
+    db.collection("users").document(hostId).collection("followers").get()
+        .addOnSuccessListener { followersSnapshot ->
+            if (followersSnapshot != null && !followersSnapshot.isEmpty) {
+                for (doc in followersSnapshot.documents) {
+                    val followerId = doc.getString("uid") ?: doc.id
+                    if (followerId.isNotBlank() && followerId != hostId) {
+                        val notifId = UUID.randomUUID().toString()
+                        val notif = NotificationItem(
+                            id = notifId,
+                            targetUserId = followerId,
+                            senderId = hostId,
+                            senderName = hostName,
+                            senderPhoto = hostPhoto,
+                            title = "🔴 $hostName is LIVE NOW!",
+                            message = "$hostName just went LIVE in '${room.title}'! Tap to join.",
+                            type = "host_live",
+                            timestamp = System.currentTimeMillis(),
+                            isRead = false
+                        )
+                        db.collection("users").document(followerId)
+                            .collection("notifications").document(notifId).set(notif)
+                        db.collection("notifications").document(notifId).set(notif)
+                    }
+                }
+            }
+        }
+}
+
+// -------------------------------------------------------------
+// ROOM SETTINGS & CONTROLS DIALOG (PRIVACY, SCHEDULE, THEME, MODERATION)
+// -------------------------------------------------------------
+@Composable
+fun RoomSettingsDialog(
+    room: RoomItem,
+    isHost: Boolean,
+    activeMembers: List<RoomMember>,
+    db: FirebaseFirestore,
+    onDismiss: () -> Unit,
+    onUpdateTheme: (String) -> Unit
+) {
+    val context = LocalContext.current
+    var scheduledTimeText by remember { mutableStateOf(room.scheduledTime) }
+    var selectedPrivacy by remember { mutableStateOf(room.privacy) }
+    val isKeyboardOpen = WindowInsets.isImeVisible
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val themeUrl = uri.toString()
+            onUpdateTheme(themeUrl)
+            db.collection("rooms").document(room.id).update("banner_image_url", themeUrl)
+            Toast.makeText(context, "Theme updated from gallery!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    BackHandler(enabled = isKeyboardOpen) {
+        keyboardController?.hide()
+        focusManager.clearFocus()
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            dismissOnBackPress = !isKeyboardOpen
+        )
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = BrandCard),
+            shape = RoundedCornerShape(20.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.85f)
+                .border(1.dp, BrandBorder, RoundedCornerShape(20.dp))
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("⚙️ Room Settings & Controls", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    // 1. LIVE / OFFLINE BROADCAST STATUS
+                    item {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text("🔴 Live Broadcast Status", color = BrandCoral, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Button(
+                                        onClick = {
+                                            db.collection("rooms").document(room.id).update(
+                                                mapOf(
+                                                    "isHostLive" to true,
+                                                    "statusMessage" to "LIVE NOW"
+                                                )
+                                            )
+                                            // Broadcast live notification to all followers
+                                            broadcastLiveNotificationToFollowers(
+                                                db = db,
+                                                hostId = room.hostId,
+                                                hostName = room.hostName,
+                                                hostPhoto = room.hostPhotoUrl,
+                                                room = room
+                                            )
+                                            Toast.makeText(context, "Room is now LIVE! Followers notified.", Toast.LENGTH_SHORT).show()
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = if (room.isHostLive) BrandGreen else BrandDark
+                                        ),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text("🔴 Go Live", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+
+                                    Button(
+                                        onClick = {
+                                            db.collection("rooms").document(room.id).update(
+                                                mapOf(
+                                                    "isHostLive" to false,
+                                                    "statusMessage" to "Host will be live soon"
+                                                )
+                                            )
+                                            Toast.makeText(context, "Room status set to 'Host will be live soon'", Toast.LENGTH_SHORT).show()
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = if (!room.isHostLive) BrandGold else BrandDark
+                                        ),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text("⏳ Set Offline", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (!room.isHostLive) Color.Black else Color.White)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 2. SCHEDULE TIMING
+                    item {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text("⏰ Live Timing Schedule", color = BrandGold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("Notify users when you will be live next (e.g. Tonight 9:00 PM)", color = Color.Gray, fontSize = 11.sp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    OutlinedTextField(
+                                        value = scheduledTimeText,
+                                        onValueChange = { scheduledTimeText = it },
+                                        placeholder = { Text("e.g. Tonight 9:30 PM", color = Color.Gray, fontSize = 11.sp) },
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedTextColor = Color.White,
+                                            unfocusedTextColor = Color.White,
+                                            focusedBorderColor = BrandGold,
+                                            unfocusedBorderColor = BrandBorder,
+                                            focusedContainerColor = BrandDark,
+                                            unfocusedContainerColor = BrandDark
+                                        ),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Button(
+                                        onClick = {
+                                            db.collection("rooms").document(room.id).update("scheduledTime", scheduledTimeText.trim())
+                                            Toast.makeText(context, "Schedule timing saved!", Toast.LENGTH_SHORT).show()
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Text("Save", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 3. ROOM PRIVACY CONTROLS
+                    item {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text("🔒 Room Access & Privacy", color = BrandCyan, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                listOf(
+                                    "public" to "🌐 Public (Open to everyone)",
+                                    "vip_only" to "⭐ VIP & Platinum Only",
+                                    "private" to "🔒 Invite Only"
+                                ).forEach { (key, label) ->
+                                    val isSelected = selectedPrivacy == key
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(if (isSelected) BrandCyan.copy(alpha = 0.15f) else Color.Transparent)
+                                            .clickable {
+                                                selectedPrivacy = key
+                                                db.collection("rooms").document(room.id).update("privacy", key)
+                                                Toast.makeText(context, "Privacy set to: $label", Toast.LENGTH_SHORT).show()
+                                            }
+                                            .padding(vertical = 8.dp, horizontal = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        RadioButton(
+                                            selected = isSelected,
+                                            onClick = {
+                                                selectedPrivacy = key
+                                                db.collection("rooms").document(room.id).update("privacy", key)
+                                            },
+                                            colors = RadioButtonDefaults.colors(selectedColor = BrandCyan)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(label, color = if (isSelected) Color.White else Color.LightGray, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 4. ROOM THEME CUSTOMIZER (LOCAL STORAGE + PRESETS)
+                    item {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("🎨 Room Theme & Background", color = BrandOrange, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    Button(
+                                        onClick = { imagePickerLauncher.launch("image/*") },
+                                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                                        shape = RoundedCornerShape(50),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                        modifier = Modifier.height(28.dp)
+                                    ) {
+                                        Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Pick from Phone", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(10.dp))
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    items(ROOM_THEME_PRESETS) { preset ->
+                                        val isCurrent = room.banner_image_url == preset.imageUrl
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            modifier = Modifier.clickable {
+                                                onUpdateTheme(preset.imageUrl)
+                                                db.collection("rooms").document(room.id).update("banner_image_url", preset.imageUrl)
+                                                Toast.makeText(context, "Theme set to: ${preset.name}", Toast.LENGTH_SHORT).show()
+                                            }
+                                        ) {
+                                            AsyncImage(
+                                                model = preset.imageUrl,
+                                                contentDescription = preset.name,
+                                                modifier = Modifier
+                                                    .size(64.dp)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .border(
+                                                        2.dp,
+                                                        if (isCurrent) BrandCoral else Color.Transparent,
+                                                        RoundedCornerShape(10.dp)
+                                                    ),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(
+                                                text = preset.name.take(10),
+                                                color = if (isCurrent) BrandCoral else Color.Gray,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 5. MEMBER MODERATION (KICK & BAN)
+                    item {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text("🛡️ Room Member Moderation", color = Color.Red, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("Manage active members in your room", color = Color.Gray, fontSize = 11.sp)
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                val nonHostMembers = activeMembers.filter { it.uid != room.hostId }
+                                if (nonHostMembers.isEmpty()) {
+                                    Text("No other members currently in this room.", color = Color.Gray, fontSize = 11.sp)
+                                } else {
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        nonHostMembers.forEach { member ->
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .background(BrandDark, RoundedCornerShape(10.dp))
+                                                    .padding(8.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    AsyncImage(
+                                                        model = member.photoUrl,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(32.dp).clip(CircleShape),
+                                                        contentScale = ContentScale.Crop
+                                                    )
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Column {
+                                                        Text(member.name, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                        Text(member.tier, color = BrandGold, fontSize = 9.sp)
+                                                    }
+                                                }
+
+                                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                    // Kick Button
+                                                    OutlinedButton(
+                                                        onClick = {
+                                                            db.collection("rooms").document(room.id)
+                                                                .collection("members").document(member.uid).delete()
+                                                            db.collection("rooms").document(room.id)
+                                                                .update("kickedUserIds", FieldValue.arrayUnion(member.uid))
+                                                            Toast.makeText(context, "${member.name} kicked out.", Toast.LENGTH_SHORT).show()
+                                                        },
+                                                        border = BorderStroke(1.dp, Color.Yellow),
+                                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                        modifier = Modifier.height(26.dp)
+                                                    ) {
+                                                        Text("Kick", color = Color.Yellow, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                                    }
+
+                                                    // Ban Button
+                                                    Button(
+                                                        onClick = {
+                                                            db.collection("rooms").document(room.id)
+                                                                .collection("members").document(member.uid).delete()
+                                                            db.collection("rooms").document(room.id)
+                                                                .update("bannedUserIds", FieldValue.arrayUnion(member.uid))
+                                                            Toast.makeText(context, "${member.name} banned.", Toast.LENGTH_SHORT).show()
+                                                        },
+                                                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                        modifier = Modifier.height(26.dp)
+                                                    ) {
+                                                        Text("Ban", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
 // 6. ADVANCED AUDIO HANGOUT ROOM MAIN SCREEN / DIALOG
 // -------------------------------------------------------------
 @Composable
@@ -879,12 +1307,55 @@ fun AudioHangoutRoomDialog(
 
     // Modals
     var showTrackSelector by remember { mutableStateOf(false) }
+    var showRoomSettingsDialog by remember { mutableStateOf(false) }
+    var isFollowingHost by remember { mutableStateOf(false) }
+    var showFollowCelebrationDialog by remember { mutableStateOf(false) }
+    var hostFollowerCount by remember { mutableStateOf(0) }
     var selectedMemberForSheet by remember { mutableStateOf<RoomMember?>(null) }
     var selectedMemberForRequest by remember { mutableStateOf<RoomMember?>(null) }
 
     val isUserHost = currentUser.uid == room.hostId || (room.hostId.isEmpty() && activeMembers.firstOrNull()?.uid == currentUser.uid)
     val isMuted by AudioPlayerManager.isMutedState
     val localPlaying by AudioPlayerManager.isPlayingState
+
+    // Kick & Ban Auto-Dismissal Enforcement
+    LaunchedEffect(room.bannedUserIds, room.kickedUserIds) {
+        if (room.bannedUserIds.contains(currentUser.uid)) {
+            Toast.makeText(context, "You have been banned from this room by the host.", Toast.LENGTH_LONG).show()
+            onDismiss()
+        } else if (room.kickedUserIds.contains(currentUser.uid)) {
+            Toast.makeText(context, "You have been kicked out of this room.", Toast.LENGTH_LONG).show()
+            onDismiss()
+        }
+    }
+
+    val hostMember = activeMembers.find { it.uid == room.hostId }
+    val hostName = room.hostName.ifEmpty { hostMember?.name ?: currentUser.name }
+    val hostPhoto = room.hostPhotoUrl.ifEmpty { hostMember?.photoUrl ?: currentUser.photo }
+
+    // Host Follower Real-Time Listener
+    val targetHostId = room.hostId.ifEmpty { activeMembers.firstOrNull { it.role == "host" }?.uid ?: "" }
+    DisposableEffect(targetHostId, currentUser.uid) {
+        if (targetHostId.isBlank() || targetHostId == currentUser.uid) {
+            return@DisposableEffect onDispose {}
+        }
+        val followDoc = db.collection("users").document(targetHostId)
+            .collection("followers").document(currentUser.uid)
+            .addSnapshotListener { snapshot, _ ->
+                isFollowingHost = snapshot != null && snapshot.exists()
+            }
+        val countListener = db.collection("users").document(targetHostId)
+            .collection("followers")
+            .addSnapshotListener { snapshot, _ ->
+                if (snapshot != null) {
+                    hostFollowerCount = snapshot.size()
+                }
+            }
+        onDispose {
+            followDoc.remove()
+            countListener.remove()
+        }
+    }
 
     // 1. Real-Time Room Metadata Listener (Rooms/{roomId})
     DisposableEffect(room.id) {
@@ -1046,15 +1517,45 @@ fun AudioHangoutRoomDialog(
                             }
                         }
 
-                        // Leave Room Button
-                        Button(
-                            onClick = onDismiss,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.8f)),
-                            shape = RoundedCornerShape(50),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                            modifier = Modifier.height(30.dp)
-                        ) {
-                            Text("Leave", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (isUserHost) {
+                                IconButton(
+                                    onClick = { showRoomSettingsDialog = true },
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Settings,
+                                        contentDescription = "Room Settings",
+                                        tint = BrandGold,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                            }
+
+                            // Leave / Close Room Button
+                            Button(
+                                onClick = {
+                                    if (isUserHost) {
+                                        db.collection("rooms").document(room.id).update(
+                                            mapOf(
+                                                "isHostLive" to false,
+                                                "statusMessage" to "Host will be live soon",
+                                                "isPlaying" to false
+                                            )
+                                        )
+                                    }
+                                    onDismiss()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.8f)),
+                                shape = RoundedCornerShape(50),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                modifier = Modifier.height(30.dp)
+                            ) {
+                                Text(if (isUserHost) "Close" else "Leave", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
@@ -1069,10 +1570,6 @@ fun AudioHangoutRoomDialog(
                 // ---------------------------------------------------------
                 // HOST SHOWCASE (TOP-MIDDLE WITH GLOWING CORAL RING & BADGE)
                 // ---------------------------------------------------------
-                val hostMember = activeMembers.find { it.uid == room.hostId }
-                val hostName = room.hostName.ifEmpty { hostMember?.name ?: currentUser.name }
-                val hostPhoto = room.hostPhotoUrl.ifEmpty { hostMember?.photoUrl ?: currentUser.photo }
-
                 Card(
                     colors = CardDefaults.cardColors(containerColor = BrandCard),
                     shape = RoundedCornerShape(18.dp),
@@ -1119,25 +1616,103 @@ fun AudioHangoutRoomDialog(
                                     text = "👑 Host: $hostName",
                                     color = Color.White,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 15.sp
+                                    fontSize = 15.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = if (isUserHost) "YOU" else "LIVE",
-                                    color = BrandGold,
+                                    text = if (isUserHost) "YOU" else if (room.isHostLive) "LIVE" else "OFFLINE",
+                                    color = if (room.isHostLive) BrandCoral else BrandGold,
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Black,
                                     modifier = Modifier
-                                        .background(BrandGold.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
+                                        .background(if (room.isHostLive) BrandCoral.copy(alpha = 0.2f) else BrandGold.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
                                         .padding(horizontal = 4.dp, vertical = 1.dp)
                                 )
                             }
 
+                            Spacer(modifier = Modifier.height(2.dp))
+
                             Text(
-                                text = if (room.isCustom) "Custom Hangout Room" else "Intent Lounge • ${room.title}",
-                                color = BrandOrange,
-                                fontSize = 11.sp
+                                text = if (room.isHostLive) "🔴 LIVE NOW"
+                                else if (room.scheduledTime.isNotBlank()) "⏳ Live at ${room.scheduledTime}"
+                                else "⏳ Host will be live soon",
+                                color = if (room.isHostLive) BrandGreen else BrandGold,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
                             )
+
+                            Text(
+                                text = "👥 $hostFollowerCount Followers",
+                                color = Color.Gray,
+                                fontSize = 10.sp
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        // Follow Host Button (for listeners) or Host Settings Quick Button
+                        if (!isUserHost && targetHostId.isNotBlank()) {
+                            Button(
+                                onClick = {
+                                    val newFollowing = !isFollowingHost
+                                    if (newFollowing) {
+                                        val record = FollowerRecord(
+                                            uid = currentUser.uid,
+                                            name = currentUser.name,
+                                            photo = currentUser.photo,
+                                            timestamp = System.currentTimeMillis()
+                                        )
+                                        db.collection("users").document(targetHostId)
+                                            .collection("followers").document(currentUser.uid).set(record)
+                                        db.collection("users").document(targetHostId)
+                                            .update("followerCount", FieldValue.increment(1))
+                                        db.collection("users").document(currentUser.uid)
+                                            .update("followingCount", FieldValue.increment(1))
+
+                                        sendNotification(
+                                            db = db,
+                                            targetUserId = targetHostId,
+                                            sender = currentUser,
+                                            type = "follow",
+                                            title = "🌟 New Follower!",
+                                            message = "${currentUser.name} started following you!"
+                                        )
+
+                                        showFollowCelebrationDialog = true
+                                    } else {
+                                        db.collection("users").document(targetHostId)
+                                            .collection("followers").document(currentUser.uid).delete()
+                                        db.collection("users").document(targetHostId)
+                                            .update("followerCount", FieldValue.increment(-1))
+                                        db.collection("users").document(currentUser.uid)
+                                            .update("followingCount", FieldValue.increment(-1))
+                                        Toast.makeText(context, "Unfollowed $hostName", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isFollowingHost) BrandDark else BrandCoral
+                                ),
+                                border = if (isFollowingHost) BorderStroke(1.dp, BrandGold.copy(alpha = 0.7f)) else null,
+                                shape = RoundedCornerShape(50),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.height(30.dp)
+                            ) {
+                                Text(
+                                    text = if (isFollowingHost) "✓ Following" else "+ Follow",
+                                    color = if (isFollowingHost) BrandGold else Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        } else if (isUserHost) {
+                            IconButton(
+                                onClick = { showRoomSettingsDialog = true },
+                                modifier = Modifier.size(34.dp).background(BrandDark, CircleShape)
+                            ) {
+                                Icon(Icons.Default.Settings, contentDescription = "Settings", tint = BrandGold, modifier = Modifier.size(18.dp))
+                            }
                         }
                     }
                 }
@@ -1219,8 +1794,9 @@ fun AudioHangoutRoomDialog(
                                                         "isPlaying" to true
                                                     )
                                                 )
+                                                AudioPlayerManager.play(context, defaultTrack.url, defaultTrack.title)
                                             } else {
-                                                AudioPlayerManager.resume()
+                                                AudioPlayerManager.resume(context)
                                             }
                                         } else {
                                             AudioPlayerManager.pause()
@@ -1229,8 +1805,8 @@ fun AudioHangoutRoomDialog(
                                     modifier = Modifier.size(34.dp).background(BrandCoral, CircleShape)
                                 ) {
                                     Icon(
-                                        imageVector = if (room.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                        contentDescription = "Play/Pause",
+                                        imageVector = if (room.isPlaying && isActuallyPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                        contentDescription = if (room.isPlaying && isActuallyPlaying) "Pause" else "Play",
                                         tint = Color.White,
                                         modifier = Modifier.size(18.dp)
                                     )
@@ -1625,6 +2201,68 @@ fun AudioHangoutRoomDialog(
                 }
             )
         }
+
+        // 4. Room Settings & Controls Dialog (Host controls: Privacy, Schedule, Theme, Kick/Ban)
+        if (showRoomSettingsDialog) {
+            RoomSettingsDialog(
+                room = room,
+                isHost = isUserHost,
+                activeMembers = activeMembers,
+                db = db,
+                onDismiss = { showRoomSettingsDialog = false },
+                onUpdateTheme = { newThemeUrl ->
+                    room = room.copy(banner_image_url = newThemeUrl)
+                }
+            )
+        }
+
+        // 5. Celebratory Welcome Follower Dialog
+        if (showFollowCelebrationDialog) {
+            Dialog(
+                onDismissRequest = { showFollowCelebrationDialog = false }
+            ) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = BrandCard),
+                    shape = RoundedCornerShape(24.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.5.dp, BrandGold, RoundedCornerShape(24.dp))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("🎉", fontSize = 46.sp)
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = "Thank You for Following!",
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "You are now following $hostName. You will receive an instant real-time notification whenever $hostName goes LIVE!",
+                            color = Color.LightGray,
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(18.dp))
+                        Button(
+                            onClick = { showFollowCelebrationDialog = false },
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                            shape = RoundedCornerShape(50),
+                            modifier = Modifier.fillMaxWidth().height(40.dp)
+                        ) {
+                            Text("Awesome! 🚀", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1656,7 +2294,7 @@ fun CategorySubRoomCard(
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(Color.Black.copy(alpha = 0.3f), Color.Black.copy(alpha = 0.9f))
+                        colors = listOf(Color.Black.copy(alpha = 0.35f), Color.Black.copy(alpha = 0.9f))
                     )
                 )
         )
@@ -1667,23 +2305,38 @@ fun CategorySubRoomCard(
                 .padding(10.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Live active count & Host chip
+            // Live status & Host chip
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(Color.Black.copy(alpha = 0.65f))
-                        .border(0.5.dp, BrandGreen.copy(alpha = 0.5f), RoundedCornerShape(50))
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(modifier = Modifier.size(5.dp).clip(CircleShape).background(BrandGreen))
-                    Spacer(modifier = Modifier.width(3.dp))
-                    Text("$activeCount Active", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                // Status Pill: "🔴 LIVE" or "⏳ Host will be live soon"
+                if (room.isHostLive) {
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(BrandCoral.copy(alpha = 0.85f))
+                            .border(0.5.dp, BrandGold, RoundedCornerShape(50))
+                            .padding(horizontal = 7.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(Color.White))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("LIVE", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(Color.Black.copy(alpha = 0.75f))
+                            .border(0.5.dp, BrandGold.copy(alpha = 0.6f), RoundedCornerShape(50))
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        val statusText = if (room.scheduledTime.isNotBlank()) "⏳ ${room.scheduledTime}" else "⏳ Live soon"
+                        Text(statusText, color = BrandGold, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
 
                 if (room.hostName.isNotBlank()) {
@@ -1706,18 +2359,34 @@ fun CategorySubRoomCard(
                     color = Color.White,
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 13.sp,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
 
-                Text(
-                    text = "Live Audio Lounge 🎙️",
-                    color = BrandOrange,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
+                // Equalizer Wave: only animated/bouncing if room is LIVE and playing!
+                Row(
+                    modifier = Modifier.padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    MusicVisualizerWave(isPlaying = room.isHostLive && room.isPlaying)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (room.isHostLive && room.isPlaying && room.nowPlayingTitle.isNotBlank()) {
+                            "🎶 ${room.nowPlayingTitle.take(14)}..."
+                        } else if (room.isHostLive) {
+                            "🔴 Room is Live"
+                        } else {
+                            "⏳ Host will be live soon"
+                        },
+                        color = if (room.isHostLive) BrandGreen else Color.LightGray,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
 
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(4.dp))
 
                 Button(
                     onClick = onJoin,

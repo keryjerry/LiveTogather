@@ -44,6 +44,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -728,6 +729,22 @@ fun LiveTogatherApp() {
                                             .collection("members").document(currentUserId)
                                             .set(member)
 
+                                        if (isHost) {
+                                            db.collection("rooms").document(room.id).update(
+                                                mapOf(
+                                                    "isHostLive" to true,
+                                                    "statusMessage" to "LIVE NOW"
+                                                )
+                                            )
+                                            broadcastLiveNotificationToFollowers(
+                                                db = db,
+                                                hostId = currentUserId,
+                                                hostName = currentUser.name,
+                                                hostPhoto = currentUser.photo,
+                                                room = room
+                                            )
+                                        }
+
                                         // 2. Update current_room in Firestore user doc
                                         currentUser = currentUser.copy(current_room = room.id)
                                         saveProfileToPrefs(prefs, currentUser)
@@ -855,6 +872,27 @@ fun LiveTogatherApp() {
                 allProfiles = discoverProfiles,
                 db = db,
                 onDismiss = {
+                    // If leaving user is the room host, mark room offline
+                    if (room.hostId == currentUserId || (room.isCustom && room.hostId.isBlank())) {
+                        db.collection("rooms").document(room.id).update(
+                            mapOf(
+                                "isHostLive" to false,
+                                "statusMessage" to "Host will be live soon",
+                                "isPlaying" to false
+                            )
+                        )
+                        if (room.category.isNotBlank()) {
+                            db.collection("intent_categories").document(room.category)
+                                .collection("rooms").document(room.id).update(
+                                    mapOf(
+                                        "isHostLive" to false,
+                                        "statusMessage" to "Host will be live soon",
+                                        "isPlaying" to false
+                                    )
+                                )
+                        }
+                    }
+
                     // Remove presence from rooms/{roomId}/members/{currentUserId}
                     db.collection("rooms").document(room.id)
                         .collection("members").document(currentUserId)
@@ -907,6 +945,22 @@ fun LiveTogatherApp() {
                     db.collection("rooms").document(room.id)
                         .collection("members").document(currentUserId)
                         .set(member)
+
+                    if (isHost) {
+                        db.collection("rooms").document(room.id).update(
+                            mapOf(
+                                "isHostLive" to true,
+                                "statusMessage" to "LIVE NOW"
+                            )
+                        )
+                        broadcastLiveNotificationToFollowers(
+                            db = db,
+                            hostId = currentUserId,
+                            hostName = currentUser.name,
+                            hostPhoto = currentUser.photo,
+                            room = room
+                        )
+                    }
 
                     currentUser = currentUser.copy(current_room = room.id)
                     saveProfileToPrefs(prefs, currentUser)
@@ -1458,11 +1512,14 @@ fun IntentRoomsGrid(
 
                 // Sub-rooms created under this category
                 val subRoomsCount = rooms.count { it.category == category.id && it.isCustom }
+                val categoryRooms = rooms.filter { it.category == category.id || it.id == category.id }
+                val isAnyRoomLive = categoryRooms.any { it.isHostLive }
+                val isAnyAudioPlaying = categoryRooms.any { it.isHostLive && it.isPlaying }
 
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(200.dp)
+                        .height(205.dp)
                         .clip(RoundedCornerShape(18.dp))
                         .border(1.dp, BrandBorder, RoundedCornerShape(18.dp))
                         .clickable { onOpenCategoryHub(category) }
@@ -1482,8 +1539,8 @@ fun IntentRoomsGrid(
                             .background(
                                 Brush.verticalGradient(
                                     colors = listOf(
-                                        Color.Black.copy(alpha = 0.3f),
-                                        Color.Black.copy(alpha = 0.85f)
+                                        Color.Black.copy(alpha = 0.35f),
+                                        Color.Black.copy(alpha = 0.88f)
                                     )
                                 )
                             )
@@ -1496,33 +1553,48 @@ fun IntentRoomsGrid(
                             .padding(12.dp),
                         verticalArrangement = Arrangement.SpaceBetween
                     ) {
-                        // Live active users counter chip & Sub-rooms badge
+                        // Live active users counter chip & Sub-rooms badge / LIVE badge
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(50))
-                                    .background(Color.Black.copy(alpha = 0.65f))
-                                    .border(0.5.dp, BrandGreen.copy(alpha = 0.5f), RoundedCornerShape(50))
-                                    .padding(horizontal = 8.dp, vertical = 3.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(
+                            if (isAnyRoomLive) {
+                                Row(
                                     modifier = Modifier
-                                        .size(6.dp)
-                                        .clip(CircleShape)
-                                        .background(BrandGreen)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "$activeCount Active",
-                                    color = Color.White,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                        .clip(RoundedCornerShape(50))
+                                        .background(BrandCoral.copy(alpha = 0.85f))
+                                        .border(0.5.dp, BrandGold, RoundedCornerShape(50))
+                                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(Color.White))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("LIVE", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                                }
+                            } else {
+                                Row(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(50))
+                                        .background(Color.Black.copy(alpha = 0.65f))
+                                        .border(0.5.dp, BrandGreen.copy(alpha = 0.5f), RoundedCornerShape(50))
+                                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(BrandGreen)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "$activeCount Active",
+                                        color = Color.White,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
 
                             if (subRoomsCount > 0) {
@@ -1544,18 +1616,34 @@ fun IntentRoomsGrid(
                                 text = category.label,
                                 color = Color.White,
                                 fontWeight = FontWeight.ExtraBold,
-                                fontSize = 14.sp,
-                                maxLines = 2
+                                fontSize = 13.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
 
-                            Spacer(modifier = Modifier.height(8.dp))
+                            // Equalizer Wave or Status Line
+                            Row(
+                                modifier = Modifier.padding(vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                MusicVisualizerWave(isPlaying = isAnyRoomLive && isAnyAudioPlaying)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (isAnyRoomLive) "🔴 Room is Live" else "⏳ Host will be live soon",
+                                    color = if (isAnyRoomLive) BrandGreen else Color.LightGray,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(4.dp))
 
                             Button(
                                 onClick = { onOpenCategoryHub(category) },
                                 colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
                                 shape = RoundedCornerShape(50),
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                                modifier = Modifier.fillMaxWidth().height(34.dp)
+                                modifier = Modifier.fillMaxWidth().height(32.dp)
                             ) {
                                 Text("Enter Hub 🚀", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }

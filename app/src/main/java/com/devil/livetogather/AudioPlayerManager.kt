@@ -45,6 +45,8 @@ object AudioPlayerManager {
                     setDataSource(urlOrUri)
                 }
 
+                isLooping = true
+
                 setOnPreparedListener { mp ->
                     isBufferingState.value = false
                     try {
@@ -60,9 +62,16 @@ object AudioPlayerManager {
                 }
 
                 setOnCompletionListener {
-                    isPlayingState.value = false
-                    isBufferingState.value = false
-                    onCompletion()
+                    // With isLooping=true this is rarely hit, but auto-loop to ensure song never ends
+                    try {
+                        it.seekTo(0)
+                        it.start()
+                        isPlayingState.value = true
+                    } catch (e: Exception) {
+                        isPlayingState.value = false
+                        isBufferingState.value = false
+                        onCompletion()
+                    }
                 }
 
                 setOnErrorListener { _, what, extra ->
@@ -93,13 +102,31 @@ object AudioPlayerManager {
         }
     }
 
-    fun resume() {
+    fun resume(context: Context? = null) {
         try {
-            mediaPlayer?.start()
-            isPlayingState.value = true
-            isBufferingState.value = false
+            if (mediaPlayer != null) {
+                mediaPlayer?.start()
+                isPlayingState.value = true
+                isBufferingState.value = false
+            } else if (context != null && currentTrackUrlState.value.isNotBlank()) {
+                play(context, currentTrackUrlState.value, currentTrackTitleState.value)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Resume failed: ${e.message}")
+        }
+    }
+
+    fun togglePlayPause(context: Context, urlOrUri: String, title: String): Boolean {
+        return if (isPlayingState.value) {
+            pause()
+            false
+        } else {
+            if (mediaPlayer != null && currentTrackUrlState.value == urlOrUri) {
+                resume(context)
+            } else {
+                play(context, urlOrUri, title)
+            }
+            true
         }
     }
 
