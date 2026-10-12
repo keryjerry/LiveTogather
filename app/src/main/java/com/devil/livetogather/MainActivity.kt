@@ -1,19 +1,26 @@
 package com.devil.livetogather
 
+import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -25,16 +32,28 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.*
 
 val BrandDark = Color(0xFF0B090A)
 val BrandCard = Color(0xFF161214)
+val BrandCardSubtle = Color(0xFF201A1D)
 val BrandCoral = Color(0xFFFF5E62)
 val BrandOrange = Color(0xFFFF9966)
 val BrandBorder = Color(0xFF2A2226)
+val BrandGold = Color(0xFFFFD700)
+val BrandCyan = Color(0xFF00E5FF)
+val BrandBlue = Color(0xFF3897F0)
+val BrandGreen = Color(0xFF00E676)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -45,400 +64,544 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LiveTogatherApp() {
     val context = LocalContext.current
     val db = remember { FirebaseFirestore.getInstance() }
+    val scope = rememberCoroutineScope()
 
-    var activeUserId by remember { mutableStateOf("USER_A") }
-    var currentScreen by remember { mutableStateOf("discover") }
-    var selectedCategory by remember { mutableStateOf("all") }
-    var matchedPartner by remember { mutableStateOf<UserProfile?>(null) }
-    var activeChatPartner by remember { mutableStateOf<UserProfile?>(null) }
-
-    val userMap = remember {
-        mutableStateMapOf(
-            "USER_A" to UserProfile(
-                uid = "USER_A",
-                name = "Dilshad Warsi",
-                age = 24,
-                city = "Kolkata",
-                photo = "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=400&q=80",
-                activeIntent = "free_tonight",
-                hobbies = "Travelling, Music, Late-night drives",
-                plan = "VIP"
-            ),
-            "USER_B" to UserProfile(
-                uid = "USER_B",
+    // Persistent Current User Session (Single user mode - Dual mode OFF)
+    val currentUserId = remember { "USER_CURRENT" }
+    var currentUser by remember {
+        mutableStateOf(
+            UserProfile(
+                uid = currentUserId,
                 name = "Maya",
                 age = 24,
+                gender = "Woman",
                 city = "Kolkata",
                 photo = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80",
                 activeIntent = "free_tonight",
                 bio = "Love late-night coffee and spontaneous road trips 🚗",
                 hobbies = "Dancing, Movies, Photography",
-                plan = "Platinum"
+                interests = "Travel, Cafe, Night Drives",
+                profession = "UX Designer",
+                education = "Masters in Design",
+                plan = "VIP LEVEL ★",
+                locationName = "New Town, West Bengal",
+                maxDistanceKm = 53,
+                showFurtherAway = true,
+                interestedIn = "Women",
+                minAge = 21,
+                maxAge = 29
             )
         )
     }
 
-    val swipes = remember { mutableStateListOf<SwipeRecord>() }
+    var currentScreen by remember { mutableStateOf("discover") }
+    var selectedCategory by remember { mutableStateOf("all") }
+    var showSettingsDialog by remember { mutableStateOf(false) }
+    var showNotificationsDialog by remember { mutableStateOf(false) }
+    var showPostMomentDialog by remember { mutableStateOf(false) }
+    var showDirectMessageDialog by remember { mutableStateOf<UserProfile?>(null) }
+    var showCommentsMoment by remember { mutableStateOf<MomentItem?>(null) }
+    var showBlockedUsersDialog by remember { mutableStateOf(false) }
+    var matchedPartner by remember { mutableStateOf<UserProfile?>(null) }
+    var activeChatPartner by remember { mutableStateOf<UserProfile?>(null) }
+
+    // Real-time Lists from Firestore
+    val discoverProfiles = remember { mutableStateListOf<UserProfile>() }
+    val incomingSwipes = remember { mutableStateListOf<SwipeRecord>() }
     val matches = remember { mutableStateListOf<MatchItem>() }
-    val messages = remember { mutableStateMapOf<String, MutableList<ChatMessage>>() }
-    val moments = remember {
-        mutableStateListOf(
-            MomentItem(
-                id = "M1",
-                userId = "USER_B",
-                userName = "Maya",
-                userPhoto = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80",
-                mediaUrl = "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=600&q=80",
-                caption = "Heading to Park Street cafe tonight! ☕🥂",
-                likes = 3
-            )
-        )
+    val moments = remember { mutableStateListOf<MomentItem>() }
+    val notifications = remember { mutableStateListOf<NotificationItem>() }
+    val chatMessages = remember { mutableStateListOf<ChatMessage>() }
+
+    // --- Firestore Listeners & Synchronization ---
+    LaunchedEffect(currentUserId) {
+        // 1. Sync Current User Profile
+        val userDoc = db.collection("users").document(currentUserId)
+        userDoc.addSnapshotListener { snapshot, _ ->
+            if (snapshot != null && snapshot.exists()) {
+                snapshot.toObject(UserProfile::class.java)?.let {
+                    currentUser = it
+                }
+            } else {
+                // Initialize user document if not present
+                userDoc.set(currentUser)
+            }
+        }
+
+        // 2. Discover Profiles Listener
+        db.collection("users").addSnapshotListener { snapshot, _ ->
+            if (snapshot != null && !snapshot.isEmpty) {
+                val list = snapshot.documents.mapNotNull { it.toObject(UserProfile::class.java) }
+                    .filter { it.uid != currentUserId && !currentUser.blockedUserIds.contains(it.uid) }
+                discoverProfiles.clear()
+                discoverProfiles.addAll(list)
+            } else {
+                // Seed initial community profiles in Firestore if collection is empty
+                seedInitialCommunityProfiles(db)
+            }
+        }
+
+        // 3. Notifications Listener (Real-Time Bell)
+        db.collection("notifications")
+            .whereEqualTo("targetUserId", currentUserId)
+            .addSnapshotListener { snapshot, _ ->
+                if (snapshot != null) {
+                    val items = snapshot.documents.mapNotNull { it.toObject(NotificationItem::class.java) }
+                        .sortedByDescending { it.timestamp }
+                    notifications.clear()
+                    notifications.addAll(items)
+                }
+            }
+
+        // 4. Incoming Swipes / Likes Listener
+        db.collection("swipes")
+            .whereEqualTo("toUserId", currentUserId)
+            .addSnapshotListener { snapshot, _ ->
+                if (snapshot != null) {
+                    val list = snapshot.documents.mapNotNull { it.toObject(SwipeRecord::class.java) }
+                    incomingSwipes.clear()
+                    incomingSwipes.addAll(list)
+                }
+            }
+
+        // 5. Mutual Matches Listener
+        db.collection("matches")
+            .whereArrayContains("users", currentUserId)
+            .addSnapshotListener { snapshot, _ ->
+                if (snapshot != null) {
+                    val list = snapshot.documents.mapNotNull { it.toObject(MatchItem::class.java) }
+                    matches.clear()
+                    matches.addAll(list)
+                }
+            }
+
+        // 6. Moments Feed Listener
+        db.collection("moments")
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .addSnapshotListener { snapshot, _ ->
+                if (snapshot != null) {
+                    val list = snapshot.documents.mapNotNull { it.toObject(MomentItem::class.java) }
+                    moments.clear()
+                    if (list.isEmpty()) {
+                        seedInitialMoments(db)
+                    } else {
+                        moments.addAll(list)
+                    }
+                }
+            }
     }
 
-    val currentUser = userMap[activeUserId] ?: UserProfile()
-    val otherUser = userMap.values.firstOrNull { it.uid != activeUserId }
+    // Chat room listener when chat is opened
+    LaunchedEffect(activeChatPartner) {
+        if (activeChatPartner != null) {
+            val partner = activeChatPartner!!
+            val matchId = listOf(currentUserId, partner.uid).sorted().joinToString("_")
+            db.collection("matches").document(matchId).collection("messages")
+                .orderBy("timestamp", Query.Direction.ASCENDING)
+                .addSnapshotListener { snapshot, _ ->
+                    if (snapshot != null) {
+                        val msgs = snapshot.documents.mapNotNull { it.toObject(ChatMessage::class.java) }
+                        chatMessages.clear()
+                        chatMessages.addAll(msgs)
+                    }
+                }
+        }
+    }
+
+    // Filtered Discover Profiles based on Category and Settings (Distance, Age, Gender, Discovery enabled)
+    val filteredProfiles = remember(discoverProfiles, selectedCategory, currentUser) {
+        discoverProfiles.filter { profile ->
+            if (!currentUser.enableDiscovery) return@filter false
+            val matchesCategory = selectedCategory == "all" || profile.activeIntent == selectedCategory
+            val matchesDistance = currentUser.showFurtherAway || profile.distanceKm <= currentUser.maxDistanceKm
+            val matchesAge = currentUser.showOutsideAge || (profile.age in currentUser.minAge..currentUser.maxAge)
+            val matchesGender = currentUser.interestedIn == "Everyone" || profile.gender.equals(currentUser.interestedIn, ignoreCase = true)
+            matchesCategory && matchesDistance && matchesAge && matchesGender
+        }
+    }
+
+    val unreadNotificationsCount = remember(notifications) {
+        notifications.count { !it.isRead }
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(BrandDark)) {
         Scaffold(
             containerColor = BrandDark,
             topBar = {
                 Row(
-                    modifier = Modifier.fillMaxWidth().background(BrandCard).padding(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(BrandCard)
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(
-                        text = "LiveTogather",
-                        color = BrandCoral,
-                        fontWeight = FontWeight.Black,
-                        fontSize = 18.sp
-                    )
-
-                    Button(
-                        onClick = {
-                            activeUserId = if (activeUserId == "USER_A") "USER_B" else "USER_A"
-                            Toast.makeText(context, "Switched to ${userMap[activeUserId]?.name}", Toast.LENGTH_SHORT).show()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandBorder),
-                        shape = RoundedCornerShape(50)
-                    ) {
-                        Icon(Icons.Default.SwitchAccount, contentDescription = null, tint = BrandOrange, modifier = Modifier.size(16.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.LocalFireDepartment,
+                            contentDescription = null,
+                            tint = BrandCoral,
+                            modifier = Modifier.size(24.dp)
+                        )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text(text = currentUser.name.split(" ")[0], color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = "LiveTogather",
+                            color = BrandCoral,
+                            fontWeight = FontWeight.Black,
+                            fontSize = 20.sp
+                        )
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Real-time Notification Bell with Badge
+                        IconButton(onClick = { showNotificationsDialog = true }) {
+                            BadgedBox(
+                                badge = {
+                                    if (unreadNotificationsCount > 0) {
+                                        Badge(
+                                            containerColor = BrandCoral,
+                                            contentColor = Color.White
+                                        ) {
+                                            Text("$unreadNotificationsCount", fontSize = 10.sp)
+                                        }
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Notifications,
+                                    contentDescription = "Notifications",
+                                    tint = if (unreadNotificationsCount > 0) BrandOrange else Color.White
+                                )
+                            }
+                        }
+
+                        // Settings Gear Icon
+                        IconButton(onClick = { showSettingsDialog = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "Settings",
+                                tint = Color.White
+                            )
+                        }
                     }
                 }
             },
             bottomBar = {
                 NavigationBar(containerColor = BrandCard) {
-                    NavigationBarItem(
-                        selected = currentScreen == "discover",
-                        onClick = { currentScreen = "discover" },
-                        icon = { Icon(Icons.Default.LocalFireDepartment, contentDescription = "Discover", tint = if (currentScreen == "discover") BrandCoral else Color.Gray) },
-                        label = { Text("Discover", fontSize = 10.sp, color = if (currentScreen == "discover") BrandCoral else Color.Gray) }
+                    val items = listOf(
+                        Triple("discover", "Discover", Icons.Default.LocalFireDepartment),
+                        Triple("likes", "Likes", Icons.Default.Favorite),
+                        Triple("chats", "Chats", Icons.Default.ChatBubble),
+                        Triple("moments", "Moments", Icons.Default.CameraAlt),
+                        Triple("profile", "Profile", Icons.Default.Person)
                     )
-                    NavigationBarItem(
-                        selected = currentScreen == "likes",
-                        onClick = { currentScreen = "likes" },
-                        icon = { Icon(Icons.Default.Favorite, contentDescription = "Likes", tint = if (currentScreen == "likes") BrandCoral else Color.Gray) },
-                        label = { Text("Likes", fontSize = 10.sp, color = if (currentScreen == "likes") BrandCoral else Color.Gray) }
-                    )
-                    NavigationBarItem(
-                        selected = currentScreen == "chats",
-                        onClick = { currentScreen = "chats" },
-                        icon = { Icon(Icons.Default.ChatBubble, contentDescription = "Chats", tint = if (currentScreen == "chats") BrandCoral else Color.Gray) },
-                        label = { Text("Chats", fontSize = 10.sp, color = if (currentScreen == "chats") BrandCoral else Color.Gray) }
-                    )
-                    NavigationBarItem(
-                        selected = currentScreen == "moments",
-                        onClick = { currentScreen = "moments" },
-                        icon = { Icon(Icons.Default.CameraAlt, contentDescription = "Moments", tint = if (currentScreen == "moments") BrandCoral else Color.Gray) },
-                        label = { Text("Moments", fontSize = 10.sp, color = if (currentScreen == "moments") BrandCoral else Color.Gray) }
-                    )
-                    NavigationBarItem(
-                        selected = currentScreen == "profile",
-                        onClick = { currentScreen = "profile" },
-                        icon = { Icon(Icons.Default.Person, contentDescription = "Profile", tint = if (currentScreen == "profile") BrandCoral else Color.Gray) },
-                        label = { Text("Profile", fontSize = 10.sp, color = if (currentScreen == "profile") BrandCoral else Color.Gray) }
-                    )
+                    items.forEach { (route, label, icon) ->
+                        val selected = currentScreen == route
+                        NavigationBarItem(
+                            selected = selected,
+                            onClick = { currentScreen = route },
+                            icon = {
+                                Icon(
+                                    icon,
+                                    contentDescription = label,
+                                    tint = if (selected) BrandCoral else Color.Gray
+                                )
+                            },
+                            label = {
+                                Text(
+                                    label,
+                                    fontSize = 10.sp,
+                                    color = if (selected) BrandCoral else Color.Gray
+                                )
+                            }
+                        )
+                    }
                 }
             }
         ) { paddingValues ->
-            Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+            ) {
                 when (currentScreen) {
                     "discover" -> {
-                        Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                items(CATEGORY_LIST) { cat ->
-                                    val isSelected = selectedCategory == cat.id
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(50))
-                                            .background(if (isSelected) Brush.horizontalGradient(listOf(BrandCoral, BrandOrange)) else Brush.linearGradient(listOf(BrandCard, BrandCard)))
-                                            .border(1.dp, if (isSelected) Color.Transparent else BrandBorder, RoundedCornerShape(50))
-                                            .clickable { selectedCategory = cat.id }
-                                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                                    ) {
-                                        Text(text = cat.label, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                }
+                        DiscoverScreenContent(
+                            profiles = filteredProfiles,
+                            selectedCategory = selectedCategory,
+                            onSelectCategory = { selectedCategory = it },
+                            onPass = { profile ->
+                                recordSwipe(db, currentUserId, profile.uid, "pass")
+                                Toast.makeText(context, "Passed ${profile.name}", Toast.LENGTH_SHORT).show()
+                            },
+                            onSuperStar = { profile ->
+                                recordSwipe(db, currentUserId, profile.uid, "superstar")
+                                sendNotification(
+                                    db = db,
+                                    targetUserId = profile.uid,
+                                    sender = currentUser,
+                                    type = "superstar",
+                                    title = "⭐ SuperStar Received!",
+                                    message = "${currentUser.name} gave you a SuperStar!"
+                                )
+                                Toast.makeText(context, "SuperStar sent to ${profile.name}!", Toast.LENGTH_SHORT).show()
+                            },
+                            onDirectMessage = { profile ->
+                                showDirectMessageDialog = profile
+                            },
+                            onLike = { profile ->
+                                recordSwipe(db, currentUserId, profile.uid, "like")
+                                // Check mutual like
+                                checkAndHandleMutualMatch(
+                                    db = db,
+                                    currentUser = currentUser,
+                                    partner = profile,
+                                    onMatch = { matchedPartner = profile }
+                                )
                             }
-
-                            Spacer(modifier = Modifier.height(14.dp))
-
-                            if (otherUser != null) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(24.dp))
-                                        .border(1.dp, BrandBorder, RoundedCornerShape(24.dp))
-                                ) {
-                                    AsyncImage(
-                                        model = otherUser.photo,
-                                        contentDescription = null,
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier.fillMaxSize()
-                                    )
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(
-                                                Brush.verticalGradient(
-                                                    colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.95f)),
-                                                    startY = 400f
-                                                )
-                                            )
-                                    )
-                                    Column(
-                                        modifier = Modifier
-                                            .align(Alignment.BottomStart)
-                                            .padding(16.dp)
-                                    ) {
-                                        Text(text = "🍷 ${otherUser.activeIntent.replace('_', ' ').uppercase()}", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.background(BrandCoral, RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 2.dp))
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        Text(text = "${otherUser.name}, ${otherUser.age}", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
-                                        Text(text = otherUser.bio, color = Color.LightGray, fontSize = 12.sp)
-                                        Text(text = "📍 ${otherUser.city} • 2.5 km away", color = BrandOrange, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-
-                                        Spacer(modifier = Modifier.height(12.dp))
-
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceEvenly
-                                        ) {
-                                            IconButton(
-                                                onClick = { Toast.makeText(context, "Passed", Toast.LENGTH_SHORT).show() },
-                                                modifier = Modifier.size(50.dp).background(Color.Black.copy(alpha = 0.7f), CircleShape).border(1.dp, Color.Red, CircleShape)
-                                            ) {
-                                                Icon(Icons.Default.Close, contentDescription = null, tint = Color.Red)
-                                            }
-
-                                            IconButton(
-                                                onClick = {
-                                                    swipes.add(SwipeRecord(fromUserId = currentUser.uid, toUserId = otherUser.uid, action = "like"))
-                                                    val mutual = swipes.any { it.fromUserId == otherUser.uid && it.toUserId == currentUser.uid && it.action == "like" }
-                                                    if (mutual) {
-                                                        val matchId = listOf(currentUser.uid, otherUser.uid).sorted().joinToString("_")
-                                                        if (matches.none { it.matchId == matchId }) {
-                                                            matches.add(MatchItem(matchId = matchId, users = listOf(currentUser.uid, otherUser.uid), matchedIntent = currentUser.activeIntent))
-                                                        }
-                                                        matchedPartner = otherUser
-                                                    } else {
-                                                        Toast.makeText(context, "Like recorded! Waiting for match.", Toast.LENGTH_SHORT).show()
-                                                    }
-                                                },
-                                                modifier = Modifier.size(54.dp).background(Brush.horizontalGradient(listOf(BrandCoral, BrandOrange)), CircleShape)
-                                            ) {
-                                                Icon(Icons.Default.Favorite, contentDescription = null, tint = Color.White)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        )
                     }
 
                     "likes" -> {
-                        val inboundLikes = swipes.filter { it.toUserId == currentUser.uid && it.action == "like" }
-                        Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-                            Text("Who Liked You", color = BrandCoral, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                            Spacer(modifier = Modifier.height(12.dp))
-                            if (inboundLikes.isEmpty()) {
-                                Text("No incoming likes yet.", color = Color.Gray, fontSize = 12.sp)
-                            } else {
-                                inboundLikes.forEach { swipe ->
-                                    val liker = userMap[swipe.fromUserId]
-                                    if (liker != null) {
-                                        Card(
-                                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                            colors = CardDefaults.cardColors(containerColor = BrandCard)
-                                        ) {
-                                            Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                                AsyncImage(model = liker.photo, contentDescription = null, modifier = Modifier.size(50.dp).clip(CircleShape), contentScale = ContentScale.Crop)
-                                                Spacer(modifier = Modifier.width(12.dp))
-                                                Column(modifier = Modifier.weight(1f)) {
-                                                    Text("${liker.name}, ${liker.age}", color = Color.White, fontWeight = FontWeight.Bold)
-                                                    Text("Intent: ${liker.activeIntent}", color = BrandOrange, fontSize = 11.sp)
-                                                }
-                                                Button(
-                                                    onClick = {
-                                                        swipes.add(SwipeRecord(fromUserId = currentUser.uid, toUserId = liker.uid, action = "like"))
-                                                        val matchId = listOf(currentUser.uid, liker.uid).sorted().joinToString("_")
-                                                        matches.add(MatchItem(matchId = matchId, users = listOf(currentUser.uid, liker.uid), matchedIntent = currentUser.activeIntent))
-                                                        matchedPartner = liker
-                                                    },
-                                                    colors = ButtonDefaults.buttonColors(containerColor = BrandCoral)
-                                                ) {
-                                                    Text("Match Back", fontSize = 11.sp)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
+                        LikesScreenContent(
+                            swipes = incomingSwipes,
+                            db = db,
+                            onMatchBack = { liker ->
+                                recordSwipe(db, currentUserId, liker.uid, "like")
+                                checkAndHandleMutualMatch(
+                                    db = db,
+                                    currentUser = currentUser,
+                                    partner = liker,
+                                    onMatch = { matchedPartner = liker }
+                                )
                             }
-                        }
+                        )
                     }
 
                     "chats" -> {
-                        Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-                            Text("Matches & Inbox", color = BrandCoral, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                            Spacer(modifier = Modifier.height(12.dp))
-                            if (matches.isEmpty()) {
-                                Text("No matches yet. Like back to start chatting!", color = Color.Gray, fontSize = 12.sp)
-                            } else {
-                                matches.forEach { m ->
-                                    val pId = m.users.firstOrNull { it != currentUser.uid }
-                                    val partner = userMap[pId]
-                                    if (partner != null) {
-                                        Card(
-                                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable {
-                                                activeChatPartner = partner
-                                            },
-                                            colors = CardDefaults.cardColors(containerColor = BrandCard)
-                                        ) {
-                                            Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                                AsyncImage(model = partner.photo, contentDescription = null, modifier = Modifier.size(44.dp).clip(CircleShape), contentScale = ContentScale.Crop)
-                                                Spacer(modifier = Modifier.width(12.dp))
-                                                Column {
-                                                    Text(partner.name, color = Color.White, fontWeight = FontWeight.Bold)
-                                                    Text(m.lastMessage, color = Color.Gray, fontSize = 11.sp)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        ChatsScreenContent(
+                            matches = matches,
+                            currentUserId = currentUserId,
+                            db = db,
+                            onOpenChat = { partner -> activeChatPartner = partner }
+                        )
                     }
 
                     "moments" -> {
-                        Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text("Moments Feed", color = BrandCoral, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                                Button(
-                                    onClick = {
-                                        moments.add(
-                                            0,
-                                            MomentItem(
-                                                id = "M${moments.size + 1}",
-                                                userId = currentUser.uid,
-                                                userName = currentUser.name,
-                                                userPhoto = currentUser.photo,
-                                                mediaUrl = "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=600&q=80",
-                                                caption = "Late night drive vibes!",
-                                                likes = 0
-                                            )
-                                        )
-                                        Toast.makeText(context, "Moment Shared!", Toast.LENGTH_SHORT).show()
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = BrandCoral)
-                                ) {
-                                    Text("+ Post Moment", fontSize = 10.sp)
-                                }
+                        MomentsScreenContent(
+                            moments = moments,
+                            currentUserId = currentUserId,
+                            onPostClick = { showPostMomentDialog = true },
+                            onLikeMoment = { moment ->
+                                toggleMomentLike(db, moment, currentUserId)
+                            },
+                            onCommentMoment = { moment ->
+                                showCommentsMoment = moment
                             }
-
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                items(moments) { item ->
-                                    Card(colors = CardDefaults.cardColors(containerColor = BrandCard)) {
-                                        Column(modifier = Modifier.padding(12.dp)) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                AsyncImage(model = item.userPhoto, contentDescription = null, modifier = Modifier.size(32.dp).clip(CircleShape), contentScale = ContentScale.Crop)
-                                                Spacer(modifier = Modifier.width(8.dp))
-                                                Text(item.userName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                            }
-                                            Spacer(modifier = Modifier.height(8.dp))
-                                            Text(item.caption, color = Color.White, fontSize = 12.sp)
-                                            Spacer(modifier = Modifier.height(8.dp))
-                                            AsyncImage(model = item.mediaUrl, contentDescription = null, modifier = Modifier.fillMaxWidth().height(160.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        )
                     }
 
                     "profile" -> {
-                        Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-                            Text("User Profile & Membership", color = BrandCoral, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                AsyncImage(model = currentUser.photo, contentDescription = null, modifier = Modifier.size(64.dp).clip(CircleShape), contentScale = ContentScale.Crop)
-                                Spacer(modifier = Modifier.width(16.dp))
-                                Column {
-                                    Text(currentUser.name, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                                    Text("${currentUser.city} • ${currentUser.age} yrs", color = Color.LightGray, fontSize = 12.sp)
-                                    Text("Plan: ${currentUser.plan}", color = BrandOrange, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                }
+                        ProfileScreenContent(
+                            currentUser = currentUser,
+                            userMoments = moments.filter { it.userId == currentUserId },
+                            onUpdateProfile = { updated ->
+                                currentUser = updated
+                                db.collection("users").document(currentUserId).set(updated)
+                                Toast.makeText(context, "Profile Info Saved!", Toast.LENGTH_SHORT).show()
+                            },
+                            onSelectPlan = { plan ->
+                                val updated = currentUser.copy(plan = plan.title)
+                                currentUser = updated
+                                db.collection("users").document(currentUserId).update("plan", plan.title)
+                                Toast.makeText(context, "Subscribed to ${plan.title}!", Toast.LENGTH_SHORT).show()
+                            },
+                            onOpenBlockedUsers = { showBlockedUsersDialog = true },
+                            onOpenSettings = { showSettingsDialog = true },
+                            onLogout = {
+                                Toast.makeText(context, "Logged out successfully", Toast.LENGTH_SHORT).show()
+                            },
+                            onDeleteAccount = {
+                                db.collection("users").document(currentUserId).delete()
+                                Toast.makeText(context, "Account deleted", Toast.LENGTH_LONG).show()
                             }
-                            Spacer(modifier = Modifier.height(20.dp))
-                            Card(colors = CardDefaults.cardColors(containerColor = BrandCard), modifier = Modifier.fillMaxWidth()) {
-                                Column(modifier = Modifier.padding(16.dp)) {
-                                    Text("Active Intent Status", color = BrandCoral, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                    Text("🍷 ${currentUser.activeIntent.replace('_', ' ').uppercase()}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text("Hobbies: ${currentUser.hobbies}", color = Color.Gray, fontSize = 12.sp)
-                                }
-                            }
-                        }
+                        )
                     }
                 }
             }
         }
 
+        // --- Dialogs & Full-Screen Modals ---
+
+        // 1. Settings Dialog (Screenshots 2, 3, 4)
+        if (showSettingsDialog) {
+            SettingsDialog(
+                user = currentUser,
+                onDismiss = { showSettingsDialog = false },
+                onSave = { updated ->
+                    currentUser = updated
+                    db.collection("users").document(currentUserId).set(updated)
+                    showSettingsDialog = false
+                    Toast.makeText(context, "Settings saved!", Toast.LENGTH_SHORT).show()
+                }
+            )
+        }
+
+        // 2. Real-Time Notification Center Dialog
+        if (showNotificationsDialog) {
+            NotificationsDialog(
+                notifications = notifications,
+                onDismiss = { showNotificationsDialog = false },
+                onMarkAllRead = {
+                    notifications.forEach { notif ->
+                        if (!notif.isRead) {
+                            db.collection("notifications").document(notif.id).update("isRead", true)
+                        }
+                    }
+                }
+            )
+        }
+
+        // 3. Post Moment Dialog (Image/Video Upload with Caption)
+        if (showPostMomentDialog) {
+            PostMomentDialog(
+                currentUser = currentUser,
+                onDismiss = { showPostMomentDialog = false },
+                onPost = { mediaUrl, caption ->
+                    val newMoment = MomentItem(
+                        id = UUID.randomUUID().toString(),
+                        userId = currentUser.uid,
+                        userName = currentUser.name,
+                        userPhoto = currentUser.photo,
+                        mediaUrl = mediaUrl,
+                        caption = caption,
+                        timestamp = System.currentTimeMillis()
+                    )
+                    db.collection("moments").document(newMoment.id).set(newMoment)
+                    showPostMomentDialog = false
+                    Toast.makeText(context, "Moment uploaded successfully!", Toast.LENGTH_SHORT).show()
+                }
+            )
+        }
+
+        // 4. Direct Message Send Prompt in Discover
+        if (showDirectMessageDialog != null) {
+            val target = showDirectMessageDialog!!
+            DirectMessageDialog(
+                targetUser = target,
+                onDismiss = { showDirectMessageDialog = null },
+                onSend = { text ->
+                    val matchId = listOf(currentUserId, target.uid).sorted().joinToString("_")
+                    val msg = ChatMessage(senderId = currentUserId, text = text)
+                    db.collection("matches").document(matchId).collection("messages").add(msg)
+                    db.collection("matches").document(matchId).set(
+                        MatchItem(
+                            matchId = matchId,
+                            users = listOf(currentUserId, target.uid),
+                            matchedIntent = currentUser.activeIntent,
+                            lastMessage = text
+                        )
+                    )
+                    sendNotification(
+                        db = db,
+                        targetUserId = target.uid,
+                        sender = currentUser,
+                        type = "message",
+                        title = "New Direct Message",
+                        message = "${currentUser.name}: $text"
+                    )
+                    showDirectMessageDialog = null
+                    Toast.makeText(context, "Message sent to ${target.name}!", Toast.LENGTH_SHORT).show()
+                }
+            )
+        }
+
+        // 5. Comments Sheet for Moments
+        if (showCommentsMoment != null) {
+            val moment = showCommentsMoment!!
+            CommentsDialog(
+                moment = moment,
+                currentUser = currentUser,
+                db = db,
+                onDismiss = { showCommentsMoment = null }
+            )
+        }
+
+        // 6. Blocked Users Dialog
+        if (showBlockedUsersDialog) {
+            BlockedUsersDialog(
+                blockedUserIds = currentUser.blockedUserIds,
+                db = db,
+                onDismiss = { showBlockedUsersDialog = false },
+                onUnblock = { unblockId ->
+                    val updatedList = currentUser.blockedUserIds - unblockId
+                    currentUser = currentUser.copy(blockedUserIds = updatedList)
+                    db.collection("users").document(currentUserId).update("blockedUserIds", updatedList)
+                    Toast.makeText(context, "User unblocked", Toast.LENGTH_SHORT).show()
+                }
+            )
+        }
+
+        // 7. Mutual Match Celebration Dialog
         if (matchedPartner != null) {
             AlertDialog(
                 onDismissRequest = { matchedPartner = null },
                 containerColor = BrandCard,
                 title = {
-                    Text("IT'S A MATCH! 🎉", color = BrandCoral, fontWeight = FontWeight.Black, fontSize = 20.sp)
+                    Text(
+                        "IT'S A MATCH! 🎉",
+                        color = BrandCoral,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 22.sp
+                    )
                 },
                 text = {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("You and ${matchedPartner?.name} liked each other!", color = Color.White, fontSize = 13.sp)
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            "You and ${matchedPartner?.name} liked each other!",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
                         Row(horizontalArrangement = Arrangement.Center) {
-                            AsyncImage(model = currentUser.photo, contentDescription = null, modifier = Modifier.size(54.dp).clip(CircleShape).border(2.dp, BrandCoral, CircleShape))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            AsyncImage(model = matchedPartner?.photo, contentDescription = null, modifier = Modifier.size(54.dp).clip(CircleShape).border(2.dp, BrandOrange, CircleShape))
+                            AsyncImage(
+                                model = currentUser.photo,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .size(60.dp)
+                                    .clip(CircleShape)
+                                    .border(2.dp, BrandCoral, CircleShape),
+                                contentScale = ContentScale.Crop
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            AsyncImage(
+                                model = matchedPartner?.photo,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .size(60.dp)
+                                    .clip(CircleShape)
+                                    .border(2.dp, BrandOrange, CircleShape),
+                                contentScale = ContentScale.Crop
+                            )
                         }
                     }
                 },
                 confirmButton = {
                     Button(
                         onClick = {
-                            val p = matchedPartner
+                            val partner = matchedPartner
                             matchedPartner = null
-                            activeChatPartner = p
+                            activeChatPartner = partner
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = BrandCoral)
                     ) {
-                        Text("Send Instant Message")
+                        Text("Send Instant Message", fontWeight = FontWeight.Bold)
                     }
                 },
                 dismissButton = {
@@ -449,59 +612,117 @@ fun LiveTogatherApp() {
             )
         }
 
+        // 8. Active 1-on-1 Chat Room Screen
         if (activeChatPartner != null) {
             val partner = activeChatPartner!!
-            val matchKey = listOf(currentUser.uid, partner.uid).sorted().joinToString("_")
+            val matchId = listOf(currentUserId, partner.uid).sorted().joinToString("_")
             var chatInput by remember { mutableStateOf("") }
-            val currentChatList = messages.getOrPut(matchKey) { mutableStateListOf() }
 
-            Box(modifier = Modifier.fillMaxSize().background(BrandDark)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(BrandDark)
+            ) {
                 Column(modifier = Modifier.fillMaxSize()) {
+                    // Chat Header
                     Row(
-                        modifier = Modifier.fillMaxWidth().background(BrandCard).padding(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(BrandCard)
+                            .padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(onClick = { activeChatPartner = null }) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = Color.White
+                            )
                         }
-                        AsyncImage(model = partner.photo, contentDescription = null, modifier = Modifier.size(36.dp).clip(CircleShape), contentScale = ContentScale.Crop)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text(partner.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Text("Plan: ${partner.activeIntent}", color = BrandOrange, fontSize = 10.sp)
+                        AsyncImage(
+                            model = partner.photo,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape),
+                            contentScale = ContentScale.Crop
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                partner.name,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            )
+                            Text(
+                                "Intent: ${partner.activeIntent.replace('_', ' ')}",
+                                color = BrandOrange,
+                                fontSize = 11.sp
+                            )
+                        }
+                        // Block User Action in Chat
+                        IconButton(
+                            onClick = {
+                                val updatedBlocked = currentUser.blockedUserIds + partner.uid
+                                currentUser = currentUser.copy(blockedUserIds = updatedBlocked)
+                                db.collection("users").document(currentUserId)
+                                    .update("blockedUserIds", updatedBlocked)
+                                activeChatPartner = null
+                                Toast.makeText(context, "${partner.name} blocked", Toast.LENGTH_SHORT).show()
+                            }
+                        ) {
+                            Icon(
+                                Icons.Default.Block,
+                                contentDescription = "Block",
+                                tint = Color.Red.copy(alpha = 0.8f)
+                            )
                         }
                     }
 
+                    // Chat Messages List
                     LazyColumn(
-                        modifier = Modifier.weight(1f).padding(12.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        items(currentChatList) { msg ->
-                            val isMe = msg.senderId == currentUser.uid
+                        items(chatMessages) { msg ->
+                            val isMe = msg.senderId == currentUserId
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start
                             ) {
                                 Box(
                                     modifier = Modifier
-                                        .clip(RoundedCornerShape(12.dp))
+                                        .clip(RoundedCornerShape(14.dp))
                                         .background(if (isMe) BrandCoral else BrandCard)
-                                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                                        .padding(horizontal = 14.dp, vertical = 9.dp)
                                 ) {
-                                    Text(msg.text, color = Color.White, fontSize = 13.sp)
+                                    Text(
+                                        msg.text,
+                                        color = Color.White,
+                                        fontSize = 13.sp
+                                    )
                                 }
                             }
                         }
                     }
 
+                    // Message Input Field
                     Row(
-                        modifier = Modifier.fillMaxWidth().background(BrandCard).padding(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(BrandCard)
+                            .padding(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         TextField(
                             value = chatInput,
                             onValueChange = { chatInput = it },
-                            placeholder = { Text("Type a message...", color = Color.Gray, fontSize = 12.sp) },
+                            placeholder = {
+                                Text("Type a message...", color = Color.Gray, fontSize = 13.sp)
+                            },
                             colors = TextFieldDefaults.colors(
                                 focusedContainerColor = Color.Transparent,
                                 unfocusedContainerColor = Color.Transparent,
@@ -513,16 +734,1966 @@ fun LiveTogatherApp() {
                         IconButton(
                             onClick = {
                                 if (chatInput.isNotBlank()) {
-                                    currentChatList.add(ChatMessage(senderId = currentUser.uid, text = chatInput))
+                                    val text = chatInput.trim()
                                     chatInput = ""
+                                    val newMsg = ChatMessage(senderId = currentUserId, text = text)
+                                    db.collection("matches").document(matchId).collection("messages").add(newMsg)
+                                    db.collection("matches").document(matchId).update("lastMessage", text)
+                                    sendNotification(
+                                        db = db,
+                                        targetUserId = partner.uid,
+                                        sender = currentUser,
+                                        type = "message",
+                                        title = "New Message",
+                                        message = "${currentUser.name}: $text"
+                                    )
                                 }
                             }
                         ) {
-                            Icon(Icons.Default.Send, contentDescription = "Send", tint = BrandCoral)
+                            Icon(
+                                Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "Send",
+                                tint = BrandCoral
+                            )
                         }
                     }
                 }
             }
         }
+    }
+}
+
+// -------------------------------------------------------------
+// DISCOVER SCREEN CONTENT WITH 4 ACTION BUTTONS
+// -------------------------------------------------------------
+@Composable
+fun DiscoverScreenContent(
+    profiles: List<UserProfile>,
+    selectedCategory: String,
+    onSelectCategory: (String) -> Unit,
+    onPass: (UserProfile) -> Unit,
+    onSuperStar: (UserProfile) -> Unit,
+    onDirectMessage: (UserProfile) -> Unit,
+    onLike: (UserProfile) -> Unit
+) {
+    var currentIndex by remember { mutableIntStateOf(0) }
+    val currentProfile = profiles.getOrNull(currentIndex)
+
+    Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+        // Intent Categories Row
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(CATEGORY_LIST) { cat ->
+                val isSelected = selectedCategory == cat.id
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(
+                            if (isSelected) Brush.horizontalGradient(listOf(BrandCoral, BrandOrange))
+                            else Brush.linearGradient(listOf(BrandCard, BrandCard))
+                        )
+                        .border(1.dp, if (isSelected) Color.Transparent else BrandBorder, RoundedCornerShape(50))
+                        .clickable {
+                            onSelectCategory(cat.id)
+                            currentIndex = 0
+                        }
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = cat.label,
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        if (currentProfile != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .clip(RoundedCornerShape(24.dp))
+                    .border(1.dp, BrandBorder, RoundedCornerShape(24.dp))
+            ) {
+                AsyncImage(
+                    model = currentProfile.photo,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                // Dark Bottom Gradient
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.95f)),
+                                startY = 300f
+                            )
+                        )
+                )
+
+                // Info & 4 Action Buttons
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(16.dp)
+                ) {
+                    Text(
+                        text = "🍷 ${currentProfile.activeIntent.replace('_', ' ').uppercase()}",
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .background(BrandCoral, RoundedCornerShape(50))
+                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "${currentProfile.name}, ${currentProfile.age}",
+                        color = Color.White,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    if (currentProfile.profession.isNotBlank()) {
+                        Text(
+                            text = "💼 ${currentProfile.profession} • 🎓 ${currentProfile.education}",
+                            color = Color.LightGray,
+                            fontSize = 11.sp
+                        )
+                    }
+                    Text(
+                        text = currentProfile.bio,
+                        color = Color.White.copy(alpha = 0.9f),
+                        fontSize = 12.sp,
+                        maxLines = 2
+                    )
+                    Text(
+                        text = "📍 ${currentProfile.city} • ${currentProfile.distanceKm} km away",
+                        color = BrandOrange,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // 4 Action Buttons: Pass, SuperStar, Direct Message, Like
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // 1. Pass (Dislike)
+                        IconButton(
+                            onClick = {
+                                onPass(currentProfile)
+                                currentIndex++
+                            },
+                            modifier = Modifier
+                                .size(50.dp)
+                                .background(Color.Black.copy(alpha = 0.7f), CircleShape)
+                                .border(1.5.dp, Color.Red, CircleShape)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Pass", tint = Color.Red)
+                        }
+
+                        // 2. SuperStar
+                        IconButton(
+                            onClick = {
+                                onSuperStar(currentProfile)
+                                currentIndex++
+                            },
+                            modifier = Modifier
+                                .size(50.dp)
+                                .background(Color.Black.copy(alpha = 0.7f), CircleShape)
+                                .border(1.5.dp, BrandGold, CircleShape)
+                        ) {
+                            Icon(Icons.Default.Star, contentDescription = "SuperStar", tint = BrandGold)
+                        }
+
+                        // 3. Direct Message
+                        IconButton(
+                            onClick = {
+                                onDirectMessage(currentProfile)
+                            },
+                            modifier = Modifier
+                                .size(50.dp)
+                                .background(Color.Black.copy(alpha = 0.7f), CircleShape)
+                                .border(1.5.dp, BrandCyan, CircleShape)
+                        ) {
+                            Icon(Icons.Default.Chat, contentDescription = "Direct Message", tint = BrandCyan)
+                        }
+
+                        // 4. Like
+                        IconButton(
+                            onClick = {
+                                onLike(currentProfile)
+                                currentIndex++
+                            },
+                            modifier = Modifier
+                                .size(56.dp)
+                                .background(
+                                    Brush.horizontalGradient(listOf(BrandCoral, BrandOrange)),
+                                    CircleShape
+                                )
+                        ) {
+                            Icon(Icons.Default.Favorite, contentDescription = "Like", tint = Color.White)
+                        }
+                    }
+                }
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        Icons.Default.LocalFireDepartment,
+                        contentDescription = null,
+                        tint = BrandCoral,
+                        modifier = Modifier.size(54.dp)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        "No more profiles to discover!",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
+                    Text(
+                        "Try expanding your distance or age filter in Settings.",
+                        color = Color.Gray,
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Button(
+                        onClick = { currentIndex = 0 },
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral)
+                    ) {
+                        Text("Reset Stack")
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// LIKES SCREEN CONTENT
+// -------------------------------------------------------------
+@Composable
+fun LikesScreenContent(
+    swipes: List<SwipeRecord>,
+    db: FirebaseFirestore,
+    onMatchBack: (UserProfile) -> Unit
+) {
+    val likerProfiles = remember { mutableStateListOf<UserProfile>() }
+
+    LaunchedEffect(swipes) {
+        likerProfiles.clear()
+        swipes.filter { it.action in listOf("like", "superstar") }.forEach { swipe ->
+            db.collection("users").document(swipe.fromUserId).get().addOnSuccessListener { doc ->
+                doc.toObject(UserProfile::class.java)?.let { likerProfiles.add(it) }
+            }
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Text("Who Liked You", color = BrandCoral, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(12.dp))
+
+        if (likerProfiles.isEmpty()) {
+            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Text("No incoming likes yet. Keep your profile active!", color = Color.Gray, fontSize = 13.sp)
+            }
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(likerProfiles) { liker ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = BrandCard)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            AsyncImage(
+                                model = liker.photo,
+                                contentDescription = null,
+                                modifier = Modifier.size(50.dp).clip(CircleShape),
+                                contentScale = ContentScale.Crop
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("${liker.name}, ${liker.age}", color = Color.White, fontWeight = FontWeight.Bold)
+                                Text("Intent: ${liker.activeIntent.replace('_', ' ')}", color = BrandOrange, fontSize = 11.sp)
+                                Text("📍 ${liker.city}", color = Color.Gray, fontSize = 11.sp)
+                            }
+                            Button(
+                                onClick = { onMatchBack(liker) },
+                                colors = ButtonDefaults.buttonColors(containerColor = BrandCoral)
+                            ) {
+                                Text("Match Back", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// CHATS SCREEN CONTENT
+// -------------------------------------------------------------
+@Composable
+fun ChatsScreenContent(
+    matches: List<MatchItem>,
+    currentUserId: String,
+    db: FirebaseFirestore,
+    onOpenChat: (UserProfile) -> Unit
+) {
+    val partnerMap = remember { mutableStateMapOf<String, UserProfile>() }
+
+    LaunchedEffect(matches) {
+        matches.forEach { match ->
+            val pId = match.users.firstOrNull { it != currentUserId }
+            if (pId != null && !partnerMap.containsKey(pId)) {
+                db.collection("users").document(pId).get().addOnSuccessListener { doc ->
+                    doc.toObject(UserProfile::class.java)?.let { partnerMap[pId] = it }
+                }
+            }
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Text("Matches & Inbox", color = BrandCoral, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(12.dp))
+
+        if (matches.isEmpty()) {
+            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Text("No matches yet. Like back profiles to start chatting!", color = Color.Gray, fontSize = 13.sp)
+            }
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(matches) { match ->
+                    val pId = match.users.firstOrNull { it != currentUserId }
+                    val partner = partnerMap[pId]
+                    if (partner != null) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onOpenChat(partner) },
+                            colors = CardDefaults.cardColors(containerColor = BrandCard)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                AsyncImage(
+                                    model = partner.photo,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(46.dp).clip(CircleShape),
+                                    contentScale = ContentScale.Crop
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(partner.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    Text(match.lastMessage, color = Color.LightGray, fontSize = 12.sp, maxLines = 1)
+                                }
+                                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// MOMENTS SCREEN WITH UPLOAD, LIKES, AND COMMENTS
+// -------------------------------------------------------------
+@Composable
+fun MomentsScreenContent(
+    moments: List<MomentItem>,
+    currentUserId: String,
+    onPostClick: () -> Unit,
+    onLikeMoment: (MomentItem) -> Unit,
+    onCommentMoment: (MomentItem) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Moments Feed", color = BrandCoral, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Button(
+                onClick = onPostClick,
+                colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                shape = RoundedCornerShape(50)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("+ Post Moment", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        if (moments.isEmpty()) {
+            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Text("No moments posted yet. Be the first to share one!", color = Color.Gray, fontSize = 13.sp)
+            }
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                items(moments) { item ->
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = BrandCard),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            // User Info Row
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                AsyncImage(
+                                    model = item.userPhoto,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(34.dp).clip(CircleShape),
+                                    contentScale = ContentScale.Crop
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(item.userName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    Text("Shared recently", color = Color.Gray, fontSize = 10.sp)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(item.caption, color = Color.White, fontSize = 13.sp)
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // Media
+                            if (item.mediaUrl.isNotBlank()) {
+                                AsyncImage(
+                                    model = item.mediaUrl,
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(180.dp)
+                                        .clip(RoundedCornerShape(12.dp)),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            // Interaction Row: Like & Comment
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                val isLikedByMe = item.likedByUsers.contains(currentUserId)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.clickable { onLikeMoment(item) }
+                                ) {
+                                    Icon(
+                                        imageVector = if (isLikedByMe) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                        contentDescription = "Like",
+                                        tint = if (isLikedByMe) BrandCoral else Color.Gray,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("${item.likes}", color = Color.White, fontSize = 12.sp)
+                                }
+
+                                Spacer(modifier = Modifier.width(20.dp))
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.clickable { onCommentMoment(item) }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ChatBubble,
+                                        contentDescription = "Comment",
+                                        tint = Color.Gray,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("${item.commentCount}", color = Color.White, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// PROFILE SCREEN CONTENT (SCREENSHOT 1)
+// -------------------------------------------------------------
+@Composable
+fun ProfileScreenContent(
+    currentUser: UserProfile,
+    userMoments: List<MomentItem>,
+    onUpdateProfile: (UserProfile) -> Unit,
+    onSelectPlan: (SubscriptionPlanItem) -> Unit,
+    onOpenBlockedUsers: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onLogout: () -> Unit,
+    onDeleteAccount: () -> Unit
+) {
+    var name by remember(currentUser) { mutableStateOf(currentUser.name) }
+    var age by remember(currentUser) { mutableStateOf(currentUser.age.toString()) }
+    var city by remember(currentUser) { mutableStateOf(currentUser.city) }
+    var hobbies by remember(currentUser) { mutableStateOf(currentUser.hobbies) }
+    var bio by remember(currentUser) { mutableStateOf(currentUser.bio) }
+    var profession by remember(currentUser) { mutableStateOf(currentUser.profession) }
+    var education by remember(currentUser) { mutableStateOf(currentUser.education) }
+    var photoUrl by remember(currentUser) { mutableStateOf(currentUser.photo) }
+
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+
+    // Image Picker Launcher
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            photoUrl = uri.toString()
+            onUpdateProfile(currentUser.copy(photo = uri.toString()))
+        }
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            // Profile Header with Avatar & Upload
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box {
+                    AsyncImage(
+                        model = photoUrl,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .size(76.dp)
+                            .clip(CircleShape)
+                            .border(2.dp, BrandCoral, CircleShape),
+                        contentScale = ContentScale.Crop
+                    )
+                    IconButton(
+                        onClick = { imagePickerLauncher.launch("image/*") },
+                        modifier = Modifier
+                            .size(26.dp)
+                            .align(Alignment.BottomEnd)
+                            .background(BrandCoral, CircleShape)
+                    ) {
+                        Icon(
+                            Icons.Default.CameraAlt,
+                            contentDescription = "Upload Photo",
+                            tint = Color.White,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(14.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(name, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Text("$city • $age yrs", color = Color.LightGray, fontSize = 12.sp)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "PLAN: ${currentUser.plan}",
+                        color = BrandGold,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                IconButton(onClick = onOpenSettings) {
+                    Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.Gray)
+                }
+            }
+        }
+
+        // Editable Form Fields (Screenshot 1)
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = BrandCard),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Basic Information", color = BrandCoral, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("Name", color = Color.Gray, fontSize = 11.sp) },
+                        colors = outlinedFieldColors(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(
+                            value = age,
+                            onValueChange = { age = it },
+                            label = { Text("Age", color = Color.Gray, fontSize = 11.sp) },
+                            colors = outlinedFieldColors(),
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = city,
+                            onValueChange = { city = it },
+                            label = { Text("City", color = Color.Gray, fontSize = 11.sp) },
+                            colors = outlinedFieldColors(),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    OutlinedTextField(
+                        value = profession,
+                        onValueChange = { profession = it },
+                        label = { Text("Profession", color = Color.Gray, fontSize = 11.sp) },
+                        colors = outlinedFieldColors(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = education,
+                        onValueChange = { education = it },
+                        label = { Text("Education", color = Color.Gray, fontSize = 11.sp) },
+                        colors = outlinedFieldColors(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = hobbies,
+                        onValueChange = { hobbies = it },
+                        label = { Text("Interests & Hobbies", color = Color.Gray, fontSize = 11.sp) },
+                        colors = outlinedFieldColors(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = bio,
+                        onValueChange = { bio = it },
+                        label = { Text("Bio", color = Color.Gray, fontSize = 11.sp) },
+                        colors = outlinedFieldColors(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Button(
+                        onClick = {
+                            val parsedAge = age.toIntOrNull() ?: currentUser.age
+                            val updated = currentUser.copy(
+                                name = name,
+                                age = parsedAge,
+                                city = city,
+                                profession = profession,
+                                education = education,
+                                hobbies = hobbies,
+                                bio = bio,
+                                photo = photoUrl
+                            )
+                            onUpdateProfile(updated)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().height(46.dp)
+                    ) {
+                        Text("Save Profile Info", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
+                }
+            }
+        }
+
+        // MEMBERSHIP SUBSCRIPTION PLANS (Screenshot 1)
+        item {
+            Column {
+                Text(
+                    "MEMBERSHIP SUBSCRIPTION PLANS",
+                    color = BrandGold,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SubscriptionPlanCard(
+                            plan = SUBSCRIPTION_PLANS[0], // Weekly Pass
+                            isSelected = currentUser.plan == SUBSCRIPTION_PLANS[0].title,
+                            modifier = Modifier.weight(1f),
+                            onClick = { onSelectPlan(SUBSCRIPTION_PLANS[0]) }
+                        )
+                        SubscriptionPlanCard(
+                            plan = SUBSCRIPTION_PLANS[1], // Monthly Pass
+                            isSelected = currentUser.plan == SUBSCRIPTION_PLANS[1].title,
+                            modifier = Modifier.weight(1f),
+                            onClick = { onSelectPlan(SUBSCRIPTION_PLANS[1]) }
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SubscriptionPlanCard(
+                            plan = SUBSCRIPTION_PLANS[2], // Platinum
+                            isSelected = currentUser.plan == SUBSCRIPTION_PLANS[2].title,
+                            modifier = Modifier.weight(1f),
+                            onClick = { onSelectPlan(SUBSCRIPTION_PLANS[2]) }
+                        )
+                        SubscriptionPlanCard(
+                            plan = SUBSCRIPTION_PLANS[3], // VIP Level
+                            isSelected = currentUser.plan == SUBSCRIPTION_PLANS[3].title,
+                            modifier = Modifier.weight(1f),
+                            onClick = { onSelectPlan(SUBSCRIPTION_PLANS[3]) }
+                        )
+                    }
+                }
+            }
+        }
+
+        // MY POSTED MOMENTS (Screenshot 1)
+        item {
+            Column {
+                Text(
+                    "MY POSTED MOMENTS",
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (userMoments.isEmpty()) {
+                    Text("No moments posted by you yet.", color = Color.Gray, fontSize = 11.sp)
+                } else {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(userMoments) { moment ->
+                            AsyncImage(
+                                model = moment.mediaUrl,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .size(100.dp)
+                                    .clip(RoundedCornerShape(12.dp)),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Account & Safety Section (Block/Unblock, Logout, Delete Account)
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = BrandCard),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Safety & Account", color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+
+                    // Blocked Contacts
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onOpenBlockedUsers() }
+                            .padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Block, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Blocked Users (${currentUser.blockedUserIds.size})", color = Color.White, fontSize = 13.sp)
+                        }
+                        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray)
+                    }
+
+                    HorizontalDivider(color = BrandBorder)
+
+                    // Logout Button
+                    Button(
+                        onClick = onLogout,
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandCardSubtle),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.ExitToApp, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Log Out", color = Color.White, fontSize = 13.sp)
+                    }
+
+                    // Delete Account Button
+                    Button(
+                        onClick = { showDeleteConfirmDialog = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.15f)),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color.Red, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Delete Account", color = Color.Red, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+
+    if (showDeleteConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmDialog = false },
+            containerColor = BrandCard,
+            title = { Text("Delete Account?", color = Color.Red, fontWeight = FontWeight.Bold) },
+            text = { Text("This will permanently remove your profile, matches, and moments from LiveTogather.", color = Color.LightGray) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteConfirmDialog = false
+                        onDeleteAccount()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                ) {
+                    Text("Delete Permanently")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmDialog = false }) {
+                    Text("Cancel", color = Color.Gray)
+                }
+            }
+        )
+    }
+}
+
+@Composable
+fun SubscriptionPlanCard(
+    plan: SubscriptionPlanItem,
+    isSelected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(BrandCard)
+            .border(
+                1.5.dp,
+                if (isSelected) BrandGold else BrandBorder,
+                RoundedCornerShape(14.dp)
+            )
+            .clickable { onClick() }
+            .padding(12.dp)
+    ) {
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    plan.title,
+                    color = if (isSelected) BrandGold else Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp
+                )
+                if (isSelected) {
+                    Icon(
+                        Icons.Default.Check,
+                        contentDescription = "Active",
+                        tint = BrandGold,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    plan.price,
+                    color = BrandCoral,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 15.sp
+                )
+                Text(
+                    plan.duration,
+                    color = Color.Gray,
+                    fontSize = 10.sp
+                )
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                plan.tagline,
+                color = Color.LightGray,
+                fontSize = 10.sp
+            )
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// SETTINGS DIALOG (SCREENSHOTS 2, 3, 4)
+// -------------------------------------------------------------
+@Composable
+fun SettingsDialog(
+    user: UserProfile,
+    onDismiss: () -> Unit,
+    onSave: (UserProfile) -> Unit
+) {
+    var hasBio by remember { mutableStateOf(user.hasBio) }
+    var locationName by remember { mutableStateOf(user.locationName) }
+    var maxDistanceKm by remember { mutableFloatStateOf(user.maxDistanceKm.toFloat()) }
+    var showFurtherAway by remember { mutableStateOf(user.showFurtherAway) }
+    var interestedIn by remember { mutableStateOf(user.interestedIn) }
+    var ageRangeStart by remember { mutableFloatStateOf(user.minAge.toFloat()) }
+    var ageRangeEnd by remember { mutableFloatStateOf(user.maxAge.toFloat()) }
+    var showOutsideAge by remember { mutableStateOf(user.showOutsideAge) }
+    var visibilityMode by remember { mutableStateOf(user.visibilityMode) }
+    var enableDiscovery by remember { mutableStateOf(user.enableDiscovery) }
+    var myMove by remember { mutableStateOf(user.myMove) }
+    var photoVerifiedChat by remember { mutableStateOf(user.photoVerifiedChat) }
+
+    // Profile attributes
+    var interests by remember { mutableStateOf(user.interests.ifBlank { "Dancing, Movies, Photography" }) }
+    var lookingFor by remember { mutableStateOf(user.lookingFor) }
+    var openTo by remember { mutableStateOf(user.openTo) }
+    var languages by remember { mutableStateOf(user.languages) }
+    var zodiac by remember { mutableStateOf(user.zodiac) }
+    var education by remember { mutableStateOf(user.education) }
+    var familyPlans by remember { mutableStateOf(user.familyPlans) }
+    var communicationStyle by remember { mutableStateOf(user.communicationStyle) }
+    var loveStyle by remember { mutableStateOf(user.loveStyle) }
+    var pets by remember { mutableStateOf(user.pets) }
+    var drinking by remember { mutableStateOf(user.drinking) }
+    var smoking by remember { mutableStateOf(user.smoking) }
+    var workout by remember { mutableStateOf(user.workout) }
+    var socialMedia by remember { mutableStateOf(user.socialMedia) }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Scaffold(
+            containerColor = Color(0xFFF5F5F7), // Light iOS styled container as in Screenshots 2, 3, 4
+            topBar = {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Black)
+                    }
+                    Text(
+                        "Settings",
+                        color = Color.Black,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    // Checkmark Done Button (Top Right as in Screenshot 2)
+                    IconButton(
+                        onClick = {
+                            val updated = user.copy(
+                                hasBio = hasBio,
+                                locationName = locationName,
+                                maxDistanceKm = maxDistanceKm.toInt(),
+                                showFurtherAway = showFurtherAway,
+                                interestedIn = interestedIn,
+                                minAge = ageRangeStart.toInt(),
+                                maxAge = ageRangeEnd.toInt(),
+                                showOutsideAge = showOutsideAge,
+                                visibilityMode = visibilityMode,
+                                enableDiscovery = enableDiscovery,
+                                myMove = myMove,
+                                photoVerifiedChat = photoVerifiedChat,
+                                interests = interests,
+                                lookingFor = lookingFor,
+                                openTo = openTo,
+                                languages = languages,
+                                zodiac = zodiac,
+                                education = education,
+                                familyPlans = familyPlans,
+                                communicationStyle = communicationStyle,
+                                loveStyle = loveStyle,
+                                pets = pets,
+                                drinking = drinking,
+                                smoking = smoking,
+                                workout = workout,
+                                socialMedia = socialMedia
+                            )
+                            onSave(updated)
+                        },
+                        modifier = Modifier
+                            .size(32.dp)
+                            .background(Color.Black, CircleShape)
+                    ) {
+                        Icon(Icons.Default.Check, contentDescription = "Save", tint = Color.White, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+        ) { paddingValues ->
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Section 1: Profile Attributes (Screenshot 2)
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            // Has a Bio Switch
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Has a Bio", color = Color.Gray, fontSize = 15.sp)
+                                Switch(checked = hasBio, onCheckedChange = { hasBio = it })
+                            }
+
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = Color(0xFFEEEEEE))
+
+                            SettingsAttributeRow("Interests", interests) { interests = it }
+                            SettingsAttributeRow("Looking for", lookingFor) { lookingFor = it }
+                            SettingsAttributeRow("Open to...", openTo) { openTo = it }
+                            SettingsAttributeRow("Add languages", languages) { languages = it }
+                            SettingsAttributeRow("Zodiac", zodiac) { zodiac = it }
+                            SettingsAttributeRow("Education", education) { education = it }
+                            SettingsAttributeRow("Family Plans", familyPlans) { familyPlans = it }
+                            SettingsAttributeRow("Communication Style", communicationStyle) { communicationStyle = it }
+                            SettingsAttributeRow("Love Style", loveStyle) { loveStyle = it }
+                            SettingsAttributeRow("Pets", pets) { pets = it }
+                            SettingsAttributeRow("Drinking", drinking) { drinking = it }
+                            SettingsAttributeRow("Smoking", smoking) { smoking = it }
+                            SettingsAttributeRow("Workout", workout) { workout = it }
+                            SettingsAttributeRow("Social Media", socialMedia) { socialMedia = it }
+                        }
+                    }
+                }
+
+                // Section 2: Discovery (Screenshot 3)
+                item {
+                    Text("Discovery", color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            // Location
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text("Location", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    Text("Change locations to find matches anywhere.", color = Color.Gray, fontSize = 11.sp)
+                                }
+                                Text(locationName, color = Color.DarkGray, fontSize = 13.sp)
+                            }
+
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color(0xFFEEEEEE))
+
+                            // Maximum Distance Slider (10 km to 120 km)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Maximum Distance", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                Text("${maxDistanceKm.toInt()} km", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            }
+                            Slider(
+                                value = maxDistanceKm,
+                                onValueChange = { maxDistanceKm = it },
+                                valueRange = 10f..120f,
+                                colors = SliderDefaults.colors(
+                                    thumbColor = Color.White,
+                                    activeTrackColor = Color.Red,
+                                    inactiveTrackColor = Color.LightGray
+                                )
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Show people further away if I run out of profiles to see.", color = Color.Gray, fontSize = 11.sp, modifier = Modifier.weight(1f))
+                                Switch(checked = showFurtherAway, onCheckedChange = { showFurtherAway = it })
+                            }
+
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color(0xFFEEEEEE))
+
+                            // Interested In
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Interested In", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                Row {
+                                    listOf("Women", "Men", "Everyone").forEach { opt ->
+                                        Text(
+                                            text = opt,
+                                            color = if (interestedIn == opt) Color.Red else Color.Gray,
+                                            fontWeight = if (interestedIn == opt) FontWeight.Bold else FontWeight.Normal,
+                                            fontSize = 13.sp,
+                                            modifier = Modifier
+                                                .clickable { interestedIn = opt }
+                                                .padding(horizontal = 6.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color(0xFFEEEEEE))
+
+                            // Age Range Slider
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Age Range", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                Text("${ageRangeStart.toInt()} - ${ageRangeEnd.toInt()}", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            }
+                            Slider(
+                                value = ageRangeEnd,
+                                onValueChange = { ageRangeEnd = it },
+                                valueRange = 21f..50f,
+                                colors = SliderDefaults.colors(
+                                    thumbColor = Color.White,
+                                    activeTrackColor = Color.Red,
+                                    inactiveTrackColor = Color.LightGray
+                                )
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Show people slightly out of my preferred range if I run out of profiles to see", color = Color.Gray, fontSize = 11.sp, modifier = Modifier.weight(1f))
+                                Switch(checked = showOutsideAge, onCheckedChange = { showOutsideAge = it })
+                            }
+                        }
+                    }
+                }
+
+                // Section 3: Control My Visibility (Screenshot 3 & 4)
+                item {
+                    Text("Control my visibility", color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            // Standard
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { visibilityMode = "Standard" },
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Standard", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    Text("You will be discoverable in the card stack.", color = Color.Gray, fontSize = 11.sp)
+                                }
+                                if (visibilityMode == "Standard") {
+                                    Icon(Icons.Default.Check, contentDescription = null, tint = Color.Red)
+                                }
+                            }
+
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color(0xFFEEEEEE))
+
+                            // Incognito
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { visibilityMode = "Incognito" },
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("Incognito", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("PLUS", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.background(Color.Red, RoundedCornerShape(4.dp)).padding(horizontal = 4.dp, vertical = 1.dp))
+                                    }
+                                    Text("You will be discoverable only by people you Like.", color = Color.Gray, fontSize = 11.sp)
+                                }
+                                if (visibilityMode == "Incognito") {
+                                    Icon(Icons.Default.Check, contentDescription = null, tint = Color.Red)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Section 4: Enable Discovery & Who Messages You (Screenshot 4)
+                item {
+                    Text("Enable Discovery", color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Enable Discovery", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                Switch(checked = enableDiscovery, onCheckedChange = { enableDiscovery = it })
+                            }
+                            Text(
+                                "When turned off, your profile will be hidden from the card stack and Discovery will be disabled. People you have already Liked may still see and match with you.",
+                                color = Color.Gray,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text("Control who messages you", color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("My Move", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    Text("Message your matches first to initiate conversation. They won't be able to message you until you do.", color = Color.Gray, fontSize = 11.sp)
+                                }
+                                Switch(checked = myMove, onCheckedChange = { myMove = it })
+                            }
+
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color(0xFFEEEEEE))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Photo Verified Chat", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    Text("Photo Verified members can enable this to only receive messages from other Photo Verified profiles.", color = Color.Gray, fontSize = 11.sp)
+                                }
+                                Switch(checked = photoVerifiedChat, onCheckedChange = { photoVerifiedChat = it })
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(30.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SettingsAttributeRow(
+    title: String,
+    currentValue: String,
+    onValueChange: (String) -> Unit
+) {
+    var isEditing by remember { mutableStateOf(false) }
+    var editValue by remember { mutableStateOf(currentValue) }
+
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { isEditing = !isEditing }
+                .padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(title, color = Color.Black, fontSize = 14.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = currentValue.ifBlank { "Select" },
+                    color = Color.Gray,
+                    fontSize = 13.sp,
+                    maxLines = 1
+                )
+                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.LightGray)
+            }
+        }
+
+        if (isEditing) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = editValue,
+                    onValueChange = { editValue = it },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.Black,
+                        unfocusedTextColor = Color.Black
+                    ),
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = {
+                    onValueChange(editValue)
+                    isEditing = false
+                }) {
+                    Icon(Icons.Default.Check, contentDescription = "Done", tint = Color.Green)
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// NOTIFICATIONS CENTER DIALOG (REAL TIME BELL)
+// -------------------------------------------------------------
+@Composable
+fun NotificationsDialog(
+    notifications: List<NotificationItem>,
+    onDismiss: () -> Unit,
+    onMarkAllRead: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.75f),
+            colors = CardDefaults.cardColors(containerColor = BrandCard),
+            shape = RoundedCornerShape(20.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Notifications, contentDescription = null, tint = BrandCoral)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Notifications", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
+                    TextButton(onClick = onMarkAllRead) {
+                        Text("Mark all read", color = BrandOrange, fontSize = 11.sp)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                if (notifications.isEmpty()) {
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        Text("No notifications yet", color = Color.Gray, fontSize = 13.sp)
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(notifications) { notif ->
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (notif.isRead) BrandDark else BrandCardSubtle
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    AsyncImage(
+                                        model = notif.senderPhoto.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80" },
+                                        contentDescription = null,
+                                        modifier = Modifier.size(38.dp).clip(CircleShape),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(notif.title, color = BrandCoral, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        Text(notif.message, color = Color.White, fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Button(
+                    onClick = onDismiss,
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Close")
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// POST MOMENT DIALOG
+// -------------------------------------------------------------
+@Composable
+fun PostMomentDialog(
+    currentUser: UserProfile,
+    onDismiss: () -> Unit,
+    onPost: (String, String) -> Unit
+) {
+    var caption by remember { mutableStateOf("") }
+    var mediaUrl by remember { mutableStateOf("https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=600&q=80") }
+
+    val mediaPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            mediaUrl = uri.toString()
+        }
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = BrandCard),
+            shape = RoundedCornerShape(20.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Share a Moment", color = BrandCoral, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+
+                OutlinedTextField(
+                    value = caption,
+                    onValueChange = { caption = it },
+                    placeholder = { Text("What's on your mind? (Cafe, Party, Trip...)", color = Color.Gray, fontSize = 12.sp) },
+                    colors = outlinedFieldColors(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                // Media Preview / Pick button
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(150.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .border(1.dp, BrandBorder, RoundedCornerShape(12.dp))
+                        .clickable { mediaPickerLauncher.launch("image/*") },
+                    contentAlignment = Alignment.Center
+                ) {
+                    AsyncImage(
+                        model = mediaUrl,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.3f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = Color.White)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Change Image / Pick File", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    TextButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                        Text("Cancel", color = Color.Gray)
+                    }
+                    Button(
+                        onClick = {
+                            if (caption.isNotBlank()) {
+                                onPost(mediaUrl, caption.trim())
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Post Now", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// DIRECT MESSAGE DIALOG IN DISCOVER
+// -------------------------------------------------------------
+@Composable
+fun DirectMessageDialog(
+    targetUser: UserProfile,
+    onDismiss: () -> Unit,
+    onSend: (String) -> Unit
+) {
+    var messageText by remember { mutableStateOf("") }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = BrandCard),
+            shape = RoundedCornerShape(20.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AsyncImage(
+                        model = targetUser.photo,
+                        contentDescription = null,
+                        modifier = Modifier.size(42.dp).clip(CircleShape),
+                        contentScale = ContentScale.Crop
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text("Message ${targetUser.name}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Text("Send a direct note before matching", color = BrandOrange, fontSize = 11.sp)
+                    }
+                }
+
+                OutlinedTextField(
+                    value = messageText,
+                    onValueChange = { messageText = it },
+                    placeholder = { Text("Say something interesting...", color = Color.Gray, fontSize = 12.sp) },
+                    colors = outlinedFieldColors(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    TextButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                        Text("Cancel", color = Color.Gray)
+                    }
+                    Button(
+                        onClick = {
+                            if (messageText.isNotBlank()) {
+                                onSend(messageText.trim())
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Send", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// COMMENTS DIALOG FOR MOMENTS
+// -------------------------------------------------------------
+@Composable
+fun CommentsDialog(
+    moment: MomentItem,
+    currentUser: UserProfile,
+    db: FirebaseFirestore,
+    onDismiss: () -> Unit
+) {
+    val comments = remember { mutableStateListOf<CommentItem>() }
+    var newCommentText by remember { mutableStateOf("") }
+
+    LaunchedEffect(moment.id) {
+        db.collection("moments").document(moment.id).collection("comments")
+            .orderBy("timestamp", Query.Direction.ASCENDING)
+            .addSnapshotListener { snapshot, _ ->
+                if (snapshot != null) {
+                    val list = snapshot.documents.mapNotNull { it.toObject(CommentItem::class.java) }
+                    comments.clear()
+                    comments.addAll(list)
+                }
+            }
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.75f),
+            colors = CardDefaults.cardColors(containerColor = BrandCard),
+            shape = RoundedCornerShape(20.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Comments (${comments.size})", color = BrandCoral, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                if (comments.isEmpty()) {
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        Text("No comments yet. Write the first one!", color = Color.Gray, fontSize = 12.sp)
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(comments) { comment ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(BrandCardSubtle, RoundedCornerShape(10.dp))
+                                    .padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                AsyncImage(
+                                    model = comment.userPhoto,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(30.dp).clip(CircleShape),
+                                    contentScale = ContentScale.Crop
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(comment.userName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    Text(comment.text, color = Color.LightGray, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Add comment input
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextField(
+                        value = newCommentText,
+                        onValueChange = { newCommentText = it },
+                        placeholder = { Text("Write a comment...", color = Color.Gray, fontSize = 12.sp) },
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = BrandDark,
+                            unfocusedContainerColor = BrandDark,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = {
+                            if (newCommentText.isNotBlank()) {
+                                val cText = newCommentText.trim()
+                                newCommentText = ""
+                                val newComment = CommentItem(
+                                    id = UUID.randomUUID().toString(),
+                                    momentId = moment.id,
+                                    userId = currentUser.uid,
+                                    userName = currentUser.name,
+                                    userPhoto = currentUser.photo,
+                                    text = cText
+                                )
+                                db.collection("moments").document(moment.id).collection("comments").document(newComment.id).set(newComment)
+                                db.collection("moments").document(moment.id).update("commentCount", moment.commentCount + 1)
+                            }
+                        }
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Post", tint = BrandCoral)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// BLOCKED USERS DIALOG
+// -------------------------------------------------------------
+@Composable
+fun BlockedUsersDialog(
+    blockedUserIds: List<String>,
+    db: FirebaseFirestore,
+    onDismiss: () -> Unit,
+    onUnblock: (String) -> Unit
+) {
+    val blockedProfiles = remember { mutableStateListOf<UserProfile>() }
+
+    LaunchedEffect(blockedUserIds) {
+        blockedProfiles.clear()
+        blockedUserIds.forEach { uid ->
+            db.collection("users").document(uid).get().addOnSuccessListener { doc ->
+                doc.toObject(UserProfile::class.java)?.let { blockedProfiles.add(it) }
+            }
+        }
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier.fillMaxWidth().fillMaxHeight(0.6f),
+            colors = CardDefaults.cardColors(containerColor = BrandCard),
+            shape = RoundedCornerShape(20.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Blocked Users", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = null, tint = Color.Gray)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                if (blockedProfiles.isEmpty()) {
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        Text("No blocked users.", color = Color.Gray, fontSize = 13.sp)
+                    }
+                } else {
+                    LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(blockedProfiles) { user ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(BrandDark, RoundedCornerShape(10.dp))
+                                    .padding(8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    AsyncImage(
+                                        model = user.photo,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(36.dp).clip(CircleShape),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(user.name, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                }
+                                TextButton(onClick = { onUnblock(user.uid) }) {
+                                    Text("Unblock", color = BrandCoral, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// HELPER FUNCTIONS & FIRESTORE ACTIONS
+// -------------------------------------------------------------
+@Composable
+fun outlinedFieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedContainerColor = BrandDark,
+    unfocusedContainerColor = BrandDark,
+    focusedTextColor = Color.White,
+    unfocusedTextColor = Color.White,
+    focusedBorderColor = BrandCoral,
+    unfocusedBorderColor = BrandBorder
+)
+
+fun recordSwipe(db: FirebaseFirestore, fromUserId: String, toUserId: String, action: String) {
+    val swipe = SwipeRecord(
+        fromUserId = fromUserId,
+        toUserId = toUserId,
+        action = action,
+        timestamp = System.currentTimeMillis()
+    )
+    val swipeId = "${fromUserId}_${toUserId}"
+    db.collection("swipes").document(swipeId).set(swipe)
+}
+
+fun checkAndHandleMutualMatch(
+    db: FirebaseFirestore,
+    currentUser: UserProfile,
+    partner: UserProfile,
+    onMatch: () -> Unit
+) {
+    val reverseSwipeId = "${partner.uid}_${currentUser.uid}"
+    db.collection("swipes").document(reverseSwipeId).get().addOnSuccessListener { snapshot ->
+        val action = snapshot.getString("action")
+        if (action == "like" || action == "superstar") {
+            // Mutual match!
+            val matchId = listOf(currentUser.uid, partner.uid).sorted().joinToString("_")
+            val match = MatchItem(
+                matchId = matchId,
+                users = listOf(currentUser.uid, partner.uid),
+                matchedIntent = currentUser.activeIntent,
+                lastMessage = "It's a Match! Say hello."
+            )
+            db.collection("matches").document(matchId).set(match)
+
+            // Notify partner
+            sendNotification(
+                db = db,
+                targetUserId = partner.uid,
+                sender = currentUser,
+                type = "match",
+                title = "🎉 New Match!",
+                message = "You and ${currentUser.name} matched!"
+            )
+            onMatch()
+        }
+    }
+}
+
+fun sendNotification(
+    db: FirebaseFirestore,
+    targetUserId: String,
+    sender: UserProfile,
+    type: String,
+    title: String,
+    message: String
+) {
+    val notif = NotificationItem(
+        id = UUID.randomUUID().toString(),
+        targetUserId = targetUserId,
+        senderId = sender.uid,
+        senderName = sender.name,
+        senderPhoto = sender.photo,
+        type = type,
+        title = title,
+        message = message,
+        timestamp = System.currentTimeMillis(),
+        isRead = false
+    )
+    db.collection("notifications").document(notif.id).set(notif)
+}
+
+fun toggleMomentLike(db: FirebaseFirestore, moment: MomentItem, currentUserId: String) {
+    val isLiked = moment.likedByUsers.contains(currentUserId)
+    val updatedList = if (isLiked) moment.likedByUsers - currentUserId else moment.likedByUsers + currentUserId
+    val newLikesCount = updatedList.size
+    db.collection("moments").document(moment.id).update(
+        mapOf(
+            "likedByUsers" to updatedList,
+            "likes" to newLikesCount
+        )
+    )
+}
+
+fun seedInitialCommunityProfiles(db: FirebaseFirestore) {
+    val samples = listOf(
+        UserProfile(
+            uid = "USER_ROHIT",
+            name = "Rohit Sen",
+            age = 25,
+            gender = "Men",
+            city = "Kolkata",
+            photo = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80",
+            activeIntent = "free_party",
+            bio = "Music producer & clubbing enthusiast. Let's hang out this weekend! 🎵",
+            profession = "Music Producer",
+            education = "Jadavpur University",
+            hobbies = "EDM, Guitar, Gym",
+            distanceKm = 4
+        ),
+        UserProfile(
+            uid = "USER_ANANYA",
+            name = "Ananya Sharma",
+            age = 23,
+            gender = "Women",
+            city = "Kolkata",
+            photo = "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80",
+            activeIntent = "free_tonight",
+            bio = "Coffee, books, and deep late-night conversations. Free tonight! ☕✨",
+            profession = "Architect",
+            education = "B.Arch",
+            hobbies = "Sketching, Specialty Coffee, Poetry",
+            distanceKm = 8
+        ),
+        UserProfile(
+            uid = "USER_PRIYA",
+            name = "Priya Roy",
+            age = 26,
+            gender = "Women",
+            city = "Kolkata",
+            photo = "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80",
+            activeIntent = "ready_travel",
+            bio = "Planning a road trip to the hills. Looking for a fun travel partner! 🏔️🚗",
+            profession = "Travel Vlogger",
+            education = "Mass Communication",
+            hobbies = "Road trips, Photography, Trekking",
+            distanceKm = 14
+        ),
+        UserProfile(
+            uid = "USER_SNEHA",
+            name = "Sneha Paul",
+            age = 24,
+            gender = "Women",
+            city = "Kolkata",
+            photo = "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=800&q=80",
+            activeIntent = "lets_cafe",
+            bio = "Love testing new cafes in Salt Lake & Park Street! 🍰",
+            profession = "Food Blogger",
+            education = "St. Xavier's College",
+            hobbies = "Baking, Pilates, Fashion",
+            distanceKm = 18
+        )
+    )
+    samples.forEach { p ->
+        db.collection("users").document(p.uid).set(p)
+    }
+}
+
+fun seedInitialMoments(db: FirebaseFirestore) {
+    val initialMoments = listOf(
+        MomentItem(
+            id = "MOMENT_1",
+            userId = "USER_ANANYA",
+            userName = "Ananya Sharma",
+            userPhoto = "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=400&q=80",
+            mediaUrl = "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=800&q=80",
+            caption = "Heading to Park Street cafe tonight! Who's around? ☕🥂",
+            likes = 5,
+            commentCount = 2,
+            timestamp = System.currentTimeMillis() - 3600000
+        ),
+        MomentItem(
+            id = "MOMENT_2",
+            userId = "USER_ROHIT",
+            userName = "Rohit Sen",
+            userPhoto = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80",
+            mediaUrl = "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=800&q=80",
+            caption = "Live music vibes in town tonight! 🎸🔥",
+            likes = 12,
+            commentCount = 4,
+            timestamp = System.currentTimeMillis() - 7200000
+        )
+    )
+    initialMoments.forEach { m ->
+        db.collection("moments").document(m.id).set(m)
     }
 }
