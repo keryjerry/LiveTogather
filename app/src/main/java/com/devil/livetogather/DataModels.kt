@@ -138,6 +138,7 @@ val SUBSCRIPTION_PLANS = listOf(
 
 data class UserProfile(
     val uid: String = "",
+    val deviceId: String = "",
     val name: String = "",
     val age: Int = 24,
     val gender: String = "Woman",
@@ -284,30 +285,100 @@ data class HangoutTrack(
     val title: String = "",
     val artist: String = "",
     val category: String = "Lo-Fi Chill",
-    val url: String = ""
+    val url: String = "",
+    val artworkUrl: String = ""
 )
 
 val CURATED_HANGOUT_TRACKS = listOf(
     // 1. Lo-Fi Chill
-    HangoutTrack("track_1", "Tokyo Sunset Beat", "Tokyo Sunset", "Lo-Fi Chill", "https://assets.mixkit.co/music/preview/mixkit-chill-bro-494.mp3"),
-    HangoutTrack("track_2", "Sleepy Cat Dreams", "Lo-Fi Dreamer", "Lo-Fi Chill", "https://assets.mixkit.co/music/preview/mixkit-sleepy-cat-135.mp3"),
-    HangoutTrack("track_3", "Sunday Coffee Mellow", "Chillhop Cafe", "Lo-Fi Chill", "https://assets.mixkit.co/music/preview/mixkit-serene-view-443.mp3"),
+    HangoutTrack(
+        id = "track_1",
+        title = "Lofi Chill Sleep",
+        artist = "Lofi Sleep Chill",
+        category = "Lo-Fi Chill",
+        url = "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/10/0f/e6/100fe64f-0815-a9d5-9bec-e375ddd5a733/mzaf_8225005754342783380.plus.aac.p.m4a",
+        artworkUrl = "https://is1-ssl.mzstatic.com/image/thumb/Music124/v4/71/15/c5/7115c542-cf70-35f6-e2e9-d2131ff538a2/5055803554880.png/100x100bb.jpg"
+    ),
+    HangoutTrack(
+        id = "track_2",
+        title = "Coffee Break Chill Cafe",
+        artist = "FM STAR",
+        category = "Lo-Fi Chill",
+        url = "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/07/77/b6/0777b68b-62c2-2c65-bed2-df61bec3d6fd/mzaf_13997473709135475175.plus.aac.p.m4a",
+        artworkUrl = "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/93/9e/20/939e2003-c7e8-3269-1ae9-b03a1dd46114/4550795098790_cover.jpg/100x100bb.jpg"
+    ),
 
     // 2. Acoustic Romantic
-    HangoutTrack("track_4", "Velvet Night Acoustic", "Velvet Guitar", "Acoustic Romantic", "https://assets.mixkit.co/music/preview/mixkit-serene-view-443.mp3"),
-    HangoutTrack("track_5", "Aura of Harmony", "Aura Harmony", "Acoustic Romantic", "https://assets.mixkit.co/music/preview/mixkit-sleepy-cat-135.mp3"),
+    HangoutTrack(
+        id = "track_3",
+        title = "Main Rang Sharbaton Ka",
+        artist = "Arijit Singh & Pritam",
+        category = "Acoustic Romantic",
+        url = "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/87/16/d6/8716d618-8cd3-8ba7-cf72-49b76b64419b/mzaf_4801674308569520150.plus.aac.p.m4a",
+        artworkUrl = "https://is1-ssl.mzstatic.com/image/thumb/Music114/v4/02/98/a6/0298a63c-c22f-52d9-a62c-1e7c19980a3a/8901854030330.jpg/100x100bb.jpg"
+    ),
+    HangoutTrack(
+        id = "track_4",
+        title = "Binte Dil Acoustic",
+        artist = "Arijit Singh",
+        category = "Acoustic Romantic",
+        url = "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/ec/74/4a/ec744a08-3be7-9935-1cd5-01070b021c18/mzaf_16411309030678014559.plus.aac.p.m4a",
+        artworkUrl = "https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/1b/19/26/1b192691-0179-73ab-3ed7-ae2b923ca71a/8902894360005_cover.jpg/100x100bb.jpg"
+    ),
 
     // 3. Cafe Jazz & Lounge
-    HangoutTrack("track_6", "Midnight Espresso Groove", "Espresso Lounge", "Cafe Jazz", "https://assets.mixkit.co/music/preview/mixkit-chill-bro-494.mp3"),
-    HangoutTrack("track_7", "Paris Morning Sax", "Smooth Sax Quartet", "Cafe Jazz", "https://assets.mixkit.co/music/preview/mixkit-serene-view-443.mp3"),
+    HangoutTrack(
+        id = "track_5",
+        title = "Soulful Jazz Whispers",
+        artist = "FM STAR",
+        category = "Cafe Jazz",
+        url = "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/bc/cb/fe/bccbfe29-2fc7-00b3-87ac-f88d610675a2/mzaf_4975142373289658271.plus.aac.p.m4a",
+        artworkUrl = "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/a4/a6/71/a4a6710d-31bb-6f4c-66e9-f5482fce04ac/4550760683020_cover.jpg/100x100bb.jpg"
+    ),
+    HangoutTrack(
+        id = "track_6",
+        title = "Gentle Jazz Whispers",
+        artist = "FM STAR",
+        category = "Cafe Jazz",
+        url = "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/00/28/6e/00286e68-84ab-b8e1-2592-3668193607cc/mzaf_16843597559467010983.plus.aac.p.m4a",
+        artworkUrl = "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/a4/a6/71/a4a6710d-31bb-6f4c-66e9-f5482fce04ac/4550760683020_cover.jpg/100x100bb.jpg"
+    ),
 
     // 4. Party Beats
-    HangoutTrack("track_8", "Tech House Warmup", "Neon Rhythm", "Party Beats", "https://assets.mixkit.co/music/preview/mixkit-tech-house-vibes-130.mp3"),
-    HangoutTrack("track_9", "Sunset Rooftop Groove", "Miami Beats", "Party Beats", "https://assets.mixkit.co/music/preview/mixkit-driving-ambition-32.mp3"),
+    HangoutTrack(
+        id = "track_7",
+        title = "Morni",
+        artist = "Diljit Dosanjh & Tru-Skool",
+        category = "Party Beats",
+        url = "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/f5/6e/e4/f56ee414-2027-b605-7455-a24fbc433373/mzaf_3937962578481238111.plus.aac.p.m4a",
+        artworkUrl = "https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/97/86/86/97868694-9413-a543-514a-a6374469ff97/859736427250_cover.jpg/100x100bb.jpg"
+    ),
+    HangoutTrack(
+        id = "track_8",
+        title = "Sauda Khara Khara",
+        artist = "Diljit Dosanjh & Sukhbir",
+        category = "Party Beats",
+        url = "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/6a/08/eb/6a08eb69-c072-d4e0-1cb5-43659ca552eb/mzaf_7562300059952992185.plus.aac.p.m4a",
+        artworkUrl = "https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/c2/82/c6/c282c63f-876f-9c0c-14aa-204c000c1a01/8909024123752.png/100x100bb.jpg"
+    ),
 
     // 5. EDM Club
-    HangoutTrack("track_10", "Driving Ambition Synth", "Synth Dream", "EDM Club", "https://assets.mixkit.co/music/preview/mixkit-driving-ambition-32.mp3"),
-    HangoutTrack("track_11", "Cyber Club Afterhours", "Electro Drift", "EDM Club", "https://assets.mixkit.co/music/preview/mixkit-tech-house-vibes-130.mp3")
+    HangoutTrack(
+        id = "track_9",
+        title = "Faded Club Mix",
+        artist = "Alan Walker",
+        category = "EDM Club",
+        url = "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/ab/18/d9/ab18d9e9-01f0-27ea-3a51-6e08585a0072/mzaf_14299744081264843911.plus.aac.p.m4a",
+        artworkUrl = "https://is1-ssl.mzstatic.com/image/thumb/Music114/v4/0d/a3/1a/0da31af7-d0ff-9bee-c427-1b6d0336f6fc/886446321981.jpg/100x100bb.jpg"
+    ),
+    HangoutTrack(
+        id = "track_10",
+        title = "Alone",
+        artist = "Alan Walker",
+        category = "EDM Club",
+        url = "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/a2/71/3f/a2713f1c-c1a2-86b3-5ec2-633e71927fae/mzaf_1625470662823872018.plus.aac.p.m4a",
+        artworkUrl = "https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/ec/20/51/ec20512e-d0ca-4281-1b03-b24a683b87da/886446357522.jpg/100x100bb.jpg"
+    )
 )
 
 data class RoomThemePreset(

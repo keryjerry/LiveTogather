@@ -1,8 +1,10 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 package com.devil.livetogather
 
 import android.content.Context
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.*
@@ -19,6 +21,8 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -33,7 +37,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -42,6 +49,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.UUID
 
 // -------------------------------------------------------------
@@ -58,7 +67,19 @@ fun CreateRoomDialog(
     var selectedCategory by remember { mutableStateOf(if (initialCategory.isNotBlank()) initialCategory else CATEGORY_LIST.getOrNull(1)?.id ?: "free_tonight") }
     var selectedTheme by remember { mutableStateOf(ROOM_THEME_PRESETS[0].imageUrl) }
 
-    Dialog(onDismissRequest = onDismiss) {
+    val isKeyboardOpen = WindowInsets.isImeVisible
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+
+    BackHandler(enabled = isKeyboardOpen) {
+        keyboardController?.hide()
+        focusManager.clearFocus()
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(dismissOnBackPress = !isKeyboardOpen)
+    ) {
         Card(
             colors = CardDefaults.cardColors(containerColor = BrandCard),
             shape = RoundedCornerShape(24.dp),
@@ -258,15 +279,44 @@ fun MusicVisualizerWave(isPlaying: Boolean, modifier: Modifier = Modifier) {
 }
 
 // -------------------------------------------------------------
-// 3. TRACK SELECTOR DIALOG (CATEGORY & ARTIST WISE CURATED STREAMS)
+// 3. TRACK SELECTOR DIALOG (REAL ARTIST/SONG SEARCH & CURATED STREAMS)
 // -------------------------------------------------------------
 @Composable
 fun TrackSelectorDialog(
     onDismiss: () -> Unit,
     onSelectTrack: (title: String, artist: String, category: String, url: String) -> Unit
 ) {
+    var searchQuery by remember { mutableStateOf("") }
+    var isSearching by remember { mutableStateOf(false) }
+    val searchResults = remember { mutableStateListOf<HangoutTrack>() }
     var selectedGenre by remember { mutableStateOf("All") }
     val genreList = listOf("All", "Lo-Fi Chill", "Acoustic Romantic", "Cafe Jazz", "Party Beats", "EDM Club")
+
+    val isKeyboardOpen = WindowInsets.isImeVisible
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+
+    // Prevent dialog from falling back / dismissing when closing keyboard
+    BackHandler(enabled = isKeyboardOpen) {
+        keyboardController?.hide()
+        focusManager.clearFocus()
+    }
+
+    // Debounced search query handler
+    LaunchedEffect(searchQuery) {
+        val trimmed = searchQuery.trim()
+        if (trimmed.isEmpty()) {
+            searchResults.clear()
+            isSearching = false
+        } else {
+            delay(400)
+            isSearching = true
+            val results = MusicSearchEngine.searchTracks(trimmed)
+            searchResults.clear()
+            searchResults.addAll(results)
+            isSearching = false
+        }
+    }
 
     val filteredTracks = remember(selectedGenre) {
         if (selectedGenre == "All") CURATED_HANGOUT_TRACKS
@@ -283,7 +333,10 @@ fun TrackSelectorDialog(
         }
     }
 
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(dismissOnBackPress = !isKeyboardOpen)
+    ) {
         Card(
             colors = CardDefaults.cardColors(containerColor = BrandCard),
             shape = RoundedCornerShape(20.dp),
@@ -304,79 +357,227 @@ fun TrackSelectorDialog(
                 }
 
                 Text(
-                    "Select category & artist-curated streams synced for all room listeners.",
+                    "Search any artist or song worldwide. Real streams synced in real-time.",
                     color = Color.Gray,
                     fontSize = 11.sp
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                // Music Genre Filter Pills
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(genreList) { genre ->
-                        val isSelected = selectedGenre == genre
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(50))
-                                .background(
-                                    if (isSelected) Brush.horizontalGradient(listOf(BrandCoral, BrandOrange))
-                                    else Brush.linearGradient(listOf(BrandDark, BrandDark))
-                                )
-                                .border(1.dp, if (isSelected) Color.Transparent else BrandBorder, RoundedCornerShape(50))
-                                .clickable { selectedGenre = genre }
-                                .padding(horizontal = 10.dp, vertical = 5.dp)
-                        ) {
-                            Text(genre, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                // Search Bar for Any Artist / Song
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search artist or song (e.g. Arijit, Diljit, Drake)...", color = Color.Gray, fontSize = 11.sp) },
+                    leadingIcon = {
+                        Icon(Icons.Default.Search, contentDescription = "Search", tint = BrandGold, modifier = Modifier.size(18.dp))
+                    },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear", tint = Color.Gray, modifier = Modifier.size(16.dp))
+                            }
                         }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Pick Local File Button
-                OutlinedButton(
-                    onClick = { audioPickerLauncher.launch("audio/*") },
-                    modifier = Modifier.fillMaxWidth().height(38.dp),
+                    },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = {
+                        keyboardController?.hide()
+                        focusManager.clearFocus()
+                    }),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = BrandGold,
+                        unfocusedBorderColor = BrandBorder,
+                        focusedContainerColor = BrandDark,
+                        unfocusedContainerColor = BrandDark
+                    ),
                     shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = BrandCyan),
-                    border = BorderStroke(1.dp, BrandCyan.copy(alpha = 0.6f)),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                ) {
-                    Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Select Audio from Device (.mp3)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                }
+                    modifier = Modifier.fillMaxWidth()
+                )
 
                 Spacer(modifier = Modifier.height(10.dp))
-                HorizontalDivider(color = BrandBorder)
-                Spacer(modifier = Modifier.height(8.dp))
 
-                Text("Streaming Stations (${filteredTracks.size}):", color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(6.dp))
+                if (searchQuery.isNotBlank()) {
+                    // Search Results View
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (isSearching) "Searching streams..." else "Found ${searchResults.size} tracks:",
+                            color = BrandGold,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (isSearching) {
+                            CircularProgressIndicator(color = BrandCoral, modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                        }
+                    }
 
-                LazyColumn(
-                    modifier = Modifier.heightIn(max = 240.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(filteredTracks) { track ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(BrandDark)
-                                .clickable {
-                                    onSelectTrack(track.title, track.artist, track.category, track.url)
-                                    onDismiss()
-                                }
-                                .padding(horizontal = 12.dp, vertical = 9.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    if (!isSearching && searchResults.isEmpty()) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().height(120.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(track.title, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                Text("👤 ${track.artist} • 🏷️ ${track.category}", color = Color.Gray, fontSize = 10.sp)
+                            Text("No tracks found for \"$searchQuery\". Try another artist name.", color = Color.Gray, fontSize = 11.sp, textAlign = TextAlign.Center)
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.heightIn(max = 260.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(searchResults) { track ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(BrandDark)
+                                        .border(0.5.dp, BrandBorder, RoundedCornerShape(10.dp))
+                                        .clickable {
+                                            onSelectTrack(track.title, track.artist, track.category, track.url)
+                                            onDismiss()
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                        if (track.artworkUrl.isNotBlank()) {
+                                            AsyncImage(
+                                                model = track.artworkUrl,
+                                                contentDescription = track.title,
+                                                modifier = Modifier.size(38.dp).clip(RoundedCornerShape(6.dp)),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                        } else {
+                                            Box(
+                                                modifier = Modifier.size(38.dp).clip(RoundedCornerShape(6.dp)).background(BrandCard),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(Icons.Default.MusicNote, contentDescription = null, tint = BrandGold, modifier = Modifier.size(20.dp))
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.width(10.dp))
+
+                                        Column {
+                                            Text(track.title, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Text("👤 ${track.artist} • 🏷️ ${track.category}", color = Color.Gray, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(8.dp))
+
+                                    Box(
+                                        modifier = Modifier.size(32.dp).clip(CircleShape).background(BrandCoral),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = Color.White, modifier = Modifier.size(18.dp))
+                                    }
+                                }
                             }
-                            Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = BrandCoral)
+                        }
+                    }
+                } else {
+                    // Default Curated Stations View
+                    // Music Genre Filter Pills
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(genreList) { genre ->
+                            val isSelected = selectedGenre == genre
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .background(
+                                        if (isSelected) Brush.horizontalGradient(listOf(BrandCoral, BrandOrange))
+                                        else Brush.linearGradient(listOf(BrandDark, BrandDark))
+                                    )
+                                    .border(1.dp, if (isSelected) Color.Transparent else BrandBorder, RoundedCornerShape(50))
+                                    .clickable { selectedGenre = genre }
+                                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                            ) {
+                                Text(genre, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Pick Local File Button
+                    OutlinedButton(
+                        onClick = { audioPickerLauncher.launch("audio/*") },
+                        modifier = Modifier.fillMaxWidth().height(36.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = BrandCyan),
+                        border = BorderStroke(1.dp, BrandCyan.copy(alpha = 0.6f)),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Select Audio from Device (.mp3)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    HorizontalDivider(color = BrandBorder)
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text("Curated Stations (${filteredTracks.size}):", color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 200.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(filteredTracks) { track ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(BrandDark)
+                                    .clickable {
+                                        onSelectTrack(track.title, track.artist, track.category, track.url)
+                                        onDismiss()
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                    if (track.artworkUrl.isNotBlank()) {
+                                        AsyncImage(
+                                            model = track.artworkUrl,
+                                            contentDescription = track.title,
+                                            modifier = Modifier.size(36.dp).clip(RoundedCornerShape(6.dp)),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    } else {
+                                        Box(
+                                            modifier = Modifier.size(36.dp).clip(RoundedCornerShape(6.dp)).background(BrandCard),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(Icons.Default.MusicNote, contentDescription = null, tint = BrandGold, modifier = Modifier.size(18.dp))
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(10.dp))
+
+                                    Column {
+                                        Text(track.title, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Text("👤 ${track.artist} • 🏷️ ${track.category}", color = Color.Gray, fontSize = 10.sp)
+                                    }
+                                }
+
+                                Box(
+                                    modifier = Modifier.size(28.dp).clip(CircleShape).background(BrandCoral),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = Color.White, modifier = Modifier.size(16.dp))
+                                }
+                            }
                         }
                     }
                 }
@@ -395,8 +596,21 @@ fun SendMessageRequestDialog(
     onSend: (message: String) -> Unit
 ) {
     var messageText by remember { mutableStateOf("Hey! Would love to connect and chat!") }
+    val isKeyboardOpen = WindowInsets.isImeVisible
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
 
-    Dialog(onDismissRequest = onDismiss) {
+    BackHandler(enabled = isKeyboardOpen) {
+        keyboardController?.hide()
+        focusManager.clearFocus()
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            dismissOnBackPress = !isKeyboardOpen
+        )
+    ) {
         Card(
             colors = CardDefaults.cardColors(containerColor = BrandCard),
             shape = RoundedCornerShape(20.dp),
@@ -747,9 +961,22 @@ fun AudioHangoutRoomDialog(
         label = "pulse"
     )
 
+    val isKeyboardOpen = WindowInsets.isImeVisible
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+
+    // Prevent full room dialog from exiting when dismissing soft keyboard
+    BackHandler(enabled = isKeyboardOpen) {
+        keyboardController?.hide()
+        focusManager.clearFocus()
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = !isKeyboardOpen
+        )
     ) {
         Scaffold(
             containerColor = BrandDark,
@@ -935,23 +1162,29 @@ fun AudioHangoutRoomDialog(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         // Visualizer Wave & Song Info
+                        val isActuallyPlaying = localPlaying && room.isPlaying
+                        val isBuffering by AudioPlayerManager.isBufferingState
+
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                            MusicVisualizerWave(isPlaying = room.isPlaying)
+                            MusicVisualizerWave(isPlaying = isActuallyPlaying)
 
                             Spacer(modifier = Modifier.width(10.dp))
 
                             Column {
                                 Text(
                                     text = if (room.nowPlayingTitle.isNotBlank()) "🎶 ${room.nowPlayingTitle}" else "🔇 Lounge Audio Idle",
-                                    color = if (room.isPlaying) BrandGold else Color.Gray,
+                                    color = if (isActuallyPlaying) BrandGold else Color.Gray,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 12.sp,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    text = if (room.isPlaying) "Real-time room stream sync" else "Host can select a soundtrack",
-                                    color = Color.Gray,
+                                    text = if (isBuffering) "⏳ Buffering audio stream..."
+                                    else if (isActuallyPlaying) "🔊 Playing live across room"
+                                    else if (room.isPlaying) "Connecting stream..."
+                                    else "Host can select a soundtrack",
+                                    color = if (isActuallyPlaying) BrandGreen else Color.Gray,
                                     fontSize = 10.sp
                                 )
                             }
@@ -1228,6 +1461,30 @@ fun AudioHangoutRoomDialog(
                             onValueChange = { commentInputText = it },
                             placeholder = { Text("Say something in room...", color = Color.Gray, fontSize = 11.sp) },
                             modifier = Modifier.weight(1f),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                            keyboardActions = KeyboardActions(onSend = {
+                                if (commentInputText.isNotBlank()) {
+                                    val msg = commentInputText.trim()
+                                    val commentDoc = LiveRoomComment(
+                                        id = UUID.randomUUID().toString(),
+                                        roomId = room.id,
+                                        userId = currentUser.uid,
+                                        userName = currentUser.name,
+                                        userPhoto = currentUser.photo,
+                                        tier = if (currentUser.isVipOrPlatinum()) {
+                                            if (currentUser.plan.contains("VIP", true)) "VIP" else "Platinum"
+                                        } else "Standard",
+                                        message = msg,
+                                        timestamp = System.currentTimeMillis()
+                                    )
+                                    db.collection("rooms").document(room.id)
+                                        .collection("live_comments").document(commentDoc.id)
+                                        .set(commentDoc)
+                                    commentInputText = ""
+                                }
+                                keyboardController?.hide()
+                                focusManager.clearFocus()
+                            }),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = Color.White,
                                 unfocusedTextColor = Color.White,
@@ -1260,6 +1517,8 @@ fun AudioHangoutRoomDialog(
                                         .set(commentDoc)
                                     commentInputText = ""
                                 }
+                                keyboardController?.hide()
+                                focusManager.clearFocus()
                             },
                             modifier = Modifier.size(32.dp).background(BrandCoral, CircleShape)
                         ) {
@@ -1498,9 +1757,21 @@ fun CategoryHubLobbyDialog(
         allUsers.count { it.activeIntent == category.id || it.current_room.contains(category.id) }
     }
 
+    val isKeyboardOpen = WindowInsets.isImeVisible
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+
+    BackHandler(enabled = isKeyboardOpen) {
+        keyboardController?.hide()
+        focusManager.clearFocus()
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = !isKeyboardOpen
+        )
     ) {
         Scaffold(
             containerColor = BrandDark,

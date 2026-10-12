@@ -1,3 +1,4 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 package com.devil.livetogather
 
 import android.content.Context
@@ -32,8 +33,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import android.provider.Settings
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -43,6 +52,7 @@ import coil.compose.AsyncImage
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.SetOptions
 import java.util.*
 
 val BrandDark = Color(0xFF0B090A)
@@ -213,17 +223,26 @@ fun LiveTogatherApp() {
     val auth = remember { FirebaseAuth.getInstance() }
     val prefs = remember { context.getSharedPreferences("livetogather_user_prefs", Context.MODE_PRIVATE) }
 
-    // Persistent User ID: check SharedPreferences or use stable persistent ID
-    val savedUid = prefs.getString("user_uid", null) ?: "USER_CURRENT".also {
-        prefs.edit().putString("user_uid", it).apply()
+    val deviceId = remember {
+        try {
+            Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: ""
+        } catch (e: Exception) {
+            ""
+        }
     }
-    var currentUserId by remember { mutableStateOf(savedUid) }
+
+    // Persistent User ID: bound directly to Firebase Auth UID or SharedPreferences
+    val initialUid = auth.currentUser?.uid
+        ?: prefs.getString("user_uid", null)
+        ?: "user_${UUID.randomUUID().toString().take(8)}"
+    var currentUserId by remember { mutableStateOf(initialUid) }
 
     // Hydrate initial UserProfile from SharedPreferences (ensures profile survives reinstall)
     var currentUser by remember {
         mutableStateOf(
             UserProfile(
                 uid = currentUserId,
+                deviceId = prefs.getString("profile_device_id", deviceId) ?: deviceId,
                 name = prefs.getString("profile_name", "Maya") ?: "Maya",
                 age = prefs.getInt("profile_age", 24),
                 gender = prefs.getString("profile_gender", "Woman") ?: "Woman",
@@ -279,15 +298,21 @@ fun LiveTogatherApp() {
             auth.signInAnonymously()
                 .addOnSuccessListener { result ->
                     val authUid = result.user?.uid
-                    if (authUid != null && prefs.getString("user_uid", null) == null) {
+                    if (authUid != null) {
                         currentUserId = authUid
                         prefs.edit().putString("user_uid", authUid).apply()
+                        currentUser = currentUser.copy(uid = authUid)
                     }
                     Log.d("Auth", "Signed in anonymously as $currentUserId")
                 }
                 .addOnFailureListener { e ->
                     Log.w("Auth", "Anonymous auth failed: ${e.message}")
                 }
+        } else {
+            val authUid = auth.currentUser!!.uid
+            currentUserId = authUid
+            prefs.edit().putString("user_uid", authUid).apply()
+            currentUser = currentUser.copy(uid = authUid)
         }
 
         // Initialize Rooms Catalog & Real-Time Snapshot Listener
@@ -326,19 +351,39 @@ fun LiveTogatherApp() {
             }
             if (snapshot != null && snapshot.exists()) {
                 snapshot.toObject(UserProfile::class.java)?.let {
-                    currentUser = it
+                    currentUser = it.copy(deviceId = deviceId)
                     // Cache to SharedPreferences
-                    saveProfileToPrefs(prefs, it)
+                    saveProfileToPrefs(prefs, currentUser)
                 }
             } else {
-                // Document doesn't exist yet, push the current profile to Firestore
-                userDoc.set(currentUser)
-                    .addOnSuccessListener {
-                        Log.d("Firestore", "Initial profile document created successfully")
-                    }
-                    .addOnFailureListener { e ->
-                        Log.w("Firestore", "Failed to create initial profile: ${e.message}")
-                    }
+                // If profile doesn't exist for currentUserId yet, check if there's a profile for this deviceId
+                // (e.g. from prior installation before reinstall)
+                if (deviceId.isNotEmpty()) {
+                    db.collection("users").whereEqualTo("deviceId", deviceId).limit(1).get()
+                        .addOnSuccessListener { prevDocs ->
+                            if (prevDocs != null && !prevDocs.isEmpty) {
+                                val prevProfile = prevDocs.documents[0].toObject(UserProfile::class.java)
+                                if (prevProfile != null) {
+                                    val restored = prevProfile.copy(uid = currentUserId, deviceId = deviceId)
+                                    currentUser = restored
+                                    saveProfileToPrefs(prefs, restored)
+                                    userDoc.set(restored, SetOptions.merge())
+                                    Log.d("Firestore", "Restored existing profile from previous install for device $deviceId")
+                                    return@addOnSuccessListener
+                                }
+                            }
+                            val initial = currentUser.copy(uid = currentUserId, deviceId = deviceId)
+                            currentUser = initial
+                            userDoc.set(initial, SetOptions.merge())
+                        }
+                        .addOnFailureListener {
+                            val initial = currentUser.copy(uid = currentUserId, deviceId = deviceId)
+                            currentUser = initial
+                            userDoc.set(initial, SetOptions.merge())
+                        }
+                } else {
+                    userDoc.set(currentUser, SetOptions.merge())
+                }
             }
         }
 
@@ -444,6 +489,21 @@ fun LiveTogatherApp() {
 
     val unreadNotificationsCount = remember(notifications) {
         notifications.count { !it.isRead }
+    }
+
+    val isKeyboardOpen = WindowInsets.isImeVisible
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+
+    // Priority 1: When keyboard is open anywhere, system back button dismisses ONLY the keyboard
+    BackHandler(enabled = isKeyboardOpen) {
+        keyboardController?.hide()
+        focusManager.clearFocus()
+    }
+
+    // Priority 2: When keyboard is closed and user is on another screen, back button returns to Discover tab
+    BackHandler(enabled = !isKeyboardOpen && currentScreen != "discover") {
+        currentScreen = "discover"
     }
 
     Box(modifier = Modifier.fillMaxSize().background(BrandDark)) {
@@ -746,16 +806,14 @@ fun LiveTogatherApp() {
                         ProfileScreenContent(
                             currentUser = currentUser,
                             userMoments = moments.filter { it.userId == currentUserId },
+                            db = db,
+                            currentUserId = currentUserId,
                             onUpdateProfile = { updated ->
-                                currentUser = updated
-                                saveProfileToPrefs(prefs, updated)
-                                db.collection("users").document(currentUserId).set(updated)
-                                    .addOnSuccessListener {
-                                        Toast.makeText(context, "Profile Synced to Firestore!", Toast.LENGTH_SHORT).show()
-                                    }
-                                    .addOnFailureListener { e ->
-                                        Toast.makeText(context, "Saved locally! (${e.message})", Toast.LENGTH_LONG).show()
-                                    }
+                                val profileWithDevice = updated.copy(uid = currentUserId, deviceId = deviceId)
+                                currentUser = profileWithDevice
+                                saveProfileToPrefs(prefs, profileWithDevice)
+                                db.collection("users").document(currentUserId)
+                                    .set(profileWithDevice, SetOptions.merge())
                             },
                             onSelectPlan = { plan ->
                                 val updated = currentUser.copy(plan = plan.title)
@@ -2273,12 +2331,18 @@ fun MomentsScreenContent(
 fun ProfileScreenContent(
     currentUser: UserProfile,
     userMoments: List<MomentItem>,
+    db: FirebaseFirestore,
+    currentUserId: String,
     onUpdateProfile: (UserProfile) -> Unit,
     onSelectPlan: (SubscriptionPlanItem) -> Unit,
     onOpenSettings: () -> Unit,
     onLogout: () -> Unit,
     onDeleteAccount: () -> Unit
 ) {
+    var isEditing by remember { mutableStateOf(false) }
+    var isSaving by remember { mutableStateOf(false) }
+    var statusMessage by remember { mutableStateOf<String?>(null) }
+
     var name by remember(currentUser) { mutableStateOf(currentUser.name) }
     var age by remember(currentUser) { mutableStateOf(currentUser.age.toString()) }
     var city by remember(currentUser) { mutableStateOf(currentUser.city) }
@@ -2297,7 +2361,9 @@ fun ProfileScreenContent(
     ) { uri: Uri? ->
         if (uri != null) {
             photoUrl = uri.toString()
-            onUpdateProfile(currentUser.copy(photo = uri.toString()))
+            val updated = currentUser.copy(photo = uri.toString())
+            onUpdateProfile(updated)
+            db.collection("users").document(currentUserId).set(updated, SetOptions.merge())
         }
     }
 
@@ -2365,7 +2431,28 @@ fun ProfileScreenContent(
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Basic Information", color = BrandCoral, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Basic Information", color = BrandCoral, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        if (isEditing) {
+                            Surface(
+                                color = BrandOrange.copy(alpha = 0.2f),
+                                shape = RoundedCornerShape(50),
+                                border = BorderStroke(1.dp, BrandOrange)
+                            ) {
+                                Text(
+                                    "Editing Mode Active",
+                                    color = BrandOrange,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
 
                     OutlinedTextField(
                         value = name,
@@ -2476,30 +2563,149 @@ fun ProfileScreenContent(
                         }
                     }
 
+                    // Real-Time Status / Feedback Banner
+                    if (statusMessage != null) {
+                        Surface(
+                            color = if (statusMessage!!.startsWith("✅")) BrandGreen.copy(alpha = 0.15f) else Color.Red.copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, if (statusMessage!!.startsWith("✅")) BrandGreen else Color.Red),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    if (statusMessage!!.startsWith("✅")) Icons.Default.CheckCircle else Icons.Default.Error,
+                                    contentDescription = null,
+                                    tint = if (statusMessage!!.startsWith("✅")) BrandGreen else Color.Red,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = statusMessage!!,
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(6.dp))
 
-                    Button(
-                        onClick = {
-                            val parsedAge = age.toIntOrNull() ?: currentUser.age
-                            val updated = currentUser.copy(
-                                name = name,
-                                age = parsedAge,
-                                city = city,
-                                profession = profession,
-                                education = education,
-                                hobbies = hobbies,
-                                bio = bio,
-                                photo = photoUrl,
-                                gender = gender,
-                                interestedIn = interestedIn
-                            )
-                            onUpdateProfile(updated)
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth().height(46.dp)
+                    // Side-by-Side Action Buttons: Edit Profile and Save Profile
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Save Profile Info", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        // Edit Profile Button
+                        OutlinedButton(
+                            onClick = {
+                                if (isEditing) {
+                                    // Reset to current profile and exit edit mode
+                                    name = currentUser.name
+                                    age = currentUser.age.toString()
+                                    city = currentUser.city
+                                    profession = currentUser.profession
+                                    education = currentUser.education
+                                    hobbies = currentUser.hobbies
+                                    bio = currentUser.bio
+                                    photoUrl = currentUser.photo
+                                    gender = currentUser.gender
+                                    interestedIn = currentUser.interestedIn
+                                    isEditing = false
+                                    statusMessage = null
+                                } else {
+                                    isEditing = true
+                                    statusMessage = null
+                                }
+                            },
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = if (isEditing) Color.LightGray else BrandCoral
+                            ),
+                            border = BorderStroke(1.5.dp, if (isEditing) Color.Gray else BrandCoral),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f).height(46.dp)
+                        ) {
+                            Icon(
+                                if (isEditing) Icons.Default.Close else Icons.Default.Edit,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = if (isEditing) Color.LightGray else BrandCoral
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (isEditing) "Cancel Edit" else "✏️ Edit Profile",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        }
+
+                        // Save Profile Button with Real-Time Firestore Sync
+                        Button(
+                            onClick = {
+                                val parsedAge = age.toIntOrNull() ?: currentUser.age
+                                val updated = currentUser.copy(
+                                    uid = currentUserId,
+                                    name = name.trim().ifEmpty { currentUser.name },
+                                    age = parsedAge,
+                                    city = city.trim().ifEmpty { currentUser.city },
+                                    profession = profession.trim(),
+                                    education = education.trim(),
+                                    hobbies = hobbies.trim(),
+                                    bio = bio.trim(),
+                                    photo = photoUrl,
+                                    gender = gender,
+                                    interestedIn = interestedIn
+                                )
+                                isSaving = true
+                                statusMessage = null
+
+                                // 1. Local Prefs & App state update
+                                onUpdateProfile(updated)
+
+                                // 2. Real-time Firestore document sync
+                                db.collection("users").document(currentUserId)
+                                    .set(updated, SetOptions.merge())
+                                    .addOnSuccessListener {
+                                        isSaving = false
+                                        isEditing = false
+                                        statusMessage = "✅ Profile Synced to Firestore in Real-Time!"
+                                    }
+                                    .addOnFailureListener { e ->
+                                        isSaving = false
+                                        statusMessage = "❌ Sync Failed: ${e.localizedMessage ?: "Network error"}"
+                                    }
+                            },
+                            enabled = !isSaving,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = BrandCoral,
+                                disabledContainerColor = BrandCoral.copy(alpha = 0.6f)
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f).height(46.dp)
+                        ) {
+                            if (isSaving) {
+                                CircularProgressIndicator(
+                                    color = Color.White,
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Saving...", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            } else {
+                                Icon(
+                                    Icons.Default.CloudUpload,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("💾 Save Profile", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        }
                     }
                 }
             }
@@ -2743,10 +2949,21 @@ fun SettingsDialog(
     var smoking by remember { mutableStateOf(user.smoking) }
     var workout by remember { mutableStateOf(user.workout) }
     var socialMedia by remember { mutableStateOf(user.socialMedia) }
+    val isKeyboardOpen = WindowInsets.isImeVisible
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+
+    BackHandler(enabled = isKeyboardOpen) {
+        keyboardController?.hide()
+        focusManager.clearFocus()
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = !isKeyboardOpen
+        )
     ) {
         Scaffold(
             containerColor = Color(0xFFF5F5F7),
@@ -3330,8 +3547,21 @@ fun PostMomentDialog(
             mediaUrl = uri.toString()
         }
     }
+    val isKeyboardOpen = WindowInsets.isImeVisible
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
 
-    Dialog(onDismissRequest = onDismiss) {
+    BackHandler(enabled = isKeyboardOpen) {
+        keyboardController?.hide()
+        focusManager.clearFocus()
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            dismissOnBackPress = !isKeyboardOpen
+        )
+    ) {
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = BrandCard),
@@ -3408,8 +3638,21 @@ fun DirectMessageDialog(
     onSend: (String) -> Unit
 ) {
     var messageText by remember { mutableStateOf("") }
+    val isKeyboardOpen = WindowInsets.isImeVisible
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
 
-    Dialog(onDismissRequest = onDismiss) {
+    BackHandler(enabled = isKeyboardOpen) {
+        keyboardController?.hide()
+        focusManager.clearFocus()
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            dismissOnBackPress = !isKeyboardOpen
+        )
+    ) {
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = BrandCard),
@@ -3483,8 +3726,21 @@ fun CommentsDialog(
                 }
             }
     }
+    val isKeyboardOpen = WindowInsets.isImeVisible
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
 
-    Dialog(onDismissRequest = onDismiss) {
+    BackHandler(enabled = isKeyboardOpen) {
+        keyboardController?.hide()
+        focusManager.clearFocus()
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            dismissOnBackPress = !isKeyboardOpen
+        )
+    ) {
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -3587,6 +3843,7 @@ fun CommentsDialog(
 fun saveProfileToPrefs(prefs: android.content.SharedPreferences, user: UserProfile) {
     prefs.edit()
         .putString("user_uid", user.uid)
+        .putString("profile_device_id", user.deviceId)
         .putString("profile_name", user.name)
         .putInt("profile_age", user.age)
         .putString("profile_gender", user.gender)

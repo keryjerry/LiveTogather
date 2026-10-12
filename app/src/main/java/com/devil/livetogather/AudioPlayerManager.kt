@@ -12,6 +12,7 @@ object AudioPlayerManager {
     private var mediaPlayer: MediaPlayer? = null
 
     val isPlayingState = mutableStateOf(false)
+    val isBufferingState = mutableStateOf(false)
     val isMutedState = mutableStateOf(false)
     val currentTrackTitleState = mutableStateOf("")
     val currentTrackUrlState = mutableStateOf("")
@@ -19,8 +20,16 @@ object AudioPlayerManager {
     fun play(context: Context, urlOrUri: String, title: String, onCompletion: () -> Unit = {}) {
         if (urlOrUri.isBlank()) return
 
+        // If already playing this track, don't restart
+        if (currentTrackUrlState.value == urlOrUri && isPlayingState.value && mediaPlayer?.isPlaying == true) {
+            return
+        }
+
         try {
             stop()
+            isBufferingState.value = true
+            currentTrackTitleState.value = title
+            currentTrackUrlState.value = urlOrUri
 
             mediaPlayer = MediaPlayer().apply {
                 setAudioAttributes(
@@ -37,27 +46,29 @@ object AudioPlayerManager {
                 }
 
                 setOnPreparedListener { mp ->
+                    isBufferingState.value = false
                     try {
                         val vol = if (isMutedState.value) 0f else 1f
                         mp.setVolume(vol, vol)
                         mp.start()
                         isPlayingState.value = true
-                        currentTrackTitleState.value = title
-                        currentTrackUrlState.value = urlOrUri
-                        Log.d(TAG, "Playback started: $title")
+                        Log.d(TAG, "Playback started successfully: $title")
                     } catch (e: Exception) {
                         Log.e(TAG, "Error starting playback: ${e.message}")
+                        isPlayingState.value = false
                     }
                 }
 
                 setOnCompletionListener {
                     isPlayingState.value = false
+                    isBufferingState.value = false
                     onCompletion()
                 }
 
                 setOnErrorListener { _, what, extra ->
-                    Log.w(TAG, "MediaPlayer error what=$what extra=$extra")
+                    Log.w(TAG, "MediaPlayer error what=$what extra=$extra for $urlOrUri")
                     isPlayingState.value = false
+                    isBufferingState.value = false
                     true
                 }
 
@@ -66,6 +77,7 @@ object AudioPlayerManager {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize MediaPlayer for $urlOrUri: ${e.message}")
             isPlayingState.value = false
+            isBufferingState.value = false
         }
     }
 
@@ -75,6 +87,7 @@ object AudioPlayerManager {
                 mediaPlayer?.pause()
             }
             isPlayingState.value = false
+            isBufferingState.value = false
         } catch (e: Exception) {
             Log.e(TAG, "Pause failed: ${e.message}")
         }
@@ -84,6 +97,7 @@ object AudioPlayerManager {
         try {
             mediaPlayer?.start()
             isPlayingState.value = true
+            isBufferingState.value = false
         } catch (e: Exception) {
             Log.e(TAG, "Resume failed: ${e.message}")
         }
@@ -98,6 +112,7 @@ object AudioPlayerManager {
         } finally {
             mediaPlayer = null
             isPlayingState.value = false
+            isBufferingState.value = false
             currentTrackTitleState.value = ""
             currentTrackUrlState.value = ""
         }
