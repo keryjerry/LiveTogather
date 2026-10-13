@@ -6,10 +6,14 @@ import android.media.MediaPlayer
 import android.net.Uri
 import android.util.Log
 import androidx.compose.runtime.mutableStateOf
+import kotlinx.coroutines.*
+import java.util.Locale
 
 object AudioPlayerManager {
     private const val TAG = "AudioPlayerManager"
     private var mediaPlayer: MediaPlayer? = null
+    private var tickerJob: Job? = null
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     val isPlayingState = mutableStateOf(false)
     val isBufferingState = mutableStateOf(false)
@@ -17,6 +21,9 @@ object AudioPlayerManager {
     val currentTrackTitleState = mutableStateOf("")
     val currentTrackUrlState = mutableStateOf("")
     val currentTrackArtworkUrlState = mutableStateOf("")
+    val currentPositionMsState = mutableStateOf(0)
+    val durationMsState = mutableStateOf(0)
+    val formattedTimeState = mutableStateOf("00:00 / 00:00")
 
     fun play(context: Context, urlOrUri: String, title: String, artworkUrl: String = "", onCompletion: () -> Unit = {}) {
         if (urlOrUri.isBlank()) return
@@ -56,7 +63,9 @@ object AudioPlayerManager {
                         mp.setVolume(vol, vol)
                         mp.start()
                         isPlayingState.value = true
-                        Log.d(TAG, "Playback started successfully: $title")
+                        durationMsState.value = mp.duration
+                        startTicker()
+                        Log.d(TAG, "Playback started successfully: $title, duration=${mp.duration}ms")
                     } catch (e: Exception) {
                         Log.e(TAG, "Error starting playback: ${e.message}")
                         isPlayingState.value = false
@@ -64,14 +73,15 @@ object AudioPlayerManager {
                 }
 
                 setOnCompletionListener {
-                    // With isLooping=true this is rarely hit, but auto-loop to ensure song never ends
                     try {
                         it.seekTo(0)
                         it.start()
                         isPlayingState.value = true
+                        startTicker()
                     } catch (e: Exception) {
                         isPlayingState.value = false
                         isBufferingState.value = false
+                        stopTicker()
                         onCompletion()
                     }
                 }
@@ -80,6 +90,7 @@ object AudioPlayerManager {
                     Log.w(TAG, "MediaPlayer error what=$what extra=$extra for $urlOrUri")
                     isPlayingState.value = false
                     isBufferingState.value = false
+                    stopTicker()
                     true
                 }
 
@@ -89,6 +100,47 @@ object AudioPlayerManager {
             Log.e(TAG, "Failed to initialize MediaPlayer for $urlOrUri: ${e.message}")
             isPlayingState.value = false
             isBufferingState.value = false
+            stopTicker()
+        }
+    }
+
+    private fun startTicker() {
+        stopTicker()
+        tickerJob = scope.launch {
+            while (isActive && isPlayingState.value) {
+                try {
+                    val pos = mediaPlayer?.currentPosition ?: 0
+                    val dur = mediaPlayer?.duration ?: 0
+                    currentPositionMsState.value = pos
+                    if (dur > 0) durationMsState.value = dur
+                    formattedTimeState.value = "${formatMs(pos)} / ${formatMs(dur)}"
+                } catch (e: Exception) {
+                    // Ignored on player state transitions
+                }
+                delay(500L)
+            }
+        }
+    }
+
+    private fun stopTicker() {
+        tickerJob?.cancel()
+        tickerJob = null
+    }
+
+    fun formatMs(ms: Int): String {
+        if (ms <= 0) return "00:00"
+        val totalSec = ms / 1000
+        val min = totalSec / 60
+        val sec = totalSec % 60
+        return String.format(Locale.getDefault(), "%02d:%02d", min, sec)
+    }
+
+    fun seekTo(ms: Int) {
+        try {
+            mediaPlayer?.seekTo(ms)
+            currentPositionMsState.value = ms
+        } catch (e: Exception) {
+            Log.w(TAG, "Seek failed: ${e.message}")
         }
     }
 
@@ -99,6 +151,7 @@ object AudioPlayerManager {
             }
             isPlayingState.value = false
             isBufferingState.value = false
+            stopTicker()
         } catch (e: Exception) {
             Log.e(TAG, "Pause failed: ${e.message}")
         }
@@ -110,6 +163,7 @@ object AudioPlayerManager {
                 mediaPlayer?.start()
                 isPlayingState.value = true
                 isBufferingState.value = false
+                startTicker()
             } else if (context != null && currentTrackUrlState.value.isNotBlank()) {
                 play(context, currentTrackUrlState.value, currentTrackTitleState.value, currentTrackArtworkUrlState.value)
             }
@@ -134,6 +188,7 @@ object AudioPlayerManager {
 
     fun stop() {
         try {
+            stopTicker()
             mediaPlayer?.stop()
             mediaPlayer?.release()
         } catch (e: Exception) {
@@ -145,6 +200,9 @@ object AudioPlayerManager {
             currentTrackTitleState.value = ""
             currentTrackUrlState.value = ""
             currentTrackArtworkUrlState.value = ""
+            currentPositionMsState.value = 0
+            durationMsState.value = 0
+            formattedTimeState.value = "00:00 / 00:00"
         }
     }
 

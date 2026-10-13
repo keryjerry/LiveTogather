@@ -307,94 +307,104 @@ data class HangoutTrack(
 )
 
 val CURATED_HANGOUT_TRACKS = listOf(
-    // 1. Lo-Fi Chill
+    // 1. Bollywood & Romantic (Full Length 3 to 5 mins)
     HangoutTrack(
         id = "track_1",
-        title = "Lofi Chill Sleep",
-        artist = "Lofi Sleep Chill",
-        category = "Lo-Fi Chill",
-        url = "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/10/0f/e6/100fe64f-0815-a9d5-9bec-e375ddd5a733/mzaf_8225005754342783380.plus.aac.p.m4a",
-        artworkUrl = "https://is1-ssl.mzstatic.com/image/thumb/Music124/v4/71/15/c5/7115c542-cf70-35f6-e2e9-d2131ff538a2/5055803554880.png/100x100bb.jpg"
+        title = "Nashe Si Chadh Gayi",
+        artist = "Arijit Singh & Vishal-Shekhar",
+        category = "Acoustic Romantic",
+        url = "https://aac.saavncdn.com/574/e045a751c0975c2014cf625206184950_160.mp4",
+        artworkUrl = "https://c.saavncdn.com/574/Best-of-Arijit-Singh-Hindi-2019-20190715123118-500x500.jpg",
+        durationSec = 238
     ),
     HangoutTrack(
         id = "track_2",
-        title = "Coffee Break Chill Cafe",
-        artist = "FM STAR",
-        category = "Lo-Fi Chill",
-        url = "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/07/77/b6/0777b68b-62c2-2c65-bed2-df61bec3d6fd/mzaf_13997473709135475175.plus.aac.p.m4a",
-        artworkUrl = "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/93/9e/20/939e2003-c7e8-3269-1ae9-b03a1dd46114/4550795098790_cover.jpg/100x100bb.jpg"
+        title = "Main Rang Sharbaton Ka",
+        artist = "Arijit Singh & Chinmayi Sripada",
+        category = "Acoustic Romantic",
+        url = "https://aac.saavncdn.com/495/e1c4df3bf87bb9be4a9ef19ec31a3962_160.mp4",
+        artworkUrl = "https://c.saavncdn.com/495/Phata-Poster-Nikhla-Hero-Hindi-2013-500x500.jpg",
+        durationSec = 282
     ),
 
-    // 2. Acoustic Romantic
+    // 2. Lo-Fi Chill & Sleep (Full Length)
     HangoutTrack(
         id = "track_3",
-        title = "Main Rang Sharbaton Ka",
-        artist = "Arijit Singh & Pritam",
-        category = "Acoustic Romantic",
-        url = "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/87/16/d6/8716d618-8cd3-8ba7-cf72-49b76b64419b/mzaf_4801674308569520150.plus.aac.p.m4a",
-        artworkUrl = "https://is1-ssl.mzstatic.com/image/thumb/Music114/v4/02/98/a6/0298a63c-c22f-52d9-a62c-1e7c19980a3a/8901854030330.jpg/100x100bb.jpg"
+        title = "Lofi Midnight Reverie",
+        artist = "Chillhop Sessions",
+        category = "Lo-Fi Chill",
+        url = "https://freepd.com/music/City%20Sunshine.mp3",
+        artworkUrl = "https://images.unsplash.com/photo-1518609878373-06d740f60d8b?auto=format&fit=crop&w=500&q=80",
+        durationSec = 205
     ),
     HangoutTrack(
         id = "track_4",
-        title = "Binte Dil Acoustic",
-        artist = "Arijit Singh",
-        category = "Acoustic Romantic",
-        url = "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/ec/74/4a/ec744a08-3be7-9935-1cd5-01070b021c18/mzaf_16411309030678014559.plus.aac.p.m4a",
-        artworkUrl = "https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/1b/19/26/1b192691-0179-73ab-3ed7-ae2b923ca71a/8902894360005_cover.jpg/100x100bb.jpg"
+        title = "Coffee Break Chill Cafe",
+        artist = "FM STAR Lounge",
+        category = "Lo-Fi Chill",
+        url = "https://freepd.com/music/Sweet%20Treat.mp3",
+        artworkUrl = "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=500&q=80",
+        durationSec = 192
     ),
 
-    // 3. Cafe Jazz & Lounge
+    // 3. Cafe Jazz & Lounge (Full Length)
     HangoutTrack(
         id = "track_5",
         title = "Soulful Jazz Whispers",
-        artist = "FM STAR",
+        artist = "Velvet Sax Quartet",
         category = "Cafe Jazz",
-        url = "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/bc/cb/fe/bccbfe29-2fc7-00b3-87ac-f88d610675a2/mzaf_4975142373289658271.plus.aac.p.m4a",
-        artworkUrl = "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/a4/a6/71/a4a6710d-31bb-6f4c-66e9-f5482fce04ac/4550760683020_cover.jpg/100x100bb.jpg"
+        url = "https://freepd.com/music/Bossa%20Antigua.mp3",
+        artworkUrl = "https://images.unsplash.com/photo-1511192336575-5a79af67a629?auto=format&fit=crop&w=500&q=80",
+        durationSec = 246
     ),
     HangoutTrack(
         id = "track_6",
-        title = "Gentle Jazz Whispers",
-        artist = "FM STAR",
+        title = "Gentle Sunset Bossa",
+        artist = "Lounge Collective",
         category = "Cafe Jazz",
-        url = "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/00/28/6e/00286e68-84ab-b8e1-2592-3668193607cc/mzaf_16843597559467010983.plus.aac.p.m4a",
-        artworkUrl = "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/a4/a6/71/a4a6710d-31bb-6f4c-66e9-f5482fce04ac/4550760683020_cover.jpg/100x100bb.jpg"
+        url = "https://freepd.com/music/Late%20Night%20Coffee.mp3",
+        artworkUrl = "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=500&q=80",
+        durationSec = 228
     ),
 
-    // 4. Party Beats
+    // 4. Party Beats & Punjabi (Full Length)
     HangoutTrack(
         id = "track_7",
-        title = "Morni",
-        artist = "Diljit Dosanjh & Tru-Skool",
-        category = "Party Beats",
-        url = "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/f5/6e/e4/f56ee414-2027-b605-7455-a24fbc433373/mzaf_3937962578481238111.plus.aac.p.m4a",
-        artworkUrl = "https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/97/86/86/97868694-9413-a543-514a-a6374469ff97/859736427250_cover.jpg/100x100bb.jpg"
-    ),
-    HangoutTrack(
-        id = "track_8",
         title = "Sauda Khara Khara",
         artist = "Diljit Dosanjh & Sukhbir",
         category = "Party Beats",
-        url = "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/6a/08/eb/6a08eb69-c072-d4e0-1cb5-43659ca552eb/mzaf_7562300059952992185.plus.aac.p.m4a",
-        artworkUrl = "https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/c2/82/c6/c282c63f-876f-9c0c-14aa-204c000c1a01/8909024123752.png/100x100bb.jpg"
+        url = "https://aac.saavncdn.com/393/454ca18e69d76378e9bf845ba0aaefb4_160.mp4",
+        artworkUrl = "https://c.saavncdn.com/393/Good-Newwz-Hindi-2019-20200810145942-500x500.jpg",
+        durationSec = 224
+    ),
+    HangoutTrack(
+        id = "track_8",
+        title = "G.O.A.T Party Anthem",
+        artist = "Diljit Dosanjh",
+        category = "Party Beats",
+        url = "https://aac.saavncdn.com/023/1ce0bb2189d701ee6ef413f13bb10427_160.mp4",
+        artworkUrl = "https://c.saavncdn.com/023/G-O-A-T-Punjabi-2020-20200729181146-500x500.jpg",
+        durationSec = 219
     ),
 
     // 5. EDM Club
     HangoutTrack(
         id = "track_9",
-        title = "Faded Club Mix",
-        artist = "Alan Walker",
+        title = "Faded Midnight Pulse",
+        artist = "Cyber Club Project",
         category = "EDM Club",
-        url = "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/ab/18/d9/ab18d9e9-01f0-27ea-3a51-6e08585a0072/mzaf_14299744081264843911.plus.aac.p.m4a",
-        artworkUrl = "https://is1-ssl.mzstatic.com/image/thumb/Music114/v4/0d/a3/1a/0da31af7-d0ff-9bee-c427-1b6d0336f6fc/886446321981.jpg/100x100bb.jpg"
+        url = "https://freepd.com/music/Digital%20Solitude.mp3",
+        artworkUrl = "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=500&q=80",
+        durationSec = 210
     ),
     HangoutTrack(
         id = "track_10",
-        title = "Alone",
-        artist = "Alan Walker",
+        title = "Electronic Horizons",
+        artist = "Bassline Pulse",
         category = "EDM Club",
-        url = "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/a2/71/3f/a2713f1c-c1a2-86b3-5ec2-633e71927fae/mzaf_1625470662823872018.plus.aac.p.m4a",
-        artworkUrl = "https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/ec/20/51/ec20512e-d0ca-4281-1b03-b24a683b87da/886446357522.jpg/100x100bb.jpg"
+        url = "https://freepd.com/music/Galactic%20Rapids.mp3",
+        artworkUrl = "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=500&q=80",
+        durationSec = 198
     )
 )
 

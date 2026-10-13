@@ -2441,6 +2441,7 @@ fun ProfileScreenContent(
     var interestedIn by remember(currentUser) { mutableStateOf(currentUser.interestedIn) }
 
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+    var showSubscriptionModal by remember { mutableStateOf(false) }
     var isUploadingPhoto by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -2758,7 +2759,7 @@ fun ProfileScreenContent(
                             )
                         }
 
-                        // Save Profile Button with Real-Time Firestore Sync
+                        // Save Profile Button with Instant Local Feedback & Background Firestore Sync
                         Button(
                             onClick = {
                                 val parsedAge = age.toIntOrNull() ?: currentUser.age
@@ -2775,23 +2776,21 @@ fun ProfileScreenContent(
                                     gender = gender,
                                     interestedIn = interestedIn
                                 )
-                                isSaving = true
-                                statusMessage = null
-
-                                // 1. Local Prefs & App state update
+                                // Immediate optimistic UI update - avoids long spinning button
                                 onUpdateProfile(updated)
+                                isEditing = false
+                                isSaving = false
+                                statusMessage = "✅ Profile updated successfully!"
+                                Toast.makeText(context, "Profile saved successfully!", Toast.LENGTH_SHORT).show()
 
-                                // 2. Real-time Firestore document sync
+                                // Background cloud sync
                                 db.collection("users").document(currentUserId)
                                     .set(updated, SetOptions.merge())
                                     .addOnSuccessListener {
-                                        isSaving = false
-                                        isEditing = false
-                                        statusMessage = "✅ Profile Synced to Firestore in Real-Time!"
+                                        statusMessage = "✅ Profile Synced in Real-Time!"
                                     }
-                                    .addOnFailureListener { e ->
-                                        isSaving = false
-                                        statusMessage = "❌ Sync Failed: ${e.localizedMessage ?: "Network error"}"
+                                    .addOnFailureListener {
+                                        statusMessage = "⚠️ Saved locally (Sync pending)"
                                     }
                             },
                             enabled = !isSaving,
@@ -2802,35 +2801,25 @@ fun ProfileScreenContent(
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.weight(1f).height(46.dp)
                         ) {
-                            if (isSaving) {
-                                CircularProgressIndicator(
-                                    color = Color.White,
-                                    strokeWidth = 2.dp,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Saving...", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                            } else {
-                                Icon(
-                                    Icons.Default.CloudUpload,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("💾 Save Profile", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                            }
+                            Icon(
+                                Icons.Default.CloudUpload,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("💾 Save Profile", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
                     }
                 }
             }
         }
 
-        // MEMBERSHIP SUBSCRIPTION PLANS
+        // MEMBERSHIP SUBSCRIPTION PLAN - SINGLE CONSOLIDATED VIP CARD BOX
         item {
             Column {
                 Text(
-                    "MEMBERSHIP SUBSCRIPTION PLANS",
+                    "MEMBERSHIP & VIP CLUB",
                     color = BrandGold,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
@@ -2838,34 +2827,93 @@ fun ProfileScreenContent(
                 )
                 Spacer(modifier = Modifier.height(10.dp))
 
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SubscriptionPlanCard(
-                            plan = SUBSCRIPTION_PLANS[0],
-                            isSelected = currentUser.plan == SUBSCRIPTION_PLANS[0].title,
-                            modifier = Modifier.weight(1f),
-                            onClick = { onSelectPlan(SUBSCRIPTION_PLANS[0]) }
-                        )
-                        SubscriptionPlanCard(
-                            plan = SUBSCRIPTION_PLANS[1],
-                            isSelected = currentUser.plan == SUBSCRIPTION_PLANS[1].title,
-                            modifier = Modifier.weight(1f),
-                            onClick = { onSelectPlan(SUBSCRIPTION_PLANS[1]) }
-                        )
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SubscriptionPlanCard(
-                            plan = SUBSCRIPTION_PLANS[2],
-                            isSelected = currentUser.plan == SUBSCRIPTION_PLANS[2].title,
-                            modifier = Modifier.weight(1f),
-                            onClick = { onSelectPlan(SUBSCRIPTION_PLANS[2]) }
-                        )
-                        SubscriptionPlanCard(
-                            plan = SUBSCRIPTION_PLANS[3],
-                            isSelected = currentUser.plan == SUBSCRIPTION_PLANS[3].title,
-                            modifier = Modifier.weight(1f),
-                            onClick = { onSelectPlan(SUBSCRIPTION_PLANS[3]) }
-                        )
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(18.dp))
+                        .clickable { showSubscriptionModal = true },
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = BrandCard),
+                    border = BorderStroke(1.5.dp, Brush.horizontalGradient(listOf(BrandGold, BrandCoral)))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(
+                                        BrandGold.copy(alpha = 0.15f),
+                                        BrandDark.copy(alpha = 0.90f),
+                                        BrandCoral.copy(alpha = 0.15f)
+                                    )
+                                )
+                            )
+                            .padding(16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(52.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        Brush.radialGradient(
+                                            listOf(BrandGold.copy(alpha = 0.35f), BrandGold.copy(alpha = 0.1f))
+                                        )
+                                    )
+                                    .border(1.5.dp, BrandGold, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("👑", fontSize = 24.sp)
+                            }
+
+                            Spacer(modifier = Modifier.width(14.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        "VIP Membership Center",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Surface(
+                                        color = BrandGold.copy(alpha = 0.2f),
+                                        shape = RoundedCornerShape(4.dp),
+                                        border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.6f))
+                                    ) {
+                                        Text(
+                                            currentUser.plan.uppercase(),
+                                            color = BrandGold,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Black,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(3.dp))
+                                Text(
+                                    "Tap to view all subscription tiers, purchase passes & unlock privileges",
+                                    color = Color.LightGray,
+                                    fontSize = 11.sp,
+                                    lineHeight = 15.sp
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        "Explore 4 Subscription Tiers",
+                                        color = BrandGold,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("›", color = BrandGold, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -2961,6 +3009,206 @@ fun ProfileScreenContent(
                 }
             }
         )
+    }
+
+    if (showSubscriptionModal) {
+        SubscriptionPlansModal(
+            currentPlan = currentUser.plan,
+            onDismiss = { showSubscriptionModal = false },
+            onSelectPlan = { plan ->
+                onSelectPlan(plan)
+                showSubscriptionModal = false
+            }
+        )
+    }
+}
+
+@Composable
+fun SubscriptionPlansModal(
+    currentPlan: String,
+    onDismiss: () -> Unit,
+    onSelectPlan: (SubscriptionPlanItem) -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .fillMaxHeight(0.85f),
+            shape = RoundedCornerShape(24.dp),
+            color = BrandDark,
+            border = BorderStroke(1.5.dp, Brush.verticalGradient(listOf(BrandGold, BrandCoral)))
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(18.dp)
+            ) {
+                // Modal Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(BrandGold.copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("👑", fontSize = 20.sp)
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                "VIP Membership Levels",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            )
+                            Text(
+                                "Select a tier to upgrade & unlock perks",
+                                color = Color.LightGray,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .size(32.dp)
+                            .background(BrandCard, CircleShape)
+                    ) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Scrollable Plans List
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(SUBSCRIPTION_PLANS) { plan ->
+                        val isSelected = currentPlan.equals(plan.title, ignoreCase = true)
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isSelected) BrandGold.copy(alpha = 0.12f) else BrandCard
+                            ),
+                            border = BorderStroke(
+                                if (isSelected) 1.5.dp else 1.dp,
+                                if (isSelected) BrandGold else BrandBorder
+                            )
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            plan.title,
+                                            color = if (isSelected) BrandGold else Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 15.sp
+                                        )
+                                        if (plan.isPopular) {
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Surface(
+                                                color = BrandCoral,
+                                                shape = RoundedCornerShape(50)
+                                            ) {
+                                                Text(
+                                                    "POPULAR 🔥",
+                                                    color = Color.White,
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Black,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    if (isSelected) {
+                                        Surface(
+                                            color = BrandGreen.copy(alpha = 0.2f),
+                                            shape = RoundedCornerShape(50),
+                                            border = BorderStroke(1.dp, BrandGreen)
+                                        ) {
+                                            Text(
+                                                "ACTIVE PLAN ✓",
+                                                color = BrandGreen,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                Row(verticalAlignment = Alignment.Bottom) {
+                                    Text(
+                                        plan.price,
+                                        color = BrandCoral,
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 22.sp
+                                    )
+                                    Text(
+                                        plan.duration,
+                                        color = Color.Gray,
+                                        fontSize = 12.sp,
+                                        modifier = Modifier.padding(bottom = 2.dp, start = 2.dp)
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                Text(
+                                    plan.tagline,
+                                    color = Color.LightGray,
+                                    fontSize = 12.sp
+                                )
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                Button(
+                                    onClick = { onSelectPlan(plan) },
+                                    modifier = Modifier.fillMaxWidth().height(40.dp),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (isSelected) BrandGold else BrandCoral
+                                    )
+                                ) {
+                                    Text(
+                                        if (isSelected) "Active Tier ✓" else "Choose ${plan.title} →",
+                                        color = if (isSelected) Color.Black else Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
