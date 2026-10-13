@@ -449,17 +449,26 @@ fun LiveTogatherApp() {
                 }
             }
 
-        // 6. Moments Feed Listener (Real-Time Real Moments)
-        db.collection("moments")
-            .orderBy("timestamp", Query.Direction.DESCENDING)
-            .addSnapshotListener { snapshot, _ ->
-                if (snapshot != null) {
-                    val list = snapshot.documents.mapNotNull { it.toObject(MomentItem::class.java) }
-                        .filter { !it.userId.startsWith("USER_") }
+        // 6. Moments Feed Listener (Real-Time Moments)
+        db.collection("moments").addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                Log.w("Firestore", "Moments listener error: ${error.message}")
+                return@addSnapshotListener
+            }
+            if (snapshot != null) {
+                val fetched = snapshot.documents.mapNotNull { it.toObject(MomentItem::class.java) }
+                if (fetched.isNotEmpty()) {
+                    val map = linkedMapOf<String, MomentItem>()
+                    // 1. Add server moments
+                    fetched.forEach { map[it.id] = it }
+                    // 2. Preserve any newly posted local moments not yet returned by server
+                    moments.forEach { if (!map.containsKey(it.id)) map[it.id] = it }
+                    val sorted = map.values.sortedByDescending { it.timestamp }
                     moments.clear()
-                    moments.addAll(list)
+                    moments.addAll(sorted)
                 }
             }
+        }
     }
 
     // Chat room listener when chat is opened
@@ -820,6 +829,15 @@ fun LiveTogatherApp() {
                             currentUserId = currentUserId,
                             onPostClick = { showPostMomentDialog = true },
                             onLikeMoment = { moment ->
+                                val idx = moments.indexOfFirst { it.id == moment.id }
+                                if (idx != -1) {
+                                    val isLiked = moment.likedByUsers.contains(currentUserId)
+                                    val updatedList = if (isLiked) moment.likedByUsers - currentUserId else moment.likedByUsers + currentUserId
+                                    moments[idx] = moment.copy(
+                                        likedByUsers = updatedList,
+                                        likes = updatedList.size
+                                    )
+                                }
                                 toggleMomentLike(db, moment, currentUserId)
                             },
                             onCommentMoment = { moment ->
@@ -1123,21 +1141,31 @@ fun LiveTogatherApp() {
                 onPost = { mediaUrl, caption ->
                     val newMoment = MomentItem(
                         id = UUID.randomUUID().toString(),
-                        userId = currentUser.uid,
-                        userName = currentUser.name,
+                        userId = currentUserId,
+                        userName = currentUser.name.ifBlank { "You" },
                         userPhoto = currentUser.photo,
                         mediaUrl = mediaUrl,
                         caption = caption,
                         timestamp = System.currentTimeMillis()
                     )
+                    // Optimistic update: immediately show in moments feed and profile
+                    val existingIdx = moments.indexOfFirst { it.id == newMoment.id }
+                    if (existingIdx == -1) {
+                        moments.add(0, newMoment)
+                    } else {
+                        moments[existingIdx] = newMoment
+                    }
+                    showPostMomentDialog = false
+                    Toast.makeText(context, "Moment shared successfully! 🎉", Toast.LENGTH_SHORT).show()
+
+                    // Sync to Cloud Firestore
                     db.collection("moments").document(newMoment.id).set(newMoment)
                         .addOnSuccessListener {
-                            Toast.makeText(context, "Moment uploaded successfully!", Toast.LENGTH_SHORT).show()
+                            Log.d("Moments", "Moment synced to Firestore: ${newMoment.id}")
                         }
                         .addOnFailureListener { e ->
-                            Toast.makeText(context, "Moment saved: ${e.message}", Toast.LENGTH_SHORT).show()
+                            Log.w("Moments", "Firestore write failed: ${e.message}")
                         }
-                    showPostMomentDialog = false
                 }
             )
         }
@@ -2343,7 +2371,7 @@ fun MomentsScreenContent(
             }
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                items(moments) { item ->
+                items(moments, key = { it.id }) { item ->
                     Card(
                         colors = CardDefaults.cardColors(containerColor = BrandCard),
                         shape = RoundedCornerShape(16.dp)
@@ -2351,7 +2379,7 @@ fun MomentsScreenContent(
                         Column(modifier = Modifier.padding(12.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 AsyncImage(
-                                    model = item.userPhoto,
+                                    model = item.userPhoto.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80" },
                                     contentDescription = null,
                                     modifier = Modifier.size(34.dp).clip(CircleShape),
                                     contentScale = ContentScale.Crop
@@ -3952,15 +3980,24 @@ fun PostMomentDialog(
     ) { uri: Uri? ->
         if (uri != null) {
             isUploading = true
-            coroutineScope.launch {
-                val uploadedUrl = ImageUploadManager.uploadImage(context, uri, "moments")
-                if (uploadedUrl != null) {
-                    mediaUrl = uploadedUrl
-                    Toast.makeText(context, "Image uploaded successfully!", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(context, "Image upload failed. Please try again.", Toast.LENGTH_SHORT).show()
+            coroutineScope.launch(Dispatchers.IO) {
+                try {
+                    val uploadedUrl = ImageUploadManager.uploadImage(context, uri, "moments")
+                    withContext(Dispatchers.Main) {
+                        if (!uploadedUrl.isNullOrBlank()) {
+                            mediaUrl = uploadedUrl
+                            Toast.makeText(context, "Image ready to share! 📸", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "Image upload failed. Try another photo.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } catch (e: Throwable) {
+                    Log.e("Moments", "Image upload failed: ${e.message}", e)
+                } finally {
+                    withContext(Dispatchers.Main) {
+                        isUploading = false
+                    }
                 }
-                isUploading = false
             }
         }
     }
@@ -4212,7 +4249,7 @@ fun CommentsDialog(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 AsyncImage(
-                                    model = comment.userPhoto,
+                                    model = comment.userPhoto.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80" },
                                     contentDescription = null,
                                     modifier = Modifier.size(30.dp).clip(CircleShape),
                                     contentScale = ContentScale.Crop
@@ -4252,10 +4289,11 @@ fun CommentsDialog(
                                     id = UUID.randomUUID().toString(),
                                     momentId = moment.id,
                                     userId = currentUser.uid,
-                                    userName = currentUser.name,
+                                    userName = currentUser.name.ifBlank { "You" },
                                     userPhoto = currentUser.photo,
                                     text = cText
                                 )
+                                comments.add(newComment)
                                 db.collection("moments").document(moment.id).collection("comments").document(newComment.id).set(newComment)
                                 db.collection("moments").document(moment.id).update("commentCount", moment.commentCount + 1)
                             }
