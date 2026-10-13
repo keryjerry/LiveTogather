@@ -58,7 +58,9 @@ import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 val BrandDark = Color(0xFF0B090A)
 val BrandCard = Color(0xFF161214)
@@ -217,6 +219,7 @@ class MainActivity : ComponentActivity() {
         val imageLoader = ImageLoader.Builder(this)
             .components {
                 add(DataUriFetcher.Factory(this@MainActivity))
+                add(DataUriFetcher.StringFactory(this@MainActivity))
             }
             .build()
         Coil.setImageLoader(imageLoader)
@@ -2459,33 +2462,36 @@ fun ProfileScreenContent(
     ) { uri: Uri? ->
         if (uri != null) {
             isUploadingPhoto = true
-            coroutineScope.launch {
-                // 1. Immediately compress & convert to Cloud Firestore Data URI (Base64 JPEG, ~20KB)
-                // This ensures profile photo is stored directly in Cloud Firestore (users/{uid}.photo) and accessible globally
-                val firestoreDataUri = ImageUploadManager.convertImageToFirestoreDataUri(context, uri) ?: uri.toString()
-                photoUrl = firestoreDataUri
-                val updatedProfile = currentUser.copy(uid = currentUserId, photo = firestoreDataUri)
-                onUpdateProfile(updatedProfile)
+            coroutineScope.launch(Dispatchers.IO) {
+                try {
+                    // 1. Immediately compress & convert to Cloud Firestore Data URI (Base64 JPEG, ~18KB)
+                    val firestoreDataUri = ImageUploadManager.convertImageToFirestoreDataUri(context, uri)
+                    if (!firestoreDataUri.isNullOrBlank()) {
+                        withContext(Dispatchers.Main) {
+                            photoUrl = firestoreDataUri
+                            val updatedProfile = currentUser.copy(uid = currentUserId, photo = firestoreDataUri)
+                            onUpdateProfile(updatedProfile)
+                            Toast.makeText(context, "Profile picture updated! 📸", Toast.LENGTH_SHORT).show()
+                        }
 
-                // Sync directly to Cloud Firestore
-                db.collection("users").document(currentUserId)
-                    .set(updatedProfile, SetOptions.merge())
-                    .addOnSuccessListener {
-                        Toast.makeText(context, "Profile picture saved to Cloud Firestore! 📸☁️", Toast.LENGTH_SHORT).show()
+                        // Persist directly to Cloud Firestore document
+                        db.collection("users").document(currentUserId)
+                            .set(mapOf("photo" to firestoreDataUri), SetOptions.merge())
+                    } else {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "Could not process image. Please try another.", Toast.LENGTH_SHORT).show()
+                        }
                     }
-                    .addOnFailureListener { e ->
-                        Toast.makeText(context, "Saved locally. Syncing to Firestore: ${e.message}", Toast.LENGTH_SHORT).show()
+                } catch (e: Throwable) {
+                    Log.e("Profile", "Image processing failed: ${e.message}", e)
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Failed to load image: ${e.message}", Toast.LENGTH_SHORT).show()
                     }
-
-                // 2. Background upload to Firebase Storage if available (upgrades to CDN URL)
-                val cloudUrl = ImageUploadManager.uploadImage(context, uri, "profiles")
-                if (!cloudUrl.isNullOrBlank() && cloudUrl.startsWith("http")) {
-                    photoUrl = cloudUrl
-                    val updatedCloud = currentUser.copy(uid = currentUserId, photo = cloudUrl)
-                    onUpdateProfile(updatedCloud)
-                    db.collection("users").document(currentUserId).set(updatedCloud, SetOptions.merge())
+                } finally {
+                    withContext(Dispatchers.Main) {
+                        isUploadingPhoto = false
+                    }
                 }
-                isUploadingPhoto = false
             }
         }
     }
@@ -2503,7 +2509,7 @@ fun ProfileScreenContent(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     AsyncImage(
-                        model = photoUrl,
+                        model = photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80" },
                         contentDescription = null,
                         modifier = Modifier
                             .size(76.dp)
@@ -2787,10 +2793,10 @@ fun ProfileScreenContent(
                             onClick = {
                                 val parsedAge = age.toIntOrNull() ?: currentUser.age
                                 val rawPhoto = photoUrl.ifEmpty { currentUser.photo }
-                                val safePhoto = if (rawPhoto.startsWith("file://")) {
+                                val safePhoto = if (rawPhoto.startsWith("file://") || rawPhoto.startsWith("content://")) {
                                     try {
                                         ImageUploadManager.convertImageToFirestoreDataUri(context, Uri.parse(rawPhoto)) ?: rawPhoto
-                                    } catch (e: Exception) {
+                                    } catch (e: Throwable) {
                                         rawPhoto
                                     }
                                 } else {

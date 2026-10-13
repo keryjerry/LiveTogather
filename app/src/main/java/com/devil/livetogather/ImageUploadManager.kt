@@ -56,8 +56,8 @@ object ImageUploadManager {
     /**
      * Multi-tier image upload:
      * 1. Converts to Firestore-ready Data URI so data is always saved in Cloud Firestore.
-     * 2. Attempts Firebase Storage with default and alternative buckets.
-     * 3. If Cloud Storage fails, returns the Firestore Data URI so it is stored directly in Cloud Firestore!
+     * 2. Attempts Firebase Storage with a strict 4-second timeout.
+     * 3. Falls back immediately to the Firestore Data URI so the image is stored directly in Cloud Firestore without hanging.
      */
     suspend fun uploadImage(
         context: Context,
@@ -66,34 +66,26 @@ object ImageUploadManager {
     ): String? = withContext(Dispatchers.IO) {
         val firestoreDataUri = convertImageToFirestoreDataUri(context, uri)
 
-        // 1. Try Firebase Storage with multiple bucket configurations
-        val bytes = compressImage(context, uri, maxDimension = 1024, quality = 85)
-        if (bytes != null) {
-            val fileName = "${folder}/${UUID.randomUUID()}.jpg"
-            val candidateBuckets = listOf(
-                null, // Default bucket from google-services.json
-                "gs://livetogather-ac204.firebasestorage.app",
-                "gs://livetogather-ac204.appspot.com"
-            )
-
-            for (bucket in candidateBuckets) {
-                try {
-                    val storage = if (bucket == null) FirebaseStorage.getInstance() else FirebaseStorage.getInstance(bucket)
+        // Attempt quick Firebase Storage upload with 4-second timeout
+        try {
+            kotlinx.coroutines.withTimeoutOrNull(4000L) {
+                val bytes = compressImage(context, uri, maxDimension = 800, quality = 80)
+                if (bytes != null) {
+                    val fileName = "${folder}/${UUID.randomUUID()}.jpg"
+                    val storage = FirebaseStorage.getInstance()
                     val storageRef = storage.reference.child(fileName)
                     val cloudUrl = uploadToStorageRef(storageRef, bytes)
                     if (!cloudUrl.isNullOrBlank()) {
-                        Log.d(TAG, "Uploaded image successfully to Firebase Storage ($bucket): $cloudUrl")
-                        return@withContext cloudUrl
+                        Log.d(TAG, "Uploaded image successfully to Firebase Storage: $cloudUrl")
+                        return@withTimeoutOrNull cloudUrl
                     }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Firebase Storage attempt failed for bucket $bucket: ${e.message}")
                 }
+                null
             }
-        }
-
-        // 2. Return the Firestore Data URI so the image is stored directly in Cloud Firestore!
-        Log.i(TAG, "Returning Cloud Firestore Data URI for cloud database persistence")
-        firestoreDataUri
+        } catch (e: Throwable) {
+            Log.w(TAG, "Firebase Storage quick upload skipped: ${e.message}")
+            null
+        } ?: firestoreDataUri
     }
 
     private suspend fun uploadToStorageRef(storageRef: StorageReference, bytes: ByteArray): String? = suspendCoroutine { continuation ->
@@ -116,33 +108,58 @@ object ImageUploadManager {
         quality: Int = 85
     ): ByteArray? {
         return try {
-            val originalBitmap = if (uri.toString().startsWith("data:image")) {
+            if (uri.toString().startsWith("data:image")) {
                 val base64Part = uri.toString().substringAfter("base64,")
-                val decodedBytes = android.util.Base64.decode(base64Part, android.util.Base64.DEFAULT)
-                BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size)
-            } else {
-                val inputStream = context.contentResolver.openInputStream(uri) ?: return null
-                val bmp = BitmapFactory.decodeStream(inputStream)
-                inputStream.close()
-                bmp
+                return android.util.Base64.decode(base64Part, android.util.Base64.DEFAULT)
+            }
+
+            // Step 1: Query image dimensions without allocating bitmap memory
+            val boundsOptions = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            context.contentResolver.openInputStream(uri)?.use { stream ->
+                BitmapFactory.decodeStream(stream, null, boundsOptions)
+            }
+
+            val origWidth = boundsOptions.outWidth
+            val origHeight = boundsOptions.outHeight
+            if (origWidth <= 0 || origHeight <= 0) return null
+
+            // Step 2: Compute inSampleSize to downsample high-res photos during decode
+            var sampleSize = 1
+            while ((origWidth / (sampleSize * 2)) >= maxDimension && (origHeight / (sampleSize * 2)) >= maxDimension) {
+                sampleSize *= 2
+            }
+
+            // Step 3: Decode scaled bitmap with RGB_565 to prevent any OutOfMemoryError
+            val decodeOptions = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+                inPreferredConfig = Bitmap.Config.RGB_565
+            }
+            val sampledBitmap = context.contentResolver.openInputStream(uri)?.use { stream ->
+                BitmapFactory.decodeStream(stream, null, decodeOptions)
             } ?: return null
 
-            val width = originalBitmap.width
-            val height = originalBitmap.height
-            val scaledBitmap = if (width > maxDimension || height > maxDimension) {
+            // Step 4: Scale precisely to maxDimension
+            val width = sampledBitmap.width
+            val height = sampledBitmap.height
+            val finalBitmap = if (width > maxDimension || height > maxDimension) {
                 val ratio = width.toFloat() / height.toFloat()
                 val targetWidth = if (ratio > 1) maxDimension else (maxDimension * ratio).toInt()
                 val targetHeight = if (ratio > 1) (maxDimension / ratio).toInt() else maxDimension
-                Bitmap.createScaledBitmap(originalBitmap, targetWidth, targetHeight, true)
+                val scaled = Bitmap.createScaledBitmap(sampledBitmap, targetWidth.coerceAtLeast(1), targetHeight.coerceAtLeast(1), true)
+                if (scaled != sampledBitmap) sampledBitmap.recycle()
+                scaled
             } else {
-                originalBitmap
+                sampledBitmap
             }
 
             val outputStream = ByteArrayOutputStream()
-            scaledBitmap.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)
+            finalBitmap.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)
+            finalBitmap.recycle()
             outputStream.toByteArray()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error compressing image: ${e.message}")
+        } catch (e: Throwable) {
+            Log.e(TAG, "Error compressing image: ${e.message}", e)
             null
         }
     }
