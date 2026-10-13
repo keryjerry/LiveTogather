@@ -43,46 +43,57 @@ object ImageUploadManager {
     }
 
     /**
+     * Compresses and converts image to a Firestore-compatible Data URI string.
+     * Stored 100% inside Cloud Firestore document (users/{uid}.photo).
+     * Works on all devices, syncs in real-time across users, and never relies on device-local directories.
+     */
+    fun convertImageToFirestoreDataUri(context: Context, uri: Uri): String? {
+        val bytes = compressImage(context, uri, maxDimension = 360, quality = 80) ?: return null
+        val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+        return "data:image/jpeg;base64,$base64"
+    }
+
+    /**
      * Multi-tier image upload:
-     * 1. Saves local persistent copy first so the chosen image NEVER fails or disappears.
+     * 1. Converts to Firestore-ready Data URI so data is always saved in Cloud Firestore.
      * 2. Attempts Firebase Storage with default and alternative buckets.
-     * 3. If Cloud Storage fails, returns the local persistent file path.
+     * 3. If Cloud Storage fails, returns the Firestore Data URI so it is stored directly in Cloud Firestore!
      */
     suspend fun uploadImage(
         context: Context,
         uri: Uri,
         folder: String = "general"
     ): String? = withContext(Dispatchers.IO) {
-        val bytes = compressImage(context, uri) ?: return@withContext null
-
-        // Always save a local copy as an unbreakable fallback
-        val localPath = saveImageLocally(context, uri, "${folder}_${UUID.randomUUID()}.jpg")
+        val firestoreDataUri = convertImageToFirestoreDataUri(context, uri)
 
         // 1. Try Firebase Storage with multiple bucket configurations
-        val fileName = "${folder}/${UUID.randomUUID()}.jpg"
-        val candidateBuckets = listOf(
-            null, // Default bucket from google-services.json
-            "gs://livetogather-ac204.firebasestorage.app",
-            "gs://livetogather-ac204.appspot.com"
-        )
+        val bytes = compressImage(context, uri, maxDimension = 1024, quality = 85)
+        if (bytes != null) {
+            val fileName = "${folder}/${UUID.randomUUID()}.jpg"
+            val candidateBuckets = listOf(
+                null, // Default bucket from google-services.json
+                "gs://livetogather-ac204.firebasestorage.app",
+                "gs://livetogather-ac204.appspot.com"
+            )
 
-        for (bucket in candidateBuckets) {
-            try {
-                val storage = if (bucket == null) FirebaseStorage.getInstance() else FirebaseStorage.getInstance(bucket)
-                val storageRef = storage.reference.child(fileName)
-                val cloudUrl = uploadToStorageRef(storageRef, bytes)
-                if (!cloudUrl.isNullOrBlank()) {
-                    Log.d(TAG, "Uploaded image successfully to Firebase Storage ($bucket): $cloudUrl")
-                    return@withContext cloudUrl
+            for (bucket in candidateBuckets) {
+                try {
+                    val storage = if (bucket == null) FirebaseStorage.getInstance() else FirebaseStorage.getInstance(bucket)
+                    val storageRef = storage.reference.child(fileName)
+                    val cloudUrl = uploadToStorageRef(storageRef, bytes)
+                    if (!cloudUrl.isNullOrBlank()) {
+                        Log.d(TAG, "Uploaded image successfully to Firebase Storage ($bucket): $cloudUrl")
+                        return@withContext cloudUrl
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Firebase Storage attempt failed for bucket $bucket: ${e.message}")
                 }
-            } catch (e: Exception) {
-                Log.w(TAG, "Firebase Storage attempt failed for bucket $bucket: ${e.message}")
             }
         }
 
-        // 2. If Cloud Storage failed, return the local file path so the photo works immediately and permanently!
-        Log.i(TAG, "Cloud storage unavailable. Falling back to local persistent path: $localPath")
-        localPath ?: uri.toString()
+        // 2. Return the Firestore Data URI so the image is stored directly in Cloud Firestore!
+        Log.i(TAG, "Returning Cloud Firestore Data URI for cloud database persistence")
+        firestoreDataUri
     }
 
     private suspend fun uploadToStorageRef(storageRef: StorageReference, bytes: ByteArray): String? = suspendCoroutine { continuation ->
@@ -98,15 +109,24 @@ object ImageUploadManager {
         }
     }
 
-    private fun compressImage(context: Context, uri: Uri): ByteArray? {
+    private fun compressImage(
+        context: Context,
+        uri: Uri,
+        maxDimension: Int = 1024,
+        quality: Int = 85
+    ): ByteArray? {
         return try {
-            val inputStream = context.contentResolver.openInputStream(uri) ?: return null
-            val originalBitmap = BitmapFactory.decodeStream(inputStream)
-            inputStream.close()
-            if (originalBitmap == null) return null
+            val originalBitmap = if (uri.toString().startsWith("data:image")) {
+                val base64Part = uri.toString().substringAfter("base64,")
+                val decodedBytes = android.util.Base64.decode(base64Part, android.util.Base64.DEFAULT)
+                BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size)
+            } else {
+                val inputStream = context.contentResolver.openInputStream(uri) ?: return null
+                val bmp = BitmapFactory.decodeStream(inputStream)
+                inputStream.close()
+                bmp
+            } ?: return null
 
-            // Scale down if dimensions exceed 1024px to optimize storage & speed
-            val maxDimension = 1024
             val width = originalBitmap.width
             val height = originalBitmap.height
             val scaledBitmap = if (width > maxDimension || height > maxDimension) {
@@ -119,7 +139,7 @@ object ImageUploadManager {
             }
 
             val outputStream = ByteArrayOutputStream()
-            scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 85, outputStream)
+            scaledBitmap.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)
             outputStream.toByteArray()
         } catch (e: Exception) {
             Log.e(TAG, "Error compressing image: ${e.message}")

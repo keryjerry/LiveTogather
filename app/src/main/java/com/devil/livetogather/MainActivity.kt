@@ -49,6 +49,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import coil.Coil
+import coil.ImageLoader
 import coil.compose.AsyncImage
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
@@ -212,6 +214,12 @@ val SETTINGS_TOPIC_OPTIONS = mapOf(
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val imageLoader = ImageLoader.Builder(this)
+            .components {
+                add(DataUriFetcher.Factory(this@MainActivity))
+            }
+            .build()
+        Coil.setImageLoader(imageLoader)
         setContent {
             LiveTogatherApp()
         }
@@ -2452,19 +2460,28 @@ fun ProfileScreenContent(
         if (uri != null) {
             isUploadingPhoto = true
             coroutineScope.launch {
-                // 1. Immediately save locally to private storage so photo is NEVER lost & displays instantly
-                val localSavedUri = ImageUploadManager.saveImageLocally(context, uri, "profile_${currentUserId}.jpg")
-                val activePhoto = localSavedUri ?: uri.toString()
-                photoUrl = activePhoto
-                val updatedLocal = currentUser.copy(photo = activePhoto)
-                onUpdateProfile(updatedLocal)
-                Toast.makeText(context, "Profile picture saved! 📸", Toast.LENGTH_SHORT).show()
+                // 1. Immediately compress & convert to Cloud Firestore Data URI (Base64 JPEG, ~20KB)
+                // This ensures profile photo is stored directly in Cloud Firestore (users/{uid}.photo) and accessible globally
+                val firestoreDataUri = ImageUploadManager.convertImageToFirestoreDataUri(context, uri) ?: uri.toString()
+                photoUrl = firestoreDataUri
+                val updatedProfile = currentUser.copy(uid = currentUserId, photo = firestoreDataUri)
+                onUpdateProfile(updatedProfile)
 
-                // 2. Upload to Cloud in background (multi-bucket Firebase Storage or fallback)
+                // Sync directly to Cloud Firestore
+                db.collection("users").document(currentUserId)
+                    .set(updatedProfile, SetOptions.merge())
+                    .addOnSuccessListener {
+                        Toast.makeText(context, "Profile picture saved to Cloud Firestore! 📸☁️", Toast.LENGTH_SHORT).show()
+                    }
+                    .addOnFailureListener { e ->
+                        Toast.makeText(context, "Saved locally. Syncing to Firestore: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+
+                // 2. Background upload to Firebase Storage if available (upgrades to CDN URL)
                 val cloudUrl = ImageUploadManager.uploadImage(context, uri, "profiles")
                 if (!cloudUrl.isNullOrBlank() && cloudUrl.startsWith("http")) {
                     photoUrl = cloudUrl
-                    val updatedCloud = currentUser.copy(photo = cloudUrl)
+                    val updatedCloud = currentUser.copy(uid = currentUserId, photo = cloudUrl)
                     onUpdateProfile(updatedCloud)
                     db.collection("users").document(currentUserId).set(updatedCloud, SetOptions.merge())
                 }
@@ -2769,6 +2786,18 @@ fun ProfileScreenContent(
                         Button(
                             onClick = {
                                 val parsedAge = age.toIntOrNull() ?: currentUser.age
+                                val rawPhoto = photoUrl.ifEmpty { currentUser.photo }
+                                val safePhoto = if (rawPhoto.startsWith("file://")) {
+                                    try {
+                                        ImageUploadManager.convertImageToFirestoreDataUri(context, Uri.parse(rawPhoto)) ?: rawPhoto
+                                    } catch (e: Exception) {
+                                        rawPhoto
+                                    }
+                                } else {
+                                    rawPhoto
+                                }
+                                photoUrl = safePhoto
+
                                 val updated = currentUser.copy(
                                     uid = currentUserId,
                                     name = name.trim().ifEmpty { currentUser.name },
@@ -2778,7 +2807,7 @@ fun ProfileScreenContent(
                                     education = education.trim(),
                                     hobbies = hobbies.trim(),
                                     bio = bio.trim(),
-                                    photo = photoUrl.ifEmpty { currentUser.photo },
+                                    photo = safePhoto,
                                     gender = gender,
                                     interestedIn = interestedIn
                                 )
@@ -2787,13 +2816,13 @@ fun ProfileScreenContent(
                                 isEditing = false
                                 isSaving = false
                                 statusMessage = "✅ Profile updated successfully!"
-                                Toast.makeText(context, "Profile saved successfully! ✅", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Profile saved to Cloud Firestore! ✅", Toast.LENGTH_SHORT).show()
 
-                                // Background cloud sync
+                                // Background cloud sync to Firestore
                                 db.collection("users").document(currentUserId)
                                     .set(updated, SetOptions.merge())
                                     .addOnSuccessListener {
-                                        statusMessage = "✅ Profile Synced in Real-Time!"
+                                        statusMessage = "✅ Profile Synced to Firestore in Real-Time!"
                                     }
                                     .addOnFailureListener {
                                         statusMessage = "✅ Profile Saved Locally!"
