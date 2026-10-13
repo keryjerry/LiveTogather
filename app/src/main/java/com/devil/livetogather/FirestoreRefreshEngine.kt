@@ -91,7 +91,11 @@ class FirestoreRefreshEngine(
                 userCount = freshUsers.size
                 withContext(Dispatchers.Main) {
                     discoverProfiles.clear()
-                    discoverProfiles.addAll(freshUsers)
+                    if (freshUsers.isNotEmpty()) {
+                        discoverProfiles.addAll(freshUsers)
+                    } else {
+                        discoverProfiles.addAll(DEFAULT_DUMMY_PROFILES.filter { it.uid != currentUserId })
+                    }
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Discover users refresh error: ${e.message}")

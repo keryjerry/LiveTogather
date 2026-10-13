@@ -2,6 +2,7 @@
 package com.devil.livetogather
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
@@ -365,6 +366,19 @@ fun LiveTogatherApp() {
             saveMomentsToPrefs(prefs, DEFAULT_MOMENTS_SEED)
         }
 
+        // Initialize Default Dummy Profiles into Firestore if not present
+        DEFAULT_DUMMY_PROFILES.forEach { dummyProfile ->
+            db.collection("users").document(dummyProfile.uid).get()
+                .addOnSuccessListener { doc ->
+                    if (doc == null || !doc.exists()) {
+                        db.collection("users").document(dummyProfile.uid).set(dummyProfile, SetOptions.merge())
+                    }
+                }
+        }
+        if (discoverProfiles.isEmpty()) {
+            discoverProfiles.addAll(DEFAULT_DUMMY_PROFILES.filter { it.uid != currentUserId })
+        }
+
         // Initialize Rooms Catalog & Real-Time Snapshot Listener
         roomsList.clear()
         roomsList.addAll(INTENT_ROOMS_CATALOG)
@@ -448,7 +462,11 @@ fun LiveTogatherApp() {
                 val list = snapshot.documents.mapNotNull { it.toObject(UserProfile::class.java) }
                     .filter { it.uid != currentUserId && !it.uid.startsWith("USER_") && !currentUser.blockedUserIds.contains(it.uid) }
                 discoverProfiles.clear()
-                discoverProfiles.addAll(list)
+                if (list.isNotEmpty()) {
+                    discoverProfiles.addAll(list)
+                } else {
+                    discoverProfiles.addAll(DEFAULT_DUMMY_PROFILES.filter { it.uid != currentUserId })
+                }
             }
         }
 
@@ -2701,6 +2719,15 @@ fun ProfileScreenContent(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
+    val isKeyboardOpen = WindowInsets.isImeVisible
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+
+    BackHandler(enabled = isKeyboardOpen) {
+        keyboardController?.hide()
+        focusManager.clearFocus()
+    }
+
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -2932,7 +2959,7 @@ fun ProfileScreenContent(
             }
         }
 
-        // 5. Action Buttons (Instagram Style: Edit Profile, Settings, VIP Club)
+        // 5. Action Buttons (Instagram Style: Edit Profile, Share Profile, VIP Club)
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -2941,7 +2968,19 @@ fun ProfileScreenContent(
             ) {
                 // Edit Profile Button (Opens Popup Dialog)
                 Button(
-                    onClick = { isEditing = true },
+                    onClick = {
+                        name = currentUser.name
+                        age = currentUser.age.toString()
+                        city = currentUser.city
+                        profession = currentUser.profession
+                        education = currentUser.education
+                        hobbies = currentUser.hobbies
+                        bio = currentUser.bio
+                        photoUrl = currentUser.photo
+                        gender = currentUser.gender
+                        interestedIn = currentUser.interestedIn
+                        isEditing = true
+                    },
                     colors = ButtonDefaults.buttonColors(containerColor = BrandCardSubtle),
                     border = BorderStroke(1.dp, BrandBorder),
                     shape = RoundedCornerShape(10.dp),
@@ -2953,18 +2992,29 @@ fun ProfileScreenContent(
                     Text("Edit Profile", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
 
-                // Settings Button
+                // Share Profile Button (Replaces duplicate Settings button with native share intent)
                 Button(
-                    onClick = onOpenSettings,
+                    onClick = {
+                        try {
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_SUBJECT, "LiveTogather Profile: ${currentUser.name}")
+                                putExtra(Intent.EXTRA_TEXT, "Connect with ${currentUser.name} on LiveTogather! Join the hangout: https://livetogather.app/profile/${currentUser.uid}")
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, "Share Profile"))
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Could not open share menu", Toast.LENGTH_SHORT).show()
+                        }
+                    },
                     colors = ButtonDefaults.buttonColors(containerColor = BrandCardSubtle),
                     border = BorderStroke(1.dp, BrandBorder),
                     shape = RoundedCornerShape(10.dp),
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                     modifier = Modifier.weight(1f).height(38.dp)
                 ) {
-                    Icon(Icons.Default.Settings, contentDescription = null, tint = Color.LightGray, modifier = Modifier.size(14.dp))
+                    Icon(Icons.Default.Share, contentDescription = null, tint = BrandGold, modifier = Modifier.size(14.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Settings", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text("Share", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
 
                 // VIP Club Pass
@@ -3327,8 +3377,18 @@ fun ProfileScreenContent(
     // Modal Edit Profile Popup Dialog
     if (isEditing) {
         Dialog(
-            onDismissRequest = { isEditing = false },
-            properties = DialogProperties(usePlatformDefaultWidth = false)
+            onDismissRequest = {
+                if (isKeyboardOpen) {
+                    keyboardController?.hide()
+                    focusManager.clearFocus()
+                } else {
+                    isEditing = false
+                }
+            },
+            properties = DialogProperties(
+                usePlatformDefaultWidth = false,
+                dismissOnBackPress = !isKeyboardOpen
+            )
         ) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = BrandDark),
@@ -3337,6 +3397,8 @@ fun ProfileScreenContent(
                 modifier = Modifier
                     .fillMaxWidth(0.94f)
                     .fillMaxHeight(0.88f)
+                    .navigationBarsPadding()
+                    .imePadding()
             ) {
                 Column(
                     modifier = Modifier
@@ -3360,7 +3422,11 @@ fun ProfileScreenContent(
                             )
                         }
                         IconButton(
-                            onClick = { isEditing = false },
+                            onClick = {
+                                keyboardController?.hide()
+                                focusManager.clearFocus()
+                                isEditing = false
+                            },
                             modifier = Modifier.size(28.dp)
                         ) {
                             Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray)
@@ -3376,6 +3442,7 @@ fun ProfileScreenContent(
                     Column(
                         modifier = Modifier
                             .weight(1f)
+                            .imePadding()
                             .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
@@ -3539,6 +3606,8 @@ fun ProfileScreenContent(
                     ) {
                         OutlinedButton(
                             onClick = {
+                                keyboardController?.hide()
+                                focusManager.clearFocus()
                                 name = currentUser.name
                                 age = currentUser.age.toString()
                                 city = currentUser.city
@@ -3561,6 +3630,8 @@ fun ProfileScreenContent(
 
                         Button(
                             onClick = {
+                                keyboardController?.hide()
+                                focusManager.clearFocus()
                                 val parsedAge = age.toIntOrNull() ?: currentUser.age
                                 val rawPhoto = photoUrl.ifEmpty { currentUser.photo }
                                 val safePhoto = if (rawPhoto.startsWith("file://") || rawPhoto.startsWith("content://")) {
