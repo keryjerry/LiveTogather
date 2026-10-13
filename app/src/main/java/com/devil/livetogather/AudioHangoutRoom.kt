@@ -79,16 +79,19 @@ fun CreateRoomDialog(
 
     val isKeyboardOpen = WindowInsets.isImeVisible
     val keyboardController = LocalSoftwareKeyboardController.current
-    val focusManager = LocalFocusManager.current
-
-    BackHandler(enabled = isKeyboardOpen) {
-        keyboardController?.hide()
-        focusManager.clearFocus()
-    }
 
     Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(dismissOnBackPress = !isKeyboardOpen)
+        onDismissRequest = {
+            if (isKeyboardOpen) {
+                keyboardController?.hide()
+            } else {
+                onDismiss()
+            }
+        },
+        properties = DialogProperties(
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true
+        )
     ) {
         Card(
             colors = CardDefaults.cardColors(containerColor = BrandCard),
@@ -331,12 +334,6 @@ fun TrackSelectorDialog(
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
 
-    // Prevent dialog from falling back / dismissing when closing keyboard
-    BackHandler(enabled = isKeyboardOpen) {
-        keyboardController?.hide()
-        focusManager.clearFocus()
-    }
-
     // Debounced search query handler
     LaunchedEffect(searchQuery) {
         val trimmed = searchQuery.trim()
@@ -369,8 +366,17 @@ fun TrackSelectorDialog(
     }
 
     Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(dismissOnBackPress = !isKeyboardOpen)
+        onDismissRequest = {
+            if (isKeyboardOpen) {
+                keyboardController?.hide()
+            } else {
+                onDismiss()
+            }
+        },
+        properties = DialogProperties(
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true
+        )
     ) {
         Card(
             colors = CardDefaults.cardColors(containerColor = BrandCard),
@@ -646,17 +652,18 @@ fun SendMessageRequestDialog(
     var messageText by remember { mutableStateOf("Hey! Would love to connect and chat!") }
     val isKeyboardOpen = WindowInsets.isImeVisible
     val keyboardController = LocalSoftwareKeyboardController.current
-    val focusManager = LocalFocusManager.current
-
-    BackHandler(enabled = isKeyboardOpen) {
-        keyboardController?.hide()
-        focusManager.clearFocus()
-    }
 
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (isKeyboardOpen) {
+                keyboardController?.hide()
+            } else {
+                onDismiss()
+            }
+        },
         properties = DialogProperties(
-            dismissOnBackPress = !isKeyboardOpen
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true
         )
     ) {
         Card(
@@ -738,16 +745,19 @@ fun AllRoomViewersDialog(
 ) {
     val isKeyboardOpen = WindowInsets.isImeVisible
     val keyboardController = LocalSoftwareKeyboardController.current
-    val focusManager = LocalFocusManager.current
-
-    BackHandler(enabled = isKeyboardOpen) {
-        keyboardController?.hide()
-        focusManager.clearFocus()
-    }
 
     Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(dismissOnBackPress = !isKeyboardOpen)
+        onDismissRequest = {
+            if (isKeyboardOpen) {
+                keyboardController?.hide()
+            } else {
+                onDismiss()
+            }
+        },
+        properties = DialogProperties(
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true
+        )
     ) {
         Card(
             colors = CardDefaults.cardColors(containerColor = BrandCard),
@@ -1415,15 +1425,17 @@ fun RoomSettingsDialog(
         }
     }
 
-    BackHandler(enabled = isKeyboardOpen) {
-        keyboardController?.hide()
-        focusManager.clearFocus()
-    }
-
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (isKeyboardOpen) {
+                keyboardController?.hide()
+            } else {
+                onDismiss()
+            }
+        },
         properties = DialogProperties(
-            dismissOnBackPress = !isKeyboardOpen
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true
         )
     ) {
         Card(
@@ -2030,7 +2042,6 @@ fun AudioHangoutRoomDialog(
         onDismissRequest = {
             if (isKeyboardOpen) {
                 keyboardController?.hide()
-                focusManager.clearFocus()
             } else {
                 onDismiss()
             }
@@ -2049,12 +2060,6 @@ fun AudioHangoutRoomDialog(
             (parent as? DialogWindowProvider)?.window?.setSoftInputMode(
                 WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
             )
-        }
-
-        // Intercept hardware/system back button inside Dialog window
-        BackHandler(enabled = isKeyboardOpen) {
-            keyboardController?.hide()
-            focusManager.clearFocus()
         }
 
         Scaffold(
@@ -3334,18 +3339,19 @@ fun CategoryHubLobbyDialog(
 
     val isKeyboardOpen = WindowInsets.isImeVisible
     val keyboardController = LocalSoftwareKeyboardController.current
-    val focusManager = LocalFocusManager.current
-
-    BackHandler(enabled = isKeyboardOpen) {
-        keyboardController?.hide()
-        focusManager.clearFocus()
-    }
 
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (isKeyboardOpen) {
+                keyboardController?.hide()
+            } else {
+                onDismiss()
+            }
+        },
         properties = DialogProperties(
             usePlatformDefaultWidth = false,
-            dismissOnBackPress = !isKeyboardOpen
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true
         )
     ) {
         Scaffold(

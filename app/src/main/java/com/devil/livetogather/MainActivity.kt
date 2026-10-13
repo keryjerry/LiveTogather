@@ -588,16 +588,9 @@ fun LiveTogatherApp() {
     }
 
     val isKeyboardOpen = WindowInsets.isImeVisible
-    val keyboardController = LocalSoftwareKeyboardController.current
-    val focusManager = LocalFocusManager.current
 
-    // Priority 1: When keyboard is open anywhere, system back button dismisses ONLY the keyboard
-    BackHandler(enabled = isKeyboardOpen) {
-        keyboardController?.hide()
-        focusManager.clearFocus()
-    }
-
-    // Priority 2: When keyboard is closed and user is on another screen, back button returns to Discover tab
+    // When keyboard is closed and user is on another screen, system back button returns to Discover tab.
+    // When keyboard is open, Android OS IME handles back button natively to dismiss keyboard without flicker.
     BackHandler(enabled = !isKeyboardOpen && currentScreen != "discover") {
         currentScreen = "discover"
     }
@@ -675,13 +668,15 @@ fun LiveTogatherApp() {
                             }
                         }
 
-                        // Settings Gear Icon
-                        IconButton(onClick = { showSettingsDialog = true }) {
-                            Icon(
-                                imageVector = Icons.Default.Settings,
-                                contentDescription = "Settings",
-                                tint = Color.White
-                            )
+                        // Profile Settings Gear Icon (Visible exclusively on real main profile screen)
+                        if (currentScreen == "profile") {
+                            IconButton(onClick = { showSettingsDialog = true }) {
+                                Icon(
+                                    imageVector = Icons.Default.Settings,
+                                    contentDescription = "Profile Settings",
+                                    tint = Color.White
+                                )
+                            }
                         }
                     }
                 }
@@ -2772,11 +2767,6 @@ fun ProfileScreenContent(
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
 
-    BackHandler(enabled = isKeyboardOpen) {
-        keyboardController?.hide()
-        focusManager.clearFocus()
-    }
-
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -3432,14 +3422,14 @@ fun ProfileScreenContent(
             onDismissRequest = {
                 if (isKeyboardOpen) {
                     keyboardController?.hide()
-                    focusManager.clearFocus()
                 } else {
                     isEditing = false
                 }
             },
             properties = DialogProperties(
                 usePlatformDefaultWidth = false,
-                dismissOnBackPress = true
+                dismissOnBackPress = true,
+                dismissOnClickOutside = true
             )
         ) {
             Card(
@@ -3457,7 +3447,6 @@ fun ProfileScreenContent(
                     ) {
                         if (isKeyboardOpen) {
                             keyboardController?.hide()
-                            focusManager.clearFocus()
                         }
                     }
             ) {
@@ -3521,7 +3510,6 @@ fun ProfileScreenContent(
                     Column(
                         modifier = Modifier
                             .weight(1f)
-                            .imePadding()
                             .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
@@ -4130,14 +4118,14 @@ fun LocationSetupDialog(
         onDismissRequest = {
             if (isKeyboardOpen) {
                 keyboardController?.hide()
-                focusManager.clearFocus()
             } else {
                 onDismiss()
             }
         },
         properties = DialogProperties(
             usePlatformDefaultWidth = false,
-            dismissOnBackPress = true
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true
         )
     ) {
         Card(
@@ -4155,7 +4143,6 @@ fun LocationSetupDialog(
                 ) {
                     if (isKeyboardOpen) {
                         keyboardController?.hide()
-                        focusManager.clearFocus()
                     }
                 }
         ) {
@@ -4404,25 +4391,19 @@ fun SettingsDialog(
     var socialMedia by remember { mutableStateOf(user.socialMedia) }
     val isKeyboardOpen = WindowInsets.isImeVisible
     val keyboardController = LocalSoftwareKeyboardController.current
-    val focusManager = LocalFocusManager.current
-
-    BackHandler(enabled = isKeyboardOpen) {
-        keyboardController?.hide()
-        focusManager.clearFocus()
-    }
 
     Dialog(
         onDismissRequest = {
             if (isKeyboardOpen) {
                 keyboardController?.hide()
-                focusManager.clearFocus()
             } else {
                 onDismiss()
             }
         },
         properties = DialogProperties(
             usePlatformDefaultWidth = false,
-            dismissOnBackPress = true
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true
         )
     ) {
         Scaffold(
@@ -5047,19 +5028,20 @@ fun PostMomentDialog(
 
     val isKeyboardOpen = WindowInsets.isImeVisible
     val keyboardController = LocalSoftwareKeyboardController.current
-    val focusManager = LocalFocusManager.current
-
-    BackHandler(enabled = isKeyboardOpen) {
-        keyboardController?.hide()
-        focusManager.clearFocus()
-    }
 
     val canPost = !isUploading && (pickedMediaUrls.isNotEmpty() || caption.isNotBlank())
 
     Dialog(
-        onDismissRequest = { if (!isUploading) onDismiss() },
+        onDismissRequest = {
+            if (isKeyboardOpen) {
+                keyboardController?.hide()
+            } else if (!isUploading) {
+                onDismiss()
+            }
+        },
         properties = DialogProperties(
-            dismissOnBackPress = !isKeyboardOpen && !isUploading
+            dismissOnBackPress = !isUploading,
+            dismissOnClickOutside = !isUploading
         )
     ) {
         Card(
@@ -5287,17 +5269,18 @@ fun EditMomentDialog(
 
     val isKeyboardOpen = WindowInsets.isImeVisible
     val keyboardController = LocalSoftwareKeyboardController.current
-    val focusManager = LocalFocusManager.current
-
-    BackHandler(enabled = isKeyboardOpen) {
-        keyboardController?.hide()
-        focusManager.clearFocus()
-    }
 
     Dialog(
-        onDismissRequest = { if (!isUploading) onDismiss() },
+        onDismissRequest = {
+            if (isKeyboardOpen) {
+                keyboardController?.hide()
+            } else if (!isUploading) {
+                onDismiss()
+            }
+        },
         properties = DialogProperties(
-            dismissOnBackPress = !isKeyboardOpen && !isUploading
+            dismissOnBackPress = !isUploading,
+            dismissOnClickOutside = !isUploading
         )
     ) {
         Card(
@@ -5474,17 +5457,18 @@ fun DirectMessageDialog(
     var messageText by remember { mutableStateOf("") }
     val isKeyboardOpen = WindowInsets.isImeVisible
     val keyboardController = LocalSoftwareKeyboardController.current
-    val focusManager = LocalFocusManager.current
-
-    BackHandler(enabled = isKeyboardOpen) {
-        keyboardController?.hide()
-        focusManager.clearFocus()
-    }
 
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (isKeyboardOpen) {
+                keyboardController?.hide()
+            } else {
+                onDismiss()
+            }
+        },
         properties = DialogProperties(
-            dismissOnBackPress = !isKeyboardOpen
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true
         )
     ) {
         Card(
@@ -5562,17 +5546,18 @@ fun CommentsDialog(
     }
     val isKeyboardOpen = WindowInsets.isImeVisible
     val keyboardController = LocalSoftwareKeyboardController.current
-    val focusManager = LocalFocusManager.current
-
-    BackHandler(enabled = isKeyboardOpen) {
-        keyboardController?.hide()
-        focusManager.clearFocus()
-    }
 
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (isKeyboardOpen) {
+                keyboardController?.hide()
+            } else {
+                onDismiss()
+            }
+        },
         properties = DialogProperties(
-            dismissOnBackPress = !isKeyboardOpen
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true
         )
     ) {
         Card(
