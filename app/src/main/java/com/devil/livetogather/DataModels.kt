@@ -32,6 +32,7 @@ data class RoomItem(
     val nowPlayingTitle: String = "",
     val nowPlayingArtist: String = "",
     val nowPlayingUrl: String = "",
+    val nowPlayingArtworkUrl: String = "",
     val currentPlayingTrack: String = "",
     val playbackPosition: Long = 0L,
     val isPlaying: Boolean = false,

@@ -16,8 +16,9 @@ object AudioPlayerManager {
     val isMutedState = mutableStateOf(false)
     val currentTrackTitleState = mutableStateOf("")
     val currentTrackUrlState = mutableStateOf("")
+    val currentTrackArtworkUrlState = mutableStateOf("")
 
-    fun play(context: Context, urlOrUri: String, title: String, onCompletion: () -> Unit = {}) {
+    fun play(context: Context, urlOrUri: String, title: String, artworkUrl: String = "", onCompletion: () -> Unit = {}) {
         if (urlOrUri.isBlank()) return
 
         // If already playing this track, don't restart
@@ -30,6 +31,7 @@ object AudioPlayerManager {
             isBufferingState.value = true
             currentTrackTitleState.value = title
             currentTrackUrlState.value = urlOrUri
+            currentTrackArtworkUrlState.value = artworkUrl
 
             mediaPlayer = MediaPlayer().apply {
                 setAudioAttributes(
@@ -109,14 +111,14 @@ object AudioPlayerManager {
                 isPlayingState.value = true
                 isBufferingState.value = false
             } else if (context != null && currentTrackUrlState.value.isNotBlank()) {
-                play(context, currentTrackUrlState.value, currentTrackTitleState.value)
+                play(context, currentTrackUrlState.value, currentTrackTitleState.value, currentTrackArtworkUrlState.value)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Resume failed: ${e.message}")
         }
     }
 
-    fun togglePlayPause(context: Context, urlOrUri: String, title: String): Boolean {
+    fun togglePlayPause(context: Context, urlOrUri: String, title: String, artworkUrl: String = ""): Boolean {
         return if (isPlayingState.value) {
             pause()
             false
@@ -124,7 +126,7 @@ object AudioPlayerManager {
             if (mediaPlayer != null && currentTrackUrlState.value == urlOrUri) {
                 resume(context)
             } else {
-                play(context, urlOrUri, title)
+                play(context, urlOrUri, title, artworkUrl)
             }
             true
         }
@@ -142,6 +144,7 @@ object AudioPlayerManager {
             isBufferingState.value = false
             currentTrackTitleState.value = ""
             currentTrackUrlState.value = ""
+            currentTrackArtworkUrlState.value = ""
         }
     }
 

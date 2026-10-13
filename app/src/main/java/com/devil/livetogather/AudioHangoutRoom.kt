@@ -7,6 +7,7 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -233,47 +234,71 @@ fun CreateRoomDialog(
 @Composable
 fun MusicVisualizerWave(isPlaying: Boolean, modifier: Modifier = Modifier) {
     val infiniteTransition = rememberInfiniteTransition(label = "wave")
-    
-    val height1 by infiniteTransition.animateFloat(
+
+    val h1 by infiniteTransition.animateFloat(
         initialValue = 6f,
         targetValue = if (isPlaying) 22f else 6f,
-        animationSpec = infiniteRepeatable(tween(400, easing = LinearEasing), RepeatMode.Reverse),
+        animationSpec = infiniteRepeatable(tween(380, easing = LinearEasing), RepeatMode.Reverse),
         label = "h1"
     )
-    val height2 by infiniteTransition.animateFloat(
+    val h2 by infiniteTransition.animateFloat(
         initialValue = 18f,
         targetValue = if (isPlaying) 8f else 6f,
-        animationSpec = infiniteRepeatable(tween(350, easing = LinearEasing), RepeatMode.Reverse),
+        animationSpec = infiniteRepeatable(tween(290, easing = LinearEasing), RepeatMode.Reverse),
         label = "h2"
     )
-    val height3 by infiniteTransition.animateFloat(
+    val h3 by infiniteTransition.animateFloat(
         initialValue = 10f,
-        targetValue = if (isPlaying) 24f else 6f,
-        animationSpec = infiniteRepeatable(tween(450, easing = LinearEasing), RepeatMode.Reverse),
+        targetValue = if (isPlaying) 26f else 6f,
+        animationSpec = infiniteRepeatable(tween(440, easing = LinearEasing), RepeatMode.Reverse),
         label = "h3"
     )
-    val height4 by infiniteTransition.animateFloat(
+    val h4 by infiniteTransition.animateFloat(
+        initialValue = 20f,
+        targetValue = if (isPlaying) 6f else 6f,
+        animationSpec = infiniteRepeatable(tween(330, easing = LinearEasing), RepeatMode.Reverse),
+        label = "h4"
+    )
+    val h5 by infiniteTransition.animateFloat(
+        initialValue = 8f,
+        targetValue = if (isPlaying) 24f else 6f,
+        animationSpec = infiniteRepeatable(tween(480, easing = LinearEasing), RepeatMode.Reverse),
+        label = "h5"
+    )
+    val h6 by infiniteTransition.animateFloat(
         initialValue = 16f,
         targetValue = if (isPlaying) 7f else 6f,
-        animationSpec = infiniteRepeatable(tween(300, easing = LinearEasing), RepeatMode.Reverse),
-        label = "h4"
+        animationSpec = infiniteRepeatable(tween(310, easing = LinearEasing), RepeatMode.Reverse),
+        label = "h6"
+    )
+    val h7 by infiniteTransition.animateFloat(
+        initialValue = 6f,
+        targetValue = if (isPlaying) 20f else 6f,
+        animationSpec = infiniteRepeatable(tween(360, easing = LinearEasing), RepeatMode.Reverse),
+        label = "h7"
     )
 
     Row(
-        modifier = modifier.height(26.dp),
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        modifier = modifier.height(28.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        listOf(height1, height2, height3, height4).forEach { h ->
+        listOf(h1, h2, h3, h4, h5, h6, h7).forEachIndexed { idx, h ->
+            val barBrush = if (isPlaying) {
+                when (idx % 3) {
+                    0 -> Brush.verticalGradient(listOf(BrandCoral, BrandGold))
+                    1 -> Brush.verticalGradient(listOf(BrandGold, BrandOrange))
+                    else -> Brush.verticalGradient(listOf(BrandCyan, BrandCoral))
+                }
+            } else {
+                Brush.verticalGradient(listOf(Color.DarkGray, Color.Gray))
+            }
             Box(
                 modifier = Modifier
-                    .width(3.dp)
+                    .width(4.dp)
                     .height(h.dp)
                     .clip(RoundedCornerShape(50))
-                    .background(
-                        if (isPlaying) Brush.verticalGradient(listOf(BrandCoral, BrandGold))
-                        else Brush.verticalGradient(listOf(Color.Gray, Color.DarkGray))
-                    )
+                    .background(barBrush)
             )
         }
     }
@@ -285,7 +310,7 @@ fun MusicVisualizerWave(isPlaying: Boolean, modifier: Modifier = Modifier) {
 @Composable
 fun TrackSelectorDialog(
     onDismiss: () -> Unit,
-    onSelectTrack: (title: String, artist: String, category: String, url: String) -> Unit
+    onSelectTrack: (title: String, artist: String, category: String, url: String, artworkUrl: String) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var isSearching by remember { mutableStateOf(false) }
@@ -329,7 +354,7 @@ fun TrackSelectorDialog(
     ) { uri: Uri? ->
         if (uri != null) {
             val fileName = uri.lastPathSegment?.substringAfterLast('/') ?: "Local Audio Track"
-            onSelectTrack(fileName, "Device Storage", "Local MP3", uri.toString())
+            onSelectTrack(fileName, "Device Storage", "Local MP3", uri.toString(), "")
             onDismiss()
         }
     }
@@ -440,7 +465,7 @@ fun TrackSelectorDialog(
                                         .background(BrandDark)
                                         .border(0.5.dp, BrandBorder, RoundedCornerShape(10.dp))
                                         .clickable {
-                                            onSelectTrack(track.title, track.artist, track.category, track.url)
+                                            onSelectTrack(track.title, track.artist, track.category, track.url, track.artworkUrl)
                                             onDismiss()
                                         }
                                         .padding(horizontal = 10.dp, vertical = 8.dp),
@@ -547,7 +572,7 @@ fun TrackSelectorDialog(
                                     .clip(RoundedCornerShape(10.dp))
                                     .background(BrandDark)
                                     .clickable {
-                                        onSelectTrack(track.title, track.artist, track.category, track.url)
+                                        onSelectTrack(track.title, track.artist, track.category, track.url, track.artworkUrl)
                                         onDismiss()
                                     }
                                     .padding(horizontal = 10.dp, vertical = 8.dp),
@@ -697,6 +722,7 @@ fun RoomMemberProfileSheet(
     member: RoomMember,
     userProfile: UserProfile?,
     currentUser: UserProfile,
+    db: FirebaseFirestore,
     onDismiss: () -> Unit,
     onLike: () -> Unit,
     onDirectMessage: () -> Unit,
@@ -705,6 +731,31 @@ fun RoomMemberProfileSheet(
     val isVipOrPlatinum = currentUser.isVipOrPlatinum()
     val isMemberVip = member.tier.contains("VIP", ignoreCase = true)
     val isMemberPlat = member.tier.contains("Platinum", ignoreCase = true)
+
+    var isFollowingMember by remember { mutableStateOf(false) }
+    var memberFollowerCount by remember { mutableStateOf(userProfile?.followerCount ?: 0) }
+
+    DisposableEffect(member.uid, currentUser.uid) {
+        if (member.uid.isBlank() || member.uid == currentUser.uid) {
+            return@DisposableEffect onDispose {}
+        }
+        val followDoc = db.collection("users").document(member.uid)
+            .collection("followers").document(currentUser.uid)
+            .addSnapshotListener { snapshot, _ ->
+                isFollowingMember = snapshot != null && snapshot.exists()
+            }
+        val countDoc = db.collection("users").document(member.uid)
+            .collection("followers")
+            .addSnapshotListener { snapshot, _ ->
+                if (snapshot != null) {
+                    memberFollowerCount = snapshot.size()
+                }
+            }
+        onDispose {
+            followDoc.remove()
+            countDoc.remove()
+        }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -814,7 +865,67 @@ fun RoomMemberProfileSheet(
                     modifier = Modifier.padding(top = 8.dp, start = 8.dp, end = 8.dp)
                 )
 
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Follow / Unfollow interactive button
+                if (member.uid != currentUser.uid && member.uid.isNotBlank()) {
+                    Button(
+                        onClick = {
+                            val newFollow = !isFollowingMember
+                            if (newFollow) {
+                                val record = FollowerRecord(
+                                    uid = currentUser.uid,
+                                    name = currentUser.name,
+                                    photo = currentUser.photo,
+                                    timestamp = System.currentTimeMillis()
+                                )
+                                db.collection("users").document(member.uid)
+                                    .collection("followers").document(currentUser.uid).set(record)
+                                db.collection("users").document(member.uid)
+                                    .update("followerCount", FieldValue.increment(1))
+                                db.collection("users").document(currentUser.uid)
+                                    .update("followingCount", FieldValue.increment(1))
+                                sendNotification(
+                                    db = db,
+                                    targetUserId = member.uid,
+                                    sender = currentUser,
+                                    type = "follow",
+                                    title = "🌟 New Follower!",
+                                    message = "${currentUser.name} started following you!"
+                                )
+                            } else {
+                                db.collection("users").document(member.uid)
+                                    .collection("followers").document(currentUser.uid).delete()
+                                db.collection("users").document(member.uid)
+                                    .update("followerCount", FieldValue.increment(-1))
+                                db.collection("users").document(currentUser.uid)
+                                    .update("followingCount", FieldValue.increment(-1))
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isFollowingMember) BrandDark else BrandCoral
+                        ),
+                        border = BorderStroke(1.dp, if (isFollowingMember) BrandGold else Color.Transparent),
+                        shape = RoundedCornerShape(50),
+                        modifier = Modifier.fillMaxWidth().height(38.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isFollowingMember) Icons.Default.Check else Icons.Default.Add,
+                            contentDescription = null,
+                            tint = if (isFollowingMember) BrandGold else Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (isFollowingMember) "✓ Following • $memberFollowerCount Followers" else "+ Follow • $memberFollowerCount Followers",
+                            color = if (isFollowingMember) BrandGold else Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
 
                 // Action Buttons
                 Row(
@@ -931,14 +1042,20 @@ fun RoomSettingsDialog(
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
 
+    val coroutineScope = rememberCoroutineScope()
+    var isUploadingTheme by remember { mutableStateOf(false) }
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            val themeUrl = uri.toString()
-            onUpdateTheme(themeUrl)
-            db.collection("rooms").document(room.id).update("banner_image_url", themeUrl)
-            Toast.makeText(context, "Theme updated from gallery!", Toast.LENGTH_SHORT).show()
+            isUploadingTheme = true
+            coroutineScope.launch {
+                val themeUrl = ImageUploadManager.uploadImage(context, uri, "rooms") ?: uri.toString()
+                onUpdateTheme(themeUrl)
+                db.collection("rooms").document(room.id).update("banner_image_url", themeUrl)
+                Toast.makeText(context, "Theme updated from gallery!", Toast.LENGTH_SHORT).show()
+                isUploadingTheme = false
+            }
         }
     }
 
@@ -1313,6 +1430,23 @@ fun AudioHangoutRoomDialog(
     var hostFollowerCount by remember { mutableStateOf(0) }
     var selectedMemberForSheet by remember { mutableStateOf<RoomMember?>(null) }
     var selectedMemberForRequest by remember { mutableStateOf<RoomMember?>(null) }
+    var entranceNotificationUser by remember { mutableStateOf<String?>(null) }
+    val knownMemberIds = remember { mutableStateListOf<String>() }
+
+    LaunchedEffect(activeMembers.size) {
+        if (knownMemberIds.isEmpty()) {
+            knownMemberIds.addAll(activeMembers.map { it.uid })
+        } else {
+            val newArrivals = activeMembers.filter { !knownMemberIds.contains(it.uid) && it.uid != currentUser.uid }
+            if (newArrivals.isNotEmpty()) {
+                val newest = newArrivals.last()
+                entranceNotificationUser = newest.name
+                knownMemberIds.addAll(newArrivals.map { it.uid })
+                delay(3500)
+                entranceNotificationUser = null
+            }
+        }
+    }
 
     val isUserHost = currentUser.uid == room.hostId || (room.hostId.isEmpty() && activeMembers.firstOrNull()?.uid == currentUser.uid)
     val isMuted by AudioPlayerManager.isMutedState
@@ -1567,9 +1701,47 @@ fun AudioHangoutRoomDialog(
                     .padding(paddingValues)
                     .padding(horizontal = 14.dp, vertical = 6.dp)
             ) {
+                // 0. LIVE STREAMING ENTRANCE MARQUEE / BANNER
+                AnimatedVisibility(
+                    visible = entranceNotificationUser != null,
+                    enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
+                    exit = slideOutHorizontally(targetOffsetX = { -it }) + fadeOut(),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(50))
+                            .background(Brush.horizontalGradient(listOf(BrandCoral.copy(alpha = 0.95f), BrandGold.copy(alpha = 0.95f))))
+                            .border(1.dp, Color.White.copy(alpha = 0.3f), RoundedCornerShape(50))
+                            .padding(horizontal = 14.dp, vertical = 6.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("✨", fontSize = 14.sp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "${entranceNotificationUser ?: ""} joined the live room! Welcome! 👋",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+
                 // ---------------------------------------------------------
-                // HOST SHOWCASE (TOP-MIDDLE WITH GLOWING CORAL RING & BADGE)
+                // 1. HOST SHOWCASE (TOP-MIDDLE WITH GLOWING CORAL RING & BADGE)
                 // ---------------------------------------------------------
+                val hostMemberObj = hostMember ?: RoomMember(
+                    uid = targetHostId.ifEmpty { "host" },
+                    name = hostName,
+                    photoUrl = hostPhoto,
+                    role = "host"
+                )
+
                 Card(
                     colors = CardDefaults.cardColors(containerColor = BrandCard),
                     shape = RoundedCornerShape(18.dp),
@@ -1583,11 +1755,16 @@ fun AudioHangoutRoomDialog(
                             .padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Host Avatar with Animated Glowing Coral Ring
+                        // Host Avatar (Clickable to open host profile!)
                         Box(
                             modifier = Modifier
-                                .size(64.dp)
+                                .size(62.dp)
                                 .clip(CircleShape)
+                                .clickable {
+                                    if (targetHostId != currentUser.uid && targetHostId.isNotBlank()) {
+                                        selectedMemberForSheet = hostMemberObj
+                                    }
+                                }
                                 .border(
                                     width = 3.dp,
                                     brush = Brush.sweepGradient(
@@ -1608,9 +1785,17 @@ fun AudioHangoutRoomDialog(
                             )
                         }
 
-                        Spacer(modifier = Modifier.width(14.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
 
-                        Column(modifier = Modifier.weight(1f)) {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable {
+                                    if (targetHostId != currentUser.uid && targetHostId.isNotBlank()) {
+                                        selectedMemberForSheet = hostMemberObj
+                                    }
+                                }
+                        ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     text = "👑 Host: $hostName",
@@ -1720,140 +1905,254 @@ fun AudioHangoutRoomDialog(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 // ---------------------------------------------------------
-                // ROOM MUSIC / AUDIO ENGINE BAR & CONTROLS
+                // 2. ROOM MUSIC / EQUALIZER BOX (LARGER, WIDE & ALBUM ARTWORK)
                 // ---------------------------------------------------------
+                val currentArtwork = room.nowPlayingArtworkUrl.ifEmpty { AudioPlayerManager.currentTrackArtworkUrlState.value }
+                val isPlayingNow = AudioPlayerManager.isPlayingState.value
+                val isBuffering by AudioPlayerManager.isBufferingState
+
                 Card(
                     colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(18.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .border(1.dp, BrandBorder, RoundedCornerShape(16.dp))
+                        .border(1.dp, BrandBorder, RoundedCornerShape(18.dp))
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Visualizer Wave & Song Info
-                        val isActuallyPlaying = localPlaying && room.isPlaying
-                        val isBuffering by AudioPlayerManager.isBufferingState
-
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                            MusicVisualizerWave(isPlaying = isActuallyPlaying)
-
-                            Spacer(modifier = Modifier.width(10.dp))
-
-                            Column {
-                                Text(
-                                    text = if (room.nowPlayingTitle.isNotBlank()) "🎶 ${room.nowPlayingTitle}" else "🔇 Lounge Audio Idle",
-                                    color = if (isActuallyPlaying) BrandGold else Color.Gray,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                        // Song Picture / Cover Thumbnail
+                        Box(
+                            modifier = Modifier
+                                .size(50.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(BrandDark)
+                                .border(1.dp, if (isPlayingNow) BrandCoral else BrandBorder, RoundedCornerShape(10.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (currentArtwork.isNotBlank()) {
+                                AsyncImage(
+                                    model = currentArtwork,
+                                    contentDescription = "Song Artwork",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
                                 )
-                                Text(
-                                    text = if (isBuffering) "⏳ Buffering audio stream..."
-                                    else if (isActuallyPlaying) "🔊 Playing live across room"
-                                    else if (room.isPlaying) "Connecting stream..."
-                                    else "Host can select a soundtrack",
-                                    color = if (isActuallyPlaying) BrandGreen else Color.Gray,
-                                    fontSize = 10.sp
+                            } else {
+                                Icon(
+                                    Icons.Default.MusicNote,
+                                    contentDescription = null,
+                                    tint = BrandGold,
+                                    modifier = Modifier.size(24.dp)
                                 )
                             }
                         }
 
-                        // Host vs Listener Controls
+                        Spacer(modifier = Modifier.width(10.dp))
+
+                        // Wide Track Info & Animated Wave Bars
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (room.nowPlayingTitle.isNotBlank()) "🎶 ${room.nowPlayingTitle}" else "🔇 Lounge Music Idle",
+                                color = if (isPlayingNow) BrandGold else Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = if (isBuffering) "⏳ Buffering audio stream..."
+                                else if (isPlayingNow) "🔊 Playing Live across Room"
+                                else "Tap Play to enjoy music",
+                                color = if (isPlayingNow) BrandGreen else Color.Gray,
+                                fontSize = 10.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            // Wide Animated Equalizer Waves
+                            MusicVisualizerWave(isPlaying = isPlayingNow, modifier = Modifier.fillMaxWidth())
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        // Controls: Track Selector + Responsive Play/Pause Button
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (isUserHost) {
-                                // Track Selector
-                                IconButton(
-                                    onClick = { showTrackSelector = true },
-                                    modifier = Modifier.size(34.dp).background(BrandDark, CircleShape)
-                                ) {
-                                    Icon(Icons.Default.MusicNote, contentDescription = "Change Track", tint = BrandCyan, modifier = Modifier.size(18.dp))
-                                }
+                            // Track Search / Selector Button
+                            IconButton(
+                                onClick = { showTrackSelector = true },
+                                modifier = Modifier.size(34.dp).background(BrandDark, CircleShape)
+                            ) {
+                                Icon(
+                                    Icons.Default.MusicNote,
+                                    contentDescription = "Search Track",
+                                    tint = BrandCyan,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
 
-                                Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
 
-                                // Play / Pause Toggle
-                                IconButton(
-                                    onClick = {
-                                        val nextPlaying = !room.isPlaying
-                                        db.collection("rooms").document(room.id)
-                                            .update("isPlaying", nextPlaying)
-                                        if (nextPlaying) {
-                                            if (room.nowPlayingUrl.isBlank()) {
-                                                val defaultTrack = CURATED_HANGOUT_TRACKS[0]
-                                                db.collection("rooms").document(room.id).update(
-                                                    mapOf(
-                                                        "nowPlayingTitle" to defaultTrack.title,
-                                                        "nowPlayingUrl" to defaultTrack.url,
-                                                        "isPlaying" to true
-                                                    )
-                                                )
-                                                AudioPlayerManager.play(context, defaultTrack.url, defaultTrack.title)
-                                            } else {
-                                                AudioPlayerManager.resume(context)
-                                            }
+                            // Interactive Play / Pause Toggle Button (Always Responsive!)
+                            IconButton(
+                                onClick = {
+                                    val willPlay = !isPlayingNow
+                                    if (willPlay) {
+                                        if (AudioPlayerManager.currentTrackUrlState.value.isNotBlank()) {
+                                            AudioPlayerManager.resume(context)
                                         } else {
-                                            AudioPlayerManager.pause()
+                                            val defaultUrl = room.nowPlayingUrl.ifEmpty { CURATED_HANGOUT_TRACKS[0].url }
+                                            val defaultTitle = room.nowPlayingTitle.ifEmpty { CURATED_HANGOUT_TRACKS[0].title }
+                                            val defaultArt = room.nowPlayingArtworkUrl.ifEmpty { CURATED_HANGOUT_TRACKS[0].artworkUrl }
+                                            AudioPlayerManager.play(context, defaultUrl, defaultTitle, defaultArt)
                                         }
-                                    },
-                                    modifier = Modifier.size(34.dp).background(BrandCoral, CircleShape)
-                                ) {
-                                    Icon(
-                                        imageVector = if (room.isPlaying && isActuallyPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                        contentDescription = if (room.isPlaying && isActuallyPlaying) "Pause" else "Play",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(18.dp)
+                                    } else {
+                                        AudioPlayerManager.pause()
+                                    }
+
+                                    // Immediate local state update for instant UI response
+                                    room = room.copy(isPlaying = willPlay)
+
+                                    // Sync to Firestore using SetOptions.merge() so it never fails!
+                                    db.collection("rooms").document(room.id).set(
+                                        mapOf(
+                                            "isPlaying" to willPlay,
+                                            "nowPlayingTitle" to AudioPlayerManager.currentTrackTitleState.value.ifEmpty { room.nowPlayingTitle },
+                                            "nowPlayingArtist" to room.nowPlayingArtist,
+                                            "nowPlayingUrl" to AudioPlayerManager.currentTrackUrlState.value.ifEmpty { room.nowPlayingUrl },
+                                            "nowPlayingArtworkUrl" to AudioPlayerManager.currentTrackArtworkUrlState.value.ifEmpty { room.nowPlayingArtworkUrl }
+                                        ),
+                                        com.google.firebase.firestore.SetOptions.merge()
                                     )
-                                }
-                            } else {
-                                // Listener Mute/Unmute Toggle
-                                IconButton(
-                                    onClick = { AudioPlayerManager.toggleMute() },
-                                    modifier = Modifier.size(34.dp).background(BrandDark, CircleShape)
-                                ) {
-                                    Icon(
-                                        imageVector = if (isMuted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
-                                        contentDescription = "Mute Toggle",
-                                        tint = if (isMuted) Color.Gray else BrandGreen,
-                                        modifier = Modifier.size(18.dp)
+                                },
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (isPlayingNow) Brush.horizontalGradient(listOf(BrandCoral, BrandOrange))
+                                        else Brush.horizontalGradient(listOf(BrandDark, BrandDark))
                                     )
-                                }
+                                    .border(1.dp, if (isPlayingNow) BrandGold else BrandBorder, CircleShape)
+                            ) {
+                                Icon(
+                                    imageVector = if (isPlayingNow) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    contentDescription = if (isPlayingNow) "Pause" else "Play",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
                             }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 // ---------------------------------------------------------
-                // LIVE MEMBERS GRID (REAL-TIME FIRESTORE LISTENER)
+                // 3. LIVE STREAMING AUDIENCE STRIP (COUNT + HORIZONTAL AVATARS)
                 // ---------------------------------------------------------
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(BrandGreen)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "👁️ ${activeMembers.size} Live in Room",
+                            color = BrandGreen,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                     Text(
-                        text = "Live Active Members (${activeMembers.size})",
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "Tap avatar to interact",
+                        text = "Tap avatar to view profile",
                         color = Color.Gray,
                         fontSize = 10.sp
                     )
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
+                // Horizontal Audience Strip
+                if (activeMembers.isNotEmpty()) {
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                    ) {
+                        items(activeMembers) { member ->
+                            val isMemberVip = member.tier.contains("VIP", ignoreCase = true)
+                            val isMemberPlat = member.tier.contains("Platinum", ignoreCase = true)
+                            val isSelf = member.uid == currentUser.uid
+
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.clickable {
+                                    if (!isSelf) {
+                                        selectedMemberForSheet = member
+                                    }
+                                }
+                            ) {
+                                Box(contentAlignment = Alignment.BottomEnd) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(42.dp)
+                                            .clip(CircleShape)
+                                            .border(
+                                                width = 2.dp,
+                                                brush = Brush.sweepGradient(
+                                                    if (isMemberVip) listOf(BrandGold, BrandCoral, BrandGold)
+                                                    else if (isMemberPlat) listOf(BrandCyan, BrandCoral, BrandCyan)
+                                                    else listOf(BrandCoral, BrandOrange)
+                                                ),
+                                                shape = CircleShape
+                                            )
+                                    ) {
+                                        AsyncImage(
+                                            model = member.photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                                            contentDescription = member.name,
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    }
+
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(BrandGreen)
+                                            .border(1.dp, BrandDark, CircleShape)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = if (isSelf) "You" else member.name.substringBefore(' '),
+                                    color = Color.White,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.width(42.dp),
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // ---------------------------------------------------------
+                // 4. ELONGATED LOUNGE STAGE MEMBER CARDS (लंबा-लंबा बॉक्सेस)
+                // ---------------------------------------------------------
                 if (activeMembers.isEmpty()) {
                     Box(
                         modifier = Modifier.fillMaxSize().weight(1f),
@@ -1866,11 +2165,9 @@ fun AudioHangoutRoomDialog(
                         )
                     }
                 } else {
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(3),
-                        modifier = Modifier.fillMaxSize().weight(1f),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         items(activeMembers) { member ->
                             val isMemberVip = member.tier.contains("VIP", ignoreCase = true)
@@ -1881,7 +2178,7 @@ fun AudioHangoutRoomDialog(
                                 colors = CardDefaults.cardColors(
                                     containerColor = if (isSelf) BrandCardSubtle else BrandCard
                                 ),
-                                shape = RoundedCornerShape(16.dp),
+                                shape = RoundedCornerShape(14.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
@@ -1892,72 +2189,87 @@ fun AudioHangoutRoomDialog(
                                     .border(
                                         width = 1.dp,
                                         color = if (isSelf) BrandCoral.copy(alpha = 0.5f) else BrandBorder,
-                                        shape = RoundedCornerShape(16.dp)
+                                        shape = RoundedCornerShape(14.dp)
                                     )
                             ) {
-                                Column(
-                                    modifier = Modifier.padding(10.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    // Avatar with Online Dot
-                                    Box(contentAlignment = Alignment.BottomEnd) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(52.dp)
-                                                .clip(CircleShape)
-                                                .border(
-                                                    width = 2.dp,
-                                                    brush = Brush.sweepGradient(
-                                                        if (isMemberVip) listOf(BrandGold, BrandCoral, BrandGold)
-                                                        else if (isMemberPlat) listOf(BrandCyan, BrandCoral, BrandCyan)
-                                                        else listOf(BrandCoral, BrandOrange)
-                                                    ),
-                                                    shape = CircleShape
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        // Avatar with Online dot
+                                        Box(contentAlignment = Alignment.BottomEnd) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(38.dp)
+                                                    .clip(CircleShape)
+                                                    .border(
+                                                        width = 1.5.dp,
+                                                        brush = Brush.sweepGradient(
+                                                            if (isMemberVip) listOf(BrandGold, BrandCoral, BrandGold)
+                                                            else if (isMemberPlat) listOf(BrandCyan, BrandCoral, BrandCyan)
+                                                            else listOf(BrandCoral, BrandOrange)
+                                                        ),
+                                                        shape = CircleShape
+                                                    )
+                                            ) {
+                                                AsyncImage(
+                                                    model = member.photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                                                    contentDescription = member.name,
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    contentScale = ContentScale.Crop
                                                 )
-                                        ) {
-                                            AsyncImage(
-                                                model = member.photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
-                                                contentDescription = member.name,
-                                                modifier = Modifier.fillMaxSize(),
-                                                contentScale = ContentScale.Crop
+                                            }
+
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(7.dp)
+                                                    .clip(CircleShape)
+                                                    .background(BrandGreen)
+                                                    .border(1.dp, BrandDark, CircleShape)
                                             )
                                         }
 
-                                        // Online indicator dot
-                                        Box(
-                                            modifier = Modifier
-                                                .size(10.dp)
-                                                .clip(CircleShape)
-                                                .background(BrandGreen)
-                                                .border(1.dp, BrandDark, CircleShape)
-                                        )
+                                        Spacer(modifier = Modifier.width(10.dp))
+
+                                        Column {
+                                            Text(
+                                                text = if (isSelf) "You (${member.name})" else member.name,
+                                                color = Color.White,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = if (member.role == "host") "👑 Room Host"
+                                                else if (isMemberVip) "★ VIP Member"
+                                                else if (isMemberPlat) "♦ Platinum Member"
+                                                else "Active Listener",
+                                                color = if (member.role == "host") BrandGold
+                                                else if (isMemberVip) BrandGold
+                                                else if (isMemberPlat) BrandCyan
+                                                else Color.Gray,
+                                                fontSize = 10.sp
+                                            )
+                                        }
                                     }
 
-                                    Spacer(modifier = Modifier.height(6.dp))
-
-                                    Text(
-                                        text = if (isSelf) "You (${member.name})" else member.name,
-                                        color = Color.White,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-
-                                    // Role / Tier chip
-                                    if (member.role == "host") {
+                                    // Action / Tier Pill on the right
+                                    Surface(
+                                        color = if (isSelf) BrandCoral.copy(alpha = 0.2f) else BrandDark,
+                                        shape = RoundedCornerShape(50),
+                                        border = BorderStroke(0.5.dp, BrandBorder)
+                                    ) {
                                         Text(
-                                            text = "👑 Host",
-                                            color = BrandGold,
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    } else {
-                                        Text(
-                                            text = if (isMemberVip) "VIP ★" else if (isMemberPlat) "PLATINUM" else "Listener",
-                                            color = if (isMemberVip) BrandGold else if (isMemberPlat) BrandCyan else Color.Gray,
-                                            fontSize = 8.sp,
-                                            fontWeight = FontWeight.Bold
+                                            text = if (isSelf) "Host/You" else "👋 View Profile",
+                                            color = if (isSelf) BrandCoral else BrandGold,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                         )
                                     }
                                 }
@@ -1967,19 +2279,19 @@ fun AudioHangoutRoomDialog(
                 }
 
                 // ---------------------------------------------------------
-                // LIVE STREAMING FLOWING COMMENTS OVERLAY & PUBLIC CHAT BAR
+                // 5. LIVE STREAMING FLOWING COMMENTS & PUBLIC CHAT BAR
                 // ---------------------------------------------------------
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 8.dp)
+                        .padding(top = 6.dp)
                 ) {
                     // Flowing Comments Overlay (Latest 4 comments)
                     if (liveComments.isNotEmpty()) {
                         LazyColumn(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(max = 120.dp),
+                                .heightIn(max = 110.dp),
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             items(liveComments.takeLast(4)) { comment ->
@@ -1992,6 +2304,16 @@ fun AudioHangoutRoomDialog(
                                         .clip(RoundedCornerShape(50))
                                         .background(Color.Black.copy(alpha = 0.75f))
                                         .border(0.5.dp, BrandBorder, RoundedCornerShape(50))
+                                        .clickable {
+                                            if (comment.userId != currentUser.uid) {
+                                                selectedMemberForSheet = RoomMember(
+                                                    uid = comment.userId,
+                                                    name = comment.userName,
+                                                    photoUrl = comment.userPhoto,
+                                                    tier = comment.tier
+                                                )
+                                            }
+                                        }
                                         .padding(horizontal = 8.dp, vertical = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
@@ -2020,7 +2342,7 @@ fun AudioHangoutRoomDialog(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
 
                     // Public Room Chat Bar (Open for all members)
                     Row(
@@ -2116,18 +2438,27 @@ fun AudioHangoutRoomDialog(
         if (showTrackSelector) {
             TrackSelectorDialog(
                 onDismiss = { showTrackSelector = false },
-                onSelectTrack = { title, artist, category, url ->
-                    db.collection("rooms").document(room.id).update(
+                onSelectTrack = { title, artist, category, url, artworkUrl ->
+                    db.collection("rooms").document(room.id).set(
                         mapOf(
                             "currentPlayingTrack" to title,
                             "nowPlayingTitle" to title,
                             "nowPlayingArtist" to artist,
                             "nowPlayingUrl" to url,
+                            "nowPlayingArtworkUrl" to artworkUrl,
                             "isPlaying" to true,
                             "playbackPosition" to 0L
-                        )
+                        ),
+                        com.google.firebase.firestore.SetOptions.merge()
                     )
-                    AudioPlayerManager.play(context, url, title)
+                    room = room.copy(
+                        nowPlayingTitle = title,
+                        nowPlayingArtist = artist,
+                        nowPlayingUrl = url,
+                        nowPlayingArtworkUrl = artworkUrl,
+                        isPlaying = true
+                    )
+                    AudioPlayerManager.play(context, url, title, artworkUrl)
                     Toast.makeText(context, "Streaming: $title by $artist", Toast.LENGTH_SHORT).show()
                 }
             )
@@ -2142,6 +2473,7 @@ fun AudioHangoutRoomDialog(
                 member = member,
                 userProfile = profile,
                 currentUser = currentUser,
+                db = db,
                 onDismiss = { selectedMemberForSheet = null },
                 onLike = {
                     recordSwipe(db, currentUser.uid, member.uid, "like")

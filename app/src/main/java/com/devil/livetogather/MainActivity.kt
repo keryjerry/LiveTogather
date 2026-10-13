@@ -54,7 +54,9 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
+import java.text.SimpleDateFormat
 import java.util.*
+import kotlinx.coroutines.launch
 
 val BrandDark = Color(0xFF0B090A)
 val BrandCard = Color(0xFF161214)
@@ -388,19 +390,17 @@ fun LiveTogatherApp() {
             }
         }
 
-        // 2. Discover Profiles Listener (Real-Time)
+        // 2. Discover Profiles Listener (Real-Time Real Users)
         db.collection("users").addSnapshotListener { snapshot, error ->
             if (error != null) {
                 Log.w("Firestore", "Discover profiles error: ${error.message}")
                 return@addSnapshotListener
             }
-            if (snapshot != null && !snapshot.isEmpty) {
+            if (snapshot != null) {
                 val list = snapshot.documents.mapNotNull { it.toObject(UserProfile::class.java) }
-                    .filter { it.uid != currentUserId && !currentUser.blockedUserIds.contains(it.uid) }
+                    .filter { it.uid != currentUserId && !it.uid.startsWith("USER_") && !currentUser.blockedUserIds.contains(it.uid) }
                 discoverProfiles.clear()
                 discoverProfiles.addAll(list)
-            } else {
-                seedInitialCommunityProfiles(db)
             }
         }
 
@@ -438,18 +438,15 @@ fun LiveTogatherApp() {
                 }
             }
 
-        // 6. Moments Feed Listener
+        // 6. Moments Feed Listener (Real-Time Real Moments)
         db.collection("moments")
             .orderBy("timestamp", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, _ ->
                 if (snapshot != null) {
                     val list = snapshot.documents.mapNotNull { it.toObject(MomentItem::class.java) }
+                        .filter { !it.userId.startsWith("USER_") }
                     moments.clear()
-                    if (list.isEmpty()) {
-                        seedInitialMoments(db)
-                    } else {
-                        moments.addAll(list)
-                    }
+                    moments.addAll(list)
                 }
             }
     }
@@ -478,11 +475,12 @@ fun LiveTogatherApp() {
             val matchesCategory = selectedCategory == "all" || profile.activeIntent == selectedCategory
             val matchesDistance = currentUser.showFurtherAway || profile.distanceKm <= currentUser.maxDistanceKm
             val matchesAge = currentUser.showOutsideAge || (profile.age in currentUser.minAge..currentUser.maxAge)
-            val matchesGender = when (currentUser.interestedIn.lowercase().trim()) {
-                "everyone", "all" -> true
-                "women", "female", "woman" -> profile.gender.lowercase().trim() in listOf("women", "female", "woman")
-                "men", "male", "man" -> profile.gender.lowercase().trim() in listOf("men", "male", "man")
-                else -> profile.gender.equals(currentUser.interestedIn, ignoreCase = true)
+            val interested = currentUser.interestedIn.lowercase().trim()
+            val matchesGender = when {
+                interested.isEmpty() || interested == "everyone" || interested == "all" -> true
+                interested in listOf("women", "female", "woman") -> profile.gender.lowercase().trim() in listOf("women", "female", "woman") || profile.gender.isBlank()
+                interested in listOf("men", "male", "man") -> profile.gender.lowercase().trim() in listOf("men", "male", "man") || profile.gender.isBlank()
+                else -> true
             }
             matchesCategory && matchesDistance && matchesAge && matchesGender
         }
@@ -2350,7 +2348,7 @@ fun MomentsScreenContent(
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Column {
                                     Text(item.userName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                    Text("Shared recently", color = Color.Gray, fontSize = 10.sp)
+                                    Text(formatRelativeTime(item.timestamp), color = Color.Gray, fontSize = 10.sp)
                                 }
                             }
 
@@ -2443,15 +2441,28 @@ fun ProfileScreenContent(
     var interestedIn by remember(currentUser) { mutableStateOf(currentUser.interestedIn) }
 
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+    var isUploadingPhoto by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            photoUrl = uri.toString()
-            val updated = currentUser.copy(photo = uri.toString())
-            onUpdateProfile(updated)
-            db.collection("users").document(currentUserId).set(updated, SetOptions.merge())
+            isUploadingPhoto = true
+            coroutineScope.launch {
+                val uploadedUrl = ImageUploadManager.uploadImage(context, uri, "profiles")
+                if (uploadedUrl != null) {
+                    photoUrl = uploadedUrl
+                    val updated = currentUser.copy(photo = uploadedUrl)
+                    onUpdateProfile(updated)
+                    db.collection("users").document(currentUserId).set(updated, SetOptions.merge())
+                    Toast.makeText(context, "Profile photo updated successfully!", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "Photo upload failed. Please try again.", Toast.LENGTH_SHORT).show()
+                }
+                isUploadingPhoto = false
+            }
         }
     }
 
@@ -2466,7 +2477,7 @@ fun ProfileScreenContent(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box {
+                Box(contentAlignment = Alignment.Center) {
                     AsyncImage(
                         model = photoUrl,
                         contentDescription = null,
@@ -2476,8 +2487,24 @@ fun ProfileScreenContent(
                             .border(2.dp, BrandCoral, CircleShape),
                         contentScale = ContentScale.Crop
                     )
+                    if (isUploadingPhoto) {
+                        Box(
+                            modifier = Modifier
+                                .size(76.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.55f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(
+                                color = BrandCoral,
+                                modifier = Modifier.size(28.dp),
+                                strokeWidth = 2.dp
+                            )
+                        }
+                    }
                     IconButton(
-                        onClick = { imagePickerLauncher.launch("image/*") },
+                        onClick = { if (!isUploadingPhoto) imagePickerLauncher.launch("image/*") },
+                        enabled = !isUploadingPhoto,
                         modifier = Modifier
                             .size(26.dp)
                             .align(Alignment.BottomEnd)
@@ -3627,12 +3654,25 @@ fun PostMomentDialog(
 ) {
     var caption by remember { mutableStateOf("") }
     var mediaUrl by remember { mutableStateOf("https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=600&q=80") }
+    var isUploading by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
     val mediaPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            mediaUrl = uri.toString()
+            isUploading = true
+            coroutineScope.launch {
+                val uploadedUrl = ImageUploadManager.uploadImage(context, uri, "moments")
+                if (uploadedUrl != null) {
+                    mediaUrl = uploadedUrl
+                    Toast.makeText(context, "Image uploaded successfully!", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "Image upload failed. Please try again.", Toast.LENGTH_SHORT).show()
+                }
+                isUploading = false
+            }
         }
     }
     val isKeyboardOpen = WindowInsets.isImeVisible
@@ -3645,9 +3685,9 @@ fun PostMomentDialog(
     }
 
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!isUploading) onDismiss() },
         properties = DialogProperties(
-            dismissOnBackPress = !isKeyboardOpen
+            dismissOnBackPress = !isKeyboardOpen && !isUploading
         )
     ) {
         Card(
@@ -3672,7 +3712,7 @@ fun PostMomentDialog(
                         .height(150.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .border(1.dp, BrandBorder, RoundedCornerShape(12.dp))
-                        .clickable { mediaPickerLauncher.launch("image/*") },
+                        .clickable(enabled = !isUploading) { mediaPickerLauncher.launch("image/*") },
                     contentAlignment = Alignment.Center
                 ) {
                     AsyncImage(
@@ -3684,31 +3724,46 @@ fun PostMomentDialog(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.3f)),
+                            .background(Color.Black.copy(alpha = if (isUploading) 0.65f else 0.35f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = Color.White)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Change Image / Pick File", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        if (isUploading) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                CircularProgressIndicator(
+                                    color = BrandCoral,
+                                    modifier = Modifier.size(30.dp),
+                                    strokeWidth = 3.dp
+                                )
+                                Text("Uploading to cloud...", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        } else {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = Color.White)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Change Image / Pick File", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    TextButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                    TextButton(onClick = onDismiss, enabled = !isUploading, modifier = Modifier.weight(1f)) {
                         Text("Cancel", color = Color.Gray)
                     }
                     Button(
                         onClick = {
-                            if (caption.isNotBlank()) {
+                            if (caption.isNotBlank() && !isUploading) {
                                 onPost(mediaUrl, caption.trim())
                             }
                         },
+                        enabled = caption.isNotBlank() && !isUploading,
                         colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("Post Now", fontWeight = FontWeight.Bold)
+                        Text(if (isUploading) "Uploading..." else "Post Now", fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -4042,104 +4097,32 @@ fun toggleMomentLike(db: FirebaseFirestore, moment: MomentItem, currentUserId: S
     )
 }
 
-fun seedInitialCommunityProfiles(db: FirebaseFirestore) {
-    val samples = listOf(
-        UserProfile(
-            uid = "USER_ROHIT",
-            name = "Rohit Sen",
-            age = 25,
-            gender = "Men",
-            city = "Kolkata",
-            photo = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80",
-            activeIntent = "free_party",
-            bio = "Music producer & clubbing enthusiast. Let's hang out this weekend! 🎵",
-            profession = "Music Producer",
-            education = "Jadavpur University",
-            hobbies = "EDM, Guitar, Gym",
-            distanceKm = 4,
-            plan = "VIP LEVEL ★",
-            current_room = "free_party"
-        ),
-        UserProfile(
-            uid = "USER_ANANYA",
-            name = "Ananya Sharma",
-            age = 23,
-            gender = "Women",
-            city = "Kolkata",
-            photo = "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80",
-            activeIntent = "free_tonight",
-            bio = "Coffee, books, and deep late-night conversations. Free tonight! ☕✨",
-            profession = "Architect",
-            education = "B.Arch",
-            hobbies = "Sketching, Specialty Coffee, Poetry",
-            distanceKm = 8,
-            plan = "PLATINUM",
-            current_room = "free_tonight"
-        ),
-        UserProfile(
-            uid = "USER_PRIYA",
-            name = "Priya Roy",
-            age = 26,
-            gender = "Women",
-            city = "Kolkata",
-            photo = "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80",
-            activeIntent = "ready_travel",
-            bio = "Planning a road trip to the hills. Looking for a fun travel partner! 🏔️🚗",
-            profession = "Travel Vlogger",
-            education = "Mass Communication",
-            hobbies = "Road trips, Photography, Trekking",
-            distanceKm = 14,
-            plan = "VIP LEVEL ★",
-            current_room = "ready_travel"
-        ),
-        UserProfile(
-            uid = "USER_SNEHA",
-            name = "Sneha Paul",
-            age = 24,
-            gender = "Women",
-            city = "Kolkata",
-            photo = "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=800&q=80",
-            activeIntent = "lets_cafe",
-            bio = "Love testing new cafes in Salt Lake & Park Street! 🍰",
-            profession = "Food Blogger",
-            education = "St. Xavier's College",
-            hobbies = "Baking, Pilates, Fashion",
-            distanceKm = 18,
-            plan = "Monthly Pass",
-            current_room = "lets_cafe"
-        )
-    )
-    samples.forEach { p ->
-        db.collection("users").document(p.uid).set(p)
+fun formatRelativeTime(timestamp: Long): String {
+    if (timestamp <= 0L) return "Just now"
+    val diff = System.currentTimeMillis() - timestamp
+    if (diff < 0L) return "Just now"
+    val seconds = diff / 1000
+    val minutes = seconds / 60
+    val hours = minutes / 60
+    val days = hours / 24
+    val weeks = days / 7
+    return when {
+        seconds < 45 -> "Just now"
+        minutes < 60 -> "${minutes}m ago"
+        hours < 24 -> "${hours}h ago"
+        days < 7 -> "${days}d ago"
+        weeks < 4 -> "${weeks}w ago"
+        else -> {
+            val sdf = SimpleDateFormat("dd MMM", Locale.getDefault())
+            sdf.format(Date(timestamp))
+        }
     }
 }
 
+fun seedInitialCommunityProfiles(db: FirebaseFirestore) {
+    // Disabled: only real registered users are used in Discover
+}
+
 fun seedInitialMoments(db: FirebaseFirestore) {
-    val initialMoments = listOf(
-        MomentItem(
-            id = "MOMENT_1",
-            userId = "USER_ANANYA",
-            userName = "Ananya Sharma",
-            userPhoto = "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=400&q=80",
-            mediaUrl = "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=800&q=80",
-            caption = "Heading to Park Street cafe tonight! Who's around? ☕🥂",
-            likes = 5,
-            commentCount = 2,
-            timestamp = System.currentTimeMillis() - 3600000
-        ),
-        MomentItem(
-            id = "MOMENT_2",
-            userId = "USER_ROHIT",
-            userName = "Rohit Sen",
-            userPhoto = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80",
-            mediaUrl = "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=800&q=80",
-            caption = "Live music vibes in town tonight! 🎸🔥",
-            likes = 12,
-            commentCount = 4,
-            timestamp = System.currentTimeMillis() - 7200000
-        )
-    )
-    initialMoments.forEach { m ->
-        db.collection("moments").document(m.id).set(m)
-    }
+    // Disabled: only real user moments are used in Moments feed
 }
