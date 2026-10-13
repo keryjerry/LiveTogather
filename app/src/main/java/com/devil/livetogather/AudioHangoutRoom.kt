@@ -13,6 +13,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -724,11 +726,17 @@ fun RoomMemberProfileSheet(
     member: RoomMember,
     userProfile: UserProfile?,
     currentUser: UserProfile,
+    isHost: Boolean,
+    roomId: String,
     db: FirebaseFirestore,
     onDismiss: () -> Unit,
     onLike: () -> Unit,
     onDirectMessage: () -> Unit,
-    onRequestMessage: () -> Unit
+    onRequestMessage: () -> Unit,
+    onKickOut: (RoomMember) -> Unit,
+    onBan: (RoomMember) -> Unit,
+    onBlock: (RoomMember) -> Unit,
+    onTagMember: (String) -> Unit
 ) {
     val isVipOrPlatinum = currentUser.isVipOrPlatinum()
     val isMemberVip = member.tier.contains("VIP", ignoreCase = true)
@@ -770,23 +778,28 @@ fun RoomMemberProfileSheet(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(20.dp),
+                    .verticalScroll(rememberScrollState())
+                    .padding(18.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // Header with Close
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray)
+                    Text("User Profile & Actions", color = BrandCoral, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray, modifier = Modifier.size(18.dp))
                     }
                 }
+
+                Spacer(modifier = Modifier.height(6.dp))
 
                 // Member Photo with Tier Ring
                 Box(
                     modifier = Modifier
-                        .size(100.dp)
+                        .size(86.dp)
                         .clip(CircleShape)
                         .border(
                             width = 3.dp,
@@ -806,14 +819,14 @@ fun RoomMemberProfileSheet(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 // Name & Age
                 val ageText = userProfile?.age?.let { ", $it" } ?: ""
                 Text(
                     text = "${member.name}$ageText",
                     color = Color.White,
-                    fontSize = 18.sp,
+                    fontSize = 17.sp,
                     fontWeight = FontWeight.Bold
                 )
 
@@ -847,27 +860,58 @@ fun RoomMemberProfileSheet(
                     )
                 }
 
-                // City & Intent
+                // City & Bio
                 val cityText = userProfile?.city ?: "Kolkata"
                 Text(
                     text = "📍 $cityText",
                     color = Color.Gray,
                     fontSize = 11.sp,
-                    modifier = Modifier.padding(top = 6.dp)
+                    modifier = Modifier.padding(top = 4.dp)
                 )
 
-                // Bio
                 val bioText = userProfile?.bio?.ifEmpty { "Excited to meet and hangout with awesome people!" }
                     ?: "Excited to meet and hangout with awesome people!"
                 Text(
                     text = "\"$bioText\"",
                     color = Color.White.copy(alpha = 0.85f),
-                    fontSize = 12.sp,
+                    fontSize = 11.sp,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(top = 8.dp, start = 8.dp, end = 8.dp)
+                    modifier = Modifier.padding(top = 4.dp, start = 8.dp, end = 8.dp)
                 )
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Subscription Level Perks Card
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isMemberVip) Color(0xFF2C2210) else if (isMemberPlat) Color(0xFF102830) else BrandCardSubtle
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(
+                        1.dp,
+                        if (isMemberVip) BrandGold.copy(alpha = 0.6f) else if (isMemberPlat) BrandCyan.copy(alpha = 0.6f) else BrandBorder
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Text(
+                            text = if (isMemberVip) "👑 VIP LEVEL BENEFITS" else if (isMemberPlat) "♦ PLATINUM BENEFITS" else "🌟 STANDARD BENEFITS",
+                            color = if (isMemberVip) BrandGold else if (isMemberPlat) BrandCyan else Color.LightGray,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = if (isMemberVip) "• Direct 1-on-1 Chats • Priority Stage Mic • Golden Halo Crown"
+                            else if (isMemberPlat) "• Profile Boost • Cyan Halo Ring • Extended Reach"
+                            else "• Message Requests • Public Room Audio & Chat Access",
+                            color = Color.White.copy(alpha = 0.75f),
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
 
                 // Follow / Unfollow interactive button
                 if (member.uid != currentUser.uid && member.uid.isNotBlank()) {
@@ -909,76 +953,154 @@ fun RoomMemberProfileSheet(
                         ),
                         border = BorderStroke(1.dp, if (isFollowingMember) BrandGold else Color.Transparent),
                         shape = RoundedCornerShape(50),
-                        modifier = Modifier.fillMaxWidth().height(38.dp)
+                        modifier = Modifier.fillMaxWidth().height(36.dp)
                     ) {
                         Icon(
                             imageVector = if (isFollowingMember) Icons.Default.Check else Icons.Default.Add,
                             contentDescription = null,
                             tint = if (isFollowingMember) BrandGold else Color.White,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(15.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = if (isFollowingMember) "✓ Following • $memberFollowerCount Followers" else "+ Follow • $memberFollowerCount Followers",
+                            text = if (isFollowingMember) "✓ Following ($memberFollowerCount)" else "+ Follow ($memberFollowerCount)",
                             color = if (isFollowingMember) BrandGold else Color.White,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp
+                            fontSize = 11.sp
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                // Action Buttons
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    // Send Like / Match Request
-                    Button(
-                        onClick = {
-                            onLike()
-                            onDismiss()
-                        },
-                        modifier = Modifier.weight(1f).height(42.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
-                        shape = RoundedCornerShape(50)
+                // Action Buttons: Like & Chat
+                if (member.uid != currentUser.uid) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Default.Favorite, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Like / Match", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        // Send Like / Match Request
+                        Button(
+                            onClick = {
+                                onLike()
+                                onDismiss()
+                            },
+                            modifier = Modifier.weight(1f).height(38.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                            shape = RoundedCornerShape(50)
+                        ) {
+                            Icon(Icons.Default.Favorite, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Like / Match", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        // Direct Message (VIP) or Request (Standard)
+                        Button(
+                            onClick = {
+                                onDismiss()
+                                if (isVipOrPlatinum) {
+                                    onDirectMessage()
+                                } else {
+                                    onRequestMessage()
+                                }
+                            },
+                            modifier = Modifier.weight(1f).height(38.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isVipOrPlatinum) BrandCyan else BrandCardSubtle
+                            ),
+                            shape = RoundedCornerShape(50),
+                            border = if (!isVipOrPlatinum) BorderStroke(1.dp, BrandCoral.copy(alpha = 0.5f)) else null
+                        ) {
+                            Icon(
+                                imageVector = if (isVipOrPlatinum) Icons.Default.Chat else Icons.Default.Send,
+                                contentDescription = null,
+                                tint = if (isVipOrPlatinum) Color.Black else BrandCoral,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (isVipOrPlatinum) "Direct Chat" else "Msg Request",
+                                color = if (isVipOrPlatinum) Color.Black else Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
 
-                    // Direct Message (VIP) or Request (Standard)
-                    Button(
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Tag / Mention in Room Chat
+                    OutlinedButton(
                         onClick = {
+                            onTagMember(member.name)
                             onDismiss()
-                            if (isVipOrPlatinum) {
-                                onDirectMessage()
-                            } else {
-                                onRequestMessage()
-                            }
                         },
-                        modifier = Modifier.weight(1f).height(42.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isVipOrPlatinum) BrandCyan else BrandCardSubtle
-                        ),
                         shape = RoundedCornerShape(50),
-                        border = if (!isVipOrPlatinum) BorderStroke(1.dp, BrandCoral.copy(alpha = 0.5f)) else null
+                        border = BorderStroke(1.dp, BrandCoral.copy(alpha = 0.7f)),
+                        modifier = Modifier.fillMaxWidth().height(36.dp)
                     ) {
-                        Icon(
-                            imageVector = if (isVipOrPlatinum) Icons.Default.Chat else Icons.Default.Send,
-                            contentDescription = null,
-                            tint = if (isVipOrPlatinum) Color.Black else BrandCoral,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = if (isVipOrPlatinum) "Direct Chat" else "Msg Request",
-                            color = if (isVipOrPlatinum) Color.Black else Color.White,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Text("@", color = BrandCoral, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Tag @${member.name.substringBefore(' ')} in Room Chat", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // Host Moderation Controls (Kick & Ban)
+                    if (isHost) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.5f)),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, Color.Red.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("👑 HOST MODERATION CONTROLS", color = BrandGold, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Button(
+                                        onClick = {
+                                            onKickOut(member)
+                                            onDismiss()
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828)),
+                                        shape = RoundedCornerShape(50),
+                                        modifier = Modifier.weight(1f).height(34.dp),
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text("👢 Kick Out", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    }
+
+                                    Button(
+                                        onClick = {
+                                            onBan(member)
+                                            onDismiss()
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF210000)),
+                                        border = BorderStroke(1.dp, Color.Red),
+                                        shape = RoundedCornerShape(50),
+                                        modifier = Modifier.weight(1f).height(34.dp),
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text("🔨 Ban User", color = Color.Red, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Block User Button
+                    TextButton(
+                        onClick = {
+                            onBlock(member)
+                            onDismiss()
+                        },
+                        modifier = Modifier.fillMaxWidth().height(32.dp)
+                    ) {
+                        Text("🚫 Block ${member.name.substringBefore(' ')}", color = Color.Gray, fontSize = 11.sp)
                     }
                 }
             }
@@ -1465,12 +1587,45 @@ fun AudioHangoutRoomDialog(
         }
     }
 
-    val hostMember = activeMembers.find { it.uid == room.hostId }
-    val hostName = room.hostName.ifEmpty { hostMember?.name ?: currentUser.name }
-    val hostPhoto = room.hostPhotoUrl.ifEmpty { hostMember?.photoUrl ?: currentUser.photo }
+    // Ensure current user is registered in rooms/{roomId}/members
+    LaunchedEffect(room.id, currentUser.uid) {
+        val memberDoc = RoomMember(
+            uid = currentUser.uid,
+            name = currentUser.name,
+            photoUrl = currentUser.photo,
+            joinedAt = System.currentTimeMillis(),
+            role = if (isUserHost) "host" else "listener",
+            tier = if (currentUser.isVipOrPlatinum()) {
+                if (currentUser.plan.contains("VIP", ignoreCase = true)) "VIP" else "Platinum"
+            } else "Standard"
+        )
+        db.collection("rooms").document(room.id)
+            .collection("members").document(currentUser.uid).set(memberDoc)
+    }
+
+    val targetHostId = room.hostId.ifEmpty { activeMembers.firstOrNull { it.role == "host" }?.uid ?: if (isUserHost) currentUser.uid else "" }
+    val hostMember = activeMembers.find { it.uid == targetHostId || it.role == "host" }
+    val hostFromProfiles = allProfiles.find { it.uid == targetHostId }
+    val hostName = room.hostName.ifBlank { hostMember?.name ?: hostFromProfiles?.name ?: if (isUserHost) currentUser.name else "Host" }
+    val hostPhoto = room.hostPhotoUrl.ifBlank { "" }
+        .ifEmpty { hostMember?.photoUrl.orEmpty() }
+        .ifEmpty { hostFromProfiles?.photo.orEmpty() }
+        .ifEmpty { if (isUserHost) currentUser.photo else "" }
+        .ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80" }
+
+    // Synchronize host photo and name to room document if not yet saved in Firestore
+    LaunchedEffect(room.id, hostPhoto, isUserHost) {
+        if (room.hostPhotoUrl.isBlank() && hostPhoto.isNotBlank() && isUserHost) {
+            db.collection("rooms").document(room.id).update(
+                mapOf(
+                    "hostPhotoUrl" to hostPhoto,
+                    "hostName" to hostName
+                )
+            )
+        }
+    }
 
     // Host Follower Real-Time Listener
-    val targetHostId = room.hostId.ifEmpty { activeMembers.firstOrNull { it.role == "host" }?.uid ?: "" }
     DisposableEffect(targetHostId, currentUser.uid) {
         if (targetHostId.isBlank() || targetHostId == currentUser.uid) {
             return@DisposableEffect onDispose {}
@@ -1681,6 +1836,164 @@ fun AudioHangoutRoomDialog(
                                 modifier = Modifier.height(28.dp)
                             ) {
                                 Text(if (isUserHost) "Close" else "Leave", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            },
+            bottomBar = {
+                // Public Room Chat Bar & Flowing Comments (Pinned at the bottom of the screen!)
+                Surface(
+                    color = Color.Black.copy(alpha = 0.88f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .imePadding()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        // Flowing Comments Overlay (Latest 4 comments)
+                        if (liveComments.isNotEmpty()) {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 100.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                items(liveComments.takeLast(4)) { comment ->
+                                    val isVip = comment.tier.contains("VIP", true)
+                                    val isPlat = comment.tier.contains("Platinum", true)
+                                    val nameColor = if (isVip) BrandGold else if (isPlat) BrandCyan else BrandCoral
+
+                                    Row(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(50))
+                                            .background(Color.Black.copy(alpha = 0.75f))
+                                            .border(0.5.dp, BrandBorder, RoundedCornerShape(50))
+                                            .clickable {
+                                                if (comment.userId != currentUser.uid) {
+                                                    selectedMemberForSheet = RoomMember(
+                                                        uid = comment.userId,
+                                                        name = comment.userName,
+                                                        photoUrl = comment.userPhoto,
+                                                        tier = comment.tier
+                                                    )
+                                                }
+                                            }
+                                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        AsyncImage(
+                                            model = comment.userPhoto.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                                            contentDescription = null,
+                                            modifier = Modifier.size(20.dp).clip(CircleShape),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "${comment.userName}: ",
+                                            color = nameColor,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp
+                                        )
+                                        Text(
+                                            text = comment.message,
+                                            color = Color.White,
+                                            fontSize = 11.sp,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                        }
+
+                        // Public Room Chat Bar (Open for all members)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(50))
+                                .background(BrandCard)
+                                .border(1.dp, BrandBorder, RoundedCornerShape(50))
+                                .padding(horizontal = 12.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = commentInputText,
+                                onValueChange = { commentInputText = it },
+                                placeholder = { Text("Say something in room...", color = Color.Gray, fontSize = 11.sp) },
+                                modifier = Modifier.weight(1f),
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                                keyboardActions = KeyboardActions(onSend = {
+                                    if (commentInputText.isNotBlank()) {
+                                        val msg = commentInputText.trim()
+                                        val commentDoc = LiveRoomComment(
+                                            id = UUID.randomUUID().toString(),
+                                            roomId = room.id,
+                                            userId = currentUser.uid,
+                                            userName = currentUser.name,
+                                            userPhoto = currentUser.photo,
+                                            tier = if (currentUser.isVipOrPlatinum()) {
+                                                if (currentUser.plan.contains("VIP", true)) "VIP" else "Platinum"
+                                            } else "Standard",
+                                            message = msg,
+                                            timestamp = System.currentTimeMillis()
+                                        )
+                                        db.collection("rooms").document(room.id)
+                                            .collection("live_comments").document(commentDoc.id)
+                                            .set(commentDoc)
+                                        commentInputText = ""
+                                    }
+                                    keyboardController?.hide()
+                                    focusManager.clearFocus()
+                                }),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White,
+                                    focusedBorderColor = Color.Transparent,
+                                    unfocusedBorderColor = Color.Transparent,
+                                    focusedContainerColor = Color.Transparent,
+                                    unfocusedContainerColor = Color.Transparent
+                                ),
+                                singleLine = true
+                            )
+
+                            IconButton(
+                                onClick = {
+                                    if (commentInputText.isNotBlank()) {
+                                        val msg = commentInputText.trim()
+                                        val commentDoc = LiveRoomComment(
+                                            id = UUID.randomUUID().toString(),
+                                            roomId = room.id,
+                                            userId = currentUser.uid,
+                                            userName = currentUser.name,
+                                            userPhoto = currentUser.photo,
+                                            tier = if (currentUser.isVipOrPlatinum()) {
+                                                if (currentUser.plan.contains("VIP", true)) "VIP" else "Platinum"
+                                            } else "Standard",
+                                            message = msg,
+                                            timestamp = System.currentTimeMillis()
+                                        )
+                                        db.collection("rooms").document(room.id)
+                                            .collection("live_comments").document(commentDoc.id)
+                                            .set(commentDoc)
+                                        commentInputText = ""
+                                    }
+                                    keyboardController?.hide()
+                                    focusManager.clearFocus()
+                                },
+                                modifier = Modifier.size(32.dp).background(BrandCoral, CircleShape)
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.Send,
+                                    contentDescription = "Send",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(14.dp)
+                                )
                             }
                         }
                     }
@@ -2225,283 +2538,136 @@ fun AudioHangoutRoomDialog(
                     // ---------------------------------------------------------
                     // 4. ELONGATED LOUNGE STAGE MEMBER CARDS (NO DUPLICATE HOST)
                     // ---------------------------------------------------------
-                    if (activeAudience.isEmpty()) {
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = BrandCard.copy(alpha = 0.6f)),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(10.dp).fillMaxWidth(),
-                                horizontalAlignment = Alignment.CenterHorizontally
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                    ) {
+                        if (activeAudience.isEmpty()) {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = BrandCard.copy(alpha = 0.6f)),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                             ) {
-                                Text(
-                                    text = if (isUserHost) "🎧 You are the Host on stage. Listeners will be listed here as friends join!"
-                                    else "🎧 Listening to ${hostName}'s live hangout. Say something in chat below!",
-                                    color = Color.LightGray,
-                                    fontSize = 11.sp,
-                                    textAlign = TextAlign.Center
-                                )
-                            }
-                        }
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxWidth().weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(5.dp)
-                        ) {
-                            items(activeAudience) { member ->
-                                val isMemberVip = member.tier.contains("VIP", ignoreCase = true)
-                                val isMemberPlat = member.tier.contains("Platinum", ignoreCase = true)
-                                val isSelf = member.uid == currentUser.uid
-
-                                Card(
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = if (isSelf) BrandCardSubtle else BrandCard
-                                    ),
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            if (!isSelf) {
-                                                selectedMemberForSheet = member
-                                            }
-                                        }
-                                        .border(
-                                            width = 1.dp,
-                                            color = if (isSelf) BrandCoral.copy(alpha = 0.5f) else BrandBorder,
-                                            shape = RoundedCornerShape(12.dp)
-                                        )
+                                Column(
+                                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
-                                    Row(
+                                    Text(
+                                        text = if (isUserHost) "🎧 You are the Host on stage. Listeners will be listed here as friends join!"
+                                        else "🎧 Listening to ${hostName}'s live hangout. Say something in chat below!",
+                                        color = Color.LightGray,
+                                        fontSize = 11.sp,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                verticalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                items(activeAudience) { member ->
+                                    val isMemberVip = member.tier.contains("VIP", ignoreCase = true)
+                                    val isMemberPlat = member.tier.contains("Platinum", ignoreCase = true)
+                                    val isSelf = member.uid == currentUser.uid
+
+                                    Card(
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = if (isSelf) BrandCardSubtle else BrandCard
+                                        ),
+                                        shape = RoundedCornerShape(12.dp),
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
+                                            .clickable {
+                                                selectedMemberForSheet = member
+                                            }
+                                            .border(
+                                                width = 1.dp,
+                                                color = if (isSelf) BrandCoral.copy(alpha = 0.5f) else BrandBorder,
+                                                shape = RoundedCornerShape(12.dp)
+                                            )
                                     ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Box(contentAlignment = Alignment.BottomEnd) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(34.dp)
-                                                        .clip(CircleShape)
-                                                        .border(
-                                                            width = 1.5.dp,
-                                                            brush = Brush.sweepGradient(
-                                                                if (isMemberVip) listOf(BrandGold, BrandCoral, BrandGold)
-                                                                else if (isMemberPlat) listOf(BrandCyan, BrandCoral, BrandCyan)
-                                                                else listOf(BrandCoral, BrandOrange)
-                                                            ),
-                                                            shape = CircleShape
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Box(contentAlignment = Alignment.BottomEnd) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(34.dp)
+                                                            .clip(CircleShape)
+                                                            .border(
+                                                                width = 1.5.dp,
+                                                                brush = Brush.sweepGradient(
+                                                                    if (isMemberVip) listOf(BrandGold, BrandCoral, BrandGold)
+                                                                    else if (isMemberPlat) listOf(BrandCyan, BrandCoral, BrandCyan)
+                                                                    else listOf(BrandCoral, BrandOrange)
+                                                                ),
+                                                                shape = CircleShape
+                                                            )
+                                                    ) {
+                                                        AsyncImage(
+                                                            model = member.photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                                                            contentDescription = member.name,
+                                                            modifier = Modifier.fillMaxSize(),
+                                                            contentScale = ContentScale.Crop
                                                         )
-                                                ) {
-                                                    AsyncImage(
-                                                        model = member.photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
-                                                        contentDescription = member.name,
-                                                        modifier = Modifier.fillMaxSize(),
-                                                        contentScale = ContentScale.Crop
+                                                    }
+
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(6.dp)
+                                                            .clip(CircleShape)
+                                                            .background(BrandGreen)
+                                                            .border(1.dp, BrandDark, CircleShape)
                                                     )
                                                 }
 
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(6.dp)
-                                                        .clip(CircleShape)
-                                                        .background(BrandGreen)
-                                                        .border(1.dp, BrandDark, CircleShape)
-                                                )
+                                                Spacer(modifier = Modifier.width(10.dp))
+
+                                                Column {
+                                                    Text(
+                                                        text = if (isSelf) "You (${member.name})" else member.name,
+                                                        color = Color.White,
+                                                        fontSize = 12.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                    Text(
+                                                        text = if (isMemberVip) "★ VIP Member"
+                                                        else if (isMemberPlat) "♦ Platinum Member"
+                                                        else "Active Listener",
+                                                        color = if (isMemberVip) BrandGold
+                                                        else if (isMemberPlat) BrandCyan
+                                                        else Color.Gray,
+                                                        fontSize = 9.sp
+                                                    )
+                                                }
                                             }
 
-                                            Spacer(modifier = Modifier.width(10.dp))
-
-                                            Column {
+                                            Surface(
+                                                color = if (isSelf) BrandCoral.copy(alpha = 0.2f) else BrandDark,
+                                                shape = RoundedCornerShape(50),
+                                                border = BorderStroke(0.5.dp, BrandBorder)
+                                            ) {
                                                 Text(
-                                                    text = if (isSelf) "You (${member.name})" else member.name,
-                                                    color = Color.White,
-                                                    fontSize = 12.sp,
+                                                    text = if (isSelf) "You" else "👋 View Profile",
+                                                    color = if (isSelf) BrandCoral else BrandGold,
+                                                    fontSize = 10.sp,
                                                     fontWeight = FontWeight.Bold,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                                Text(
-                                                    text = if (isMemberVip) "★ VIP Member"
-                                                    else if (isMemberPlat) "♦ Platinum Member"
-                                                    else "Active Listener",
-                                                    color = if (isMemberVip) BrandGold
-                                                    else if (isMemberPlat) BrandCyan
-                                                    else Color.Gray,
-                                                    fontSize = 9.sp
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                                 )
                                             }
                                         }
-
-                                        Surface(
-                                            color = if (isSelf) BrandCoral.copy(alpha = 0.2f) else BrandDark,
-                                            shape = RoundedCornerShape(50),
-                                            border = BorderStroke(0.5.dp, BrandBorder)
-                                        ) {
-                                            Text(
-                                                text = if (isSelf) "You" else "👋 View Profile",
-                                                color = if (isSelf) BrandCoral else BrandGold,
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                        )
                                     }
                                 }
                             }
-                        }
-                    }
-                }
-
-                // ---------------------------------------------------------
-                // 5. LIVE STREAMING FLOWING COMMENTS & PUBLIC CHAT BAR
-                // ---------------------------------------------------------
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 6.dp)
-                ) {
-                    // Flowing Comments Overlay (Latest 4 comments)
-                    if (liveComments.isNotEmpty()) {
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 110.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            items(liveComments.takeLast(4)) { comment ->
-                                val isVip = comment.tier.contains("VIP", true)
-                                val isPlat = comment.tier.contains("Platinum", true)
-                                val nameColor = if (isVip) BrandGold else if (isPlat) BrandCyan else BrandCoral
-
-                                Row(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(50))
-                                        .background(Color.Black.copy(alpha = 0.75f))
-                                        .border(0.5.dp, BrandBorder, RoundedCornerShape(50))
-                                        .clickable {
-                                            if (comment.userId != currentUser.uid) {
-                                                selectedMemberForSheet = RoomMember(
-                                                    uid = comment.userId,
-                                                    name = comment.userName,
-                                                    photoUrl = comment.userPhoto,
-                                                    tier = comment.tier
-                                                )
-                                            }
-                                        }
-                                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    AsyncImage(
-                                        model = comment.userPhoto.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
-                                        contentDescription = null,
-                                        modifier = Modifier.size(20.dp).clip(CircleShape),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = "${comment.userName}: ",
-                                        color = nameColor,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 11.sp
-                                    )
-                                    Text(
-                                        text = comment.message,
-                                        color = Color.White,
-                                        fontSize = 11.sp,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    // Public Room Chat Bar (Open for all members)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(50))
-                            .background(BrandCard)
-                            .border(1.dp, BrandBorder, RoundedCornerShape(50))
-                            .padding(horizontal = 12.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedTextField(
-                            value = commentInputText,
-                            onValueChange = { commentInputText = it },
-                            placeholder = { Text("Say something in room...", color = Color.Gray, fontSize = 11.sp) },
-                            modifier = Modifier.weight(1f),
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                            keyboardActions = KeyboardActions(onSend = {
-                                if (commentInputText.isNotBlank()) {
-                                    val msg = commentInputText.trim()
-                                    val commentDoc = LiveRoomComment(
-                                        id = UUID.randomUUID().toString(),
-                                        roomId = room.id,
-                                        userId = currentUser.uid,
-                                        userName = currentUser.name,
-                                        userPhoto = currentUser.photo,
-                                        tier = if (currentUser.isVipOrPlatinum()) {
-                                            if (currentUser.plan.contains("VIP", true)) "VIP" else "Platinum"
-                                        } else "Standard",
-                                        message = msg,
-                                        timestamp = System.currentTimeMillis()
-                                    )
-                                    db.collection("rooms").document(room.id)
-                                        .collection("live_comments").document(commentDoc.id)
-                                        .set(commentDoc)
-                                    commentInputText = ""
-                                }
-                                keyboardController?.hide()
-                                focusManager.clearFocus()
-                            }),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedBorderColor = Color.Transparent,
-                                unfocusedBorderColor = Color.Transparent,
-                                focusedContainerColor = Color.Transparent,
-                                unfocusedContainerColor = Color.Transparent
-                            ),
-                            singleLine = true
-                        )
-
-                        IconButton(
-                            onClick = {
-                                if (commentInputText.isNotBlank()) {
-                                    val msg = commentInputText.trim()
-                                    val commentDoc = LiveRoomComment(
-                                        id = UUID.randomUUID().toString(),
-                                        roomId = room.id,
-                                        userId = currentUser.uid,
-                                        userName = currentUser.name,
-                                        userPhoto = currentUser.photo,
-                                        tier = if (currentUser.isVipOrPlatinum()) {
-                                            if (currentUser.plan.contains("VIP", true)) "VIP" else "Platinum"
-                                        } else "Standard",
-                                        message = msg,
-                                        timestamp = System.currentTimeMillis()
-                                    )
-                                    db.collection("rooms").document(room.id)
-                                        .collection("live_comments").document(commentDoc.id)
-                                        .set(commentDoc)
-                                    commentInputText = ""
-                                }
-                                keyboardController?.hide()
-                                focusManager.clearFocus()
-                            },
-                            modifier = Modifier.size(32.dp).background(BrandCoral, CircleShape)
-                        ) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.Send,
-                                contentDescription = "Send",
-                                tint = Color.White,
-                                modifier = Modifier.size(14.dp)
-                            )
                         }
                     }
                 }
@@ -2549,6 +2715,8 @@ fun AudioHangoutRoomDialog(
                 member = member,
                 userProfile = profile,
                 currentUser = currentUser,
+                isHost = isUserHost,
+                roomId = room.id,
                 db = db,
                 onDismiss = { selectedMemberForSheet = null },
                 onLike = {
@@ -2572,6 +2740,32 @@ fun AudioHangoutRoomDialog(
                 },
                 onRequestMessage = {
                     selectedMemberForRequest = member
+                },
+                onKickOut = { targetMember ->
+                    db.collection("rooms").document(room.id)
+                        .collection("members").document(targetMember.uid).delete()
+                    db.collection("rooms").document(room.id)
+                        .update("kickedUserIds", FieldValue.arrayUnion(targetMember.uid))
+                    Toast.makeText(context, "${targetMember.name} kicked out of room.", Toast.LENGTH_SHORT).show()
+                    selectedMemberForSheet = null
+                },
+                onBan = { targetMember ->
+                    db.collection("rooms").document(room.id)
+                        .collection("members").document(targetMember.uid).delete()
+                    db.collection("rooms").document(room.id)
+                        .update("bannedUserIds", FieldValue.arrayUnion(targetMember.uid))
+                    Toast.makeText(context, "${targetMember.name} permanently banned from room.", Toast.LENGTH_SHORT).show()
+                    selectedMemberForSheet = null
+                },
+                onBlock = { targetMember ->
+                    db.collection("users").document(currentUser.uid)
+                        .update("blockedUserIds", FieldValue.arrayUnion(targetMember.uid))
+                    Toast.makeText(context, "Blocked ${targetMember.name}.", Toast.LENGTH_SHORT).show()
+                    selectedMemberForSheet = null
+                },
+                onTagMember = { memberName ->
+                    commentInputText = "@$memberName "
+                    selectedMemberForSheet = null
                 }
             )
         }
@@ -2672,7 +2866,6 @@ fun AudioHangoutRoomDialog(
             }
         }
     }
-}
 }
 
 // -------------------------------------------------------------

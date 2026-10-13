@@ -251,6 +251,7 @@ data class MomentItem(
     val userName: String = "",
     val userPhoto: String = "",
     val mediaUrl: String = "",
+    val mediaUrls: List<String> = emptyList(),
     val caption: String = "",
     val likes: Int = 0,
     val likedByUsers: List<String> = emptyList(),
@@ -481,6 +482,18 @@ fun parseMomentFromDoc(doc: DocumentSnapshot): MomentItem {
         val validUserName = parsed?.userName?.ifBlank { null } ?: doc.getString("userName") ?: doc.getString("authorName") ?: doc.getString("name") ?: "User"
         val validUserPhoto = parsed?.userPhoto?.ifBlank { null } ?: doc.getString("userPhoto") ?: doc.getString("photo") ?: ""
         val validMediaUrl = parsed?.mediaUrl?.ifBlank { null } ?: doc.getString("mediaUrl") ?: doc.getString("imageUrl") ?: doc.getString("photoUrl") ?: ""
+        
+        val validMediaUrls = if (parsed != null && parsed.mediaUrls.isNotEmpty()) {
+            parsed.mediaUrls
+        } else {
+            @Suppress("UNCHECKED_CAST")
+            val listFromDoc = doc.get("mediaUrls") as? List<String>
+            if (!listFromDoc.isNullOrEmpty()) listFromDoc
+            else if (validMediaUrl.isNotBlank()) listOf(validMediaUrl)
+            else emptyList()
+        }
+        val effectiveMediaUrl = validMediaUrl.ifBlank { validMediaUrls.firstOrNull() ?: "" }
+
         val validCaption = parsed?.caption?.ifBlank { null } ?: doc.getString("caption") ?: doc.getString("text") ?: ""
         val validLikes = if (parsed != null && parsed.likes > 0) parsed.likes else (doc.getLong("likes") ?: 0L).toInt()
         @Suppress("UNCHECKED_CAST")
@@ -493,7 +506,8 @@ fun parseMomentFromDoc(doc: DocumentSnapshot): MomentItem {
             userId = validUserId,
             userName = validUserName,
             userPhoto = validUserPhoto,
-            mediaUrl = validMediaUrl,
+            mediaUrl = effectiveMediaUrl,
+            mediaUrls = validMediaUrls,
             caption = validCaption,
             likes = validLikes,
             likedByUsers = validLikedBy,
@@ -507,6 +521,10 @@ fun parseMomentFromDoc(doc: DocumentSnapshot): MomentItem {
         val validUserName = doc.getString("userName") ?: doc.getString("authorName") ?: doc.getString("name") ?: "User"
         val validUserPhoto = doc.getString("userPhoto") ?: doc.getString("photo") ?: ""
         val validMediaUrl = doc.getString("mediaUrl") ?: doc.getString("imageUrl") ?: doc.getString("photoUrl") ?: ""
+        @Suppress("UNCHECKED_CAST")
+        val validMediaUrls = (doc.get("mediaUrls") as? List<String>) ?: (if (validMediaUrl.isNotBlank()) listOf(validMediaUrl) else emptyList())
+        val effectiveMediaUrl = validMediaUrl.ifBlank { validMediaUrls.firstOrNull() ?: "" }
+
         val validCaption = doc.getString("caption") ?: doc.getString("text") ?: ""
         val validLikes = (doc.getLong("likes") ?: 0L).toInt()
         @Suppress("UNCHECKED_CAST")
@@ -519,7 +537,8 @@ fun parseMomentFromDoc(doc: DocumentSnapshot): MomentItem {
             userId = validUserId,
             userName = validUserName,
             userPhoto = validUserPhoto,
-            mediaUrl = validMediaUrl,
+            mediaUrl = effectiveMediaUrl,
+            mediaUrls = validMediaUrls,
             caption = validCaption,
             likes = validLikes,
             likedByUsers = validLikedBy,
@@ -539,6 +558,9 @@ fun saveMomentsToPrefs(prefs: SharedPreferences, moments: List<MomentItem>) {
                 put("userName", item.userName)
                 put("userPhoto", item.userPhoto)
                 put("mediaUrl", item.mediaUrl)
+                val mediaUrlsArray = JSONArray()
+                item.mediaUrls.forEach { mediaUrlsArray.put(it) }
+                put("mediaUrls", mediaUrlsArray)
                 put("caption", item.caption)
                 put("likes", item.likes)
                 put("commentCount", item.commentCount)
@@ -569,13 +591,25 @@ fun loadMomentsFromPrefs(prefs: SharedPreferences): List<MomentItem> {
                     likedByList.add(likedByArray.getString(j))
                 }
             }
+            val mediaUrlsList = mutableListOf<String>()
+            val mediaUrlsArray = obj.optJSONArray("mediaUrls")
+            if (mediaUrlsArray != null) {
+                for (j in 0 until mediaUrlsArray.length()) {
+                    mediaUrlsList.add(mediaUrlsArray.getString(j))
+                }
+            }
+            val singleMedia = obj.optString("mediaUrl", "")
+            if (mediaUrlsList.isEmpty() && singleMedia.isNotBlank()) {
+                mediaUrlsList.add(singleMedia)
+            }
             list.add(
                 MomentItem(
                     id = obj.optString("id", UUID.randomUUID().toString()),
                     userId = obj.optString("userId", ""),
                     userName = obj.optString("userName", "User"),
                     userPhoto = obj.optString("userPhoto", ""),
-                    mediaUrl = obj.optString("mediaUrl", ""),
+                    mediaUrl = singleMedia.ifBlank { mediaUrlsList.firstOrNull() ?: "" },
+                    mediaUrls = mediaUrlsList,
                     caption = obj.optString("caption", ""),
                     likes = obj.optInt("likes", 0),
                     likedByUsers = likedByList,

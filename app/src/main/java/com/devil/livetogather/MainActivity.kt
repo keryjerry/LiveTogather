@@ -1200,13 +1200,15 @@ fun LiveTogatherApp() {
             PostMomentDialog(
                 currentUser = currentUser,
                 onDismiss = { showPostMomentDialog = false },
-                onPost = { mediaUrl, caption ->
+                onPost = { mediaUrls, caption ->
+                    val firstMedia = mediaUrls.firstOrNull() ?: ""
                     val newMoment = MomentItem(
                         id = UUID.randomUUID().toString(),
                         userId = currentUserId,
                         userName = currentUser.name.ifBlank { "You" },
                         userPhoto = currentUser.photo,
-                        mediaUrl = mediaUrl,
+                        mediaUrl = firstMedia,
+                        mediaUrls = mediaUrls,
                         caption = caption,
                         timestamp = System.currentTimeMillis()
                     )
@@ -2471,9 +2473,13 @@ fun MomentsScreenContent(
                             Text(item.caption, color = Color.White, fontSize = 13.sp)
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            if (item.mediaUrl.isNotBlank()) {
+                            val displayPhotos = if (item.mediaUrls.isNotEmpty()) item.mediaUrls 
+                                else if (item.mediaUrl.isNotBlank()) listOf(item.mediaUrl) 
+                                else emptyList()
+
+                            if (displayPhotos.size == 1) {
                                 AsyncImage(
-                                    model = item.mediaUrl,
+                                    model = displayPhotos.first(),
                                     contentDescription = null,
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -2481,6 +2487,25 @@ fun MomentsScreenContent(
                                         .clip(RoundedCornerShape(12.dp)),
                                     contentScale = ContentScale.Crop
                                 )
+                            } else if (displayPhotos.size > 1) {
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(180.dp)
+                                ) {
+                                    items(displayPhotos) { photoUrl ->
+                                        AsyncImage(
+                                            model = photoUrl,
+                                            contentDescription = null,
+                                            modifier = Modifier
+                                                .fillParentMaxWidth(0.82f)
+                                                .fillMaxHeight()
+                                                .clip(RoundedCornerShape(12.dp)),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    }
+                                }
                             }
 
                             Spacer(modifier = Modifier.height(10.dp))
@@ -4124,28 +4149,40 @@ fun NotificationsDialog(
 fun PostMomentDialog(
     currentUser: UserProfile,
     onDismiss: () -> Unit,
-    onPost: (String, String) -> Unit
+    onPost: (List<String>, String) -> Unit
 ) {
     var caption by remember { mutableStateOf("") }
-    var mediaUrl by remember { mutableStateOf("https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=600&q=80") }
+    val pickedMediaUrls = remember { mutableStateListOf<String>() }
     var isUploading by remember { mutableStateOf(false) }
+    var uploadStatusText by remember { mutableStateOf("") }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    val mediaPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        if (uri != null) {
+    val multiMediaPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
             isUploading = true
+            uploadStatusText = "Uploading 1/${uris.size}..."
             coroutineScope.launch(Dispatchers.IO) {
                 try {
-                    val uploadedUrl = ImageUploadManager.uploadImage(context, uri, "moments")
-                    withContext(Dispatchers.Main) {
+                    val batch = uris.take(6)
+                    val newUrls = mutableListOf<String>()
+                    batch.forEachIndexed { index, uri ->
+                        withContext(Dispatchers.Main) {
+                            uploadStatusText = "Uploading ${index + 1}/${batch.size}..."
+                        }
+                        val uploadedUrl = ImageUploadManager.uploadImage(context, uri, "moments")
                         if (!uploadedUrl.isNullOrBlank()) {
-                            mediaUrl = uploadedUrl
-                            Toast.makeText(context, "Image ready to share! 📸", Toast.LENGTH_SHORT).show()
+                            newUrls.add(uploadedUrl)
+                        }
+                    }
+                    withContext(Dispatchers.Main) {
+                        if (newUrls.isNotEmpty()) {
+                            pickedMediaUrls.addAll(newUrls)
+                            Toast.makeText(context, "${newUrls.size} photos ready to share! 📸", Toast.LENGTH_SHORT).show()
                         } else {
-                            Toast.makeText(context, "Image upload failed. Try another photo.", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Photo upload failed. Try another photo.", Toast.LENGTH_SHORT).show()
                         }
                     }
                 } catch (e: Throwable) {
@@ -4153,11 +4190,13 @@ fun PostMomentDialog(
                 } finally {
                     withContext(Dispatchers.Main) {
                         isUploading = false
+                        uploadStatusText = ""
                     }
                 }
             }
         }
     }
+
     val isKeyboardOpen = WindowInsets.isImeVisible
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
@@ -4166,6 +4205,8 @@ fun PostMomentDialog(
         keyboardController?.hide()
         focusManager.clearFocus()
     }
+
+    val canPost = !isUploading && (pickedMediaUrls.isNotEmpty() || caption.isNotBlank())
 
     Dialog(
         onDismissRequest = { if (!isUploading) onDismiss() },
@@ -4179,35 +4220,36 @@ fun PostMomentDialog(
             shape = RoundedCornerShape(20.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Share a Moment", color = BrandCoral, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Share a Moment", color = BrandCoral, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    if (pickedMediaUrls.isNotEmpty()) {
+                        Text("${pickedMediaUrls.size} Photo${if (pickedMediaUrls.size > 1) "s" else ""}", color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
 
                 OutlinedTextField(
                     value = caption,
                     onValueChange = { caption = it },
-                    placeholder = { Text("What's on your mind? (Cafe, Party, Trip...)", color = Color.Gray, fontSize = 12.sp) },
+                    placeholder = { Text("What's on your mind? (Optional or type message...)", color = Color.Gray, fontSize = 12.sp) },
                     colors = outlinedFieldColors(),
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(150.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .border(1.dp, BrandBorder, RoundedCornerShape(12.dp))
-                        .clickable(enabled = !isUploading) { mediaPickerLauncher.launch("image/*") },
-                    contentAlignment = Alignment.Center
-                ) {
-                    AsyncImage(
-                        model = mediaUrl,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
+                if (pickedMediaUrls.isEmpty()) {
                     Box(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black.copy(alpha = if (isUploading) 0.65f else 0.35f)),
+                            .fillMaxWidth()
+                            .height(140.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(BrandCardSubtle)
+                            .border(1.dp, BrandBorder, RoundedCornerShape(14.dp))
+                            .clickable(enabled = !isUploading) {
+                                multiMediaPickerLauncher.launch("image/*")
+                            },
                         contentAlignment = Alignment.Center
                     ) {
                         if (isUploading) {
@@ -4217,16 +4259,86 @@ fun PostMomentDialog(
                             ) {
                                 CircularProgressIndicator(
                                     color = BrandCoral,
-                                    modifier = Modifier.size(30.dp),
+                                    modifier = Modifier.size(32.dp),
                                     strokeWidth = 3.dp
                                 )
-                                Text("Uploading to cloud...", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                Text(uploadStatusText.ifEmpty { "Uploading..." }, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                             }
                         } else {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = BrandCoral, modifier = Modifier.size(36.dp))
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text("Select Photos (Multiple supported)", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text("Choose from Gallery / Camera", color = Color.Gray, fontSize = 10.sp)
+                            }
+                        }
+                    }
+                } else {
+                    Column {
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth().height(140.dp)
+                        ) {
+                            items(pickedMediaUrls) { url ->
+                                Box(
+                                    modifier = Modifier
+                                        .size(130.dp, 140.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .border(1.dp, BrandBorder, RoundedCornerShape(12.dp))
+                                ) {
+                                    AsyncImage(
+                                        model = url,
+                                        contentDescription = null,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .padding(6.dp)
+                                            .size(24.dp)
+                                            .clip(CircleShape)
+                                            .background(Color.Black.copy(alpha = 0.75f))
+                                            .clickable(enabled = !isUploading) {
+                                                pickedMediaUrls.remove(url)
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(Icons.Default.Close, contentDescription = "Remove", tint = Color.White, modifier = Modifier.size(14.dp))
+                                    }
+                                }
+                            }
+
+                            if (pickedMediaUrls.size < 6) {
+                                item {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(100.dp, 140.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(BrandCardSubtle)
+                                            .border(1.dp, BrandBorder, RoundedCornerShape(12.dp))
+                                            .clickable(enabled = !isUploading) {
+                                                multiMediaPickerLauncher.launch("image/*")
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = BrandCoral, modifier = Modifier.size(28.dp))
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text("+ Add More", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if (isUploading) {
+                            Spacer(modifier = Modifier.height(6.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = Color.White)
+                                CircularProgressIndicator(color = BrandCoral, modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Change Image / Pick File", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text(uploadStatusText.ifEmpty { "Uploading photos..." }, color = BrandGold, fontSize = 11.sp)
                             }
                         }
                     }
@@ -4238,15 +4350,27 @@ fun PostMomentDialog(
                     }
                     Button(
                         onClick = {
-                            if (caption.isNotBlank() && !isUploading) {
-                                onPost(mediaUrl, caption.trim())
+                            if (canPost) {
+                                val finalCaption = caption.trim().ifEmpty { "✨ Shared a moment" }
+                                val finalUrls = if (pickedMediaUrls.isNotEmpty()) pickedMediaUrls.toList()
+                                    else listOf("https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=600&q=80")
+                                onPost(finalUrls, finalCaption)
                             }
                         },
-                        enabled = caption.isNotBlank() && !isUploading,
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                        enabled = canPost,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = BrandCoral,
+                            contentColor = Color.White,
+                            disabledContainerColor = BrandCoral.copy(alpha = 0.35f),
+                            disabledContentColor = Color.White.copy(alpha = 0.5f)
+                        ),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text(if (isUploading) "Uploading..." else "Post Now", fontWeight = FontWeight.Bold)
+                        Text(
+                            text = if (isUploading) "Uploading..." else "Post Now",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
                     }
                 }
             }
