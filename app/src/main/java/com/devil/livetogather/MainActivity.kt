@@ -2452,15 +2452,21 @@ fun ProfileScreenContent(
         if (uri != null) {
             isUploadingPhoto = true
             coroutineScope.launch {
-                val uploadedUrl = ImageUploadManager.uploadImage(context, uri, "profiles")
-                if (uploadedUrl != null) {
-                    photoUrl = uploadedUrl
-                    val updated = currentUser.copy(photo = uploadedUrl)
-                    onUpdateProfile(updated)
-                    db.collection("users").document(currentUserId).set(updated, SetOptions.merge())
-                    Toast.makeText(context, "Profile photo updated successfully!", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(context, "Photo upload failed. Please try again.", Toast.LENGTH_SHORT).show()
+                // 1. Immediately save locally to private storage so photo is NEVER lost & displays instantly
+                val localSavedUri = ImageUploadManager.saveImageLocally(context, uri, "profile_${currentUserId}.jpg")
+                val activePhoto = localSavedUri ?: uri.toString()
+                photoUrl = activePhoto
+                val updatedLocal = currentUser.copy(photo = activePhoto)
+                onUpdateProfile(updatedLocal)
+                Toast.makeText(context, "Profile picture saved! 📸", Toast.LENGTH_SHORT).show()
+
+                // 2. Upload to Cloud in background (multi-bucket Firebase Storage or fallback)
+                val cloudUrl = ImageUploadManager.uploadImage(context, uri, "profiles")
+                if (!cloudUrl.isNullOrBlank() && cloudUrl.startsWith("http")) {
+                    photoUrl = cloudUrl
+                    val updatedCloud = currentUser.copy(photo = cloudUrl)
+                    onUpdateProfile(updatedCloud)
+                    db.collection("users").document(currentUserId).set(updatedCloud, SetOptions.merge())
                 }
                 isUploadingPhoto = false
             }
@@ -2772,7 +2778,7 @@ fun ProfileScreenContent(
                                     education = education.trim(),
                                     hobbies = hobbies.trim(),
                                     bio = bio.trim(),
-                                    photo = photoUrl,
+                                    photo = photoUrl.ifEmpty { currentUser.photo },
                                     gender = gender,
                                     interestedIn = interestedIn
                                 )
@@ -2781,7 +2787,7 @@ fun ProfileScreenContent(
                                 isEditing = false
                                 isSaving = false
                                 statusMessage = "✅ Profile updated successfully!"
-                                Toast.makeText(context, "Profile saved successfully!", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Profile saved successfully! ✅", Toast.LENGTH_SHORT).show()
 
                                 // Background cloud sync
                                 db.collection("users").document(currentUserId)
@@ -2790,7 +2796,7 @@ fun ProfileScreenContent(
                                         statusMessage = "✅ Profile Synced in Real-Time!"
                                     }
                                     .addOnFailureListener {
-                                        statusMessage = "⚠️ Saved locally (Sync pending)"
+                                        statusMessage = "✅ Profile Saved Locally!"
                                     }
                             },
                             enabled = !isSaving,
