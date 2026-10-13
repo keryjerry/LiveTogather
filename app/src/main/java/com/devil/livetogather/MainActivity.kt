@@ -375,16 +375,17 @@ fun LiveTogatherApp() {
                 return@addSnapshotListener
             }
             if (snapshot != null) {
-                if (snapshot.isEmpty) {
-                    INTENT_ROOMS_CATALOG.forEach { room ->
-                        db.collection("rooms").document(room.id).set(room)
+                val fetchedRooms = snapshot.documents.mapNotNull { it.toObject(RoomItem::class.java) }
+                // Ensure all catalog rooms have their assigned real host data merged in Firestore
+                INTENT_ROOMS_CATALOG.forEach { catalogRoom ->
+                    val existing = fetchedRooms.find { it.id == catalogRoom.id }
+                    if (existing == null || existing.hostId.isBlank()) {
+                        db.collection("rooms").document(catalogRoom.id).set(catalogRoom, SetOptions.merge())
                     }
-                } else {
-                    val fetchedRooms = snapshot.documents.mapNotNull { it.toObject(RoomItem::class.java) }
-                    if (fetchedRooms.isNotEmpty()) {
-                        roomsList.clear()
-                        roomsList.addAll(fetchedRooms)
-                    }
+                }
+                if (fetchedRooms.isNotEmpty()) {
+                    roomsList.clear()
+                    roomsList.addAll(fetchedRooms)
                 }
             }
         }
