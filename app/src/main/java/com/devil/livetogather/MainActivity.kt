@@ -11,6 +11,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,10 +27,12 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -305,6 +308,26 @@ fun LiveTogatherApp() {
     val chatMessages = remember { mutableStateListOf<ChatMessage>() }
     val roomsList = remember { mutableStateListOf<RoomItem>() }
 
+    // Real-Time Cloud Firestore Refresh Engine (Zero Dummy Data, Direct Source.SERVER)
+    val refreshEngine = remember { FirestoreRefreshEngine(context, db, prefs) }
+    val coroutineScope = rememberCoroutineScope()
+    val triggerRefresh: () -> Unit = {
+        coroutineScope.launch {
+            refreshEngine.refreshAll(
+                currentUserId = currentUserId,
+                deviceId = deviceId,
+                currentUser = currentUser,
+                onUpdateUser = { updated -> currentUser = updated },
+                discoverProfiles = discoverProfiles,
+                roomsList = roomsList,
+                moments = moments,
+                notifications = notifications,
+                incomingSwipes = incomingSwipes,
+                matches = matches
+            )
+        }
+    }
+
     // --- Firebase Authentication & Firestore Setup ---
     LaunchedEffect(Unit) {
         // Authenticate anonymously so Firestore security rules don't block requests with PERMISSION_DENIED
@@ -554,6 +577,28 @@ fun LiveTogatherApp() {
                     }
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Real-Time Cloud Firestore Server Refresh Action
+                        val infiniteTransition = rememberInfiniteTransition(label = "refreshAnim")
+                        val rotation by infiniteTransition.animateFloat(
+                            initialValue = 0f,
+                            targetValue = 360f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(1000, easing = LinearEasing)
+                            ),
+                            label = "refreshRotation"
+                        )
+                        IconButton(
+                            onClick = triggerRefresh,
+                            enabled = !refreshEngine.isRefreshing
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Refresh Cloud Firestore",
+                                modifier = Modifier.rotate(if (refreshEngine.isRefreshing) rotation else 0f),
+                                tint = if (refreshEngine.isRefreshing) BrandCoral else Color.White
+                            )
+                        }
+
                         // Real-time Notification Bell with Badge
                         IconButton(onClick = { showNotificationsDialog = true }) {
                             BadgedBox(
@@ -620,7 +665,9 @@ fun LiveTogatherApp() {
                 }
             }
         ) { paddingValues ->
-            Box(
+            PullToRefreshBox(
+                isRefreshing = refreshEngine.isRefreshing,
+                onRefresh = triggerRefresh,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
