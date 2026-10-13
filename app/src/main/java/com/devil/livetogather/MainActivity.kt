@@ -1,12 +1,18 @@
 @file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 package com.devil.livetogather
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.location.Geocoder
+import android.location.Location
+import android.location.LocationManager
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
+import androidx.core.content.ContextCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -14,6 +20,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -274,7 +281,10 @@ fun LiveTogatherApp() {
                 profession = prefs.getString("profile_profession", "UX Designer") ?: "",
                 education = prefs.getString("profile_education", "Masters in Design") ?: "",
                 plan = prefs.getString("profile_plan", "VIP LEVEL ★") ?: "VIP LEVEL ★",
-                locationName = prefs.getString("profile_location", "New Town, West Bengal") ?: "New Town, West Bengal",
+                locationName = prefs.getString("profile_location", "New Town, Kolkata") ?: "New Town, Kolkata",
+                latitude = prefs.getString("profile_latitude", "22.5726")?.toDoubleOrNull() ?: 22.5726,
+                longitude = prefs.getString("profile_longitude", "88.3639")?.toDoubleOrNull() ?: 88.3639,
+                isLocationSet = prefs.getBoolean("profile_is_location_set", false),
                 maxDistanceKm = prefs.getInt("profile_max_distance", 53),
                 showFurtherAway = prefs.getBoolean("profile_show_further", true),
                 interestedIn = prefs.getString("profile_interested_in", "Women") ?: "Women",
@@ -289,6 +299,14 @@ fun LiveTogatherApp() {
     var discoverTab by remember { mutableStateOf("cards") } // "cards" or "rooms"
     var selectedCategory by remember { mutableStateOf("all") }
     var showSettingsDialog by remember { mutableStateOf(false) }
+    var showLocationSetupDialog by remember { mutableStateOf(false) }
+
+    // Prompt user to set their real location on login / initial launch if not configured yet
+    LaunchedEffect(currentUser.isLocationSet, currentUserId) {
+        if (currentUserId.isNotBlank() && !currentUser.isLocationSet) {
+            showLocationSetupDialog = true
+        }
+    }
     var showNotificationsDialog by remember { mutableStateOf(false) }
     var showPostMomentDialog by remember { mutableStateOf(false) }
     var momentToEdit by remember { mutableStateOf<MomentItem?>(null) }
@@ -544,12 +562,15 @@ fun LiveTogatherApp() {
         }
     }
 
-    // Filtered Discover Profiles
+    // Filtered Discover Profiles (Real-Time Proximity & Attribute Matching)
     val filteredProfiles = remember(discoverProfiles, selectedCategory, currentUser) {
         discoverProfiles.filter { profile ->
             if (!currentUser.enableDiscovery) return@filter false
             val matchesCategory = selectedCategory == "all" || profile.activeIntent == selectedCategory
-            val matchesDistance = currentUser.showFurtherAway || profile.distanceKm <= currentUser.maxDistanceKm
+            val candLat = if (profile.latitude != 0.0) profile.latitude else (CITY_COORDINATES[profile.city]?.first ?: 22.5726)
+            val candLon = if (profile.longitude != 0.0) profile.longitude else (CITY_COORDINATES[profile.city]?.second ?: 88.3639)
+            val realDist = calculateDistanceKm(currentUser.latitude, currentUser.longitude, candLat, candLon)
+            val matchesDistance = currentUser.showFurtherAway || realDist <= currentUser.maxDistanceKm
             val matchesAge = currentUser.showOutsideAge || (profile.age in currentUser.minAge..currentUser.maxAge)
             val interested = currentUser.interestedIn.lowercase().trim()
             val matchesGender = when {
@@ -968,6 +989,7 @@ fun LiveTogatherApp() {
                                     }
                             },
                             onOpenSettings = { showSettingsDialog = true },
+                            onOpenLocationSetup = { showLocationSetupDialog = true },
                             onLogout = {
                                 prefs.edit().clear().apply()
                                 Toast.makeText(context, "Logged out successfully", Toast.LENGTH_SHORT).show()
@@ -1198,6 +1220,7 @@ fun LiveTogatherApp() {
             SettingsDialog(
                 user = currentUser,
                 onDismiss = { showSettingsDialog = false },
+                onOpenLocationSetup = { showLocationSetupDialog = true },
                 onSave = { updated ->
                     currentUser = updated
                     saveProfileToPrefs(prefs, updated)
@@ -1209,6 +1232,23 @@ fun LiveTogatherApp() {
                             Toast.makeText(context, "Settings saved locally!", Toast.LENGTH_SHORT).show()
                         }
                     showSettingsDialog = false
+                }
+            )
+        }
+
+        // Location Setup & Onboarding Dialog
+        if (showLocationSetupDialog) {
+            LocationSetupDialog(
+                currentUser = currentUser,
+                onDismiss = { showLocationSetupDialog = false },
+                onSaveLocation = { updated ->
+                    currentUser = updated
+                    saveProfileToPrefs(prefs, updated)
+                    db.collection("users").document(currentUserId).set(updated, SetOptions.merge())
+                        .addOnSuccessListener {
+                            Toast.makeText(context, "Location updated in real-time! 📍", Toast.LENGTH_SHORT).show()
+                        }
+                    showLocationSetupDialog = false
                 }
             )
         }
@@ -2209,8 +2249,16 @@ fun DiscoverScreenContent(
                         fontSize = 12.sp,
                         maxLines = 2
                     )
+                    val candLat = if (currentProfile.latitude != 0.0) currentProfile.latitude else (CITY_COORDINATES[currentProfile.city]?.first ?: 22.5726)
+                    val candLon = if (currentProfile.longitude != 0.0) currentProfile.longitude else (CITY_COORDINATES[currentProfile.city]?.second ?: 88.3639)
+                    val realDist = calculateDistanceKm(currentUser.latitude, currentUser.longitude, candLat, candLon)
+                    val locationLabel = if (currentProfile.city.equals(currentUser.city, ignoreCase = true)) {
+                        "📍 In your city (${currentProfile.city}) • $realDist km away"
+                    } else {
+                        "📍 ${currentProfile.locationName.ifBlank { currentProfile.city }} • $realDist km away"
+                    }
                     Text(
-                        text = "📍 ${currentProfile.city} • ${currentProfile.distanceKm} km away",
+                        text = locationLabel,
                         color = BrandOrange,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
@@ -2692,6 +2740,7 @@ fun ProfileScreenContent(
     onUpdateProfile: (UserProfile) -> Unit,
     onSelectPlan: (SubscriptionPlanItem) -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenLocationSetup: () -> Unit = {},
     onLogout: () -> Unit,
     onDeleteAccount: () -> Unit,
     onShareMomentClick: () -> Unit = {},
@@ -2791,10 +2840,6 @@ fun ProfileScreenContent(
                     if (currentUser.isVipOrPlatinum()) {
                         Text("👑", fontSize = 14.sp)
                     }
-                }
-
-                IconButton(onClick = onOpenSettings) {
-                    Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.LightGray)
                 }
             }
         }
@@ -2920,12 +2965,19 @@ fun ProfileScreenContent(
                     }
                 }
                 Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = "📍 $city • $age yrs • $gender",
-                    color = Color.LightGray,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable { onOpenLocationSetup() }
+                ) {
+                    Text(
+                        text = "📍 ${currentUser.locationName.ifBlank { city }} • $age yrs • $gender",
+                        color = Color.LightGray,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("✏️", fontSize = 11.sp)
+                }
             }
         }
 
@@ -3387,7 +3439,7 @@ fun ProfileScreenContent(
             },
             properties = DialogProperties(
                 usePlatformDefaultWidth = false,
-                dismissOnBackPress = !isKeyboardOpen
+                dismissOnBackPress = true
             )
         ) {
             Card(
@@ -3399,6 +3451,15 @@ fun ProfileScreenContent(
                     .fillMaxHeight(0.88f)
                     .navigationBarsPadding()
                     .imePadding()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        if (isKeyboardOpen) {
+                            keyboardController?.hide()
+                            focusManager.clearFocus()
+                        }
+                    }
             ) {
                 Column(
                     modifier = Modifier
@@ -3421,15 +3482,33 @@ fun ProfileScreenContent(
                                 fontWeight = FontWeight.Bold
                             )
                         }
-                        IconButton(
-                            onClick = {
-                                keyboardController?.hide()
-                                focusManager.clearFocus()
-                                isEditing = false
-                            },
-                            modifier = Modifier.size(28.dp)
-                        ) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (isKeyboardOpen) {
+                                Button(
+                                    onClick = {
+                                        keyboardController?.hide()
+                                        focusManager.clearFocus()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = BrandCardSubtle),
+                                    border = BorderStroke(1.dp, BrandBorder),
+                                    shape = RoundedCornerShape(20.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(28.dp)
+                                ) {
+                                    Text("⌨️ Done", color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                                Spacer(modifier = Modifier.width(6.dp))
+                            }
+                            IconButton(
+                                onClick = {
+                                    keyboardController?.hide()
+                                    focusManager.clearFocus()
+                                    isEditing = false
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray)
+                            }
                         }
                     }
 
@@ -3981,13 +4060,320 @@ fun SubscriptionPlanCard(
 }
 
 // -------------------------------------------------------------
+// LOCATION SETUP & ONBOARDING DIALOG
+// -------------------------------------------------------------
+@Composable
+fun LocationSetupDialog(
+    currentUser: UserProfile,
+    onDismiss: () -> Unit,
+    onSaveLocation: (UserProfile) -> Unit
+) {
+    var selectedCity by remember { mutableStateOf(currentUser.city.ifBlank { "Kolkata" }) }
+    var locationArea by remember { mutableStateOf(currentUser.locationName.ifBlank { "New Town" }) }
+    var currentLat by remember { mutableDoubleStateOf(currentUser.latitude) }
+    var currentLon by remember { mutableDoubleStateOf(currentUser.longitude) }
+    var isDetectingLocation by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    val isKeyboardOpen = WindowInsets.isImeVisible
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
+        val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (fineGranted || coarseGranted) {
+            isDetectingLocation = true
+            try {
+                val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+                val loc: Location? = if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                    locationManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                        ?: locationManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+                } else {
+                    locationManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+                }
+
+                if (loc != null) {
+                    currentLat = loc.latitude
+                    currentLon = loc.longitude
+                    try {
+                        val geocoder = Geocoder(context, Locale.getDefault())
+                        val addresses = geocoder.getFromLocation(loc.latitude, loc.longitude, 1)
+                        if (!addresses.isNullOrEmpty()) {
+                            val addr = addresses[0]
+                            val locality = addr.locality ?: addr.subAdminArea ?: addr.adminArea ?: "Local Area"
+                            val subLocality = addr.subLocality ?: addr.featureName ?: locality
+                            selectedCity = locality
+                            locationArea = "$subLocality, $locality"
+                        }
+                    } catch (e: Exception) {
+                        Log.w("LocationSetup", "Geocoder error: ${e.message}")
+                    }
+                    Toast.makeText(context, "📍 Real GPS Location Detected!", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "Location signal acquired. Selected $selectedCity.", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Log.e("LocationSetup", "Location detection error: ${e.message}")
+                Toast.makeText(context, "Using $selectedCity coordinates.", Toast.LENGTH_SHORT).show()
+            } finally {
+                isDetectingLocation = false
+            }
+        } else {
+            Toast.makeText(context, "Location permission not granted. You can pick your city below.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    Dialog(
+        onDismissRequest = {
+            if (isKeyboardOpen) {
+                keyboardController?.hide()
+                focusManager.clearFocus()
+            } else {
+                onDismiss()
+            }
+        },
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = true
+        )
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = BrandDark),
+            shape = RoundedCornerShape(20.dp),
+            border = BorderStroke(1.dp, BrandBorder),
+            modifier = Modifier
+                .fillMaxWidth(0.94f)
+                .fillMaxHeight(0.85f)
+                .navigationBarsPadding()
+                .imePadding()
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) {
+                    if (isKeyboardOpen) {
+                        keyboardController?.hide()
+                        focusManager.clearFocus()
+                    }
+                }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(18.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("📍", fontSize = 20.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                "Real Location & Area",
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                "Required for real-time dating & distance matching",
+                                color = Color.Gray,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                    IconButton(
+                        onClick = {
+                            keyboardController?.hide()
+                            focusManager.clearFocus()
+                            onDismiss()
+                        },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray)
+                    }
+                }
+
+                HorizontalDivider(color = BrandBorder, modifier = Modifier.padding(vertical = 12.dp))
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    // Auto GPS Detection Button
+                    Button(
+                        onClick = {
+                            locationPermissionLauncher.launch(
+                                arrayOf(
+                                    Manifest.permission.ACCESS_FINE_LOCATION,
+                                    Manifest.permission.ACCESS_COARSE_LOCATION
+                                )
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandCardSubtle),
+                        border = BorderStroke(1.dp, BrandOrange.copy(alpha = 0.8f)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().height(44.dp)
+                    ) {
+                        if (isDetectingLocation) {
+                            CircularProgressIndicator(color = BrandOrange, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Detecting Real GPS...", color = Color.White, fontSize = 12.sp)
+                        } else {
+                            Text("📍 Auto-Detect My Live Location (GPS)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Text("Selected City", color = BrandCoral, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    // City selector pills
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(CITY_COORDINATES.keys.toList()) { city ->
+                            val isSelected = selectedCity.equals(city, ignoreCase = true)
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .background(
+                                        if (isSelected) Brush.horizontalGradient(listOf(BrandCoral, BrandOrange))
+                                        else Brush.linearGradient(listOf(BrandCard, BrandCard))
+                                    )
+                                    .border(1.dp, if (isSelected) Color.Transparent else BrandBorder, RoundedCornerShape(50))
+                                    .clickable {
+                                        selectedCity = city
+                                        val coords = CITY_COORDINATES[city] ?: Pair(22.5726, 88.3639)
+                                        currentLat = coords.first
+                                        currentLon = coords.second
+                                        val popularAreas = POPULAR_AREAS_BY_CITY[city]
+                                        if (!popularAreas.isNullOrEmpty()) {
+                                            locationArea = "${popularAreas.first()}, $city"
+                                        } else {
+                                            locationArea = city
+                                        }
+                                    }
+                                    .padding(horizontal = 14.dp, vertical = 7.dp)
+                            ) {
+                                Text(
+                                    text = city,
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
+                            }
+                        }
+                    }
+
+                    // Popular Neighborhoods / Areas
+                    val areas = POPULAR_AREAS_BY_CITY[selectedCity] ?: listOf("Central", "North", "South", "East", "West")
+                    Text("Select Area in $selectedCity", color = BrandCoral, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        areas.forEach { area ->
+                            val isSelected = locationArea.contains(area, ignoreCase = true)
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSelected) BrandGold.copy(alpha = 0.2f) else BrandCardSubtle)
+                                    .border(1.dp, if (isSelected) BrandGold else BrandBorder, RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        locationArea = "$area, $selectedCity"
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = area,
+                                    color = if (isSelected) BrandGold else Color.LightGray,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+
+                    // Specific Neighborhood / Street input
+                    OutlinedTextField(
+                        value = locationArea,
+                        onValueChange = { locationArea = it },
+                        label = { Text("Exact Area / Neighborhood", color = Color.Gray, fontSize = 11.sp) },
+                        placeholder = { Text("e.g. New Town Action Area 1", color = Color.DarkGray, fontSize = 11.sp) },
+                        colors = outlinedFieldColors(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    // Current Coordinates summary badge
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(BrandCardSubtle)
+                            .padding(10.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("🌐", fontSize = 14.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text("Real-Time Coordinates for Distance Calculation", color = Color.LightGray, fontSize = 10.sp)
+                                Text(
+                                    "Lat: ${String.format(Locale.US, "%.4f", currentLat)}, Lon: ${String.format(Locale.US, "%.4f", currentLon)}",
+                                    color = BrandGreen,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Save button
+                Button(
+                    onClick = {
+                        keyboardController?.hide()
+                        focusManager.clearFocus()
+                        val updated = currentUser.copy(
+                            city = selectedCity.trim().ifBlank { "Kolkata" },
+                            locationName = locationArea.trim().ifBlank { selectedCity },
+                            latitude = if (currentLat != 0.0) currentLat else (CITY_COORDINATES[selectedCity]?.first ?: 22.5726),
+                            longitude = if (currentLon != 0.0) currentLon else (CITY_COORDINATES[selectedCity]?.second ?: 88.3639),
+                            isLocationSet = true
+                        )
+                        onSaveLocation(updated)
+                        onDismiss()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().height(44.dp)
+                ) {
+                    Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Confirm & Set Location", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
 // SETTINGS DIALOG WITH TOPIC SELECTION
 // -------------------------------------------------------------
 @Composable
 fun SettingsDialog(
     user: UserProfile,
     onDismiss: () -> Unit,
-    onSave: (UserProfile) -> Unit
+    onSave: (UserProfile) -> Unit,
+    onOpenLocationSetup: () -> Unit = {}
 ) {
     var hasBio by remember { mutableStateOf(user.hasBio) }
     var locationName by remember { mutableStateOf(user.locationName) }
@@ -4026,10 +4412,17 @@ fun SettingsDialog(
     }
 
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (isKeyboardOpen) {
+                keyboardController?.hide()
+                focusManager.clearFocus()
+            } else {
+                onDismiss()
+            }
+        },
         properties = DialogProperties(
             usePlatformDefaultWidth = false,
-            dismissOnBackPress = !isKeyboardOpen
+            dismissOnBackPress = true
         )
     ) {
         Scaffold(
@@ -4144,15 +4537,17 @@ fun SettingsDialog(
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onOpenLocationSetup() },
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column {
-                                    Text("Location", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                    Text("Change locations to find matches anywhere.", color = Color.Gray, fontSize = 11.sp)
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Location & Area", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    Text("Tap to change real GPS location & area.", color = Color.Gray, fontSize = 11.sp)
                                 }
-                                Text(locationName, color = Color.DarkGray, fontSize = 13.sp)
+                                Text("📍 $locationName ✏️", color = BrandCoral, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                             }
 
                             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color(0xFFEEEEEE))
@@ -5297,6 +5692,9 @@ fun saveProfileToPrefs(prefs: android.content.SharedPreferences, user: UserProfi
         .putString("profile_education", user.education)
         .putString("profile_plan", user.plan)
         .putString("profile_location", user.locationName)
+        .putString("profile_latitude", user.latitude.toString())
+        .putString("profile_longitude", user.longitude.toString())
+        .putBoolean("profile_is_location_set", user.isLocationSet)
         .putInt("profile_max_distance", user.maxDistanceKm)
         .putBoolean("profile_show_further", user.showFurtherAway)
         .putString("profile_interested_in", user.interestedIn)

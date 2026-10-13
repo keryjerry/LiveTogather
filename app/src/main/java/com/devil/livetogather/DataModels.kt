@@ -238,6 +238,9 @@ data class UserProfile(
     val socialMedia: String = "@maya_livetogather",
 
     val locationName: String = "New Town, West Bengal",
+    val latitude: Double = 22.5726,
+    val longitude: Double = 88.3639,
+    val isLocationSet: Boolean = false,
     val maxDistanceKm: Int = 53,
     val showFurtherAway: Boolean = true,
     val interestedIn: String = "Women",
@@ -522,6 +525,46 @@ val DEFAULT_MOMENTS_SEED = listOf(
     )
 )
 
+/**
+ * Calculates real-world geographic distance between two coordinates in kilometers using Haversine formula.
+ */
+fun calculateDistanceKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Int {
+    if ((lat1 == 0.0 && lon1 == 0.0) || (lat2 == 0.0 && lon2 == 0.0)) return 1
+    val earthRadius = 6371.0
+    val dLat = Math.toRadians(lat2 - lat1)
+    val dLon = Math.toRadians(lon2 - lon1)
+    val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2)
+    val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    return Math.round(earthRadius * c).toInt().coerceAtLeast(1)
+}
+
+val CITY_COORDINATES = mapOf(
+    "Kolkata" to Pair(22.5726, 88.3639),
+    "Mumbai" to Pair(19.0760, 72.8777),
+    "Delhi" to Pair(28.6139, 77.2090),
+    "Bangalore" to Pair(12.9716, 77.5946),
+    "Bengaluru" to Pair(12.9716, 77.5946),
+    "Pune" to Pair(18.5204, 73.8567),
+    "Hyderabad" to Pair(17.3850, 78.4867),
+    "Chennai" to Pair(13.0827, 80.2707),
+    "Ahmedabad" to Pair(23.0225, 72.5714),
+    "Jaipur" to Pair(26.9124, 75.7873),
+    "Lucknow" to Pair(26.8467, 80.9462),
+    "Chandigarh" to Pair(30.7333, 76.7794),
+    "Goa" to Pair(15.2993, 74.1240)
+)
+
+val POPULAR_AREAS_BY_CITY = mapOf(
+    "Kolkata" to listOf("New Town", "Salt Lake", "Park Street", "Ballygunge", "Howrah", "Dum Dum"),
+    "Mumbai" to listOf("Bandra West", "Andheri", "Juhu", "Colaba", "Powai", "Thane"),
+    "Delhi" to listOf("Connaught Place", "Hauz Khas", "Saket", "Dwarka", "Vasant Kunj", "Noida"),
+    "Bangalore" to listOf("Koramangala", "Indiranagar", "HSR Layout", "Whitefield", "JP Nagar"),
+    "Pune" to listOf("Koregaon Park", "Viman Nagar", "Baner", "Kothrud", "Aundh", "Hinjawadi"),
+    "Hyderabad" to listOf("Jubilee Hills", "Banjara Hills", "Hitec City", "Gachibowli", "Madhapur")
+)
+
 val DEFAULT_DUMMY_PROFILES = listOf(
     UserProfile(
         uid = "dummy_priya",
@@ -529,6 +572,10 @@ val DEFAULT_DUMMY_PROFILES = listOf(
         age = 23,
         gender = "Woman",
         city = "Kolkata",
+        locationName = "New Town, Kolkata",
+        latitude = 22.5850,
+        longitude = 88.4600,
+        isLocationSet = true,
         photo = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80",
         bio = "Host of Free Tonight 🍷 Singer, traveler, and coffee enthusiast.",
         profession = "Live Streamer & Vocalist",
@@ -548,6 +595,10 @@ val DEFAULT_DUMMY_PROFILES = listOf(
         age = 24,
         gender = "Woman",
         city = "Mumbai",
+        locationName = "Bandra West, Mumbai",
+        latitude = 19.0596,
+        longitude = 72.8295,
+        isLocationSet = true,
         photo = "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80",
         bio = "Fashion stylist & weekend foodie. Always up for good conversations and road trips 🚗✨",
         profession = "Fashion Stylist & Creative Director",
@@ -567,6 +618,10 @@ val DEFAULT_DUMMY_PROFILES = listOf(
         age = 26,
         gender = "Man",
         city = "Delhi",
+        locationName = "Hauz Khas, Delhi",
+        latitude = 28.5494,
+        longitude = 77.2001,
+        isLocationSet = true,
         photo = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80",
         bio = "Electronic music producer & DJ. Let's talk synthesizers and hidden rooftop spots 🎧",
         profession = "Music Producer & DJ",
@@ -586,6 +641,10 @@ val DEFAULT_DUMMY_PROFILES = listOf(
         age = 23,
         gender = "Woman",
         city = "Bangalore",
+        locationName = "Indiranagar, Bangalore",
+        latitude = 12.9784,
+        longitude = 77.6408,
+        isLocationSet = true,
         photo = "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80",
         bio = "Software architect by day, bookworm & stargazer by night 🌌📚",
         profession = "Cloud Architect",
@@ -605,6 +664,10 @@ val DEFAULT_DUMMY_PROFILES = listOf(
         age = 27,
         gender = "Man",
         city = "Pune",
+        locationName = "Koregaon Park, Pune",
+        latitude = 18.5362,
+        longitude = 73.8958,
+        isLocationSet = true,
         photo = "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=800&q=80",
         bio = "Crossfit athlete, calisthenics fanatic, and solo backpacker 🏔️ Always seeking the next summit.",
         profession = "Fitness Trainer & Adventure Guide",
@@ -624,6 +687,10 @@ val DEFAULT_DUMMY_PROFILES = listOf(
         age = 25,
         gender = "Woman",
         city = "Kolkata",
+        locationName = "Park Street, Kolkata",
+        latitude = 22.5510,
+        longitude = 88.3524,
+        isLocationSet = true,
         photo = "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=800&q=80",
         bio = "Graphic designer & plant mom 🌱 Loves museum visits, sunset walks, and indie vinyl records.",
         profession = "Brand Identity Designer",

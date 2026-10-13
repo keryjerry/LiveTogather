@@ -1062,10 +1062,14 @@ fun RoomMemberProfileSheet(
                     )
                 }
 
-                // City & Bio
-                val cityText = userProfile?.city ?: "Kolkata"
+                // City & Bio with Real Distance
+                val locationStr = userProfile?.locationName?.ifBlank { userProfile.city } ?: userProfile?.city ?: "Kolkata"
+                val distKm = if (userProfile != null && currentUser.latitude != 0.0 && userProfile.latitude != 0.0) {
+                    calculateDistanceKm(currentUser.latitude, currentUser.longitude, userProfile.latitude, userProfile.longitude)
+                } else 0
+                val distText = if (distKm > 0) " • $distKm km away" else ""
                 Text(
-                    text = "📍 $cityText • 👥 $memberFollowerCount Followers",
+                    text = "📍 $locationStr$distText • 👥 $memberFollowerCount Followers",
                     color = Color.Gray,
                     fontSize = 11.sp,
                     modifier = Modifier.padding(top = 4.dp)
