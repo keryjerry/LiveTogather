@@ -2746,25 +2746,68 @@ fun ProfileScreenContent(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // 1. Top Bar: Handle & Settings
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "@${(name.ifBlank { "member" }).lowercase().replace(" ", "_")}",
+                        color = Color.White,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Spacer(modifier = Modifier.width(5.dp))
+                    if (currentUser.isVipOrPlatinum()) {
+                        Text("👑", fontSize = 14.sp)
+                    }
+                }
+
+                IconButton(onClick = onOpenSettings) {
+                    Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.LightGray)
+                }
+            }
+        }
+
+        // 2. Avatar & Instagram Stats Row
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Royal Golden Sweep Gradient Ring Avatar
                 Box(contentAlignment = Alignment.Center) {
-                    AsyncImage(
-                        model = photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80" },
-                        contentDescription = null,
+                    Box(
                         modifier = Modifier
-                            .size(76.dp)
+                            .size(86.dp)
                             .clip(CircleShape)
-                            .border(2.dp, BrandCoral, CircleShape),
-                        contentScale = ContentScale.Crop
-                    )
+                            .border(
+                                width = 2.5.dp,
+                                brush = Brush.sweepGradient(
+                                    if (currentUser.isVipOrPlatinum()) listOf(BrandGold, BrandCoral, BrandOrange, BrandGold)
+                                    else listOf(BrandCoral, BrandOrange, BrandCoral)
+                                ),
+                                shape = CircleShape
+                            )
+                            .padding(3.5.dp)
+                    ) {
+                        AsyncImage(
+                            model = photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80" },
+                            contentDescription = name,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(CircleShape),
+                            contentScale = ContentScale.Crop
+                        )
+                    }
+
                     if (isUploadingPhoto) {
                         Box(
                             modifier = Modifier
-                                .size(76.dp)
+                                .size(86.dp)
                                 .clip(CircleShape)
                                 .background(Color.Black.copy(alpha = 0.55f)),
                             contentAlignment = Alignment.Center
@@ -2776,6 +2819,18 @@ fun ProfileScreenContent(
                             )
                         }
                     }
+
+                    // Online Green Dot
+                    Box(
+                        modifier = Modifier
+                            .size(13.dp)
+                            .clip(CircleShape)
+                            .background(BrandGreen)
+                            .border(2.dp, BrandDark, CircleShape)
+                            .align(Alignment.TopEnd)
+                    )
+
+                    // Photo Change Camera Button
                     IconButton(
                         onClick = { if (!isUploadingPhoto) imagePickerLauncher.launch("image/*") },
                         enabled = !isUploadingPhoto,
@@ -2783,317 +2838,187 @@ fun ProfileScreenContent(
                             .size(26.dp)
                             .align(Alignment.BottomEnd)
                             .background(BrandCoral, CircleShape)
+                            .border(1.5.dp, BrandDark, CircleShape)
                     ) {
                         Icon(
                             Icons.Default.CameraAlt,
                             contentDescription = "Upload Photo",
                             tint = Color.White,
-                            modifier = Modifier.size(14.dp)
+                            modifier = Modifier.size(13.dp)
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.width(14.dp))
+                Spacer(modifier = Modifier.width(16.dp))
 
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(name, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                    Text("$city • $age yrs", color = Color.LightGray, fontSize = 12.sp)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "PLAN: ${currentUser.plan}",
-                        color = BrandGold,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
+                // Instagram Stats
+                Row(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.SpaceAround,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    ProfileStatItem(count = "${userMoments.size}", label = "Moments")
+                    ProfileStatItem(count = "${currentUser.followerCount}", label = "Followers")
+                    ProfileStatItem(count = "${currentUser.followingCount}", label = "Following")
+                    ProfileStatItem(
+                        count = if (currentUser.isVipOrPlatinum()) "VIP" else "PRO",
+                        label = "Tier",
+                        highlightColor = BrandGold
                     )
-                }
-
-                IconButton(onClick = onOpenSettings) {
-                    Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.Gray)
                 }
             }
         }
 
-        // Editable Form Fields
+        // 3. User Identity (Name & Location & Age)
+        item {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = name,
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Surface(
+                        color = BrandGold.copy(alpha = 0.2f),
+                        shape = CircleShape
+                    ) {
+                        Icon(
+                            Icons.Default.Check,
+                            contentDescription = "Verified",
+                            tint = BrandGold,
+                            modifier = Modifier.size(14.dp).padding(2.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "📍 $city • $age yrs • $gender",
+                    color = Color.LightGray,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+
+        // 4. Bio Quote Card
+        if (bio.isNotBlank()) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = BrandCard.copy(alpha = 0.85f)),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, BrandBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Text("“", color = BrandGold, fontSize = 24.sp, fontWeight = FontWeight.Black, lineHeight = 20.sp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = bio,
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                            lineHeight = 17.sp,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("”", color = BrandGold, fontSize = 24.sp, fontWeight = FontWeight.Black, lineHeight = 20.sp)
+                    }
+                }
+            }
+        }
+
+        // 5. Action Buttons (Instagram Style: Edit Profile, Settings, VIP Club)
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Edit Profile Button (Opens Popup Dialog)
+                Button(
+                    onClick = { isEditing = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandCardSubtle),
+                    border = BorderStroke(1.dp, BrandBorder),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                    modifier = Modifier.weight(1.3f).height(38.dp)
+                ) {
+                    Icon(Icons.Default.Edit, contentDescription = null, tint = BrandCoral, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Text("Edit Profile", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+
+                // Settings Button
+                Button(
+                    onClick = onOpenSettings,
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandCardSubtle),
+                    border = BorderStroke(1.dp, BrandBorder),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                    modifier = Modifier.weight(1f).height(38.dp)
+                ) {
+                    Icon(Icons.Default.Settings, contentDescription = null, tint = Color.LightGray, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Settings", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+
+                // VIP Club Pass
+                Button(
+                    onClick = { showSubscriptionModal = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandCardSubtle),
+                    border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.6f)),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                    modifier = Modifier.weight(1.1f).height(38.dp)
+                ) {
+                    Text("👑 VIP Club", color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        // 6. Professional & Lifestyle Attributes
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = BrandCard),
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, BrandBorder),
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Basic Information", color = BrandCoral, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                        if (isEditing) {
-                            Surface(
-                                color = BrandOrange.copy(alpha = 0.2f),
-                                shape = RoundedCornerShape(50),
-                                border = BorderStroke(1.dp, BrandOrange)
-                            ) {
-                                Text(
-                                    "Editing Mode Active",
-                                    color = BrandOrange,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
-                    }
+                    Text("👑 ABOUT & LIFESTYLE", color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
 
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = { name = it },
-                        label = { Text("Name", color = Color.Gray, fontSize = 11.sp) },
-                        colors = outlinedFieldColors(),
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    ProfileAttributeRow(icon = "💼", label = "Profession", value = profession.ifBlank { "Not specified" })
+                    ProfileAttributeRow(icon = "🎓", label = "Education", value = education.ifBlank { "Graduate" })
+                    ProfileAttributeRow(icon = "💬", label = "Looking for", value = interestedIn.ifBlank { "Everyone" })
+                    ProfileAttributeRow(icon = "🗣️", label = "Languages", value = currentUser.languages.ifBlank { "English, Hindi" })
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        OutlinedTextField(
-                            value = age,
-                            onValueChange = { age = it },
-                            label = { Text("Age", color = Color.Gray, fontSize = 11.sp) },
-                            colors = outlinedFieldColors(),
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedTextField(
-                            value = city,
-                            onValueChange = { city = it },
-                            label = { Text("City", color = Color.Gray, fontSize = 11.sp) },
-                            colors = outlinedFieldColors(),
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-
-                    OutlinedTextField(
-                        value = profession,
-                        onValueChange = { profession = it },
-                        label = { Text("Profession", color = Color.Gray, fontSize = 11.sp) },
-                        colors = outlinedFieldColors(),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    OutlinedTextField(
-                        value = education,
-                        onValueChange = { education = it },
-                        label = { Text("Education", color = Color.Gray, fontSize = 11.sp) },
-                        colors = outlinedFieldColors(),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    OutlinedTextField(
-                        value = hobbies,
-                        onValueChange = { hobbies = it },
-                        label = { Text("Interests & Hobbies", color = Color.Gray, fontSize = 11.sp) },
-                        colors = outlinedFieldColors(),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    OutlinedTextField(
-                        value = bio,
-                        onValueChange = { bio = it },
-                        label = { Text("Bio", color = Color.Gray, fontSize = 11.sp) },
-                        colors = outlinedFieldColors(),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(modifier = Modifier.height(2.dp))
-
-                    // Gender Selection Pills
-                    Text("Your Gender", color = BrandCoral, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        listOf("Female 👩", "Male 👨", "Non-binary 🧑").forEach { opt ->
-                            val optVal = opt.substringBefore(' ').trim()
-                            val isSelected = gender.equals(optVal, ignoreCase = true) || gender.equals(opt, ignoreCase = true)
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(50))
-                                    .background(
-                                        if (isSelected) Brush.horizontalGradient(listOf(BrandCoral, BrandOrange))
-                                        else Brush.linearGradient(listOf(BrandDark, BrandDark))
-                                    )
-                                    .border(1.dp, if (isSelected) Color.Transparent else BrandBorder, RoundedCornerShape(50))
-                                    .clickable { gender = optVal }
-                                    .padding(vertical = 7.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(opt, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    // Interested In Selection Pills
-                    Text("Interested In Meeting", color = BrandCoral, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        listOf("Women 👩", "Men 👨", "Everyone 🌈").forEach { opt ->
-                            val optVal = opt.substringBefore(' ').trim()
-                            val isSelected = interestedIn.equals(optVal, ignoreCase = true) || interestedIn.equals(opt, ignoreCase = true)
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(50))
-                                    .background(
-                                        if (isSelected) Brush.horizontalGradient(listOf(BrandCoral, BrandOrange))
-                                        else Brush.linearGradient(listOf(BrandDark, BrandDark))
-                                    )
-                                    .border(1.dp, if (isSelected) Color.Transparent else BrandBorder, RoundedCornerShape(50))
-                                    .clickable { interestedIn = optVal }
-                                    .padding(vertical = 7.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(opt, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-
-                    // Real-Time Status / Feedback Banner
-                    if (statusMessage != null) {
-                        Surface(
-                            color = if (statusMessage!!.startsWith("✅")) BrandGreen.copy(alpha = 0.15f) else Color.Red.copy(alpha = 0.15f),
-                            shape = RoundedCornerShape(10.dp),
-                            border = BorderStroke(1.dp, if (statusMessage!!.startsWith("✅")) BrandGreen else Color.Red),
+                    if (hobbies.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text("🏷️ Interests & Passions", color = BrandCoral, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Row(
-                                modifier = Modifier.padding(10.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    if (statusMessage!!.startsWith("✅")) Icons.Default.CheckCircle else Icons.Default.Error,
-                                    contentDescription = null,
-                                    tint = if (statusMessage!!.startsWith("✅")) BrandGreen else Color.Red,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = statusMessage!!,
-                                    color = Color.White,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
+                            hobbies.split(",").map { it.trim() }.filter { it.isNotBlank() }.take(4).forEach { tag ->
+                                Surface(
+                                    color = BrandDark,
+                                    shape = RoundedCornerShape(50),
+                                    border = BorderStroke(0.5.dp, BrandBorder)
+                                ) {
+                                    Text(
+                                        text = tag,
+                                        color = Color.LightGray,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
                             }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    // Side-by-Side Action Buttons: Edit Profile and Save Profile
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Edit Profile Button
-                        OutlinedButton(
-                            onClick = {
-                                if (isEditing) {
-                                    // Reset to current profile and exit edit mode
-                                    name = currentUser.name
-                                    age = currentUser.age.toString()
-                                    city = currentUser.city
-                                    profession = currentUser.profession
-                                    education = currentUser.education
-                                    hobbies = currentUser.hobbies
-                                    bio = currentUser.bio
-                                    photoUrl = currentUser.photo
-                                    gender = currentUser.gender
-                                    interestedIn = currentUser.interestedIn
-                                    isEditing = false
-                                    statusMessage = null
-                                } else {
-                                    isEditing = true
-                                    statusMessage = null
-                                }
-                            },
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = if (isEditing) Color.LightGray else BrandCoral
-                            ),
-                            border = BorderStroke(1.5.dp, if (isEditing) Color.Gray else BrandCoral),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f).height(46.dp)
-                        ) {
-                            Icon(
-                                if (isEditing) Icons.Default.Close else Icons.Default.Edit,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = if (isEditing) Color.LightGray else BrandCoral
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = if (isEditing) "Cancel Edit" else "✏️ Edit Profile",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            )
-                        }
-
-                        // Save Profile Button with Instant Local Feedback & Background Firestore Sync
-                        Button(
-                            onClick = {
-                                val parsedAge = age.toIntOrNull() ?: currentUser.age
-                                val rawPhoto = photoUrl.ifEmpty { currentUser.photo }
-                                val safePhoto = if (rawPhoto.startsWith("file://") || rawPhoto.startsWith("content://")) {
-                                    try {
-                                        ImageUploadManager.convertImageToFirestoreDataUri(context, Uri.parse(rawPhoto)) ?: rawPhoto
-                                    } catch (e: Throwable) {
-                                        rawPhoto
-                                    }
-                                } else {
-                                    rawPhoto
-                                }
-                                photoUrl = safePhoto
-
-                                val updated = currentUser.copy(
-                                    uid = currentUserId,
-                                    name = name.trim().ifEmpty { currentUser.name },
-                                    age = parsedAge,
-                                    city = city.trim().ifEmpty { currentUser.city },
-                                    profession = profession.trim(),
-                                    education = education.trim(),
-                                    hobbies = hobbies.trim(),
-                                    bio = bio.trim(),
-                                    photo = safePhoto,
-                                    gender = gender,
-                                    interestedIn = interestedIn
-                                )
-                                // Immediate optimistic UI update - avoids long spinning button
-                                onUpdateProfile(updated)
-                                isEditing = false
-                                isSaving = false
-                                statusMessage = "✅ Profile updated successfully!"
-                                Toast.makeText(context, "Profile saved to Cloud Firestore! ✅", Toast.LENGTH_SHORT).show()
-
-                                // Background cloud sync to Firestore
-                                db.collection("users").document(currentUserId)
-                                    .set(updated, SetOptions.merge())
-                                    .addOnSuccessListener {
-                                        statusMessage = "✅ Profile Synced to Firestore in Real-Time!"
-                                    }
-                                    .addOnFailureListener {
-                                        statusMessage = "✅ Profile Saved Locally!"
-                                    }
-                            },
-                            enabled = !isSaving,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = BrandCoral,
-                                disabledContainerColor = BrandCoral.copy(alpha = 0.6f)
-                            ),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f).height(46.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.CloudUpload,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("💾 Save Profile", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
                     }
                 }
@@ -3245,95 +3170,79 @@ fun ProfileScreenContent(
                         }
                     }
                 } else {
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        // Quick Add Card
-                        item {
-                            Box(
-                                modifier = Modifier
-                                    .size(100.dp, 120.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(BrandCard)
-                                    .border(1.dp, BrandCoral.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                                    .clickable { onShareMomentClick() },
-                                contentAlignment = Alignment.Center
+                    // Instagram 3-Column Square Grid
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        userMoments.chunked(3).forEach { rowMoments ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Icon(Icons.Default.Add, contentDescription = null, tint = BrandCoral, modifier = Modifier.size(24.dp))
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text("+ Add", color = BrandCoral, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                        items(userMoments) { moment ->
-                            Card(
-                                modifier = Modifier.size(100.dp, 120.dp),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = CardDefaults.cardColors(containerColor = BrandCard)
-                            ) {
-                                Box(modifier = Modifier.fillMaxSize()) {
-                                    AsyncImage(
-                                        model = moment.mediaUrl.ifBlank { "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=600&q=80" },
-                                        contentDescription = null,
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop
-                                    )
+                                rowMoments.forEach { moment ->
                                     Box(
                                         modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(
-                                                Brush.verticalGradient(
-                                                    listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f))
-                                                )
-                                            )
-                                    )
-                                    // Edit & Delete chips on top-right
-                                    Row(
-                                        modifier = Modifier
-                                            .align(Alignment.TopEnd)
-                                            .padding(4.dp)
+                                            .weight(1f)
+                                            .aspectRatio(1f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .border(1.dp, BrandBorder, RoundedCornerShape(8.dp))
                                     ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(20.dp)
-                                                .clip(CircleShape)
-                                                .background(Color.Black.copy(alpha = 0.75f))
-                                                .clickable { onEditMoment(moment) },
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Color.White, modifier = Modifier.size(11.dp))
-                                        }
-                                        Spacer(modifier = Modifier.width(3.dp))
-                                        Box(
-                                            modifier = Modifier
-                                                .size(20.dp)
-                                                .clip(CircleShape)
-                                                .background(Color.Black.copy(alpha = 0.75f))
-                                                .clickable { onDeleteMoment(moment) },
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red, modifier = Modifier.size(11.dp))
-                                        }
-                                    }
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .padding(6.dp),
-                                        verticalArrangement = Arrangement.Bottom
-                                    ) {
-                                        Text(
-                                            text = moment.caption.ifBlank { "Moment" },
-                                            color = Color.White,
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                        AsyncImage(
+                                            model = moment.mediaUrl.ifBlank { "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=600&q=80" },
+                                            contentDescription = null,
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop
                                         )
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .background(
+                                                    Brush.verticalGradient(
+                                                        listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))
+                                                    )
+                                                )
+                                        )
+                                        // Edit & Delete chips on top-right
+                                        Row(
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .padding(3.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(20.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color.Black.copy(alpha = 0.75f))
+                                                    .clickable { onEditMoment(moment) },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Color.White, modifier = Modifier.size(10.dp))
+                                            }
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(20.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color.Black.copy(alpha = 0.75f))
+                                                    .clickable { onDeleteMoment(moment) },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red, modifier = Modifier.size(10.dp))
+                                            }
+                                        }
+                                        // Likes count at bottom left
+                                        Row(
+                                            modifier = Modifier
+                                                .align(Alignment.BottomStart)
+                                                .padding(4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
                                             Icon(Icons.Default.Favorite, contentDescription = null, tint = BrandCoral, modifier = Modifier.size(10.dp))
                                             Spacer(modifier = Modifier.width(3.dp))
-                                            Text("${moment.likes}", color = Color.White, fontSize = 9.sp)
+                                            Text("${moment.likes}", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                                         }
                                     }
+                                }
+                                repeat(3 - rowMoments.size) {
+                                    Spacer(modifier = Modifier.weight(1f))
                                 }
                             }
                         }
@@ -3412,6 +3321,337 @@ fun ProfileScreenContent(
                 onSelectPlan(plan)
                 showSubscriptionModal = false
             }
+        )
+    }
+
+    // Modal Edit Profile Popup Dialog
+    if (isEditing) {
+        Dialog(
+            onDismissRequest = { isEditing = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = BrandDark),
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, BrandBorder),
+                modifier = Modifier
+                    .fillMaxWidth(0.94f)
+                    .fillMaxHeight(0.88f)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp)
+                ) {
+                    // Header
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("✏️", fontSize = 18.sp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                "Edit Royal Profile",
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        IconButton(
+                            onClick = { isEditing = false },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray)
+                        }
+                    }
+
+                    HorizontalDivider(
+                        color = BrandBorder,
+                        modifier = Modifier.padding(vertical = 10.dp)
+                    )
+
+                    // Form Fields
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        // Photo Change Row inside Popup
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(BrandCard)
+                                .padding(10.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                AsyncImage(
+                                    model = photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .size(52.dp)
+                                        .clip(CircleShape)
+                                        .border(1.5.dp, BrandCoral, CircleShape),
+                                    contentScale = ContentScale.Crop
+                                )
+                                if (isUploadingPhoto) {
+                                    CircularProgressIndicator(
+                                        color = BrandCoral,
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Profile Picture", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text("High-resolution photo for royal status", color = Color.Gray, fontSize = 10.sp)
+                            }
+                            Button(
+                                onClick = { imagePickerLauncher.launch("image/*") },
+                                enabled = !isUploadingPhoto,
+                                colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                                shape = RoundedCornerShape(50),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                modifier = Modifier.height(30.dp)
+                            ) {
+                                Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Change", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        OutlinedTextField(
+                            value = name,
+                            onValueChange = { name = it },
+                            label = { Text("Full Name", color = Color.Gray, fontSize = 11.sp) },
+                            colors = outlinedFieldColors(),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            OutlinedTextField(
+                                value = age,
+                                onValueChange = { age = it },
+                                label = { Text("Age", color = Color.Gray, fontSize = 11.sp) },
+                                colors = outlinedFieldColors(),
+                                modifier = Modifier.weight(1f)
+                            )
+                            OutlinedTextField(
+                                value = city,
+                                onValueChange = { city = it },
+                                label = { Text("City", color = Color.Gray, fontSize = 11.sp) },
+                                colors = outlinedFieldColors(),
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+
+                        OutlinedTextField(
+                            value = profession,
+                            onValueChange = { profession = it },
+                            label = { Text("Profession", color = Color.Gray, fontSize = 11.sp) },
+                            colors = outlinedFieldColors(),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        OutlinedTextField(
+                            value = education,
+                            onValueChange = { education = it },
+                            label = { Text("Education", color = Color.Gray, fontSize = 11.sp) },
+                            colors = outlinedFieldColors(),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        OutlinedTextField(
+                            value = hobbies,
+                            onValueChange = { hobbies = it },
+                            label = { Text("Interests & Hobbies (comma-separated)", color = Color.Gray, fontSize = 11.sp) },
+                            colors = outlinedFieldColors(),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        OutlinedTextField(
+                            value = bio,
+                            onValueChange = { bio = it },
+                            label = { Text("Bio / Status Quote", color = Color.Gray, fontSize = 11.sp) },
+                            colors = outlinedFieldColors(),
+                            modifier = Modifier.fillMaxWidth(),
+                            maxLines = 3
+                        )
+
+                        Text("Your Gender", color = BrandCoral, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            listOf("Female 👩", "Male 👨", "Non-binary 🧑").forEach { opt ->
+                                val optVal = opt.substringBefore(' ').trim()
+                                val isSelected = gender.equals(optVal, ignoreCase = true) || gender.equals(opt, ignoreCase = true)
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(50))
+                                        .background(
+                                            if (isSelected) Brush.horizontalGradient(listOf(BrandCoral, BrandOrange))
+                                            else Brush.linearGradient(listOf(BrandCard, BrandCard))
+                                        )
+                                        .border(1.dp, if (isSelected) Color.Transparent else BrandBorder, RoundedCornerShape(50))
+                                        .clickable { gender = optVal }
+                                        .padding(vertical = 7.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(opt, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+
+                        Text("Interested In", color = BrandCoral, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            listOf("Women 👩", "Men 👨", "Everyone 🌈").forEach { opt ->
+                                val optVal = opt.substringBefore(' ').trim()
+                                val isSelected = interestedIn.equals(optVal, ignoreCase = true) || interestedIn.equals(opt, ignoreCase = true)
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(50))
+                                        .background(
+                                            if (isSelected) Brush.horizontalGradient(listOf(BrandCoral, BrandOrange))
+                                            else Brush.linearGradient(listOf(BrandCard, BrandCard))
+                                        )
+                                        .border(1.dp, if (isSelected) Color.Transparent else BrandBorder, RoundedCornerShape(50))
+                                        .clickable { interestedIn = optVal }
+                                        .padding(vertical = 7.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(opt, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Action Buttons: Cancel and Save
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                name = currentUser.name
+                                age = currentUser.age.toString()
+                                city = currentUser.city
+                                profession = currentUser.profession
+                                education = currentUser.education
+                                hobbies = currentUser.hobbies
+                                bio = currentUser.bio
+                                photoUrl = currentUser.photo
+                                gender = currentUser.gender
+                                interestedIn = currentUser.interestedIn
+                                isEditing = false
+                            },
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.LightGray),
+                            border = BorderStroke(1.dp, Color.Gray),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f).height(44.dp)
+                        ) {
+                            Text("Cancel", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = {
+                                val parsedAge = age.toIntOrNull() ?: currentUser.age
+                                val rawPhoto = photoUrl.ifEmpty { currentUser.photo }
+                                val safePhoto = if (rawPhoto.startsWith("file://") || rawPhoto.startsWith("content://")) {
+                                    try {
+                                        ImageUploadManager.convertImageToFirestoreDataUri(context, Uri.parse(rawPhoto)) ?: rawPhoto
+                                    } catch (e: Throwable) {
+                                        rawPhoto
+                                    }
+                                } else {
+                                    rawPhoto
+                                }
+                                photoUrl = safePhoto
+
+                                val updated = currentUser.copy(
+                                    uid = currentUserId,
+                                    name = name.trim().ifEmpty { currentUser.name },
+                                    age = parsedAge,
+                                    city = city.trim().ifEmpty { currentUser.city },
+                                    profession = profession.trim(),
+                                    education = education.trim(),
+                                    hobbies = hobbies.trim(),
+                                    bio = bio.trim(),
+                                    photo = safePhoto,
+                                    gender = gender,
+                                    interestedIn = interestedIn
+                                )
+                                onUpdateProfile(updated)
+                                isEditing = false
+                                Toast.makeText(context, "Profile updated successfully! ✅", Toast.LENGTH_SHORT).show()
+                                db.collection("users").document(currentUserId)
+                                    .set(updated, SetOptions.merge())
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f).height(44.dp)
+                        ) {
+                            Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Save Changes", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ProfileStatItem(
+    count: String,
+    label: String,
+    highlightColor: Color = Color.White
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = count,
+            color = highlightColor,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.ExtraBold
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = label,
+            color = Color.Gray,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+@Composable
+fun ProfileAttributeRow(
+    icon: String,
+    label: String,
+    value: String
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(icon, fontSize = 13.sp)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(label, color = Color.LightGray, fontSize = 12.sp)
+        }
+        Text(
+            text = value,
+            color = Color.White,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold
         )
     }
 }

@@ -724,6 +724,191 @@ fun SendMessageRequestDialog(
 }
 
 // -------------------------------------------------------------
+// 4B. ALL ROOM VIEWERS & MODERATION DIALOG
+// -------------------------------------------------------------
+@Composable
+fun AllRoomViewersDialog(
+    viewers: List<RoomMember>,
+    currentUser: UserProfile,
+    isHost: Boolean,
+    onSelectMember: (RoomMember) -> Unit,
+    onKickOut: (RoomMember) -> Unit,
+    onBan: (RoomMember) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val isKeyboardOpen = WindowInsets.isImeVisible
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+
+    BackHandler(enabled = isKeyboardOpen) {
+        keyboardController?.hide()
+        focusManager.clearFocus()
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(dismissOnBackPress = !isKeyboardOpen)
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = BrandCard),
+            shape = RoundedCornerShape(20.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.72f)
+                .border(1.dp, BrandBorder, RoundedCornerShape(20.dp))
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "👥 Active Viewers (${viewers.size})",
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Real-time listeners in this audio room",
+                            color = Color.Gray,
+                            fontSize = 11.sp
+                        )
+                    }
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray, modifier = Modifier.size(18.dp))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (viewers.isEmpty()) {
+                    Box(
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("No active listeners yet.", color = Color.Gray, fontSize = 12.sp)
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(viewers, key = { it.uid }) { member ->
+                            val isVip = member.tier.contains("VIP", true)
+                            val isPlat = member.tier.contains("Platinum", true)
+                            val isSelf = member.uid == currentUser.uid
+
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isSelf) BrandCardSubtle else BrandDark
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        onSelectMember(member)
+                                        onDismiss()
+                                    }
+                                    .border(
+                                        0.5.dp,
+                                        if (isSelf) BrandCoral.copy(alpha = 0.5f) else BrandBorder,
+                                        RoundedCornerShape(12.dp)
+                                    )
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(40.dp)
+                                                .clip(CircleShape)
+                                                .border(
+                                                    1.5.dp,
+                                                    if (isVip) BrandGold else if (isPlat) BrandCyan else BrandCoral,
+                                                    CircleShape
+                                                )
+                                        ) {
+                                            AsyncImage(
+                                                model = member.photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                                                contentDescription = member.name,
+                                                modifier = Modifier.fillMaxSize(),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.width(10.dp))
+
+                                        Column {
+                                            Text(
+                                                text = if (isSelf) "${member.name} (You)" else member.name,
+                                                color = Color.White,
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                text = if (isVip) "★ VIP Member" else if (isPlat) "♦ Platinum" else "Listener",
+                                                color = if (isVip) BrandGold else if (isPlat) BrandCyan else Color.Gray,
+                                                fontSize = 10.sp
+                                            )
+                                        }
+                                    }
+
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Surface(
+                                            color = BrandCard,
+                                            shape = RoundedCornerShape(50),
+                                            border = BorderStroke(0.5.dp, BrandBorder),
+                                            modifier = Modifier.clickable {
+                                                onSelectMember(member)
+                                                onDismiss()
+                                            }
+                                        ) {
+                                            Text("Profile", color = BrandGold, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
+                                        }
+
+                                        if (isHost && !isSelf) {
+                                            OutlinedButton(
+                                                onClick = { onKickOut(member) },
+                                                border = BorderStroke(1.dp, Color.Yellow),
+                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                                                modifier = Modifier.height(24.dp)
+                                            ) {
+                                                Text("Kick", color = Color.Yellow, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                            }
+
+                                            Button(
+                                                onClick = { onBan(member) },
+                                                colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                                                modifier = Modifier.height(24.dp)
+                                            ) {
+                                                Text("Ban", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
 // 5. MEMBER PROFILE SHEET / DIALOG
 // -------------------------------------------------------------
 @Composable
@@ -1634,6 +1819,7 @@ fun AudioHangoutRoomDialog(
     // Modals
     var showTrackSelector by remember { mutableStateOf(false) }
     var showRoomSettingsDialog by remember { mutableStateOf(false) }
+    var showAllViewersDialog by remember { mutableStateOf(false) }
     var isFollowingHost by remember { mutableStateOf(false) }
     var showFollowCelebrationDialog by remember { mutableStateOf(false) }
     var hostFollowerCount by remember { mutableStateOf(0) }
@@ -1672,9 +1858,8 @@ fun AudioHangoutRoomDialog(
         }
     }
 
-    // Ensure current user is registered in rooms/{roomId}/members
-    LaunchedEffect(room.id, currentUser.uid) {
-        val memberDoc = RoomMember(
+    val currentMember = remember(currentUser.uid, room.id, isUserHost) {
+        RoomMember(
             uid = currentUser.uid,
             name = currentUser.name,
             photoUrl = currentUser.photo,
@@ -1684,8 +1869,24 @@ fun AudioHangoutRoomDialog(
                 if (currentUser.plan.contains("VIP", ignoreCase = true)) "VIP" else "Platinum"
             } else "Standard"
         )
+    }
+
+    // Immediately guarantee currentUser is present locally in activeMembers
+    LaunchedEffect(currentMember) {
+        if (activeMembers.none { it.uid == currentUser.uid }) {
+            activeMembers.add(currentMember)
+        }
+    }
+
+    // Ensure current user is registered in rooms/{roomId}/members in Firestore and deleted on exit
+    DisposableEffect(room.id, currentUser.uid) {
         db.collection("rooms").document(room.id)
-            .collection("members").document(currentUser.uid).set(memberDoc)
+            .collection("members").document(currentUser.uid).set(currentMember)
+
+        onDispose {
+            db.collection("rooms").document(room.id)
+                .collection("members").document(currentUser.uid).delete()
+        }
     }
 
     val targetHostId = room.hostId.ifEmpty { activeMembers.firstOrNull { it.role == "host" }?.uid ?: if (isUserHost) currentUser.uid else "" }
@@ -1697,6 +1898,12 @@ fun AudioHangoutRoomDialog(
         .ifEmpty { hostFromProfiles?.photo.orEmpty() }
         .ifEmpty { if (isUserHost) currentUser.photo else "" }
         .ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80" }
+
+    val filteredActiveAudience = activeMembers.filter {
+        it.uid != targetHostId && it.uid !in room.kickedUserIds && it.uid !in room.bannedUserIds
+    }
+    val displayAudience = filteredActiveAudience
+    val totalDisplayCount = (if (hostName.isNotBlank() || targetHostId.isNotBlank()) 1 else 0) + displayAudience.size
 
     // Synchronize host photo and name to room document if not yet saved in Firestore
     LaunchedEffect(room.id, hostPhoto, isUserHost) {
@@ -1769,6 +1976,9 @@ fun AudioHangoutRoomDialog(
                     val list = snapshot.documents.mapNotNull { it.toObject(RoomMember::class.java) }
                     activeMembers.clear()
                     activeMembers.addAll(list)
+                    if (activeMembers.none { it.uid == currentUser.uid }) {
+                        activeMembers.add(currentMember)
+                    }
                 }
             }
 
@@ -2165,18 +2375,6 @@ fun AudioHangoutRoomDialog(
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
-                                    if (room.isHostLive) {
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(
-                                            text = "LIVE",
-                                            color = BrandCoral,
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Black,
-                                            modifier = Modifier
-                                                .background(BrandCoral.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
-                                                .padding(horizontal = 5.dp, vertical = 1.dp)
-                                        )
-                                    }
                                 }
 
                                 Spacer(modifier = Modifier.height(2.dp))
@@ -2484,50 +2682,36 @@ fun AudioHangoutRoomDialog(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     // ---------------------------------------------------------
-                    // 3. LIVE STREAMING AUDIENCE STRIP (NO DUPLICATE HOST)
+                    // 3. LIVE STREAMING AUDIENCE STRIP (REAL-TIME, NO DUMMY DATA)
                     // ---------------------------------------------------------
-                    val filteredActiveAudience = remember(activeMembers, targetHostId, room.kickedUserIds, room.bannedUserIds) {
-                        activeMembers.filter { it.uid != targetHostId && it.uid !in room.kickedUserIds && it.uid !in room.bannedUserIds }
-                    }
+                    val audienceListState = rememberLazyListState()
 
-                    // Interactive co-listeners: Always show real active members merged with catalog profiles (up to 6 members)
-                    val displayAudience = remember(filteredActiveAudience, allProfiles, room.kickedUserIds, room.bannedUserIds) {
-                        val existingUids = filteredActiveAudience.map { it.uid }.toSet()
-                        val otherProfiles = allProfiles.filter {
-                            it.uid !in existingUids &&
-                            it.uid != targetHostId &&
-                            it.uid !in room.kickedUserIds &&
-                            it.uid !in room.bannedUserIds
-                        }.take((6 - filteredActiveAudience.size).coerceAtLeast(0)).map { profile ->
-                            RoomMember(
-                                uid = profile.uid,
-                                name = profile.name,
-                                photoUrl = profile.photo,
-                                role = "listener",
-                                tier = if (profile.isVipOrPlatinum()) {
-                                    if (profile.plan.contains("VIP", true)) "VIP" else "Platinum"
-                                } else "Standard"
-                            )
+                    // Auto-sliding Carousel for audience when members > 3
+                    LaunchedEffect(displayAudience.size) {
+                        if (displayAudience.size > 3) {
+                            while (true) {
+                                delay(2800)
+                                val current = audienceListState.firstVisibleItemIndex
+                                val next = (current + 1) % displayAudience.size
+                                audienceListState.animateScrollToItem(next)
+                            }
                         }
-                        val combined = (filteredActiveAudience + otherProfiles).filter {
-                            it.uid !in room.kickedUserIds && it.uid !in room.bannedUserIds
-                        }
-                        if (combined.isNotEmpty()) combined else listOf(
-                            RoomMember(uid = "guest_ananya", name = "Ananya Sen", photoUrl = "https://images.unsplash.com/photo-1494790108377-be9c29b29330", role = "listener", tier = "VIP"),
-                            RoomMember(uid = "guest_rohan", name = "Rohan Verma", photoUrl = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d", role = "listener", tier = "Platinum"),
-                            RoomMember(uid = "guest_sneha", name = "Sneha Patel", photoUrl = "https://images.unsplash.com/photo-1517841905240-472988babdf9", role = "listener", tier = "Standard"),
-                            RoomMember(uid = "guest_kabir", name = "Kabir Mehra", photoUrl = "https://images.unsplash.com/photo-1500648767791-00dcc994a43e", role = "listener", tier = "VIP")
-                        ).filter { it.uid !in room.kickedUserIds && it.uid !in room.bannedUserIds }
                     }
-
-                    val totalDisplayCount = 1 + displayAudience.size
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(BrandGreen.copy(alpha = 0.12f))
+                                .border(1.dp, BrandGreen.copy(alpha = 0.35f), RoundedCornerShape(50))
+                                .clickable { showAllViewersDialog = true }
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                        ) {
                             Box(
                                 modifier = Modifier
                                     .size(7.dp)
@@ -2541,6 +2725,13 @@ fun AudioHangoutRoomDialog(
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Icon(
+                                Icons.Default.ChevronRight,
+                                contentDescription = "View all",
+                                tint = BrandGreen,
+                                modifier = Modifier.size(13.dp)
+                            )
                         }
                         Text(
                             text = "Tap avatar to view profile",
@@ -2551,67 +2742,95 @@ fun AudioHangoutRoomDialog(
 
                     Spacer(modifier = Modifier.height(4.dp))
 
-                    // Horizontal Audience Strip with Large Avatars & Clear Names
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(14.dp),
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                    ) {
-                        items(displayAudience) { member ->
-                            val isMemberVip = member.tier.contains("VIP", ignoreCase = true)
-                            val isMemberPlat = member.tier.contains("Platinum", ignoreCase = true)
-                            val isSelf = member.uid == currentUser.uid
+                    if (displayAudience.isEmpty()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color.White.copy(alpha = 0.05f))
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("🎧", fontSize = 13.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "No listeners yet • Invite friends to join your hangout!",
+                                color = Color.LightGray,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    } else {
+                        val avatarSize = if (displayAudience.size > 4) 46.dp else 52.dp
+                        // Horizontal Audience Strip with Responsive Sizing & Auto-Sliding
+                        LazyRow(
+                            state = audienceListState,
+                            horizontalArrangement = Arrangement.spacedBy(if (displayAudience.size > 4) 10.dp else 14.dp),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                        ) {
+                            items(displayAudience, key = { it.uid }) { member ->
+                                val isMemberVip = member.tier.contains("VIP", ignoreCase = true)
+                                val isMemberPlat = member.tier.contains("Platinum", ignoreCase = true)
+                                val isSelf = member.uid == currentUser.uid
 
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .clickable {
-                                        selectedMemberForSheet = member
-                                    }
-                                    .padding(4.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.BottomEnd) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(54.dp)
-                                            .clip(CircleShape)
-                                            .border(
-                                                width = 2.dp,
-                                                brush = Brush.sweepGradient(
-                                                    if (isMemberVip) listOf(BrandGold, BrandCoral, BrandGold)
-                                                    else if (isMemberPlat) listOf(BrandCyan, BrandCoral, BrandCyan)
-                                                    else listOf(BrandCoral, BrandOrange)
-                                                ),
-                                                shape = CircleShape
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .clickable {
+                                            selectedMemberForSheet = member
+                                        }
+                                        .padding(2.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.BottomEnd) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(avatarSize)
+                                                .clip(CircleShape)
+                                                .border(
+                                                    width = 2.dp,
+                                                    brush = Brush.sweepGradient(
+                                                        if (isMemberVip) listOf(BrandGold, BrandCoral, BrandGold)
+                                                        else if (isMemberPlat) listOf(BrandCyan, BrandCoral, BrandCyan)
+                                                        else listOf(BrandCoral, BrandOrange)
+                                                    ),
+                                                    shape = CircleShape
+                                                )
+                                        ) {
+                                            AsyncImage(
+                                                model = member.photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                                                contentDescription = member.name,
+                                                modifier = Modifier.fillMaxSize(),
+                                                contentScale = ContentScale.Crop
                                             )
-                                    ) {
-                                        AsyncImage(
-                                            model = member.photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
-                                            contentDescription = member.name,
-                                            modifier = Modifier.fillMaxSize(),
-                                            contentScale = ContentScale.Crop
+                                        }
+
+                                        Box(
+                                            modifier = Modifier
+                                                .size(10.dp)
+                                                .clip(CircleShape)
+                                                .background(BrandGreen)
+                                                .border(1.5.dp, BrandDark, CircleShape)
                                         )
                                     }
-
-                                    Box(
-                                        modifier = Modifier
-                                            .size(11.dp)
-                                            .clip(CircleShape)
-                                            .background(BrandGreen)
-                                            .border(1.5.dp, BrandDark, CircleShape)
+                                    Spacer(modifier = Modifier.height(3.dp))
+                                    Text(
+                                        text = if (isSelf) "You" else member.name.substringBefore(' '),
+                                        color = Color.White,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.width(if (displayAudience.size > 4) 48.dp else 56.dp),
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Text(
+                                        text = if (isMemberVip) "VIP" else if (isMemberPlat) "PLAT" else "USER",
+                                        color = if (isMemberVip) BrandGold else if (isMemberPlat) BrandCyan else Color.Gray,
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.Bold
                                     )
                                 }
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = if (isSelf) "You" else member.name.substringBefore(' '),
-                                    color = Color.White,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.width(56.dp),
-                                    textAlign = TextAlign.Center
-                                )
                             }
                         }
                     }
@@ -2866,6 +3085,36 @@ fun AudioHangoutRoomDialog(
                 onBanMember = { banned ->
                     room = room.copy(bannedUserIds = room.bannedUserIds + banned.uid)
                 }
+            )
+        }
+
+        // 4B. All Room Viewers & Moderation Dialog
+        if (showAllViewersDialog) {
+            AllRoomViewersDialog(
+                viewers = displayAudience,
+                currentUser = currentUser,
+                isHost = isUserHost,
+                onSelectMember = { member ->
+                    selectedMemberForSheet = member
+                    showAllViewersDialog = false
+                },
+                onKickOut = { targetMember ->
+                    room = room.copy(kickedUserIds = room.kickedUserIds + targetMember.uid)
+                    db.collection("rooms").document(room.id)
+                        .collection("members").document(targetMember.uid).delete()
+                    db.collection("rooms").document(room.id)
+                        .update("kickedUserIds", FieldValue.arrayUnion(targetMember.uid))
+                    Toast.makeText(context, "${targetMember.name} kicked out of room.", Toast.LENGTH_SHORT).show()
+                },
+                onBan = { targetMember ->
+                    room = room.copy(bannedUserIds = room.bannedUserIds + targetMember.uid)
+                    db.collection("rooms").document(room.id)
+                        .collection("members").document(targetMember.uid).delete()
+                    db.collection("rooms").document(room.id)
+                        .update("bannedUserIds", FieldValue.arrayUnion(targetMember.uid))
+                    Toast.makeText(context, "${targetMember.name} permanently banned from room.", Toast.LENGTH_SHORT).show()
+                },
+                onDismiss = { showAllViewersDialog = false }
             )
         }
 
