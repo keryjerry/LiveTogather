@@ -18,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -1197,7 +1198,9 @@ fun RoomSettingsDialog(
     activeMembers: List<RoomMember>,
     db: FirebaseFirestore,
     onDismiss: () -> Unit,
-    onUpdateTheme: (String) -> Unit
+    onUpdateTheme: (String) -> Unit,
+    onKickMember: ((RoomMember) -> Unit)? = null,
+    onBanMember: ((RoomMember) -> Unit)? = null
 ) {
     val context = LocalContext.current
     var scheduledTimeText by remember { mutableStateOf(room.scheduledTime) }
@@ -1526,6 +1529,7 @@ fun RoomSettingsDialog(
                                                     // Kick Button
                                                     OutlinedButton(
                                                         onClick = {
+                                                            onKickMember?.invoke(member)
                                                             db.collection("rooms").document(room.id)
                                                                 .collection("members").document(member.uid).delete()
                                                             db.collection("rooms").document(room.id)
@@ -1542,6 +1546,7 @@ fun RoomSettingsDialog(
                                                     // Ban Button
                                                     Button(
                                                         onClick = {
+                                                            onBanMember?.invoke(member)
                                                             db.collection("rooms").document(room.id)
                                                                 .collection("members").document(member.uid).delete()
                                                             db.collection("rooms").document(room.id)
@@ -1557,6 +1562,46 @@ fun RoomSettingsDialog(
                                                 }
                                             }
                                         }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 6. CLEAR ROOM CHAT (HOST ONLY)
+                    if (isHost) {
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
+                                shape = RoundedCornerShape(14.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text("🗑️ Clear Room Chat", color = Color.Red, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("Permanently delete all live messages from this room in real-time.", color = Color.Gray, fontSize = 11.sp)
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Button(
+                                        onClick = {
+                                            db.collection("rooms").document(room.id)
+                                                .collection("live_comments")
+                                                .get()
+                                                .addOnSuccessListener { snapshot ->
+                                                    val batch = db.batch()
+                                                    for (doc in snapshot.documents) {
+                                                        batch.delete(doc.reference)
+                                                    }
+                                                    batch.commit().addOnSuccessListener {
+                                                        Toast.makeText(context, "Room chat cleared successfully!", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.85f)),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.fillMaxWidth().height(36.dp)
+                                    ) {
+                                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Clear All Messages", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -1901,81 +1946,25 @@ fun AudioHangoutRoomDialog(
                 }
             },
             bottomBar = {
-                // Public Room Chat Bar & Flowing Comments (Pinned at the bottom of the screen!)
+                // Public Room Chat Bar (Floating transparent pill pinned at bottom)
                 Surface(
-                    color = Color.Black.copy(alpha = 0.88f),
+                    color = Color.Transparent,
                     modifier = Modifier
                         .fillMaxWidth()
                         .navigationBarsPadding()
                         .imePadding()
                 ) {
-                    Column(
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 12.dp, vertical = 6.dp)
                     ) {
-                        // Flowing Comments Overlay (Latest 4 comments)
-                        if (liveComments.isNotEmpty()) {
-                            LazyColumn(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = 100.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                items(liveComments.takeLast(4)) { comment ->
-                                    val isVip = comment.tier.contains("VIP", true)
-                                    val isPlat = comment.tier.contains("Platinum", true)
-                                    val nameColor = if (isVip) BrandGold else if (isPlat) BrandCyan else BrandCoral
-
-                                    Row(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(50))
-                                            .background(Color.Black.copy(alpha = 0.75f))
-                                            .border(0.5.dp, BrandBorder, RoundedCornerShape(50))
-                                            .clickable {
-                                                selectedMemberForSheet = RoomMember(
-                                                    uid = comment.userId,
-                                                    name = comment.userName,
-                                                    photoUrl = comment.userPhoto,
-                                                    tier = comment.tier
-                                                )
-                                            }
-                                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        AsyncImage(
-                                            model = comment.userPhoto.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
-                                            contentDescription = null,
-                                            modifier = Modifier.size(24.dp).clip(CircleShape),
-                                            contentScale = ContentScale.Crop
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(
-                                            text = "${comment.userName}: ",
-                                            color = nameColor,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 11.sp
-                                        )
-                                        Text(
-                                            text = comment.message,
-                                            color = Color.White,
-                                            fontSize = 11.sp,
-                                            maxLines = 2,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                        }
-
-                        // Public Room Chat Bar (Open for all members)
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(50))
-                                .background(BrandCard)
-                                .border(1.dp, BrandBorder, RoundedCornerShape(50))
+                                .background(Color.Black.copy(alpha = 0.75f))
+                                .border(1.dp, BrandBorder.copy(alpha = 0.8f), RoundedCornerShape(50))
                                 .padding(horizontal = 12.dp, vertical = 2.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -2497,35 +2486,38 @@ fun AudioHangoutRoomDialog(
                     // ---------------------------------------------------------
                     // 3. LIVE STREAMING AUDIENCE STRIP (NO DUPLICATE HOST)
                     // ---------------------------------------------------------
-                    val activeAudience = remember(activeMembers, targetHostId) {
-                        activeMembers.filter { it.uid != targetHostId }
+                    val filteredActiveAudience = remember(activeMembers, targetHostId, room.kickedUserIds, room.bannedUserIds) {
+                        activeMembers.filter { it.uid != targetHostId && it.uid !in room.kickedUserIds && it.uid !in room.bannedUserIds }
                     }
 
-                    // Interactive co-listeners: if alone or starting room, provide realistic active participants from allProfiles
-                    val displayAudience = remember(activeAudience, allProfiles) {
-                        if (activeAudience.isNotEmpty()) {
-                            activeAudience
-                        } else {
-                            val simulated = allProfiles.filter { it.uid != currentUser.uid && it.uid != targetHostId }.take(5).map { profile ->
-                                RoomMember(
-                                    uid = profile.uid,
-                                    name = profile.name,
-                                    photoUrl = profile.photo,
-                                    role = "listener",
-                                    tier = if (profile.isVipOrPlatinum()) {
-                                        if (profile.plan.contains("VIP", true)) "VIP" else "Platinum"
-                                    } else "Standard"
-                                )
-                            }
-                            simulated.ifEmpty {
-                                listOf(
-                                    RoomMember(uid = "guest_ananya", name = "Ananya Sen", photoUrl = "https://images.unsplash.com/photo-1494790108377-be9c29b29330", role = "listener", tier = "VIP"),
-                                    RoomMember(uid = "guest_rohan", name = "Rohan Verma", photoUrl = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d", role = "listener", tier = "Platinum"),
-                                    RoomMember(uid = "guest_sneha", name = "Sneha Patel", photoUrl = "https://images.unsplash.com/photo-1517841905240-472988babdf9", role = "listener", tier = "Standard"),
-                                    RoomMember(uid = "guest_kabir", name = "Kabir Mehra", photoUrl = "https://images.unsplash.com/photo-1500648767791-00dcc994a43e", role = "listener", tier = "VIP")
-                                )
-                            }
+                    // Interactive co-listeners: Always show real active members merged with catalog profiles (up to 6 members)
+                    val displayAudience = remember(filteredActiveAudience, allProfiles, room.kickedUserIds, room.bannedUserIds) {
+                        val existingUids = filteredActiveAudience.map { it.uid }.toSet()
+                        val otherProfiles = allProfiles.filter {
+                            it.uid !in existingUids &&
+                            it.uid != targetHostId &&
+                            it.uid !in room.kickedUserIds &&
+                            it.uid !in room.bannedUserIds
+                        }.take((6 - filteredActiveAudience.size).coerceAtLeast(0)).map { profile ->
+                            RoomMember(
+                                uid = profile.uid,
+                                name = profile.name,
+                                photoUrl = profile.photo,
+                                role = "listener",
+                                tier = if (profile.isVipOrPlatinum()) {
+                                    if (profile.plan.contains("VIP", true)) "VIP" else "Platinum"
+                                } else "Standard"
+                            )
                         }
+                        val combined = (filteredActiveAudience + otherProfiles).filter {
+                            it.uid !in room.kickedUserIds && it.uid !in room.bannedUserIds
+                        }
+                        if (combined.isNotEmpty()) combined else listOf(
+                            RoomMember(uid = "guest_ananya", name = "Ananya Sen", photoUrl = "https://images.unsplash.com/photo-1494790108377-be9c29b29330", role = "listener", tier = "VIP"),
+                            RoomMember(uid = "guest_rohan", name = "Rohan Verma", photoUrl = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d", role = "listener", tier = "Platinum"),
+                            RoomMember(uid = "guest_sneha", name = "Sneha Patel", photoUrl = "https://images.unsplash.com/photo-1517841905240-472988babdf9", role = "listener", tier = "Standard"),
+                            RoomMember(uid = "guest_kabir", name = "Kabir Mehra", photoUrl = "https://images.unsplash.com/photo-1500648767791-00dcc994a43e", role = "listener", tier = "VIP")
+                        ).filter { it.uid !in room.kickedUserIds && it.uid !in room.bannedUserIds }
                     }
 
                     val totalDisplayCount = 1 + displayAudience.size
@@ -2561,7 +2553,7 @@ fun AudioHangoutRoomDialog(
 
                     // Horizontal Audience Strip with Large Avatars & Clear Names
                     LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
                         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                     ) {
                         items(displayAudience) { member ->
@@ -2571,14 +2563,17 @@ fun AudioHangoutRoomDialog(
 
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier.clickable {
-                                    selectedMemberForSheet = member
-                                }
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable {
+                                        selectedMemberForSheet = member
+                                    }
+                                    .padding(4.dp)
                             ) {
                                 Box(contentAlignment = Alignment.BottomEnd) {
                                     Box(
                                         modifier = Modifier
-                                            .size(48.dp)
+                                            .size(54.dp)
                                             .clip(CircleShape)
                                             .border(
                                                 width = 2.dp,
@@ -2600,7 +2595,7 @@ fun AudioHangoutRoomDialog(
 
                                     Box(
                                         modifier = Modifier
-                                            .size(10.dp)
+                                            .size(11.dp)
                                             .clip(CircleShape)
                                             .background(BrandGreen)
                                             .border(1.5.dp, BrandDark, CircleShape)
@@ -2611,130 +2606,96 @@ fun AudioHangoutRoomDialog(
                                     text = if (isSelf) "You" else member.name.substringBefore(' '),
                                     color = Color.White,
                                     fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold,
+                                    fontWeight = FontWeight.Bold,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.width(52.dp),
+                                    modifier = Modifier.width(56.dp),
                                     textAlign = TextAlign.Center
                                 )
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
 
                     // ---------------------------------------------------------
-                    // 4. ELONGATED LOUNGE STAGE MEMBER CARDS
+                    // 4. LIVE TRANSPARENT COMMENTS STREAM (FLOATING OVER WALLPAPER)
                     // ---------------------------------------------------------
+                    val chatListState = rememberLazyListState()
+                    LaunchedEffect(liveComments.size) {
+                        if (liveComments.isNotEmpty()) {
+                            chatListState.animateScrollToItem(liveComments.size - 1)
+                        }
+                    }
+
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f)
                     ) {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            items(displayAudience) { member ->
-                                val isMemberVip = member.tier.contains("VIP", ignoreCase = true)
-                                val isMemberPlat = member.tier.contains("Platinum", ignoreCase = true)
-                                val isSelf = member.uid == currentUser.uid
+                        if (liveComments.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "💬 Live Room Chat\nBe the first to say hello to the host and room!",
+                                    color = Color.White.copy(alpha = 0.5f),
+                                    fontSize = 12.sp,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        } else {
+                            LazyColumn(
+                                state = chatListState,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(vertical = 4.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                items(liveComments) { comment ->
+                                    val isVip = comment.tier.contains("VIP", true)
+                                    val isPlat = comment.tier.contains("Platinum", true)
+                                    val nameColor = if (isVip) BrandGold else if (isPlat) BrandCyan else BrandCoral
 
-                                Card(
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = if (isSelf) BrandCardSubtle else BrandCard
-                                    ),
-                                    shape = RoundedCornerShape(14.dp),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            selectedMemberForSheet = member
-                                        }
-                                        .border(
-                                            width = 1.dp,
-                                            color = if (isSelf) BrandCoral.copy(alpha = 0.5f)
-                                            else if (isMemberVip) BrandGold.copy(alpha = 0.5f)
-                                            else if (isMemberPlat) BrandCyan.copy(alpha = 0.5f)
-                                            else BrandBorder,
-                                            shape = RoundedCornerShape(14.dp)
-                                        )
-                                ) {
                                     Row(
                                         modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(10.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
+                                            .clip(RoundedCornerShape(50))
+                                            .background(Color.Black.copy(alpha = 0.55f))
+                                            .border(0.5.dp, if (isVip) BrandGold.copy(alpha = 0.6f) else BrandBorder, RoundedCornerShape(50))
+                                            .clickable {
+                                                selectedMemberForSheet = RoomMember(
+                                                    uid = comment.userId,
+                                                    name = comment.userName,
+                                                    photoUrl = comment.userPhoto,
+                                                    tier = comment.tier
+                                                )
+                                            }
+                                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Box(contentAlignment = Alignment.BottomEnd) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(42.dp)
-                                                        .clip(CircleShape)
-                                                        .border(
-                                                            width = 1.5.dp,
-                                                            brush = Brush.sweepGradient(
-                                                                if (isMemberVip) listOf(BrandGold, BrandCoral, BrandGold)
-                                                                else if (isMemberPlat) listOf(BrandCyan, BrandCoral, BrandCyan)
-                                                                else listOf(BrandCoral, BrandOrange)
-                                                            ),
-                                                            shape = CircleShape
-                                                        )
-                                                ) {
-                                                    AsyncImage(
-                                                        model = member.photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
-                                                        contentDescription = member.name,
-                                                        modifier = Modifier.fillMaxSize(),
-                                                        contentScale = ContentScale.Crop
-                                                    )
-                                                }
-
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(8.dp)
-                                                        .clip(CircleShape)
-                                                        .background(BrandGreen)
-                                                        .border(1.dp, BrandDark, CircleShape)
-                                                )
-                                            }
-
-                                            Spacer(modifier = Modifier.width(10.dp))
-
-                                            Column {
-                                                Text(
-                                                    text = if (isSelf) "You (${member.name})" else member.name,
-                                                    color = Color.White,
-                                                    fontSize = 13.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                                Text(
-                                                    text = if (isMemberVip) "★ VIP Member"
-                                                    else if (isMemberPlat) "♦ Platinum Member"
-                                                    else "Active Listener",
-                                                    color = if (isMemberVip) BrandGold
-                                                    else if (isMemberPlat) BrandCyan
-                                                    else Color.Gray,
-                                                    fontSize = 10.sp
-                                                )
-                                            }
-                                        }
-
-                                        Surface(
-                                            color = BrandDark,
-                                            shape = RoundedCornerShape(50),
-                                            border = BorderStroke(1.dp, if (isMemberVip) BrandGold else BrandBorder)
-                                        ) {
-                                            Text(
-                                                text = if (isSelf) "Your Profile" else "👋 View Profile",
-                                                color = if (isSelf) BrandCoral else BrandGold,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                                            )
-                                        }
+                                        AsyncImage(
+                                            model = comment.userPhoto.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                                            contentDescription = null,
+                                            modifier = Modifier.size(24.dp).clip(CircleShape),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "${comment.userName}: ",
+                                            color = nameColor,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp
+                                        )
+                                        Text(
+                                            text = comment.message,
+                                            color = Color.White,
+                                            fontSize = 11.sp,
+                                            maxLines = 3,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
                                     }
                                 }
                             }
@@ -2803,9 +2764,9 @@ fun AudioHangoutRoomDialog(
                 },
                 onLike = {
                     recordSwipe(db, currentUser.uid, member.uid, "like")
-                    profile?.let { partner ->
-                        checkAndHandleMutualMatch(db, currentUser, partner, onMatch = {})
-                    }
+                    checkAndHandleMutualMatch(db, currentUser, profile, onMatch = {
+                        Toast.makeText(context, "🎉 It's a Match with ${profile.name}!", Toast.LENGTH_LONG).show()
+                    })
                     sendNotification(
                         db = db,
                         targetUserId = member.uid,
@@ -2824,6 +2785,7 @@ fun AudioHangoutRoomDialog(
                     selectedMemberForRequest = member
                 },
                 onKickOut = { targetMember ->
+                    room = room.copy(kickedUserIds = room.kickedUserIds + targetMember.uid)
                     db.collection("rooms").document(room.id)
                         .collection("members").document(targetMember.uid).delete()
                     db.collection("rooms").document(room.id)
@@ -2832,6 +2794,7 @@ fun AudioHangoutRoomDialog(
                     selectedMemberForSheet = null
                 },
                 onBan = { targetMember ->
+                    room = room.copy(bannedUserIds = room.bannedUserIds + targetMember.uid)
                     db.collection("rooms").document(room.id)
                         .collection("members").document(targetMember.uid).delete()
                     db.collection("rooms").document(room.id)
@@ -2896,6 +2859,12 @@ fun AudioHangoutRoomDialog(
                 onDismiss = { showRoomSettingsDialog = false },
                 onUpdateTheme = { newThemeUrl ->
                     room = room.copy(banner_image_url = newThemeUrl)
+                },
+                onKickMember = { kicked ->
+                    room = room.copy(kickedUserIds = room.kickedUserIds + kicked.uid)
+                },
+                onBanMember = { banned ->
+                    room = room.copy(bannedUserIds = room.bannedUserIds + banned.uid)
                 }
             )
         }
