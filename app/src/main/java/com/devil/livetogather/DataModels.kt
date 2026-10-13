@@ -1,5 +1,12 @@
 package com.devil.livetogather
 
+import android.content.SharedPreferences
+import android.util.Log
+import com.google.firebase.firestore.DocumentSnapshot
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.UUID
+
 data class IntentCategory(val id: String, val label: String)
 
 val CATEGORY_LIST = listOf(
@@ -422,4 +429,166 @@ val ROOM_THEME_PRESETS = listOf(
     RoomThemePreset("theme_coastal_drive", "Coastal Night Drive", "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80"),
     RoomThemePreset("theme_party_vibes", "Golden Hour Festival", "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=800&q=80")
 )
+
+val DEFAULT_MOMENTS_SEED = listOf(
+    MomentItem(
+        id = "moment_seed_1",
+        userId = "host_maya",
+        userName = "Maya",
+        userPhoto = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80",
+        mediaUrl = "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=600&q=80",
+        caption = "Late night coffee & planning the next weekend trip! ☕🚗",
+        likes = 12,
+        likedByUsers = listOf("user_1", "user_2"),
+        commentCount = 3,
+        timestamp = System.currentTimeMillis() - 3600000L
+    ),
+    MomentItem(
+        id = "moment_seed_2",
+        userId = "user_rahul",
+        userName = "Rahul",
+        userPhoto = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80",
+        mediaUrl = "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=800&q=80",
+        caption = "Concert vibes tonight! Who else is around? 🎶🎸",
+        likes = 8,
+        likedByUsers = listOf("user_3"),
+        commentCount = 1,
+        timestamp = System.currentTimeMillis() - 7200000L
+    ),
+    MomentItem(
+        id = "moment_seed_3",
+        userId = "user_priya",
+        userName = "Priya",
+        userPhoto = "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80",
+        mediaUrl = "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80",
+        caption = "Sunset by the bay 🌅 Peaceful evenings hit differently.",
+        likes = 24,
+        likedByUsers = listOf("user_1", "user_4", "user_5"),
+        commentCount = 5,
+        timestamp = System.currentTimeMillis() - 14400000L
+    )
+)
+
+/**
+ * Resiliently parses a MomentItem from a Firestore DocumentSnapshot.
+ * Handles schema variations, missing fields, Long-to-Int conversions, and fallback to doc.id.
+ */
+fun parseMomentFromDoc(doc: DocumentSnapshot): MomentItem {
+    return try {
+        val parsed = doc.toObject(MomentItem::class.java)
+        val validId = parsed?.id?.ifBlank { null } ?: doc.getString("id")?.ifBlank { null } ?: doc.id
+        val validUserId = parsed?.userId?.ifBlank { null } ?: doc.getString("userId") ?: doc.getString("uid") ?: ""
+        val validUserName = parsed?.userName?.ifBlank { null } ?: doc.getString("userName") ?: doc.getString("authorName") ?: doc.getString("name") ?: "User"
+        val validUserPhoto = parsed?.userPhoto?.ifBlank { null } ?: doc.getString("userPhoto") ?: doc.getString("photo") ?: ""
+        val validMediaUrl = parsed?.mediaUrl?.ifBlank { null } ?: doc.getString("mediaUrl") ?: doc.getString("imageUrl") ?: doc.getString("photoUrl") ?: ""
+        val validCaption = parsed?.caption?.ifBlank { null } ?: doc.getString("caption") ?: doc.getString("text") ?: ""
+        val validLikes = if (parsed != null && parsed.likes > 0) parsed.likes else (doc.getLong("likes") ?: 0L).toInt()
+        @Suppress("UNCHECKED_CAST")
+        val validLikedBy = if (parsed != null && parsed.likedByUsers.isNotEmpty()) parsed.likedByUsers else (doc.get("likedByUsers") as? List<String>) ?: emptyList()
+        val validComments = if (parsed != null && parsed.commentCount > 0) parsed.commentCount else (doc.getLong("commentCount") ?: 0L).toInt()
+        val validTimestamp = if (parsed != null && parsed.timestamp > 0) parsed.timestamp else (doc.getLong("timestamp") ?: doc.getLong("createdAt") ?: System.currentTimeMillis())
+
+        MomentItem(
+            id = validId,
+            userId = validUserId,
+            userName = validUserName,
+            userPhoto = validUserPhoto,
+            mediaUrl = validMediaUrl,
+            caption = validCaption,
+            likes = validLikes,
+            likedByUsers = validLikedBy,
+            commentCount = validComments,
+            timestamp = validTimestamp
+        )
+    } catch (e: Exception) {
+        Log.w("Moments", "Safe fallback parser for doc ${doc.id}: ${e.message}")
+        val validId = doc.getString("id")?.ifBlank { null } ?: doc.id
+        val validUserId = doc.getString("userId") ?: doc.getString("uid") ?: ""
+        val validUserName = doc.getString("userName") ?: doc.getString("authorName") ?: doc.getString("name") ?: "User"
+        val validUserPhoto = doc.getString("userPhoto") ?: doc.getString("photo") ?: ""
+        val validMediaUrl = doc.getString("mediaUrl") ?: doc.getString("imageUrl") ?: doc.getString("photoUrl") ?: ""
+        val validCaption = doc.getString("caption") ?: doc.getString("text") ?: ""
+        val validLikes = (doc.getLong("likes") ?: 0L).toInt()
+        @Suppress("UNCHECKED_CAST")
+        val validLikedBy = (doc.get("likedByUsers") as? List<String>) ?: emptyList()
+        val validComments = (doc.getLong("commentCount") ?: 0L).toInt()
+        val validTimestamp = doc.getLong("timestamp") ?: doc.getLong("createdAt") ?: System.currentTimeMillis()
+
+        MomentItem(
+            id = validId,
+            userId = validUserId,
+            userName = validUserName,
+            userPhoto = validUserPhoto,
+            mediaUrl = validMediaUrl,
+            caption = validCaption,
+            likes = validLikes,
+            likedByUsers = validLikedBy,
+            commentCount = validComments,
+            timestamp = validTimestamp
+        )
+    }
+}
+
+fun saveMomentsToPrefs(prefs: SharedPreferences, moments: List<MomentItem>) {
+    try {
+        val jsonArray = JSONArray()
+        moments.take(50).forEach { item ->
+            val obj = JSONObject().apply {
+                put("id", item.id)
+                put("userId", item.userId)
+                put("userName", item.userName)
+                put("userPhoto", item.userPhoto)
+                put("mediaUrl", item.mediaUrl)
+                put("caption", item.caption)
+                put("likes", item.likes)
+                put("commentCount", item.commentCount)
+                put("timestamp", item.timestamp)
+                val likedByArray = JSONArray()
+                item.likedByUsers.forEach { likedByArray.put(it) }
+                put("likedByUsers", likedByArray)
+            }
+            jsonArray.put(obj)
+        }
+        prefs.edit().putString("cached_moments_json", jsonArray.toString()).apply()
+    } catch (e: Exception) {
+        Log.w("MomentsCache", "Failed to cache moments: ${e.message}")
+    }
+}
+
+fun loadMomentsFromPrefs(prefs: SharedPreferences): List<MomentItem> {
+    return try {
+        val raw = prefs.getString("cached_moments_json", null) ?: return emptyList()
+        val jsonArray = JSONArray(raw)
+        val list = mutableListOf<MomentItem>()
+        for (i in 0 until jsonArray.length()) {
+            val obj = jsonArray.getJSONObject(i)
+            val likedByList = mutableListOf<String>()
+            val likedByArray = obj.optJSONArray("likedByUsers")
+            if (likedByArray != null) {
+                for (j in 0 until likedByArray.length()) {
+                    likedByList.add(likedByArray.getString(j))
+                }
+            }
+            list.add(
+                MomentItem(
+                    id = obj.optString("id", UUID.randomUUID().toString()),
+                    userId = obj.optString("userId", ""),
+                    userName = obj.optString("userName", "User"),
+                    userPhoto = obj.optString("userPhoto", ""),
+                    mediaUrl = obj.optString("mediaUrl", ""),
+                    caption = obj.optString("caption", ""),
+                    likes = obj.optInt("likes", 0),
+                    likedByUsers = likedByList,
+                    commentCount = obj.optInt("commentCount", 0),
+                    timestamp = obj.optLong("timestamp", System.currentTimeMillis())
+                )
+            )
+        }
+        list
+    } catch (e: Exception) {
+        Log.w("MomentsCache", "Failed to load moments cache: ${e.message}")
+        emptyList()
+    }
+}
+
 

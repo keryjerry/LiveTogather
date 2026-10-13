@@ -125,7 +125,7 @@ class FirestoreRefreshEngine(
                 } catch (_: Exception) {
                     db.collection("moments").get().await()
                 }
-                val freshMoments = momentsSnap.documents.mapNotNull { it.toObject(MomentItem::class.java) }
+                val freshMoments = momentsSnap.documents.map { parseMomentFromDoc(it) }
                     .sortedByDescending { it.timestamp }
                 momentCount = freshMoments.size
                 withContext(Dispatchers.Main) {
@@ -135,6 +135,7 @@ class FirestoreRefreshEngine(
                     val sorted = map.values.sortedByDescending { it.timestamp }
                     moments.clear()
                     moments.addAll(sorted)
+                    saveMomentsToPrefs(prefs, moments)
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Moments refresh error: ${e.message}")

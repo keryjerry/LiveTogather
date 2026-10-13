@@ -16,6 +16,7 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -352,6 +353,16 @@ fun LiveTogatherApp() {
             currentUser = currentUser.copy(uid = authUid)
         }
 
+        // Initialize Moments Feed from local cache or seed
+        val cachedMoments = loadMomentsFromPrefs(prefs)
+        if (cachedMoments.isNotEmpty()) {
+            moments.clear()
+            moments.addAll(cachedMoments)
+        } else if (moments.isEmpty()) {
+            moments.addAll(DEFAULT_MOMENTS_SEED)
+            saveMomentsToPrefs(prefs, DEFAULT_MOMENTS_SEED)
+        }
+
         // Initialize Rooms Catalog & Real-Time Snapshot Listener
         roomsList.clear()
         roomsList.addAll(INTENT_ROOMS_CATALOG)
@@ -479,7 +490,7 @@ fun LiveTogatherApp() {
                 return@addSnapshotListener
             }
             if (snapshot != null) {
-                val fetched = snapshot.documents.mapNotNull { it.toObject(MomentItem::class.java) }
+                val fetched = snapshot.documents.map { parseMomentFromDoc(it) }
                 if (fetched.isNotEmpty()) {
                     val map = linkedMapOf<String, MomentItem>()
                     // 1. Add server moments
@@ -489,6 +500,7 @@ fun LiveTogatherApp() {
                     val sorted = map.values.sortedByDescending { it.timestamp }
                     moments.clear()
                     moments.addAll(sorted)
+                    saveMomentsToPrefs(prefs, moments)
                 }
             }
         }
@@ -896,9 +908,12 @@ fun LiveTogatherApp() {
                     "profile" -> {
                         ProfileScreenContent(
                             currentUser = currentUser,
-                            userMoments = moments.filter { it.userId == currentUserId },
+                            userMoments = moments.filter {
+                                it.userId == currentUserId || it.userId == currentUser.uid || (currentUser.name.isNotBlank() && it.userName == currentUser.name)
+                            },
                             db = db,
                             currentUserId = currentUserId,
+                            onShareMomentClick = { showPostMomentDialog = true },
                             onUpdateProfile = { updated ->
                                 val profileWithDevice = updated.copy(uid = currentUserId, deviceId = deviceId)
                                 currentUser = profileWithDevice
@@ -1202,6 +1217,7 @@ fun LiveTogatherApp() {
                     } else {
                         moments[existingIdx] = newMoment
                     }
+                    saveMomentsToPrefs(prefs, moments)
                     showPostMomentDialog = false
                     Toast.makeText(context, "Moment shared successfully! 🎉", Toast.LENGTH_SHORT).show()
 
@@ -2417,9 +2433,22 @@ fun MomentsScreenContent(
                 Text("No moments posted yet. Be the first to share one!", color = Color.Gray, fontSize = 13.sp)
             }
         } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            val listState = rememberLazyListState()
+            LaunchedEffect(moments.size) {
+                if (moments.isNotEmpty()) {
+                    listState.animateScrollToItem(0)
+                }
+            }
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
                 items(moments, key = { it.id }) { item ->
                     Card(
+                        modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(containerColor = BrandCard),
                         shape = RoundedCornerShape(16.dp)
                     ) {
@@ -2509,7 +2538,8 @@ fun ProfileScreenContent(
     onSelectPlan: (SubscriptionPlanItem) -> Unit,
     onOpenSettings: () -> Unit,
     onLogout: () -> Unit,
-    onDeleteAccount: () -> Unit
+    onDeleteAccount: () -> Unit,
+    onShareMomentClick: () -> Unit = {}
 ) {
     var isEditing by remember { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
@@ -3038,27 +3068,107 @@ fun ProfileScreenContent(
         // MY POSTED MOMENTS
         item {
             Column {
-                Text(
-                    "MY POSTED MOMENTS",
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "MY POSTED MOMENTS (${userMoments.size})",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    TextButton(onClick = onShareMomentClick) {
+                        Icon(Icons.Default.Add, contentDescription = null, tint = BrandCoral, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("+ Post Moment", color = BrandCoral, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
                 Spacer(modifier = Modifier.height(8.dp))
 
                 if (userMoments.isEmpty()) {
-                    Text("No moments posted by you yet.", color = Color.Gray, fontSize = 11.sp)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(BrandCard)
+                            .border(1.dp, BrandBorder, RoundedCornerShape(12.dp))
+                            .clickable { onShareMomentClick() }
+                            .padding(16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = BrandCoral, modifier = Modifier.size(28.dp))
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text("No moments posted yet", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Tap here to share your first moment! 📸", color = Color.Gray, fontSize = 10.sp)
+                        }
+                    }
                 } else {
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(userMoments) { moment ->
-                            AsyncImage(
-                                model = moment.mediaUrl,
-                                contentDescription = null,
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        // Quick Add Card
+                        item {
+                            Box(
                                 modifier = Modifier
-                                    .size(100.dp)
-                                    .clip(RoundedCornerShape(12.dp)),
-                                contentScale = ContentScale.Crop
-                            )
+                                    .size(100.dp, 120.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(BrandCard)
+                                    .border(1.dp, BrandCoral.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                                    .clickable { onShareMomentClick() },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(Icons.Default.Add, contentDescription = null, tint = BrandCoral, modifier = Modifier.size(24.dp))
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("+ Add", color = BrandCoral, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                        items(userMoments) { moment ->
+                            Card(
+                                modifier = Modifier.size(100.dp, 120.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = BrandCard)
+                            ) {
+                                Box(modifier = Modifier.fillMaxSize()) {
+                                    AsyncImage(
+                                        model = moment.mediaUrl.ifBlank { "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=600&q=80" },
+                                        contentDescription = null,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(
+                                                Brush.verticalGradient(
+                                                    listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f))
+                                                )
+                                            )
+                                    )
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(6.dp),
+                                        verticalArrangement = Arrangement.Bottom
+                                    ) {
+                                        Text(
+                                            text = moment.caption.ifBlank { "Moment" },
+                                            color = Color.White,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.Favorite, contentDescription = null, tint = BrandCoral, modifier = Modifier.size(10.dp))
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Text("${moment.likes}", color = Color.White, fontSize = 9.sp)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
