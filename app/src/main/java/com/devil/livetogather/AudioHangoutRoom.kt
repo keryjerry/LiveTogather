@@ -43,6 +43,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -51,6 +52,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import android.view.WindowManager
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import coil.compose.AsyncImage
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -730,6 +734,7 @@ fun RoomMemberProfileSheet(
     roomId: String,
     db: FirebaseFirestore,
     onDismiss: () -> Unit,
+    onLeaveRoom: () -> Unit,
     onLike: () -> Unit,
     onDirectMessage: () -> Unit,
     onRequestMessage: () -> Unit,
@@ -741,29 +746,34 @@ fun RoomMemberProfileSheet(
     val isVipOrPlatinum = currentUser.isVipOrPlatinum()
     val isMemberVip = member.tier.contains("VIP", ignoreCase = true)
     val isMemberPlat = member.tier.contains("Platinum", ignoreCase = true)
+    val isSelf = member.uid == currentUser.uid
 
     var isFollowingMember by remember { mutableStateOf(false) }
     var memberFollowerCount by remember { mutableStateOf(userProfile?.followerCount ?: 0) }
 
     DisposableEffect(member.uid, currentUser.uid) {
-        if (member.uid.isBlank() || member.uid == currentUser.uid) {
+        val targetUid = member.uid.ifEmpty { currentUser.uid }
+        if (targetUid.isBlank()) {
             return@DisposableEffect onDispose {}
         }
-        val followDoc = db.collection("users").document(member.uid)
-            .collection("followers").document(currentUser.uid)
-            .addSnapshotListener { snapshot, _ ->
-                isFollowingMember = snapshot != null && snapshot.exists()
-            }
-        val countDoc = db.collection("users").document(member.uid)
+        val countDoc = db.collection("users").document(targetUid)
             .collection("followers")
             .addSnapshotListener { snapshot, _ ->
                 if (snapshot != null) {
                     memberFollowerCount = snapshot.size()
                 }
             }
+        val followDoc = if (!isSelf && member.uid.isNotBlank()) {
+            db.collection("users").document(member.uid)
+                .collection("followers").document(currentUser.uid)
+                .addSnapshotListener { snapshot, _ ->
+                    isFollowingMember = snapshot != null && snapshot.exists()
+                }
+        } else null
+
         onDispose {
-            followDoc.remove()
             countDoc.remove()
+            followDoc?.remove()
         }
     }
 
@@ -788,7 +798,12 @@ fun RoomMemberProfileSheet(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("User Profile & Actions", color = BrandCoral, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(
+                        if (isSelf) "Your Profile in Room" else "User Profile & Actions",
+                        color = BrandCoral,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
                     IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
                         Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray, modifier = Modifier.size(18.dp))
                     }
@@ -824,7 +839,7 @@ fun RoomMemberProfileSheet(
                 // Name & Age
                 val ageText = userProfile?.age?.let { ", $it" } ?: ""
                 Text(
-                    text = "${member.name}$ageText",
+                    text = "${if (isSelf) "You (${member.name})" else member.name}$ageText",
                     color = Color.White,
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold
@@ -836,7 +851,7 @@ fun RoomMemberProfileSheet(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.padding(top = 4.dp)
                 ) {
-                    if (member.role == "host") {
+                    if (member.role == "host" || isHost && isSelf) {
                         Text(
                             text = "👑 Room Host",
                             color = BrandGold,
@@ -863,7 +878,7 @@ fun RoomMemberProfileSheet(
                 // City & Bio
                 val cityText = userProfile?.city ?: "Kolkata"
                 Text(
-                    text = "📍 $cityText",
+                    text = "📍 $cityText • 👥 $memberFollowerCount Followers",
                     color = Color.Gray,
                     fontSize = 11.sp,
                     modifier = Modifier.padding(top = 4.dp)
@@ -913,68 +928,68 @@ fun RoomMemberProfileSheet(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Follow / Unfollow interactive button
-                if (member.uid != currentUser.uid && member.uid.isNotBlank()) {
-                    Button(
-                        onClick = {
-                            val newFollow = !isFollowingMember
-                            if (newFollow) {
-                                val record = FollowerRecord(
-                                    uid = currentUser.uid,
-                                    name = currentUser.name,
-                                    photo = currentUser.photo,
-                                    timestamp = System.currentTimeMillis()
-                                )
-                                db.collection("users").document(member.uid)
-                                    .collection("followers").document(currentUser.uid).set(record)
-                                db.collection("users").document(member.uid)
-                                    .update("followerCount", FieldValue.increment(1))
-                                db.collection("users").document(currentUser.uid)
-                                    .update("followingCount", FieldValue.increment(1))
-                                sendNotification(
-                                    db = db,
-                                    targetUserId = member.uid,
-                                    sender = currentUser,
-                                    type = "follow",
-                                    title = "🌟 New Follower!",
-                                    message = "${currentUser.name} started following you!"
-                                )
-                            } else {
-                                db.collection("users").document(member.uid)
-                                    .collection("followers").document(currentUser.uid).delete()
-                                db.collection("users").document(member.uid)
-                                    .update("followerCount", FieldValue.increment(-1))
-                                db.collection("users").document(currentUser.uid)
-                                    .update("followingCount", FieldValue.increment(-1))
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isFollowingMember) BrandDark else BrandCoral
-                        ),
-                        border = BorderStroke(1.dp, if (isFollowingMember) BrandGold else Color.Transparent),
-                        shape = RoundedCornerShape(50),
-                        modifier = Modifier.fillMaxWidth().height(36.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (isFollowingMember) Icons.Default.Check else Icons.Default.Add,
-                            contentDescription = null,
-                            tint = if (isFollowingMember) BrandGold else Color.White,
-                            modifier = Modifier.size(15.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (isFollowingMember) "✓ Following ($memberFollowerCount)" else "+ Follow ($memberFollowerCount)",
-                            color = if (isFollowingMember) BrandGold else Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp
-                        )
+                if (!isSelf) {
+                    // Follow / Unfollow interactive button
+                    if (member.uid.isNotBlank()) {
+                        Button(
+                            onClick = {
+                                val newFollow = !isFollowingMember
+                                if (newFollow) {
+                                    val record = FollowerRecord(
+                                        uid = currentUser.uid,
+                                        name = currentUser.name,
+                                        photo = currentUser.photo,
+                                        timestamp = System.currentTimeMillis()
+                                    )
+                                    db.collection("users").document(member.uid)
+                                        .collection("followers").document(currentUser.uid).set(record)
+                                    db.collection("users").document(member.uid)
+                                        .update("followerCount", FieldValue.increment(1))
+                                    db.collection("users").document(currentUser.uid)
+                                        .update("followingCount", FieldValue.increment(1))
+                                    sendNotification(
+                                        db = db,
+                                        targetUserId = member.uid,
+                                        sender = currentUser,
+                                        type = "follow",
+                                        title = "🌟 New Follower!",
+                                        message = "${currentUser.name} started following you!"
+                                    )
+                                } else {
+                                    db.collection("users").document(member.uid)
+                                        .collection("followers").document(currentUser.uid).delete()
+                                    db.collection("users").document(member.uid)
+                                        .update("followerCount", FieldValue.increment(-1))
+                                    db.collection("users").document(currentUser.uid)
+                                        .update("followingCount", FieldValue.increment(-1))
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isFollowingMember) BrandDark else BrandCoral
+                            ),
+                            border = BorderStroke(1.dp, if (isFollowingMember) BrandGold else Color.Transparent),
+                            shape = RoundedCornerShape(50),
+                            modifier = Modifier.fillMaxWidth().height(38.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isFollowingMember) Icons.Default.Check else Icons.Default.Add,
+                                contentDescription = null,
+                                tint = if (isFollowingMember) BrandGold else Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (isFollowingMember) "✓ Following ($memberFollowerCount)" else "+ Follow ($memberFollowerCount)",
+                                color = if (isFollowingMember) BrandGold else Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-
-                // Action Buttons: Like & Chat
-                if (member.uid != currentUser.uid) {
+                    // Action Buttons: Like & Chat
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1019,7 +1034,7 @@ fun RoomMemberProfileSheet(
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = if (isVipOrPlatinum) "Direct Chat" else "Msg Request",
+                                text = if (isVipOrPlatinum) "Send Message" else "Msg Request",
                                 color = if (isVipOrPlatinum) Color.Black else Color.White,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
@@ -1101,6 +1116,37 @@ fun RoomMemberProfileSheet(
                         modifier = Modifier.fillMaxWidth().height(32.dp)
                     ) {
                         Text("🚫 Block ${member.name.substringBefore(' ')}", color = Color.Gray, fontSize = 11.sp)
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // Leave Room option for any listener
+                    OutlinedButton(
+                        onClick = {
+                            onDismiss()
+                            onLeaveRoom()
+                        },
+                        shape = RoundedCornerShape(50),
+                        border = BorderStroke(1.dp, Color.Red.copy(alpha = 0.4f)),
+                        modifier = Modifier.fillMaxWidth().height(36.dp)
+                    ) {
+                        Text("🚪 Leave Room", color = Color.Red, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    // Current User's Own Profile Actions
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Button(
+                        onClick = {
+                            onDismiss()
+                            onLeaveRoom()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.85f)),
+                        shape = RoundedCornerShape(50),
+                        modifier = Modifier.fillMaxWidth().height(42.dp)
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("🚪 Leave Room", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -1727,19 +1773,37 @@ fun AudioHangoutRoomDialog(
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
 
-    // Prevent full room dialog from exiting when dismissing soft keyboard
-    BackHandler(enabled = isKeyboardOpen) {
-        keyboardController?.hide()
-        focusManager.clearFocus()
-    }
-
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (isKeyboardOpen) {
+                keyboardController?.hide()
+                focusManager.clearFocus()
+            } else {
+                onDismiss()
+            }
+        },
         properties = DialogProperties(
             usePlatformDefaultWidth = false,
-            dismissOnBackPress = !isKeyboardOpen
+            decorFitsSystemWindows = false
         )
     ) {
+        val view = LocalView.current
+        SideEffect {
+            var parent = view.parent
+            while (parent != null && parent !is android.app.Dialog && parent !is DialogWindowProvider) {
+                parent = parent.parent
+            }
+            (parent as? DialogWindowProvider)?.window?.setSoftInputMode(
+                WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+            )
+        }
+
+        // Intercept hardware/system back button inside Dialog window
+        BackHandler(enabled = isKeyboardOpen) {
+            keyboardController?.hide()
+            focusManager.clearFocus()
+        }
+
         Scaffold(
             containerColor = BrandDark,
             topBar = {
@@ -2152,7 +2216,7 @@ fun AudioHangoutRoomDialog(
                             Spacer(modifier = Modifier.width(6.dp))
 
                             // Dedicated Follow Action Button or Settings Button
-                            if (!isUserHost && targetHostId.isNotBlank()) {
+                            if (targetHostId.isNotBlank() && targetHostId != currentUser.uid) {
                                 Button(
                                     onClick = {
                                         val newFollowing = !isFollowingHost
@@ -2199,18 +2263,35 @@ fun AudioHangoutRoomDialog(
                                     modifier = Modifier.height(28.dp)
                                 ) {
                                     Text(
-                                        text = if (isFollowingHost) "✓ Following" else "+ Follow",
+                                        text = if (isFollowingHost) "✓ Following ($hostFollowerCount)" else "+ Follow ($hostFollowerCount)",
                                         color = if (isFollowingHost) BrandGold else Color.White,
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
-                            } else if (isUserHost) {
-                                IconButton(
-                                    onClick = { showRoomSettingsDialog = true },
-                                    modifier = Modifier.size(32.dp).background(BrandDark, CircleShape)
-                                ) {
-                                    Icon(Icons.Default.Settings, contentDescription = "Settings", tint = BrandGold, modifier = Modifier.size(16.dp))
+                            } else {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Surface(
+                                        color = BrandCoral.copy(alpha = 0.2f),
+                                        shape = RoundedCornerShape(50),
+                                        border = BorderStroke(1.dp, BrandCoral),
+                                        modifier = Modifier.clickable { selectedMemberForSheet = hostMemberObj }
+                                    ) {
+                                        Text(
+                                            text = "👑 Host ($hostFollowerCount fans)",
+                                            color = BrandCoral,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    IconButton(
+                                        onClick = { showRoomSettingsDialog = true },
+                                        modifier = Modifier.size(28.dp).background(BrandDark, CircleShape)
+                                    ) {
+                                        Icon(Icons.Default.Settings, contentDescription = "Settings", tint = BrandGold, modifier = Modifier.size(14.dp))
+                                    }
                                 }
                             }
                         }
@@ -2481,9 +2562,7 @@ fun AudioHangoutRoomDialog(
                                 Column(
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     modifier = Modifier.clickable {
-                                        if (!isSelf) {
-                                            selectedMemberForSheet = member
-                                        }
+                                        selectedMemberForSheet = member
                                     }
                                 ) {
                                     Box(contentAlignment = Alignment.BottomEnd) {
@@ -2719,6 +2798,10 @@ fun AudioHangoutRoomDialog(
                 roomId = room.id,
                 db = db,
                 onDismiss = { selectedMemberForSheet = null },
+                onLeaveRoom = {
+                    selectedMemberForSheet = null
+                    onDismiss()
+                },
                 onLike = {
                     recordSwipe(db, currentUser.uid, member.uid, "like")
                     profile?.let { partner ->

@@ -290,6 +290,8 @@ fun LiveTogatherApp() {
     var showSettingsDialog by remember { mutableStateOf(false) }
     var showNotificationsDialog by remember { mutableStateOf(false) }
     var showPostMomentDialog by remember { mutableStateOf(false) }
+    var momentToEdit by remember { mutableStateOf<MomentItem?>(null) }
+    var momentToDelete by remember { mutableStateOf<MomentItem?>(null) }
     var showDirectMessageDialog by remember { mutableStateOf<UserProfile?>(null) }
     var showCommentsMoment by remember { mutableStateOf<MomentItem?>(null) }
     var activeRoomDeck by remember { mutableStateOf<RoomItem?>(null) }
@@ -901,6 +903,12 @@ fun LiveTogatherApp() {
                             },
                             onCommentMoment = { moment ->
                                 showCommentsMoment = moment
+                            },
+                            onEditMoment = { moment ->
+                                momentToEdit = moment
+                            },
+                            onDeleteMoment = { moment ->
+                                momentToDelete = moment
                             }
                         )
                     }
@@ -914,6 +922,12 @@ fun LiveTogatherApp() {
                             db = db,
                             currentUserId = currentUserId,
                             onShareMomentClick = { showPostMomentDialog = true },
+                            onEditMoment = { moment ->
+                                momentToEdit = moment
+                            },
+                            onDeleteMoment = { moment ->
+                                momentToDelete = moment
+                            },
                             onUpdateProfile = { updated ->
                                 val profileWithDevice = updated.copy(uid = currentUserId, deviceId = deviceId)
                                 currentUser = profileWithDevice
@@ -1232,6 +1246,67 @@ fun LiveTogatherApp() {
                             Log.w("Moments", "Firestore write failed: ${e.message}")
                         }
                 }
+            )
+        }
+
+        // 4b. Edit Moment Dialog
+        if (momentToEdit != null) {
+            val target = momentToEdit!!
+            EditMomentDialog(
+                moment = target,
+                onDismiss = { momentToEdit = null },
+                onSave = { newCaption, newUrls ->
+                    val firstMedia = newUrls.firstOrNull() ?: target.mediaUrl
+                    val updated = target.copy(
+                        caption = newCaption,
+                        mediaUrls = newUrls,
+                        mediaUrl = firstMedia
+                    )
+                    val idx = moments.indexOfFirst { it.id == target.id }
+                    if (idx != -1) {
+                        moments[idx] = updated
+                    }
+                    saveMomentsToPrefs(prefs, moments)
+                    momentToEdit = null
+                    Toast.makeText(context, "Moment updated successfully! ✨", Toast.LENGTH_SHORT).show()
+
+                    // Sync to Cloud Firestore
+                    db.collection("moments").document(target.id).set(updated, SetOptions.merge())
+                }
+            )
+        }
+
+        // 4c. Delete Moment Dialog
+        if (momentToDelete != null) {
+            val target = momentToDelete!!
+            AlertDialog(
+                onDismissRequest = { momentToDelete = null },
+                title = { Text("Delete Moment?", color = Color.White, fontWeight = FontWeight.Bold) },
+                text = { Text("Are you sure you want to permanently delete this post?", color = Color.LightGray) },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val id = target.id
+                            moments.removeAll { it.id == id }
+                            saveMomentsToPrefs(prefs, moments)
+                            momentToDelete = null
+                            Toast.makeText(context, "Moment deleted", Toast.LENGTH_SHORT).show()
+
+                            // Delete from Cloud Firestore
+                            db.collection("moments").document(id).delete()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                    ) {
+                        Text("Delete", fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { momentToDelete = null }) {
+                        Text("Cancel", color = Color.Gray)
+                    }
+                },
+                containerColor = BrandCard,
+                shape = RoundedCornerShape(16.dp)
             )
         }
 
@@ -2408,7 +2483,9 @@ fun MomentsScreenContent(
     currentUserId: String,
     onPostClick: () -> Unit,
     onLikeMoment: (MomentItem) -> Unit,
-    onCommentMoment: (MomentItem) -> Unit
+    onCommentMoment: (MomentItem) -> Unit,
+    onEditMoment: (MomentItem) -> Unit = {},
+    onDeleteMoment: (MomentItem) -> Unit = {}
 ) {
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Row(
@@ -2455,17 +2532,51 @@ fun MomentsScreenContent(
                         shape = RoundedCornerShape(16.dp)
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                AsyncImage(
-                                    model = item.userPhoto.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80" },
-                                    contentDescription = null,
-                                    modifier = Modifier.size(34.dp).clip(CircleShape),
-                                    contentScale = ContentScale.Crop
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Column {
-                                    Text(item.userName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                    Text(formatRelativeTime(item.timestamp), color = Color.Gray, fontSize = 10.sp)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    AsyncImage(
+                                        model = item.userPhoto.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80" },
+                                        contentDescription = null,
+                                        modifier = Modifier.size(34.dp).clip(CircleShape),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text(item.userName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        Text(formatRelativeTime(item.timestamp), color = Color.Gray, fontSize = 10.sp)
+                                    }
+                                }
+
+                                if (item.userId == currentUserId) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        IconButton(
+                                            onClick = { onEditMoment(item) },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Edit,
+                                                contentDescription = "Edit Post",
+                                                tint = BrandCoral,
+                                                modifier = Modifier.size(15.dp)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                        IconButton(
+                                            onClick = { onDeleteMoment(item) },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Delete,
+                                                contentDescription = "Delete Post",
+                                                tint = Color.Red.copy(alpha = 0.85f),
+                                                modifier = Modifier.size(15.dp)
+                                            )
+                                        }
+                                    }
                                 }
                             }
 
@@ -2564,7 +2675,9 @@ fun ProfileScreenContent(
     onOpenSettings: () -> Unit,
     onLogout: () -> Unit,
     onDeleteAccount: () -> Unit,
-    onShareMomentClick: () -> Unit = {}
+    onShareMomentClick: () -> Unit = {},
+    onEditMoment: (MomentItem) -> Unit = {},
+    onDeleteMoment: (MomentItem) -> Unit = {}
 ) {
     var isEditing by remember { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
@@ -3172,6 +3285,34 @@ fun ProfileScreenContent(
                                                 )
                                             )
                                     )
+                                    // Edit & Delete chips on top-right
+                                    Row(
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .padding(4.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(20.dp)
+                                                .clip(CircleShape)
+                                                .background(Color.Black.copy(alpha = 0.75f))
+                                                .clickable { onEditMoment(moment) },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Color.White, modifier = Modifier.size(11.dp))
+                                        }
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Box(
+                                            modifier = Modifier
+                                                .size(20.dp)
+                                                .clip(CircleShape)
+                                                .background(Color.Black.copy(alpha = 0.75f))
+                                                .clickable { onDeleteMoment(moment) },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red, modifier = Modifier.size(11.dp))
+                                        }
+                                    }
                                     Column(
                                         modifier = Modifier
                                             .fillMaxSize()
@@ -4371,6 +4512,242 @@ fun PostMomentDialog(
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp
                         )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// EDIT MOMENT DIALOG
+// -------------------------------------------------------------
+@Composable
+fun EditMomentDialog(
+    moment: MomentItem,
+    onDismiss: () -> Unit,
+    onSave: (String, List<String>) -> Unit
+) {
+    var caption by remember { mutableStateOf(moment.caption) }
+    val initialUrls = if (moment.mediaUrls.isNotEmpty()) moment.mediaUrls
+        else if (moment.mediaUrl.isNotBlank()) listOf(moment.mediaUrl)
+        else emptyList()
+    val pickedMediaUrls = remember { mutableStateListOf<String>().apply { addAll(initialUrls) } }
+    var isUploading by remember { mutableStateOf(false) }
+    var uploadStatusText by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+
+    val multiMediaPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            isUploading = true
+            uploadStatusText = "Uploading 1/${uris.size}..."
+            coroutineScope.launch(Dispatchers.IO) {
+                try {
+                    val remainingSlots = (6 - pickedMediaUrls.size).coerceAtLeast(0)
+                    val batch = uris.take(remainingSlots)
+                    val newUrls = mutableListOf<String>()
+                    batch.forEachIndexed { index, uri ->
+                        withContext(Dispatchers.Main) {
+                            uploadStatusText = "Uploading ${index + 1}/${batch.size}..."
+                        }
+                        val uploadedUrl = ImageUploadManager.uploadImage(context, uri, "moments")
+                        if (!uploadedUrl.isNullOrBlank()) {
+                            newUrls.add(uploadedUrl)
+                        }
+                    }
+                    withContext(Dispatchers.Main) {
+                        if (newUrls.isNotEmpty()) {
+                            pickedMediaUrls.addAll(newUrls)
+                            Toast.makeText(context, "${newUrls.size} photos added! 📸", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "Photo upload failed. Try another photo.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } catch (e: Throwable) {
+                    Log.e("Moments", "Image edit upload failed: ${e.message}", e)
+                } finally {
+                    withContext(Dispatchers.Main) {
+                        isUploading = false
+                        uploadStatusText = ""
+                    }
+                }
+            }
+        }
+    }
+
+    val isKeyboardOpen = WindowInsets.isImeVisible
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+
+    BackHandler(enabled = isKeyboardOpen) {
+        keyboardController?.hide()
+        focusManager.clearFocus()
+    }
+
+    Dialog(
+        onDismissRequest = { if (!isUploading) onDismiss() },
+        properties = DialogProperties(
+            dismissOnBackPress = !isKeyboardOpen && !isUploading
+        )
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = BrandCard),
+            shape = RoundedCornerShape(20.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("✏️ Edit Moment", color = BrandCoral, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray, modifier = Modifier.size(18.dp))
+                    }
+                }
+
+                OutlinedTextField(
+                    value = caption,
+                    onValueChange = { caption = it },
+                    placeholder = { Text("Update caption...", color = Color.Gray, fontSize = 12.sp) },
+                    colors = outlinedFieldColors(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                if (pickedMediaUrls.isNotEmpty()) {
+                    Column {
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth().height(140.dp)
+                        ) {
+                            items(pickedMediaUrls) { url ->
+                                Box(
+                                    modifier = Modifier
+                                        .size(130.dp, 140.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .border(1.dp, BrandBorder, RoundedCornerShape(12.dp))
+                                ) {
+                                    AsyncImage(
+                                        model = url,
+                                        contentDescription = null,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .padding(6.dp)
+                                            .size(24.dp)
+                                            .clip(CircleShape)
+                                            .background(Color.Black.copy(alpha = 0.75f))
+                                            .clickable(enabled = !isUploading) {
+                                                pickedMediaUrls.remove(url)
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(Icons.Default.Close, contentDescription = "Remove", tint = Color.White, modifier = Modifier.size(14.dp))
+                                    }
+                                }
+                            }
+
+                            if (pickedMediaUrls.size < 6) {
+                                item {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(100.dp, 140.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(BrandCardSubtle)
+                                            .border(1.dp, BrandBorder, RoundedCornerShape(12.dp))
+                                            .clickable(enabled = !isUploading) {
+                                                multiMediaPickerLauncher.launch("image/*")
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = BrandCoral, modifier = Modifier.size(28.dp))
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text("+ Add More", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if (isUploading) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(color = BrandCoral, modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(uploadStatusText.ifEmpty { "Uploading photos..." }, color = BrandGold, fontSize = 11.sp)
+                            }
+                        }
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(140.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(BrandCardSubtle)
+                            .border(1.dp, BrandBorder, RoundedCornerShape(14.dp))
+                            .clickable(enabled = !isUploading) {
+                                multiMediaPickerLauncher.launch("image/*")
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isUploading) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                CircularProgressIndicator(
+                                    color = BrandCoral,
+                                    modifier = Modifier.size(32.dp),
+                                    strokeWidth = 3.dp
+                                )
+                                Text(uploadStatusText.ifEmpty { "Uploading..." }, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        } else {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = BrandCoral, modifier = Modifier.size(36.dp))
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text("Add Photos", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        enabled = !isUploading,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(50),
+                        border = BorderStroke(1.dp, BrandBorder)
+                    ) {
+                        Text("Cancel", color = Color.White, fontSize = 12.sp)
+                    }
+                    Button(
+                        onClick = {
+                            if (!isUploading) {
+                                onSave(caption.trim(), pickedMediaUrls.toList())
+                            }
+                        },
+                        enabled = !isUploading,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = BrandCoral,
+                            contentColor = Color.White,
+                            disabledContainerColor = BrandCoral.copy(alpha = 0.35f),
+                            disabledContentColor = Color.White.copy(alpha = 0.5f)
+                        ),
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(50)
+                    ) {
+                        Text(if (isUploading) "Saving..." else "Save Changes", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                 }
             }

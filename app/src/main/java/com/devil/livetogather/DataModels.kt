@@ -58,78 +58,130 @@ val INTENT_ROOMS_CATALOG = listOf(
         id = "free_tonight",
         title = "Free Tonight",
         emoji = "🍷",
+        hostId = "host_priya_sharma",
+        hostName = "Priya Sharma",
+        hostPhotoUrl = "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=400&q=80",
+        isHostLive = true,
         banner_image_url = "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?auto=format&fit=crop&w=800&q=80"
     ),
     RoomItem(
         id = "free_tomorrow",
         title = "Free Tomorrow",
         emoji = "🌙",
+        hostId = "host_aarav_kapoor",
+        hostName = "Aarav Kapoor",
+        hostPhotoUrl = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80",
+        isHostLive = true,
         banner_image_url = "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=800&q=80"
     ),
     RoomItem(
         id = "free_weekend",
         title = "Free in Weekend",
         emoji = "🎉",
+        hostId = "host_ananya_sen",
+        hostName = "Ananya Sen",
+        hostPhotoUrl = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80",
+        isHostLive = true,
         banner_image_url = "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=800&q=80"
     ),
     RoomItem(
         id = "ready_travel",
         title = "Ready for Travelling",
         emoji = "🧳",
+        hostId = "host_rohit_verma",
+        hostName = "Rohit Verma",
+        hostPhotoUrl = "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=400&q=80",
+        isHostLive = true,
         banner_image_url = "https://images.unsplash.com/photo-1488646953014-85cb44e25828?auto=format&fit=crop&w=800&q=80"
     ),
     RoomItem(
         id = "travel_partner",
         title = "Travel Partner",
         emoji = "✈️",
+        hostId = "host_sneha_patel",
+        hostName = "Sneha Patel",
+        hostPhotoUrl = "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=400&q=80",
+        isHostLive = true,
         banner_image_url = "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80"
     ),
     RoomItem(
         id = "hangout_partner",
         title = "Hangout Partner",
         emoji = "🤝",
+        hostId = "host_vikram_malhotra",
+        hostName = "Vikram Malhotra",
+        hostPhotoUrl = "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&w=400&q=80",
+        isHostLive = true,
         banner_image_url = "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=800&q=80"
     ),
     RoomItem(
         id = "free_party",
         title = "Free for Party",
         emoji = "🥳",
+        hostId = "host_isha_roy",
+        hostName = "Isha Roy",
+        hostPhotoUrl = "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=400&q=80",
+        isHostLive = true,
         banner_image_url = "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=800&q=80"
     ),
     RoomItem(
         id = "join_party",
         title = "Join Party",
         emoji = "🍸",
+        hostId = "host_karan_singh",
+        hostName = "Karan Singh",
+        hostPhotoUrl = "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=400&q=80",
+        isHostLive = true,
         banner_image_url = "https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?auto=format&fit=crop&w=800&q=80"
     ),
     RoomItem(
         id = "going_club",
         title = "Going to Club",
         emoji = "🕺",
+        hostId = "host_tanya_mehra",
+        hostName = "Tanya Mehra",
+        hostPhotoUrl = "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=400&q=80",
+        isHostLive = true,
         banner_image_url = "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=800&q=80"
     ),
     RoomItem(
         id = "plan_trip",
         title = "Lets Plan Holiday Trip",
         emoji = "🗺️",
+        hostId = "host_samir_joshi",
+        hostName = "Samir Joshi",
+        hostPhotoUrl = "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=400&q=80",
+        isHostLive = true,
         banner_image_url = "https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?auto=format&fit=crop&w=800&q=80"
     ),
     RoomItem(
         id = "lets_movie",
         title = "Lets Go For Movie",
         emoji = "🍿",
+        hostId = "host_pooja_reddy",
+        hostName = "Pooja Reddy",
+        hostPhotoUrl = "https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?auto=format&fit=crop&w=400&q=80",
+        isHostLive = true,
         banner_image_url = "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=800&q=80"
     ),
     RoomItem(
         id = "lets_cafe",
         title = "Lets Go Cafe",
         emoji = "☕",
+        hostId = "host_arjun_das",
+        hostName = "Arjun Das",
+        hostPhotoUrl = "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=400&q=80",
+        isHostLive = true,
         banner_image_url = "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=800&q=80"
     ),
     RoomItem(
         id = "lets_dinner",
         title = "Lets Go For Dinner/Lunch",
         emoji = "🍽️",
+        hostId = "host_kavya_nair",
+        hostName = "Kavya Nair",
+        hostPhotoUrl = "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80",
+        isHostLive = true,
         banner_image_url = "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=800&q=80"
     )
 )
