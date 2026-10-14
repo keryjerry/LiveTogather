@@ -12,7 +12,20 @@
           "package_name": "com.devil.livetogather"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "427307595210-m9q2l2fc51dgpq8al4ohqlh3qng9loc6.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.devil.livetogather",
+            "certificate_hash": "c5eb004c4b1b5de114314d7e46a848e926dd4d80"
+          }
+        },
+        {
+          "client_id": "427307595210-964d0a6ircr7fn5a0ompnsf70ah0v2m1.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyALkKOigqX9nd_Ss8kCKWQRDHoxIpGNmUY"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "427307595210-964d0a6ircr7fn5a0ompnsf70ah0v2m1.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }
