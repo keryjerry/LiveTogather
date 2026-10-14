@@ -33,6 +33,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -300,6 +301,7 @@ fun LiveTogatherApp() {
     var selectedCategory by remember { mutableStateOf("all") }
     var showSettingsDialog by remember { mutableStateOf(false) }
     var showLocationSetupDialog by remember { mutableStateOf(false) }
+    var showPrivacyPolicy by remember { mutableStateOf(false) }
 
     // Prompt user to set their real location on login / initial launch if not configured yet
     LaunchedEffect(currentUser.isLocationSet, currentUserId) {
@@ -985,6 +987,7 @@ fun LiveTogatherApp() {
                             },
                             onOpenSettings = { showSettingsDialog = true },
                             onOpenLocationSetup = { showLocationSetupDialog = true },
+                            onOpenPrivacyPolicy = { showPrivacyPolicy = true },
                             onLogout = {
                                 prefs.edit().clear().apply()
                                 Toast.makeText(context, "Logged out successfully", Toast.LENGTH_SHORT).show()
@@ -1001,6 +1004,13 @@ fun LiveTogatherApp() {
         }
 
         // --- Dialogs & Modals ---
+
+        // Dedicated Full Privacy Policy Screen
+        if (showPrivacyPolicy) {
+            PrivacyPolicyScreen(
+                onBack = { showPrivacyPolicy = false }
+            )
+        }
 
         // 0. Advanced Real-time Audio Hangout Room Dialog
         if (activeAudioRoom != null) {
@@ -1216,6 +1226,7 @@ fun LiveTogatherApp() {
                 user = currentUser,
                 onDismiss = { showSettingsDialog = false },
                 onOpenLocationSetup = { showLocationSetupDialog = true },
+                onOpenPrivacyPolicy = { showPrivacyPolicy = true },
                 onSave = { updated ->
                     currentUser = updated
                     saveProfileToPrefs(prefs, updated)
@@ -2740,7 +2751,8 @@ fun ProfileScreenContent(
     onDeleteAccount: () -> Unit,
     onShareMomentClick: () -> Unit = {},
     onEditMoment: (MomentItem) -> Unit = {},
-    onDeleteMoment: (MomentItem) -> Unit = {}
+    onDeleteMoment: (MomentItem) -> Unit = {},
+    onOpenPrivacyPolicy: () -> Unit = {}
 ) {
     var isEditing by remember { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
@@ -3111,6 +3123,86 @@ fun ProfileScreenContent(
                                     )
                                 }
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 6b. Settings & Legal Card (Under user details card)
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = BrandCard),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, BrandBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        "⚙️ SETTINGS & LEGAL",
+                        color = BrandCoral,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 1.sp
+                    )
+
+                    Surface(
+                        color = BrandCardSubtle,
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(0.8.dp, BrandBorder),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onOpenPrivacyPolicy() }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(BrandCoral.copy(alpha = 0.15f))
+                                    .border(1.dp, BrandCoral.copy(alpha = 0.35f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Security,
+                                    contentDescription = "Privacy Policy",
+                                    tint = BrandCoral,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Privacy Policy",
+                                    color = Color.White,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "How AYAD Creations protects your data",
+                                    color = Color.LightGray,
+                                    fontSize = 11.sp,
+                                    lineHeight = 15.sp
+                                )
+                            }
+
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                contentDescription = null,
+                                tint = Color.Gray,
+                                modifier = Modifier.size(14.dp)
+                            )
                         }
                     }
                 }
@@ -4360,7 +4452,8 @@ fun SettingsDialog(
     user: UserProfile,
     onDismiss: () -> Unit,
     onSave: (UserProfile) -> Unit,
-    onOpenLocationSetup: () -> Unit = {}
+    onOpenLocationSetup: () -> Unit = {},
+    onOpenPrivacyPolicy: () -> Unit = {}
 ) {
     var hasBio by remember { mutableStateOf(user.hasBio) }
     var locationName by remember { mutableStateOf(user.locationName) }
@@ -4721,6 +4814,58 @@ fun SettingsDialog(
                                     Text("Photo Verified members can enable this to only receive messages from other Photo Verified profiles.", color = Color.Gray, fontSize = 11.sp)
                                 }
                                 Switch(checked = photoVerifiedChat, onCheckedChange = { photoVerifiedChat = it })
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text("Legal & Policies", color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        onDismiss()
+                                        onOpenPrivacyPolicy()
+                                    },
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.Security,
+                                        contentDescription = null,
+                                        tint = BrandCoral,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column {
+                                        Text(
+                                            text = "Privacy Policy",
+                                            color = Color.Black,
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontSize = 14.sp
+                                        )
+                                        Text(
+                                            text = "How AYAD Creations protects your data",
+                                            color = Color.Gray,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                }
+
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                    contentDescription = null,
+                                    tint = Color.Gray,
+                                    modifier = Modifier.size(14.dp)
+                                )
                             }
                         }
                     }
