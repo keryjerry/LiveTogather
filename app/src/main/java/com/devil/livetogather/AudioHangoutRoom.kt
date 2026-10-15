@@ -4128,10 +4128,7 @@ fun AudioHangoutRoomDialog(
 fun CategorySubRoomCard(
     room: RoomItem,
     activeCount: Int,
-    isHost: Boolean = false,
-    onJoin: () -> Unit,
-    onEdit: (() -> Unit)? = null,
-    onDelete: (() -> Unit)? = null
+    onJoin: () -> Unit
 ) {
     Box(
         modifier = Modifier
@@ -4246,50 +4243,14 @@ fun CategorySubRoomCard(
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                if (isHost) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().height(32.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(
-                            onClick = { onEdit?.invoke() },
-                            modifier = Modifier
-                                .size(30.dp)
-                                .background(BrandCard, CircleShape)
-                                .border(1.dp, BrandCoral.copy(alpha = 0.8f), CircleShape)
-                        ) {
-                            Icon(Icons.Default.Edit, contentDescription = "Edit", tint = BrandCoral, modifier = Modifier.size(13.dp))
-                        }
-                        IconButton(
-                            onClick = { onDelete?.invoke() },
-                            modifier = Modifier
-                                .size(30.dp)
-                                .background(Color.Red.copy(alpha = 0.2f), CircleShape)
-                                .border(1.dp, Color.Red.copy(alpha = 0.7f), CircleShape)
-                        ) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red, modifier = Modifier.size(13.dp))
-                        }
-                        Button(
-                            onClick = onJoin,
-                            colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
-                            shape = RoundedCornerShape(50),
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                            modifier = Modifier.weight(1f).height(30.dp)
-                        ) {
-                            Text("Join 🎙️", fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                } else {
-                    Button(
-                        onClick = onJoin,
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
-                        shape = RoundedCornerShape(50),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                        modifier = Modifier.fillMaxWidth().height(32.dp)
-                    ) {
-                        Text("Join Room", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
+                Button(
+                    onClick = onJoin,
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                    shape = RoundedCornerShape(50),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                    modifier = Modifier.fillMaxWidth().height(32.dp)
+                ) {
+                    Text("Join Room 🎙️", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -4313,8 +4274,6 @@ fun CategoryHubLobbyDialog(
     // Rooms belonging to this category (dynamically reactive to Firestore real-time updates)
     val context = LocalContext.current
     val db = remember { FirebaseFirestore.getInstance() }
-    var roomToEdit by remember { mutableStateOf<RoomItem?>(null) }
-    var roomToDelete by remember { mutableStateOf<RoomItem?>(null) }
 
     val categoryRooms = remember(allRooms.size, allRooms.map { it.id to it.isHostLive }, category.id) {
         allRooms.filter { it.category == category.id && it.title.isNotBlank() }
@@ -4499,14 +4458,10 @@ fun CategoryHubLobbyDialog(
                     ) {
                         items(categoryRooms) { room ->
                             val activeCount = allUsers.count { it.current_room == room.id }
-                            val isHost = room.hostId == currentUser.uid || (room.hostName.isNotBlank() && room.hostName == currentUser.name)
                             CategorySubRoomCard(
                                 room = room,
                                 activeCount = activeCount,
-                                isHost = isHost,
-                                onJoin = { onJoinRoom(room) },
-                                onEdit = { roomToEdit = room },
-                                onDelete = { roomToDelete = room }
+                                onJoin = { onJoinRoom(room) }
                             )
                         }
 
@@ -4549,36 +4504,6 @@ fun CategoryHubLobbyDialog(
                     }
                 }
             }
-        }
-
-        // Host Edit Room Dialog
-        if (roomToEdit != null) {
-            EditRoomDialog(
-                room = roomToEdit!!,
-                db = db,
-                onDismiss = { roomToEdit = null },
-                onRoomUpdated = { roomToEdit = null }
-            )
-        }
-
-        // Host Delete Room Confirmation Dialog
-        if (roomToDelete != null) {
-            val target = roomToDelete!!
-            RoomDeleteConfirmationDialog(
-                roomTitle = target.title,
-                onDismiss = { roomToDelete = null },
-                onConfirmDelete = {
-                    val id = target.id
-                    roomToDelete = null
-                    db.collection("rooms").document(id).delete()
-                        .addOnSuccessListener {
-                            Toast.makeText(context, "Room \"${target.title}\" deleted successfully", Toast.LENGTH_SHORT).show()
-                        }
-                        .addOnFailureListener { e ->
-                            Toast.makeText(context, "Failed to delete room: ${e.message}", Toast.LENGTH_SHORT).show()
-                        }
-                }
-            )
         }
     }
 }
