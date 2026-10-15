@@ -206,10 +206,23 @@ object AudioPlayerManager {
         }
     }
 
+    val volumeLevelState = mutableStateOf(1.0f)
+
+    fun setVolumeLevel(vol: Float) {
+        val clamped = vol.coerceIn(0f, 1f)
+        volumeLevelState.value = clamped
+        isMutedState.value = clamped == 0f
+        try {
+            mediaPlayer?.setVolume(clamped, clamped)
+        } catch (e: Exception) {
+            Log.w(TAG, "Set volume error: ${e.message}")
+        }
+    }
+
     fun toggleMute(): Boolean {
         val newMute = !isMutedState.value
         isMutedState.value = newMute
-        val vol = if (newMute) 0f else 1f
+        val vol = if (newMute) 0f else volumeLevelState.value.coerceAtLeast(0.5f)
         try {
             mediaPlayer?.setVolume(vol, vol)
         } catch (e: Exception) {

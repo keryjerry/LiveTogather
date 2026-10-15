@@ -3,6 +3,7 @@ package com.devil.livetogather
 import android.content.SharedPreferences
 import android.util.Log
 import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.PropertyName
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
@@ -54,15 +55,15 @@ data class RoomItem(
 )
 
 data class MicSeat(
-    val seatIndex: Int = 0,         // 0 to 4 (Mic 1, Mic 2, Mic 3, Mic 4, Mic 5)
-    val label: String = "Mic 1",    // e.g. "Host 👑", "Mic 2", "Mic 3", "Mic 4", "Mic 5"
-    val uid: String = "",           // Occupant UID, empty if open
-    val name: String = "",          // Occupant display name
-    val photo: String = "",         // Occupant avatar URL
-    val isMuted: Boolean = false,   // Seat mic muted
-    val isLocked: Boolean = false,  // Seat locked by host
-    val isTalking: Boolean = false, // Live audio speech animation
-    val role: String = "speaker"    // "host" or "speaker"
+    @get:PropertyName("seatIndex") @set:PropertyName("seatIndex") var seatIndex: Int = 0,         // 0 to 4 (Mic 1, Mic 2, Mic 3, Mic 4, Mic 5)
+    @get:PropertyName("label") @set:PropertyName("label") var label: String = "Mic 1",            // e.g. "Host 👑", "Mic 2", "Mic 3", "Mic 4", "Mic 5"
+    @get:PropertyName("uid") @set:PropertyName("uid") var uid: String = "",                       // Occupant UID, empty if open
+    @get:PropertyName("name") @set:PropertyName("name") var name: String = "",                    // Occupant display name
+    @get:PropertyName("photo") @set:PropertyName("photo") var photo: String = "",                 // Occupant avatar URL
+    @get:PropertyName("isMuted") @set:PropertyName("isMuted") var isMuted: Boolean = false,       // Seat mic muted
+    @get:PropertyName("isLocked") @set:PropertyName("isLocked") var isLocked: Boolean = false,    // Seat locked by host
+    @get:PropertyName("isTalking") @set:PropertyName("isTalking") var isTalking: Boolean = false, // Live audio speech animation
+    @get:PropertyName("role") @set:PropertyName("role") var role: String = "speaker"              // "host" or "speaker"
 )
 
 val INTENT_ROOMS_CATALOG = listOf(

@@ -36,6 +36,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -2076,7 +2078,15 @@ fun AudioHangoutRoomDialog(
                             micSeatsRef.document(s.seatIndex.toString()).set(s)
                         }
                     } else {
-                        val seats = snapshot.documents.mapNotNull { it.toObject(MicSeat::class.java) }
+                        val seats = snapshot.documents.mapNotNull { doc ->
+                            val s = doc.toObject(MicSeat::class.java)
+                            if (s != null) {
+                                val rawMuted = doc.getBoolean("isMuted") ?: doc.getBoolean("muted") ?: s.isMuted
+                                val rawLocked = doc.getBoolean("isLocked") ?: doc.getBoolean("locked") ?: s.isLocked
+                                val rawTalking = doc.getBoolean("isTalking") ?: doc.getBoolean("talking") ?: s.isTalking
+                                s.copy(isMuted = rawMuted, isLocked = rawLocked, isTalking = rawTalking)
+                            } else null
+                        }
                         val fullList = (0..4).map { idx ->
                             val existing = seats.find { it.seatIndex == idx }
                             if (existing != null) {
@@ -2133,7 +2143,7 @@ fun AudioHangoutRoomDialog(
                             uid = currentUser.uid,
                             name = currentUser.name,
                             photo = currentUser.photo,
-                            isMuted = false,
+                            isMuted = seat0.isMuted,
                             isLocked = false,
                             isTalking = false,
                             role = "host"
@@ -2361,7 +2371,7 @@ fun AudioHangoutRoomDialog(
                 }
             },
             bottomBar = {
-                // Public Room Chat Bar (Floating transparent pill pinned at bottom)
+                // Public Room Chat & Audio Controls Bar
                 Surface(
                     color = Color.Transparent,
                     modifier = Modifier
@@ -2369,24 +2379,122 @@ fun AudioHangoutRoomDialog(
                         .navigationBarsPadding()
                         .imePadding()
                 ) {
-                    Box(
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        // 1. SELF MIC BUTTON (Bottom Left Corner)
+                        val mySeat = micSeats.find { it.uid == currentUser.uid }
+                        val isSelfOnStage = mySeat != null
+                        val isSelfMicMuted = mySeat?.isMuted ?: true
+
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (isSelfMicMuted) Color(0xFF281518)
+                                    else if (isLocalTalking) BrandGreen
+                                    else BrandCard
+                                )
+                                .border(
+                                    1.5.dp,
+                                    if (isSelfMicMuted) Color(0xFFFF5252).copy(alpha = 0.85f)
+                                    else if (isLocalTalking) BrandGreen
+                                    else BrandCoral.copy(alpha = 0.85f),
+                                    CircleShape
+                                )
+                                .clickable {
+                                    if (isSelfOnStage) {
+                                        val s = mySeat!!
+                                        val newMute = !s.isMuted
+                                        val idx = micSeats.indexOfFirst { it.seatIndex == s.seatIndex }
+                                        if (idx != -1) {
+                                            micSeats[idx] = micSeats[idx].copy(isMuted = newMute)
+                                        }
+                                        toggleMuteMicSeat(db, room.id, s.seatIndex, s.isMuted)
+                                        Toast.makeText(context, if (newMute) "Microphone Muted 🔇" else "Microphone Live 🎙️", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        val openSeat = micSeats.firstOrNull { it.seatIndex > 0 && it.uid.isEmpty() && !it.isLocked }
+                                        if (openSeat != null) {
+                                            val hasPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                                            if (hasPerm) {
+                                                joinMicSeat(db, room.id, openSeat.seatIndex, currentUser, micSeats)
+                                                Toast.makeText(context, "You took Mic ${openSeat.seatIndex + 1}! Live now 🎙️", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                pendingSeatToJoin = openSeat
+                                                recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                            }
+                                        } else if (isUserHost) {
+                                            val hasPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                                            if (hasPerm) {
+                                                joinMicSeat(db, room.id, 0, currentUser, micSeats)
+                                                Toast.makeText(context, "Host Mic Active 🎙️", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                pendingSeatToJoin = MicSeat(seatIndex = 0, label = "Host 👑", role = "host")
+                                                recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                            }
+                                        } else {
+                                            Toast.makeText(context, "All stage microphones are currently occupied", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (isSelfMicMuted) Icons.Default.MicOff else Icons.Default.Mic,
+                                contentDescription = "Self Mic",
+                                tint = if (isSelfMicMuted) Color(0xFFFF8A80) else Color.White,
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
+
+                        // 2. ROOM VOLUME BUTTON (Next to Mic in Bottom Left)
+                        val isRoomAudioMuted by AudioPlayerManager.isMutedState
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (isRoomAudioMuted) Color(0xFF251A1D)
+                                    else BrandCard
+                                )
+                                .border(
+                                    1.5.dp,
+                                    if (isRoomAudioMuted) Color.Red.copy(alpha = 0.8f) else BrandCyan.copy(alpha = 0.8f),
+                                    CircleShape
+                                )
+                                .clickable {
+                                    val newMute = AudioPlayerManager.toggleMute()
+                                    Toast.makeText(context, if (newMute) "Room Audio Muted 🔇" else "Room Audio On 🔊", Toast.LENGTH_SHORT).show()
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (isRoomAudioMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                                contentDescription = "Room Volume",
+                                tint = if (isRoomAudioMuted) Color(0xFFFF8A80) else BrandCyan,
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
+
+                        // 3. COMMENT BOX (Adjusted width with weight(1f), no logic changes)
                         Row(
                             modifier = Modifier
-                                .fillMaxWidth()
+                                .weight(1f)
                                 .clip(RoundedCornerShape(50))
                                 .background(Color.Black.copy(alpha = 0.75f))
                                 .border(1.dp, BrandBorder.copy(alpha = 0.8f), RoundedCornerShape(50))
-                                .padding(horizontal = 12.dp, vertical = 2.dp),
+                                .padding(horizontal = 10.dp, vertical = 2.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             OutlinedTextField(
                                 value = commentInputText,
                                 onValueChange = { commentInputText = it },
-                                placeholder = { Text("Say something in room...", color = Color.Gray, fontSize = 11.sp) },
+                                placeholder = { Text("Say something...", color = Color.Gray, fontSize = 11.sp) },
                                 modifier = Modifier.weight(1f),
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                                 keyboardActions = KeyboardActions(onSend = {
@@ -2447,13 +2555,13 @@ fun AudioHangoutRoomDialog(
                                     keyboardController?.hide()
                                     focusManager.clearFocus()
                                 },
-                                modifier = Modifier.size(32.dp).background(BrandCoral, CircleShape)
+                                modifier = Modifier.size(30.dp).background(BrandCoral, CircleShape)
                             ) {
                                 Icon(
                                     Icons.AutoMirrored.Filled.Send,
                                     contentDescription = "Send",
                                     tint = Color.White,
-                                    modifier = Modifier.size(14.dp)
+                                    modifier = Modifier.size(13.dp)
                                 )
                             }
                         }
@@ -3985,8 +4093,15 @@ fun toggleMuteMicSeat(
     seatIndex: Int,
     currentMuted: Boolean
 ) {
+    val newMute = !currentMuted
     db.collection("rooms").document(roomId).collection("mic_seats").document(seatIndex.toString())
-        .update("isMuted", !currentMuted)
+        .set(
+            mapOf(
+                "isMuted" to newMute,
+                "muted" to newMute
+            ),
+            SetOptions.merge()
+        )
 }
 
 fun toggleLockMicSeat(
@@ -3995,8 +4110,15 @@ fun toggleLockMicSeat(
     seatIndex: Int,
     currentLocked: Boolean
 ) {
+    val newLock = !currentLocked
     db.collection("rooms").document(roomId).collection("mic_seats").document(seatIndex.toString())
-        .update("isLocked", !currentLocked)
+        .set(
+            mapOf(
+                "isLocked" to newLock,
+                "locked" to newLock
+            ),
+            SetOptions.merge()
+        )
 }
 
 @Composable

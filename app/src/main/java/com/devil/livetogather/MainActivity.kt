@@ -1212,6 +1212,7 @@ fun LiveTogatherApp() {
                     db.collection("users").document(currentUserId)
                         .update("current_room", room.id)
 
+                    activeCategoryHub = null
                     activeAudioRoom = room
                 }
             )
