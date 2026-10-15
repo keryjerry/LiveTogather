@@ -6,8 +6,8 @@ import android.os.Bundle
 import android.util.Patterns
 import android.view.View
 import android.widget.*
+import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
 import com.facebook.CallbackManager
 import com.facebook.FacebookCallback
 import com.facebook.FacebookException
@@ -32,7 +32,7 @@ import com.google.firebase.auth.GoogleAuthProvider
  * Flow Requirement:
  * After ANY successful authentication, strictly navigates to ProfileSetupActivity.
  */
-class LoginActivity : AppCompatActivity() {
+class LoginActivity : ComponentActivity() {
 
     private lateinit var auth: FirebaseAuth
     private lateinit var callbackManager: CallbackManager
