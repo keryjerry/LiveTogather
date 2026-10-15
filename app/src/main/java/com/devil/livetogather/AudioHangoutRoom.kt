@@ -3774,9 +3774,9 @@ fun CategoryHubLobbyDialog(
     onCreateRoom: () -> Unit,
     onJoinRoom: (RoomItem) -> Unit
 ) {
-    // Rooms belonging to this category
-    val categoryRooms = remember(allRooms, category.id) {
-        allRooms.filter { it.category == category.id || it.id == category.id }
+    // Rooms belonging to this category (dynamically reactive to Firestore real-time updates)
+    val categoryRooms = remember(allRooms.size, allRooms.map { it.id to it.isHostLive }, category.id) {
+        allRooms.filter { it.category == category.id && it.title.isNotBlank() }
     }
 
     // Active members in this category across users
@@ -3900,64 +3900,52 @@ fun CategoryHubLobbyDialog(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 if (categoryRooms.isEmpty()) {
-                    // Show default category lounge + invitation card
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(2),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.fillMaxSize()
+                    // Clean Empty State when no room has been created in this category yet
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
+                        shape = RoundedCornerShape(20.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 16.dp)
+                            .border(1.dp, BrandCoral.copy(alpha = 0.4f), RoundedCornerShape(20.dp))
                     ) {
-                        item {
-                            // Official category room card
-                            val defaultRoom = RoomItem(
-                                id = category.id,
-                                title = category.label.substringAfter(' '),
-                                emoji = category.label.take(2).trim(),
-                                banner_image_url = categoryBannerUrl,
-                                category = category.id
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
+                            verticalArrangement = Arrangement.Center,
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "🎙️",
+                                fontSize = 42.sp
                             )
-                            CategorySubRoomCard(
-                                room = defaultRoom,
-                                activeCount = activeCategoryCount,
-                                onJoin = { onJoinRoom(defaultRoom) }
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = "No Live Rooms Yet",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                textAlign = TextAlign.Center
                             )
-                        }
-
-                        item {
-                            // Host prompt card
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
-                                shape = RoundedCornerShape(18.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(200.dp)
-                                    .border(1.dp, BrandCoral.copy(alpha = 0.5f), RoundedCornerShape(18.dp))
-                                    .clickable { onCreateRoom() }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Be the first to host a hangout in ${category.label}! Stream music, talk on stage, and invite friends to join.",
+                                color = Color.Gray,
+                                fontSize = 12.sp,
+                                textAlign = TextAlign.Center,
+                                lineHeight = 18.sp
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Button(
+                                onClick = onCreateRoom,
+                                colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                                shape = RoundedCornerShape(50),
+                                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
                             ) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(14.dp),
-                                    verticalArrangement = Arrangement.Center,
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    Icon(Icons.Default.AddCircle, contentDescription = null, tint = BrandCoral, modifier = Modifier.size(36.dp))
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text(
-                                        text = "Host a New Room",
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp,
-                                        textAlign = TextAlign.Center
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = "Be the Host 👑 with music & live chat!",
-                                        color = Color.Gray,
-                                        fontSize = 10.sp,
-                                        textAlign = TextAlign.Center
-                                    )
-                                }
+                                Icon(Icons.Default.AddCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Create Room Now 🎙️", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             }
                         }
                     }

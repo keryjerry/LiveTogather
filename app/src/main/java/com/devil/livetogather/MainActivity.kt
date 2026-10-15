@@ -401,9 +401,8 @@ fun LiveTogatherApp() {
             discoverProfiles.addAll(DEFAULT_DUMMY_PROFILES.filter { it.uid != currentUserId })
         }
 
-        // Initialize Rooms Catalog & Real-Time Snapshot Listener
+        // Initialize Rooms & Real-Time Firestore Snapshot Listener
         roomsList.clear()
-        roomsList.addAll(INTENT_ROOMS_CATALOG)
 
         db.collection("rooms").addSnapshotListener { snapshot, error ->
             if (error != null) {
@@ -411,18 +410,10 @@ fun LiveTogatherApp() {
                 return@addSnapshotListener
             }
             if (snapshot != null) {
-                val fetchedRooms = snapshot.documents.mapNotNull { it.toObject(RoomItem::class.java) }
-                // Ensure all catalog rooms have their assigned real host data merged in Firestore
-                INTENT_ROOMS_CATALOG.forEach { catalogRoom ->
-                    val existing = fetchedRooms.find { it.id == catalogRoom.id }
-                    if (existing == null || existing.hostId.isBlank()) {
-                        db.collection("rooms").document(catalogRoom.id).set(catalogRoom, SetOptions.merge())
-                    }
-                }
-                if (fetchedRooms.isNotEmpty()) {
-                    roomsList.clear()
-                    roomsList.addAll(fetchedRooms)
-                }
+                val fetchedRooms = snapshot.documents.mapNotNull { parseRoomFromDoc(it) }
+                roomsList.clear()
+                roomsList.addAll(fetchedRooms)
+                Log.d("Firestore", "Loaded ${fetchedRooms.size} real-time rooms from Firestore")
             }
         }
     }
@@ -880,9 +871,28 @@ fun LiveTogatherApp() {
                                 // 2-Column Clean Intent Category Hubs Grid Layout
                                 IntentRoomsGrid(
                                     categories = CATEGORY_LIST.filter { it.id != "all" },
-                                    catalogRooms = INTENT_ROOMS_CATALOG,
+                                    catalogRooms = emptyList(),
                                     rooms = roomsList,
                                     allUsers = discoverProfiles + currentUser,
+                                    onCreateRoom = {
+                                        createRoomInitialCategory = "free_tonight"
+                                        // 7 Days Free Trial For App Launch & Minimum Platinum Criteria
+                                        if (currentUser.hostTrialStartDate == 0L) {
+                                            val now = System.currentTimeMillis()
+                                            currentUser = currentUser.copy(hostTrialStartDate = now)
+                                            saveProfileToPrefs(prefs, currentUser)
+                                            db.collection("users").document(currentUserId).update("hostTrialStartDate", now)
+                                        }
+
+                                        if (currentUser.isHostTrialActive()) {
+                                            showHostTrialOfferDialog = true
+                                        } else if (currentUser.isVipOrPlatinum()) {
+                                            showCreateRoomDialog = true
+                                        } else {
+                                            subscriptionPaywallNotice = "👑 Host Access Criteria: Minimum Platinum Membership Required!\nYour 7-day launch trial has ended. Upgrade to Platinum (₹249/mo) or VIP to create audio rooms and go live."
+                                            showMainSubscriptionModal = true
+                                        }
+                                    },
                                     onOpenCategoryHub = { category ->
                                         activeCategoryHub = category
                                     },
@@ -1092,12 +1102,12 @@ fun LiveTogatherApp() {
                 allProfiles = discoverProfiles,
                 db = db,
                 onDismiss = {
-                    // If leaving user is the room host, mark room offline
+                    // If leaving user is the room host, mark room offline (NEVER delete room document)
                     if (room.hostId == currentUserId || (room.isCustom && room.hostId.isBlank())) {
                         db.collection("rooms").document(room.id).update(
                             mapOf(
                                 "isHostLive" to false,
-                                "statusMessage" to "Host will be live soon",
+                                "statusMessage" to "Host Away • Open Hangout",
                                 "isPlaying" to false
                             )
                         )
@@ -1106,7 +1116,7 @@ fun LiveTogatherApp() {
                                 .collection("rooms").document(room.id).update(
                                     mapOf(
                                         "isHostLive" to false,
-                                        "statusMessage" to "Host will be live soon",
+                                        "statusMessage" to "Host Away • Open Hangout",
                                         "isPlaying" to false
                                     )
                                 )
@@ -1138,7 +1148,7 @@ fun LiveTogatherApp() {
         // 0.05 Category Hub / Lobby Dialog (Category-Scoped Sub-Rooms Grid)
         if (activeCategoryHub != null) {
             val cat = activeCategoryHub!!
-            val bannerUrl = INTENT_ROOMS_CATALOG.find { it.id == cat.id }?.banner_image_url ?: ""
+            val bannerUrl = getCategoryBanner(cat.id)
             CategoryHubLobbyDialog(
                 category = cat,
                 categoryBannerUrl = bannerUrl,
@@ -1309,12 +1319,13 @@ fun LiveTogatherApp() {
                 onCreate = { title, categoryId, themeUrl ->
                     val roomId = "custom_" + UUID.randomUUID().toString().take(8)
                     val catEmoji = CATEGORY_LIST.find { it.id == categoryId }?.label?.take(2)?.trim() ?: "🎙️"
+                    val finalBanner = if (themeUrl.isNotBlank()) themeUrl else getCategoryBanner(categoryId)
                     val newRoom = RoomItem(
                         id = roomId,
                         title = title,
                         category = categoryId,
                         emoji = catEmoji,
-                        banner_image_url = themeUrl,
+                        banner_image_url = finalBanner,
                         hostId = currentUserId,
                         hostName = currentUser.name,
                         hostPhotoUrl = currentUser.photo,
@@ -1325,10 +1336,19 @@ fun LiveTogatherApp() {
                         playbackPosition = 0L,
                         isPlaying = false,
                         isCustom = true,
+                        isHostLive = true,
+                        statusMessage = "LIVE NOW",
                         createdAt = System.currentTimeMillis()
                     )
                     // Save to Firestore rooms/{roomId}
                     db.collection("rooms").document(roomId).set(newRoom)
+                        .addOnSuccessListener {
+                            Log.d("Firestore", "Room $roomId successfully created in Firestore")
+                        }
+                        .addOnFailureListener { e ->
+                            Log.e("Firestore", "Failed to create room $roomId: ${e.message}")
+                            Toast.makeText(context, "Error saving room: ${e.message}", Toast.LENGTH_LONG).show()
+                        }
                     // Save to intent_categories/{categoryId}/rooms/{roomId}
                     db.collection("intent_categories").document(categoryId)
                         .collection("rooms").document(roomId).set(newRoom)
@@ -1829,7 +1849,7 @@ fun LiveTogatherApp() {
 @Composable
 fun IntentRoomsGrid(
     categories: List<IntentCategory> = CATEGORY_LIST.filter { it.id != "all" },
-    catalogRooms: List<RoomItem> = INTENT_ROOMS_CATALOG,
+    catalogRooms: List<RoomItem> = emptyList(),
     rooms: List<RoomItem> = emptyList(),
     allUsers: List<UserProfile>,
     onCreateRoom: () -> Unit = {},
@@ -1860,6 +1880,15 @@ fun IntentRoomsGrid(
                     fontSize = 11.sp
                 )
             }
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(
+                onClick = onCreateRoom,
+                colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                shape = RoundedCornerShape(12.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text("+ Host 🎙️", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -1871,9 +1900,7 @@ fun IntentRoomsGrid(
             modifier = Modifier.fillMaxSize()
         ) {
             items(categories) { category ->
-                val catalog = catalogRooms.find { it.id == category.id }
-                    ?: INTENT_ROOMS_CATALOG.find { it.id == category.id }
-                    ?: RoomItem(id = category.id, title = category.label, banner_image_url = "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3")
+                val bannerUrl = getCategoryBanner(category.id)
 
                 // Dynamic real-time active users in this category
                 val activeCount = allUsers.count {
@@ -1881,8 +1908,8 @@ fun IntentRoomsGrid(
                 }
 
                 // Sub-rooms created under this category
-                val subRoomsCount = rooms.count { it.category == category.id && it.isCustom }
-                val categoryRooms = rooms.filter { it.category == category.id || it.id == category.id }
+                val categoryRooms = rooms.filter { it.category == category.id }
+                val subRoomsCount = categoryRooms.size
                 val isAnyRoomLive = categoryRooms.any { it.isHostLive }
                 val isAnyAudioPlaying = categoryRooms.any { it.isHostLive && it.isPlaying }
 
@@ -1896,7 +1923,7 @@ fun IntentRoomsGrid(
                 ) {
                     // Fixed curated system background image (Read-only, system managed)
                     AsyncImage(
-                        model = catalog.banner_image_url,
+                        model = bannerUrl,
                         contentDescription = category.label,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop

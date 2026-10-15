@@ -28,30 +28,30 @@ val CATEGORY_LIST = listOf(
 )
 
 data class RoomItem(
-    val id: String = "",
-    val title: String = "",
-    val emoji: String = "",
-    val banner_image_url: String = "",
-    val activeUserCount: Int = 0,
-    val hostId: String = "",
-    val hostName: String = "",
-    val hostPhotoUrl: String = "",
-    val category: String = "",
-    val nowPlayingTitle: String = "",
-    val nowPlayingArtist: String = "",
-    val nowPlayingUrl: String = "",
-    val nowPlayingArtworkUrl: String = "",
-    val currentPlayingTrack: String = "",
-    val playbackPosition: Long = 0L,
-    val isPlaying: Boolean = false,
-    val isCustom: Boolean = false,
-    val isHostLive: Boolean = true,
-    val scheduledTime: String = "",
-    val statusMessage: String = "",
-    val privacy: String = "public", // "public", "vip_only", "private"
-    val bannedUserIds: List<String> = emptyList(),
-    val kickedUserIds: List<String> = emptyList(),
-    val createdAt: Long = System.currentTimeMillis()
+    @get:PropertyName("id") @set:PropertyName("id") var id: String = "",
+    @get:PropertyName("title") @set:PropertyName("title") var title: String = "",
+    @get:PropertyName("emoji") @set:PropertyName("emoji") var emoji: String = "🎙️",
+    @get:PropertyName("banner_image_url") @set:PropertyName("banner_image_url") var banner_image_url: String = "",
+    @get:PropertyName("activeUserCount") @set:PropertyName("activeUserCount") var activeUserCount: Int = 0,
+    @get:PropertyName("hostId") @set:PropertyName("hostId") var hostId: String = "",
+    @get:PropertyName("hostName") @set:PropertyName("hostName") var hostName: String = "",
+    @get:PropertyName("hostPhotoUrl") @set:PropertyName("hostPhotoUrl") var hostPhotoUrl: String = "",
+    @get:PropertyName("category") @set:PropertyName("category") var category: String = "",
+    @get:PropertyName("nowPlayingTitle") @set:PropertyName("nowPlayingTitle") var nowPlayingTitle: String = "",
+    @get:PropertyName("nowPlayingArtist") @set:PropertyName("nowPlayingArtist") var nowPlayingArtist: String = "",
+    @get:PropertyName("nowPlayingUrl") @set:PropertyName("nowPlayingUrl") var nowPlayingUrl: String = "",
+    @get:PropertyName("nowPlayingArtworkUrl") @set:PropertyName("nowPlayingArtworkUrl") var nowPlayingArtworkUrl: String = "",
+    @get:PropertyName("currentPlayingTrack") @set:PropertyName("currentPlayingTrack") var currentPlayingTrack: String = "",
+    @get:PropertyName("playbackPosition") @set:PropertyName("playbackPosition") var playbackPosition: Long = 0L,
+    @get:PropertyName("isPlaying") @set:PropertyName("isPlaying") var isPlaying: Boolean = false,
+    @get:PropertyName("isCustom") @set:PropertyName("isCustom") var isCustom: Boolean = true,
+    @get:PropertyName("isHostLive") @set:PropertyName("isHostLive") var isHostLive: Boolean = true,
+    @get:PropertyName("scheduledTime") @set:PropertyName("scheduledTime") var scheduledTime: String = "",
+    @get:PropertyName("statusMessage") @set:PropertyName("statusMessage") var statusMessage: String = "",
+    @get:PropertyName("privacy") @set:PropertyName("privacy") var privacy: String = "public", // "public", "vip_only", "private"
+    @get:PropertyName("bannedUserIds") @set:PropertyName("bannedUserIds") var bannedUserIds: List<String> = emptyList(),
+    @get:PropertyName("kickedUserIds") @set:PropertyName("kickedUserIds") var kickedUserIds: List<String> = emptyList(),
+    @get:PropertyName("createdAt") @set:PropertyName("createdAt") var createdAt: Long = System.currentTimeMillis()
 )
 
 data class MicSeat(
@@ -66,138 +66,84 @@ data class MicSeat(
     @get:PropertyName("role") @set:PropertyName("role") var role: String = "speaker"              // "host" or "speaker"
 )
 
-val INTENT_ROOMS_CATALOG = listOf(
-    RoomItem(
-        id = "free_tonight",
-        title = "Free Tonight",
-        emoji = "🍷",
-        hostId = "host_priya_sharma",
-        hostName = "Priya Sharma",
-        hostPhotoUrl = "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=400&q=80",
-        isHostLive = true,
-        banner_image_url = "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?auto=format&fit=crop&w=800&q=80"
-    ),
-    RoomItem(
-        id = "free_tomorrow",
-        title = "Free Tomorrow",
-        emoji = "🌙",
-        hostId = "host_aarav_kapoor",
-        hostName = "Aarav Kapoor",
-        hostPhotoUrl = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80",
-        isHostLive = true,
-        banner_image_url = "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=800&q=80"
-    ),
-    RoomItem(
-        id = "free_weekend",
-        title = "Free in Weekend",
-        emoji = "🎉",
-        hostId = "host_ananya_sen",
-        hostName = "Ananya Sen",
-        hostPhotoUrl = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80",
-        isHostLive = true,
-        banner_image_url = "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=800&q=80"
-    ),
-    RoomItem(
-        id = "ready_travel",
-        title = "Ready for Travelling",
-        emoji = "🧳",
-        hostId = "host_rohit_verma",
-        hostName = "Rohit Verma",
-        hostPhotoUrl = "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=400&q=80",
-        isHostLive = true,
-        banner_image_url = "https://images.unsplash.com/photo-1488646953014-85cb44e25828?auto=format&fit=crop&w=800&q=80"
-    ),
-    RoomItem(
-        id = "travel_partner",
-        title = "Travel Partner",
-        emoji = "✈️",
-        hostId = "host_sneha_patel",
-        hostName = "Sneha Patel",
-        hostPhotoUrl = "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=400&q=80",
-        isHostLive = true,
-        banner_image_url = "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80"
-    ),
-    RoomItem(
-        id = "hangout_partner",
-        title = "Hangout Partner",
-        emoji = "🤝",
-        hostId = "host_vikram_malhotra",
-        hostName = "Vikram Malhotra",
-        hostPhotoUrl = "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&w=400&q=80",
-        isHostLive = true,
-        banner_image_url = "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=800&q=80"
-    ),
-    RoomItem(
-        id = "free_party",
-        title = "Free for Party",
-        emoji = "🥳",
-        hostId = "host_isha_roy",
-        hostName = "Isha Roy",
-        hostPhotoUrl = "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=400&q=80",
-        isHostLive = true,
-        banner_image_url = "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=800&q=80"
-    ),
-    RoomItem(
-        id = "join_party",
-        title = "Join Party",
-        emoji = "🍸",
-        hostId = "host_karan_singh",
-        hostName = "Karan Singh",
-        hostPhotoUrl = "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=400&q=80",
-        isHostLive = true,
-        banner_image_url = "https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?auto=format&fit=crop&w=800&q=80"
-    ),
-    RoomItem(
-        id = "going_club",
-        title = "Going to Club",
-        emoji = "🕺",
-        hostId = "host_tanya_mehra",
-        hostName = "Tanya Mehra",
-        hostPhotoUrl = "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=400&q=80",
-        isHostLive = true,
-        banner_image_url = "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=800&q=80"
-    ),
-    RoomItem(
-        id = "plan_trip",
-        title = "Lets Plan Holiday Trip",
-        emoji = "🗺️",
-        hostId = "host_samir_joshi",
-        hostName = "Samir Joshi",
-        hostPhotoUrl = "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=400&q=80",
-        isHostLive = true,
-        banner_image_url = "https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?auto=format&fit=crop&w=800&q=80"
-    ),
-    RoomItem(
-        id = "lets_movie",
-        title = "Lets Go For Movie",
-        emoji = "🍿",
-        hostId = "host_pooja_reddy",
-        hostName = "Pooja Reddy",
-        hostPhotoUrl = "https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?auto=format&fit=crop&w=400&q=80",
-        isHostLive = true,
-        banner_image_url = "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=800&q=80"
-    ),
-    RoomItem(
-        id = "lets_cafe",
-        title = "Lets Go Cafe",
-        emoji = "☕",
-        hostId = "host_arjun_das",
-        hostName = "Arjun Das",
-        hostPhotoUrl = "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=400&q=80",
-        isHostLive = true,
-        banner_image_url = "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=800&q=80"
-    ),
-    RoomItem(
-        id = "lets_dinner",
-        title = "Lets Go For Dinner/Lunch",
-        emoji = "🍽️",
-        hostId = "host_kavya_nair",
-        hostName = "Kavya Nair",
-        hostPhotoUrl = "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80",
-        isHostLive = true,
-        banner_image_url = "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=800&q=80"
+fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
+    val id = doc.getString("id") ?: doc.id
+    val title = doc.getString("title") ?: ""
+    val emoji = doc.getString("emoji") ?: "🎙️"
+    val bannerUrl = doc.getString("banner_image_url") ?: ""
+    val activeCount = (doc.getLong("activeUserCount") ?: 0L).toInt()
+    val hostId = doc.getString("hostId") ?: ""
+    val hostName = doc.getString("hostName") ?: ""
+    val hostPhotoUrl = doc.getString("hostPhotoUrl") ?: ""
+    val category = doc.getString("category") ?: ""
+    val nowPlayingTitle = doc.getString("nowPlayingTitle") ?: ""
+    val nowPlayingArtist = doc.getString("nowPlayingArtist") ?: ""
+    val nowPlayingUrl = doc.getString("nowPlayingUrl") ?: ""
+    val nowPlayingArtworkUrl = doc.getString("nowPlayingArtworkUrl") ?: ""
+    val currentPlayingTrack = doc.getString("currentPlayingTrack") ?: ""
+    val playbackPosition = doc.getLong("playbackPosition") ?: 0L
+    val isPlaying = doc.getBoolean("isPlaying") ?: doc.getBoolean("playing") ?: false
+    val isCustom = doc.getBoolean("isCustom") ?: doc.getBoolean("custom") ?: true
+    val isHostLive = doc.getBoolean("isHostLive") ?: doc.getBoolean("hostLive") ?: true
+    val scheduledTime = doc.getString("scheduledTime") ?: ""
+    val statusMessage = doc.getString("statusMessage") ?: ""
+    val privacy = doc.getString("privacy") ?: "public"
+    @Suppress("UNCHECKED_CAST")
+    val bannedUserIds = (doc.get("bannedUserIds") as? List<String>) ?: emptyList()
+    @Suppress("UNCHECKED_CAST")
+    val kickedUserIds = (doc.get("kickedUserIds") as? List<String>) ?: emptyList()
+    val createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
+
+    return RoomItem(
+        id = id,
+        title = title,
+        emoji = emoji,
+        banner_image_url = bannerUrl,
+        activeUserCount = activeCount,
+        hostId = hostId,
+        hostName = hostName,
+        hostPhotoUrl = hostPhotoUrl,
+        category = category,
+        nowPlayingTitle = nowPlayingTitle,
+        nowPlayingArtist = nowPlayingArtist,
+        nowPlayingUrl = nowPlayingUrl,
+        nowPlayingArtworkUrl = nowPlayingArtworkUrl,
+        currentPlayingTrack = currentPlayingTrack,
+        playbackPosition = playbackPosition,
+        isPlaying = isPlaying,
+        isCustom = isCustom,
+        isHostLive = isHostLive,
+        scheduledTime = scheduledTime,
+        statusMessage = statusMessage,
+        privacy = privacy,
+        bannedUserIds = bannedUserIds,
+        kickedUserIds = kickedUserIds,
+        createdAt = createdAt
     )
+}
+
+val CATEGORY_BANNERS = mapOf(
+    "free_tonight" to "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?auto=format&fit=crop&w=800&q=80",
+    "free_tomorrow" to "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=800&q=80",
+    "free_weekend" to "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=800&q=80",
+    "ready_travel" to "https://images.unsplash.com/photo-1488646953014-85cb44e25828?auto=format&fit=crop&w=800&q=80",
+    "travel_partner" to "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80",
+    "hangout_partner" to "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=800&q=80",
+    "free_party" to "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=800&q=80",
+    "join_party" to "https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?auto=format&fit=crop&w=800&q=80",
+    "going_club" to "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=800&q=80",
+    "plan_trip" to "https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?auto=format&fit=crop&w=800&q=80",
+    "lets_movie" to "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=800&q=80",
+    "lets_cafe" to "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=800&q=80",
+    "lets_dinner" to "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80"
 )
+
+fun getCategoryBanner(categoryId: String): String {
+    return CATEGORY_BANNERS[categoryId] ?: "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?auto=format&fit=crop&w=800&q=80"
+}
+
+// All hardcoded dummy rooms removed - rooms now originate 100% dynamically from Firestore
+val INTENT_ROOMS_CATALOG: List<RoomItem> = emptyList()
 
 data class SubscriptionPlanItem(
     val id: String = "",
