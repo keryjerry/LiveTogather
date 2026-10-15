@@ -2792,39 +2792,6 @@ fun AudioHangoutRoomDialog(
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (isUserHost) {
-                                // Edit Room
-                                IconButton(
-                                    onClick = { showEditRoomDialog = true },
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .background(BrandCard.copy(alpha = 0.85f), CircleShape)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Edit,
-                                        contentDescription = "Edit Room",
-                                        tint = BrandCoral,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(6.dp))
-
-                                // Delete Room (with Confirmation Popup)
-                                IconButton(
-                                    onClick = { showDeleteConfirmation = true },
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .background(Color.Red.copy(alpha = 0.25f), CircleShape)
-                                        .border(1.dp, Color.Red.copy(alpha = 0.6f), CircleShape)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Delete,
-                                        contentDescription = "Delete Room",
-                                        tint = Color.Red,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(6.dp))
-
                                 IconButton(
                                     onClick = { showRoomSettingsDialog = true },
                                     modifier = Modifier
