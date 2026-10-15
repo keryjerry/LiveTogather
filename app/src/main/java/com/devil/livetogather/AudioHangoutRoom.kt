@@ -3177,10 +3177,15 @@ fun AudioHangoutRoomDialog(
                                     )
                                 }
 
+                                val topBarHostFrameId = if (isUserHost) {
+                                    activeUserFrame.ifBlank { "frame_angel_wings" }
+                                } else {
+                                    hostFromProfiles?.activeFrame?.ifBlank { "frame_angel_wings" } ?: "frame_angel_wings"
+                                }
                                 Image(
-                                    painter = painterResource(id = R.drawable.luxury_host_frame),
+                                    painter = painterResource(id = getAvatarFrameDrawable(topBarHostFrameId)),
                                     contentDescription = "Host Luxury Frame",
-                                    modifier = Modifier.size(68.dp),
+                                    modifier = Modifier.size(76.dp),
                                     contentScale = ContentScale.Fit
                                 )
                             }
@@ -5035,10 +5040,17 @@ fun MicSeatView(
                     )
                 }
 
-                // Luxury Floral Frame Overlay (Wide, Bold, Prominent!)
+                // Luxury 3D Winged Frame Overlay (Wide, Bold, Prominent!)
                 if (shouldShowFrame) {
+                    val seatFrameId = if (isCurrentSelf && userActiveFrame.isNotBlank()) {
+                        userActiveFrame
+                    } else if (seatOccupantProfile?.activeFrame?.isNotBlank() == true) {
+                        seatOccupantProfile.activeFrame
+                    } else {
+                        "frame_angel_wings"
+                    }
                     Image(
-                        painter = painterResource(id = R.drawable.luxury_host_frame),
+                        painter = painterResource(id = getAvatarFrameDrawable(seatFrameId)),
                         contentDescription = "Luxury Avatar Frame",
                         modifier = Modifier
                             .size(80.dp)
@@ -5849,11 +5861,6 @@ private fun AvatarFramesSection(
     onApply: (String) -> Unit,
     onGoToRecharge: () -> Unit
 ) {
-    val frameId = "luxury_host_frame"
-    val frameCost = 25000L
-    val isOwned = ownedFrames.contains(frameId)
-    val isEquipped = activeFrame == frameId
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -5861,142 +5868,183 @@ private fun AvatarFramesSection(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        // Header Banner
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.04f)),
-            shape = RoundedCornerShape(18.dp),
-            border = BorderStroke(1.dp, if (isEquipped) BrandGreen else BrandGold.copy(alpha = 0.6f)),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1528)),
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.5f)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
+                    .padding(14.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Live Frame Preview with user photo
-                Box(
-                    modifier = Modifier.size(110.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(56.dp)
-                            .clip(CircleShape)
-                            .border(1.5.dp, BrandGold, CircleShape)
-                    ) {
-                        AsyncImage(
-                            model = currentUser.photo.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
-                            contentDescription = "Avatar",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
-                    }
-
-                    Image(
-                        painter = painterResource(id = R.drawable.luxury_host_frame),
-                        contentDescription = "Luxury Host Frame",
-                        modifier = Modifier.size(105.dp),
-                        contentScale = ContentScale.Fit
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
                 Text(
-                    text = "Imperial Rose & Gold VIP Frame",
-                    color = Color.White,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold
+                    text = "👑 3D Winged Royal Frames",
+                    color = BrandGold,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.ExtraBold
                 )
-
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Displays prominently on 5-Mic Stage & Host Profile",
+                    text = "Select any frame to wear on the Mic Stage & Live Host Profile!",
                     color = Color.LightGray,
                     fontSize = 11.sp,
                     textAlign = TextAlign.Center
                 )
+            }
+        }
 
-                Spacer(modifier = Modifier.height(10.dp))
+        // Frames Catalog
+        AVATAR_FRAMES_CATALOG.forEach { frameItem ->
+            val isOwned = ownedFrames.contains(frameItem.id)
+            val isEquipped = activeFrame == frameItem.id
 
-                Row(
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.04f)),
+                shape = RoundedCornerShape(18.dp),
+                border = BorderStroke(
+                    width = if (isEquipped) 1.5.dp else 1.dp,
+                    color = if (isEquipped) BrandGreen else if (isOwned) BrandGold else Color.White.copy(alpha = 0.12f)
+                ),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(BrandGold.copy(alpha = 0.15f))
-                        .padding(horizontal = 12.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("💎", fontSize = 13.sp)
-                    Spacer(modifier = Modifier.width(5.dp))
-                    Text(
-                        text = "%,d Diamonds".format(frameCost),
-                        color = BrandGold,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.ExtraBold
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Action Button: Buy / Wear / Applied
-                if (!isOwned) {
-                    if (currentDiamonds >= frameCost) {
-                        Button(
-                            onClick = { onBuy(frameId, frameCost) },
-                            colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth().height(44.dp)
+                    // Live Frame Preview with user photo
+                    Box(
+                        modifier = Modifier.size(115.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .border(1.5.dp, BrandGold, CircleShape)
                         ) {
-                            Text(
-                                text = "🛒 Purchase for 25,000 💎",
-                                color = BrandDark,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold
+                            AsyncImage(
+                                model = currentUser.photo.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                                contentDescription = "Avatar",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
                             )
                         }
-                    } else {
-                        Button(
-                            onClick = onGoToRecharge,
-                            colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth().height(44.dp)
-                        ) {
-                            Text(
-                                text = "💎 Need 25,000 Diamonds (Recharge)",
-                                color = Color.White,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+
+                        Image(
+                            painter = painterResource(id = frameItem.drawableRes),
+                            contentDescription = frameItem.name,
+                            modifier = Modifier.size(112.dp),
+                            contentScale = ContentScale.Fit
+                        )
                     }
-                } else {
-                    if (isEquipped) {
-                        Button(
-                            onClick = { onApply(frameId) },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A24)),
-                            border = BorderStroke(1.dp, BrandGreen),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth().height(44.dp)
-                        ) {
-                            Text(
-                                text = "✅ Currently Wearing (Tap to Remove)",
-                                color = BrandGreen,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text(
+                        text = frameItem.name,
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(2.dp))
+
+                    Text(
+                        text = frameItem.description,
+                        color = Color.LightGray,
+                        fontSize = 11.sp,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(BrandGold.copy(alpha = 0.15f))
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("💎", fontSize = 13.sp)
+                        Spacer(modifier = Modifier.width(5.dp))
+                        Text(
+                            text = "%,d Diamonds".format(frameItem.cost),
+                            color = BrandGold,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Action Button: Buy / Wear / Applied
+                    if (!isOwned) {
+                        if (currentDiamonds >= frameItem.cost) {
+                            Button(
+                                onClick = { onBuy(frameItem.id, frameItem.cost) },
+                                colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth().height(44.dp)
+                            ) {
+                                Text(
+                                    text = "🛒 Purchase for %,d 💎".format(frameItem.cost),
+                                    color = BrandDark,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        } else {
+                            Button(
+                                onClick = onGoToRecharge,
+                                colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth().height(44.dp)
+                            ) {
+                                Text(
+                                    text = "💎 Need %,d Diamonds (Recharge)".format(frameItem.cost),
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     } else {
-                        Button(
-                            onClick = { onApply(frameId) },
-                            colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth().height(44.dp)
-                        ) {
-                            Text(
-                                text = "👑 Wear / Apply Frame",
-                                color = BrandDark,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                        if (isEquipped) {
+                            Button(
+                                onClick = { onApply(frameItem.id) },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A24)),
+                                border = BorderStroke(1.dp, BrandGreen),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth().height(44.dp)
+                            ) {
+                                Text(
+                                    text = "✅ Currently Wearing (Tap to Remove)",
+                                    color = BrandGreen,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        } else {
+                            Button(
+                                onClick = { onApply(frameItem.id) },
+                                colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth().height(44.dp)
+                            ) {
+                                Text(
+                                    text = "👑 Wear / Apply Frame",
+                                    color = BrandDark,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     }
                 }

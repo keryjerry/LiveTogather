@@ -1166,4 +1166,97 @@ fun loadMomentsFromPrefs(prefs: SharedPreferences): List<MomentItem> {
     }
 }
 
+data class AvatarFrameItem(
+    val id: String,
+    val name: String,
+    val description: String,
+    val cost: Long = 25000L,
+    val drawableRes: Int
+)
+
+val AVATAR_FRAMES_CATALOG = listOf(
+    AvatarFrameItem(
+        id = "frame_angel_wings",
+        name = "Divine Archangel Wings & Halo",
+        description = "Pure celestial gold feathers with radiant diamond halo",
+        cost = 25000L,
+        drawableRes = R.drawable.frame_angel_wings
+    ),
+    AvatarFrameItem(
+        id = "frame_phoenix_fire",
+        name = "Blazing Phoenix Solar Crown",
+        description = "Fiery mythical wings with molten embers & solar sunburst crown",
+        cost = 25000L,
+        drawableRes = R.drawable.frame_phoenix_fire
+    ),
+    AvatarFrameItem(
+        id = "frame_dark_angel",
+        name = "Dark Gothic Fallen Angel",
+        description = "Obsidian shadow wings with crimson aura & ruby demon tiara",
+        cost = 25000L,
+        drawableRes = R.drawable.frame_dark_angel
+    ),
+    AvatarFrameItem(
+        id = "frame_moon_celestial",
+        name = "Celestial Moon Seraph",
+        description = "Platinum lunar archangel wings with sparkling blue moon halo",
+        cost = 25000L,
+        drawableRes = R.drawable.frame_moon_celestial
+    ),
+    AvatarFrameItem(
+        id = "frame_ice_valkyrie",
+        name = "Ice Valkyrie Frost Crown",
+        description = "Frozen glacial crystal wings with diamond frost tiara & cyan mist",
+        cost = 25000L,
+        drawableRes = R.drawable.frame_ice_valkyrie
+    ),
+    AvatarFrameItem(
+        id = "frame_imperial_gold",
+        name = "Imperial Golden Eagle King",
+        description = "Majestic eagle golden wings with red velvet royal imperial crown",
+        cost = 25000L,
+        drawableRes = R.drawable.frame_imperial_gold
+    ),
+    AvatarFrameItem(
+        id = "frame_rose_seraph",
+        name = "Rose Gold Seraph of Love",
+        description = "Shimmering pink & rose gold feather wings with crystal heart tiara",
+        cost = 25000L,
+        drawableRes = R.drawable.frame_rose_seraph
+    ),
+    AvatarFrameItem(
+        id = "frame_amethyst_seraph",
+        name = "Royal Amethyst Mystic Wings",
+        description = "Deep violet royal seraph wings with glowing amethyst gem tiara",
+        cost = 25000L,
+        drawableRes = R.drawable.frame_amethyst_seraph
+    ),
+    AvatarFrameItem(
+        id = "frame_emerald_valkyrie",
+        name = "Emerald Crystal Valkyrie",
+        description = "Vibrant jade emerald crystal wings with enchanted forest crown",
+        cost = 25000L,
+        drawableRes = R.drawable.frame_emerald_valkyrie
+    ),
+    AvatarFrameItem(
+        id = "frame_sapphire_king",
+        name = "Sapphire Royal Sky King",
+        description = "Electric sapphire blue archangel wings with regal azure crown",
+        cost = 25000L,
+        drawableRes = R.drawable.frame_sapphire_king
+    ),
+    AvatarFrameItem(
+        id = "luxury_host_frame",
+        name = "Imperial Rose & Gold VIP Frame",
+        description = "Original luxury golden floral wreath with ruby accents",
+        cost = 25000L,
+        drawableRes = R.drawable.luxury_host_frame
+    )
+)
+
+fun getAvatarFrameDrawable(frameId: String): Int {
+    return AVATAR_FRAMES_CATALOG.find { it.id == frameId }?.drawableRes ?: R.drawable.frame_angel_wings
+}
+
+
 
