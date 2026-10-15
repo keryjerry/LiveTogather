@@ -103,7 +103,8 @@ class LoginActivity : ComponentActivity() {
             FacebookSdk.setApplicationId(getString(R.string.facebook_app_id))
             FacebookSdk.setClientToken(getString(R.string.facebook_client_token))
             FacebookSdk.sdkInitialize(applicationContext)
-            LoginManager.getInstance().setLoginBehavior(LoginBehavior.NATIVE_WITH_FALLBACK)
+            // Use WEB_ONLY to bypass old/outdated device Facebook Katana apps that fail TLS/SSL validation
+            LoginManager.getInstance().setLoginBehavior(LoginBehavior.WEB_ONLY)
         } catch (e: Exception) {
             android.util.Log.e("LoginActivity", "FacebookSdk init error", e)
         }
