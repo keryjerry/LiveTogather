@@ -218,7 +218,12 @@ data class UserProfile(
     // Daily swipe limits & App Launch 7-Day Host Trial
     val dailySwipeCount: Int = 0,
     val lastSwipeDate: String = "",
-    val hostTrialStartDate: Long = 0L
+    val hostTrialStartDate: Long = 0L,
+
+    // Diamond Economy & Avatar Frames System
+    val diamonds: Long = 0L,
+    val activeFrame: String = "",
+    val ownedFrames: List<String> = emptyList()
 ) {
     fun isPaidSubscriber(): Boolean {
         return plan.isNotBlank() && !plan.equals("Free", ignoreCase = true)
@@ -256,6 +261,37 @@ data class FollowerRecord(
     val name: String = "",
     val photo: String = "",
     val timestamp: Long = System.currentTimeMillis()
+)
+
+data class GiftEvent(
+    val id: String = "",
+    val roomId: String = "",
+    val senderId: String = "",
+    val senderName: String = "",
+    val senderPhoto: String = "",
+    val giftId: String = "",
+    val giftName: String = "",
+    val giftEmoji: String = "🎁",
+    val cost: Long = 0L,
+    val animationType: String = "car", // "car", "rocket", "dragon", "roses", "castle"
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+data class VideoGiftItem(
+    val id: String,
+    val name: String,
+    val emoji: String,
+    val cost: Long,
+    val animationType: String,
+    val description: String
+)
+
+val VIDEO_GIFT_CATALOG = listOf(
+    VideoGiftItem("rose_storm", "Rose Storm", "🌹", 5000L, "roses", "Romantic cascading rose petals shower"),
+    VideoGiftItem("supercar", "Cyber Supercar", "🏎️", 10000L, "car", "Ultra luxury roaring sports car drift"),
+    VideoGiftItem("rocket", "Galactic Rocket", "🚀", 20000L, "rocket", "Cosmic space blastoff across the sky"),
+    VideoGiftItem("golden_palace", "Imperial Palace", "🏰", 35000L, "castle", "Majestic golden palace fireworks"),
+    VideoGiftItem("dragon", "Golden Dragon", "🐉", 50000L, "dragon", "Legendary flaming golden dragon roar")
 )
 
 data class SwipeRecord(

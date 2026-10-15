@@ -16,9 +16,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -2319,6 +2321,47 @@ fun AudioHangoutRoomDialog(
     var entranceNotificationUser by remember { mutableStateOf<String?>(null) }
     val knownMemberIds = remember { mutableStateListOf<String>() }
 
+    // Diamond Wallet & Equipped Frame States
+    var userDiamonds by remember { mutableStateOf(currentUser.diamonds) }
+    var activeUserFrame by remember { mutableStateOf(currentUser.activeFrame) }
+    var userOwnedFrames by remember { mutableStateOf(currentUser.ownedFrames) }
+    var showGiftStoreDialog by remember { mutableStateOf(false) }
+    var activeGiftEvent by remember { mutableStateOf<GiftEvent?>(null) }
+
+    // Real-time listener for current user diamonds and active frame
+    LaunchedEffect(currentUser.uid) {
+        if (currentUser.uid.isNotBlank()) {
+            db.collection("users").document(currentUser.uid)
+                .addSnapshotListener { snap, _ ->
+                    if (snap != null && snap.exists()) {
+                        userDiamonds = snap.getLong("diamonds") ?: 0L
+                        activeUserFrame = snap.getString("activeFrame") ?: ""
+                        @Suppress("UNCHECKED_CAST")
+                        userOwnedFrames = (snap.get("ownedFrames") as? List<String>) ?: emptyList()
+                    }
+                }
+        }
+    }
+
+    // Real-time listener for room video gift events
+    LaunchedEffect(room.id) {
+        db.collection("rooms").document(room.id)
+            .collection("gift_events")
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .limit(1)
+            .addSnapshotListener { snapshot, _ ->
+                if (snapshot != null && !snapshot.isEmpty) {
+                    val latest = snapshot.documents[0].toObject(GiftEvent::class.java)
+                    if (latest != null) {
+                        val now = System.currentTimeMillis()
+                        if (now - latest.timestamp < 15000L && latest.id != activeGiftEvent?.id) {
+                            activeGiftEvent = latest
+                        }
+                    }
+                }
+            }
+    }
+
     // 5-Mic Live Stage States
     val micSeats = remember { mutableStateListOf<MicSeat>() }
     var selectedSeatForAdmin by remember { mutableStateOf<MicSeat?>(null) }
@@ -3480,6 +3523,8 @@ fun AudioHangoutRoomDialog(
                         currentUserId = currentUser.uid,
                         isHost = isUserHost,
                         isLocalTalking = isLocalTalking,
+                        allProfiles = allProfiles,
+                        userActiveFrame = activeUserFrame,
                         onSeatClick = { seat ->
                             if (isUserHost) {
                                 selectedSeatForAdmin = seat
@@ -3763,6 +3808,42 @@ fun AudioHangoutRoomDialog(
                             }
                         }
                     }
+                }
+
+                // -------------------------------------------------------------
+                // FLOATING LUXURY GIFT BUTTON (Directly above the Send button in bottom-right)
+                // -------------------------------------------------------------
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(bottom = 12.dp, end = 12.dp)
+                        .size(46.dp)
+                        .clip(CircleShape)
+                        .background(
+                            Brush.sweepGradient(
+                                listOf(
+                                    Color(0xFFFF1744),
+                                    Color(0xFFFFB300),
+                                    Color(0xFFFF4081),
+                                    Color(0xFFFF1744)
+                                )
+                            )
+                        )
+                        .border(1.5.dp, BrandGold, CircleShape)
+                        .clickable { showGiftStoreDialog = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("🎁", fontSize = 22.sp)
+                }
+
+                // -------------------------------------------------------------
+                // FULL-SCREEN TRANSPARENT VIDEO GIFT BROADCAST ANIMATION
+                // -------------------------------------------------------------
+                activeGiftEvent?.let { giftEvent ->
+                    FullScreenGiftAnimationOverlay(
+                        giftEvent = giftEvent,
+                        onDismiss = { activeGiftEvent = null }
+                    )
                 }
             }
         }
@@ -4124,6 +4205,76 @@ fun AudioHangoutRoomDialog(
                         Toast.makeText(context, "You stepped down from the stage", Toast.LENGTH_SHORT).show()
                     }
                     selectedOwnSeatForControl = null
+                }
+            )
+        }
+
+        // 7. Luxury Gift & Store Dialog
+        if (showGiftStoreDialog) {
+            GiftStoreDialog(
+                currentDiamonds = userDiamonds,
+                activeFrame = activeUserFrame,
+                ownedFrames = userOwnedFrames,
+                currentUser = currentUser,
+                roomId = room.id,
+                onDismiss = { showGiftStoreDialog = false },
+                onDiamondsRecharged = { addedDiamonds ->
+                    val newTotal = userDiamonds + addedDiamonds
+                    db.collection("users").document(currentUser.uid).update("diamonds", newTotal)
+                    userDiamonds = newTotal
+                    Toast.makeText(context, "🎉 Recharged $addedDiamonds Diamonds!", Toast.LENGTH_SHORT).show()
+                },
+                onBuyFrame = { frameId, cost ->
+                    if (userDiamonds >= cost) {
+                        val newDiamonds = userDiamonds - cost
+                        val newOwned = (userOwnedFrames + frameId).distinct()
+                        db.collection("users").document(currentUser.uid).update(
+                            mapOf(
+                                "diamonds" to newDiamonds,
+                                "ownedFrames" to newOwned,
+                                "activeFrame" to frameId
+                            )
+                        )
+                        userDiamonds = newDiamonds
+                        userOwnedFrames = newOwned
+                        activeUserFrame = frameId
+                        Toast.makeText(context, "👑 Frame Purchased & Equipped!", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "Not enough diamonds! Please recharge.", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onApplyFrame = { frameId ->
+                    val targetFrame = if (activeUserFrame == frameId) "" else frameId
+                    db.collection("users").document(currentUser.uid).update("activeFrame", targetFrame)
+                    activeUserFrame = targetFrame
+                    Toast.makeText(context, if (targetFrame.isEmpty()) "Frame removed" else "👑 Frame equipped!", Toast.LENGTH_SHORT).show()
+                },
+                onSendGift = { giftItem ->
+                    if (userDiamonds >= giftItem.cost) {
+                        val newDiamonds = userDiamonds - giftItem.cost
+                        db.collection("users").document(currentUser.uid).update("diamonds", newDiamonds)
+                        userDiamonds = newDiamonds
+                        val giftEvent = GiftEvent(
+                            id = UUID.randomUUID().toString(),
+                            roomId = room.id,
+                            senderId = currentUser.uid,
+                            senderName = currentUser.name,
+                            senderPhoto = currentUser.photo,
+                            giftId = giftItem.id,
+                            giftName = giftItem.name,
+                            giftEmoji = giftItem.emoji,
+                            cost = giftItem.cost,
+                            animationType = giftItem.animationType,
+                            timestamp = System.currentTimeMillis()
+                        )
+                        activeGiftEvent = giftEvent
+                        db.collection("rooms").document(room.id)
+                            .collection("gift_events").document(giftEvent.id)
+                            .set(giftEvent)
+                        showGiftStoreDialog = false
+                    } else {
+                        Toast.makeText(context, "Not enough diamonds to send ${giftItem.name}! Please recharge.", Toast.LENGTH_SHORT).show()
+                    }
                 }
             )
         }
@@ -4624,6 +4775,8 @@ fun FiveMicStageSection(
     currentUserId: String,
     isHost: Boolean,
     isLocalTalking: Boolean,
+    allProfiles: List<UserProfile> = emptyList(),
+    userActiveFrame: String = "",
     onSeatClick: (MicSeat) -> Unit,
     onQuickToggleMute: () -> Unit,
     onQuickLeaveStage: () -> Unit
@@ -4801,6 +4954,8 @@ fun FiveMicStageSection(
                         isCurrentSelf = seat.uid.isNotEmpty() && seat.uid == currentUserId,
                         isLocalTalking = isLocalTalking,
                         isHost = isHost,
+                        allProfiles = allProfiles,
+                        userActiveFrame = userActiveFrame,
                         onClick = { onSeatClick(seat) }
                     )
                 }
@@ -4815,6 +4970,8 @@ fun MicSeatView(
     isCurrentSelf: Boolean,
     isLocalTalking: Boolean,
     isHost: Boolean,
+    allProfiles: List<UserProfile> = emptyList(),
+    userActiveFrame: String = "",
     onClick: () -> Unit
 ) {
     val isSpeaking = if (isCurrentSelf) (isLocalTalking && !seat.isMuted) else (seat.isTalking && !seat.isMuted)
@@ -4826,15 +4983,24 @@ fun MicSeatView(
         label = "scale_${seat.seatIndex}"
     )
 
+    val seatOccupantProfile = if (seat.uid.isNotEmpty()) allProfiles.find { it.uid == seat.uid } else null
+    val hasEquippedFrame = (isCurrentSelf && userActiveFrame.isNotBlank()) ||
+            (seatOccupantProfile?.activeFrame?.isNotBlank() == true) ||
+            (seat.seatIndex == 0)
+    val shouldShowFrame = seat.uid.isNotEmpty() && hasEquippedFrame
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .clip(RoundedCornerShape(10.dp))
             .clickable { onClick() }
-            .padding(2.dp)
+            .padding(horizontal = 2.dp, vertical = 2.dp)
     ) {
+        val seatBoxSize = if (shouldShowFrame) 54.dp else 46.dp
+        val avatarSize = if (shouldShowFrame) 40.dp else 38.dp
+
         Box(
-            modifier = Modifier.size(46.dp),
+            modifier = Modifier.size(seatBoxSize),
             contentAlignment = Alignment.Center
         ) {
             // Pulsing speech ring animation
@@ -4853,7 +5019,7 @@ fun MicSeatView(
                 // Occupied Avatar
                 Box(
                     modifier = Modifier
-                        .size(38.dp)
+                        .size(avatarSize)
                         .clip(CircleShape)
                         .border(
                             width = if (isSpeaking) 2.dp else 1.5.dp,
@@ -4869,13 +5035,13 @@ fun MicSeatView(
                     )
                 }
 
-                // Luxury Floral Frame Overlay for Seat 0 (Host)
-                if (seat.seatIndex == 0) {
+                // Luxury Floral Frame Overlay (Wide, Bold, Prominent!)
+                if (shouldShowFrame) {
                     Image(
                         painter = painterResource(id = R.drawable.luxury_host_frame),
-                        contentDescription = "Host Luxury Frame",
+                        contentDescription = "Luxury Avatar Frame",
                         modifier = Modifier
-                            .size(68.dp)
+                            .size(80.dp)
                             .align(Alignment.Center),
                         contentScale = ContentScale.Fit
                     )
@@ -5347,5 +5513,844 @@ fun SpeakerSeatControlDialog(
         }
     }
 }
+
+// -------------------------------------------------------------
+// 9. LUXURY GIFT & DIAMOND STORE DIALOG
+// -------------------------------------------------------------
+@Composable
+fun GiftStoreDialog(
+    currentDiamonds: Long,
+    activeFrame: String,
+    ownedFrames: List<String>,
+    currentUser: UserProfile,
+    roomId: String,
+    onDismiss: () -> Unit,
+    onDiamondsRecharged: (Long) -> Unit,
+    onBuyFrame: (frameId: String, cost: Long) -> Unit,
+    onApplyFrame: (frameId: String) -> Unit,
+    onSendGift: (VideoGiftItem) -> Unit
+) {
+    var selectedTab by remember { mutableStateOf(0) } // 0: Diamonds, 1: Frames, 2: Video Gifts
+    val context = LocalContext.current
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = BrandCard.copy(alpha = 0.98f)),
+            shape = RoundedCornerShape(22.dp),
+            border = BorderStroke(1.5.dp, BrandGold.copy(alpha = 0.6f)),
+            modifier = Modifier
+                .fillMaxWidth(0.94f)
+                .heightIn(max = 580.dp)
+                .padding(vertical = 12.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("🎁", fontSize = 20.sp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Gift & VIP Store",
+                            color = Color.White,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Diamond balance chip
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(Color(0xFF2B1D0E))
+                                .border(1.dp, BrandGold, RoundedCornerShape(50))
+                                .clickable { selectedTab = 0 }
+                                .padding(horizontal = 9.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("💎", fontSize = 12.sp)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "$currentDiamonds",
+                                color = BrandGold,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        IconButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Close",
+                                tint = Color.LightGray,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Navigation Tabs
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.White.copy(alpha = 0.05f))
+                        .padding(3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    val tabs = listOf("💎 Diamonds", "👑 Avatar Frames", "🎬 Video Gifts")
+                    tabs.forEachIndexed { index, title ->
+                        val isSelected = selectedTab == index
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(
+                                    if (isSelected) Brush.horizontalGradient(listOf(BrandCoral, BrandOrange))
+                                    else Brush.horizontalGradient(listOf(Color.Transparent, Color.Transparent))
+                                )
+                                .clickable { selectedTab = index }
+                                .padding(vertical = 7.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = title,
+                                color = if (isSelected) Color.White else Color.Gray,
+                                fontSize = 11.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Tab Content
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                ) {
+                    when (selectedTab) {
+                        0 -> DiamondsRechargeSection(
+                            onRecharge = { diamonds -> onDiamondsRecharged(diamonds) }
+                        )
+                        1 -> AvatarFramesSection(
+                            currentDiamonds = currentDiamonds,
+                            activeFrame = activeFrame,
+                            ownedFrames = ownedFrames,
+                            currentUser = currentUser,
+                            onBuy = { frameId, cost -> onBuyFrame(frameId, cost) },
+                            onApply = { frameId -> onApplyFrame(frameId) },
+                            onGoToRecharge = { selectedTab = 0 }
+                        )
+                        2 -> VideoGiftsSection(
+                            currentDiamonds = currentDiamonds,
+                            onSendGift = { gift -> onSendGift(gift) },
+                            onGoToRecharge = { selectedTab = 0 }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// TAB 1: DIAMONDS RECHARGE
+// -------------------------------------------------------------
+@Composable
+private fun DiamondsRechargeSection(
+    onRecharge: (Long) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        // Special Featured Offer Banner (User Request: Rs 149 = 50,000 Diamonds)
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF26190B)),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.5.dp, BrandGold),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(BrandGold)
+                            .padding(horizontal = 7.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "🔥 BEST VALUE OFFER",
+                            color = BrandDark,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                    Text(
+                        text = "Save 60%",
+                        color = BrandGreen,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("💎", fontSize = 22.sp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "50,000 Diamonds",
+                                color = BrandGold,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
+                        Text(
+                            text = "Special Room Launch Promo Pack",
+                            color = Color.LightGray,
+                            fontSize = 11.sp
+                        )
+                    }
+
+                    Button(
+                        onClick = { onRecharge(50000L) },
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(
+                            text = "₹149",
+                            color = BrandDark,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                }
+            }
+        }
+
+        Text(
+            text = "More Diamond Packs",
+            color = Color.White,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+
+        val packs = listOf(
+            Triple(15000L, "₹49", "Starter Pack 💎"),
+            Triple(120000L, "₹299", "Super Value 💎"),
+            Triple(300000L, "₹599", "Royal VIP Pack 💎")
+        )
+
+        packs.forEach { (diamonds, price, label) ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.White.copy(alpha = 0.05f))
+                    .border(1.dp, BrandBorder.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("💎", fontSize = 16.sp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = "%,d Diamonds".format(diamonds),
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = label,
+                            color = Color.Gray,
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+
+                Button(
+                    onClick = { onRecharge(diamonds) },
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = price,
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = "🔒 Secure 1-click mock payment • Instant real-time Firestore sync",
+            color = Color.Gray,
+            fontSize = 10.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+// -------------------------------------------------------------
+// TAB 2: AVATAR FRAMES STORE (Normal frame: 25k Diamonds)
+// -------------------------------------------------------------
+@Composable
+private fun AvatarFramesSection(
+    currentDiamonds: Long,
+    activeFrame: String,
+    ownedFrames: List<String>,
+    currentUser: UserProfile,
+    onBuy: (String, Long) -> Unit,
+    onApply: (String) -> Unit,
+    onGoToRecharge: () -> Unit
+) {
+    val frameId = "luxury_host_frame"
+    val frameCost = 25000L
+    val isOwned = ownedFrames.contains(frameId)
+    val isEquipped = activeFrame == frameId
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.04f)),
+            shape = RoundedCornerShape(18.dp),
+            border = BorderStroke(1.dp, if (isEquipped) BrandGreen else BrandGold.copy(alpha = 0.6f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Live Frame Preview with user photo
+                Box(
+                    modifier = Modifier.size(110.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(CircleShape)
+                            .border(1.5.dp, BrandGold, CircleShape)
+                    ) {
+                        AsyncImage(
+                            model = currentUser.photo.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                            contentDescription = "Avatar",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    }
+
+                    Image(
+                        painter = painterResource(id = R.drawable.luxury_host_frame),
+                        contentDescription = "Luxury Host Frame",
+                        modifier = Modifier.size(105.dp),
+                        contentScale = ContentScale.Fit
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Text(
+                    text = "Imperial Rose & Gold VIP Frame",
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Text(
+                    text = "Displays prominently on 5-Mic Stage & Host Profile",
+                    color = Color.LightGray,
+                    fontSize = 11.sp,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(BrandGold.copy(alpha = 0.15f))
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("💎", fontSize = 13.sp)
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Text(
+                        text = "%,d Diamonds".format(frameCost),
+                        color = BrandGold,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Action Button: Buy / Wear / Applied
+                if (!isOwned) {
+                    if (currentDiamonds >= frameCost) {
+                        Button(
+                            onClick = { onBuy(frameId, frameCost) },
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth().height(44.dp)
+                        ) {
+                            Text(
+                                text = "🛒 Purchase for 25,000 💎",
+                                color = BrandDark,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    } else {
+                        Button(
+                            onClick = onGoToRecharge,
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth().height(44.dp)
+                        ) {
+                            Text(
+                                text = "💎 Need 25,000 Diamonds (Recharge)",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                } else {
+                    if (isEquipped) {
+                        Button(
+                            onClick = { onApply(frameId) },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A24)),
+                            border = BorderStroke(1.dp, BrandGreen),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth().height(44.dp)
+                        ) {
+                            Text(
+                                text = "✅ Currently Wearing (Tap to Remove)",
+                                color = BrandGreen,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    } else {
+                        Button(
+                            onClick = { onApply(frameId) },
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth().height(44.dp)
+                        ) {
+                            Text(
+                                text = "👑 Wear / Apply Frame",
+                                color = BrandDark,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// TAB 3: VIDEO GIFTS CATALOG
+// -------------------------------------------------------------
+@Composable
+private fun VideoGiftsSection(
+    currentDiamonds: Long,
+    onSendGift: (VideoGiftItem) -> Unit,
+    onGoToRecharge: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        VIDEO_GIFT_CATALOG.forEach { gift ->
+            val canAfford = currentDiamonds >= gift.cost
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color.White.copy(alpha = 0.05f))
+                    .border(1.dp, BrandBorder.copy(alpha = 0.6f), RoundedCornerShape(14.dp))
+                    .padding(10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(46.dp)
+                            .clip(CircleShape)
+                            .background(BrandGold.copy(alpha = 0.12f))
+                            .border(1.dp, BrandGold.copy(alpha = 0.4f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(gift.emoji, fontSize = 24.sp)
+                    }
+
+                    Spacer(modifier = Modifier.width(10.dp))
+
+                    Column {
+                        Text(
+                            text = gift.name,
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = gift.description,
+                            color = Color.Gray,
+                            fontSize = 10.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("💎", fontSize = 11.sp)
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = "%,d".format(gift.cost),
+                                color = BrandGold,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                if (canAfford) {
+                    Button(
+                        onClick = { onSendGift(gift) },
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = "Send 🎁",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                } else {
+                    Button(
+                        onClick = onGoToRecharge,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.1f)),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = "Recharge",
+                            color = Color.LightGray,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// 10. FULL-SCREEN TRANSPARENT VIDEO GIFT BROADCAST ANIMATION
+// -------------------------------------------------------------
+@Composable
+fun FullScreenGiftAnimationOverlay(
+    giftEvent: GiftEvent,
+    onDismiss: () -> Unit
+) {
+    // Auto-dismiss after 4.5 seconds
+    LaunchedEffect(giftEvent.id) {
+        delay(4500)
+        onDismiss()
+    }
+
+    val infiniteTransition = rememberInfiniteTransition(label = "gift_anim")
+
+    // Dynamic travel animation values
+    val carOffset by infiniteTransition.animateFloat(
+        initialValue = -350f,
+        targetValue = 350f,
+        animationSpec = infiniteRepeatable(tween(2200, easing = LinearEasing), RepeatMode.Restart),
+        label = "car_offset"
+    )
+
+    val rocketOffsetY by infiniteTransition.animateFloat(
+        initialValue = 300f,
+        targetValue = -350f,
+        animationSpec = infiniteRepeatable(tween(2500, easing = FastOutSlowInEasing), RepeatMode.Restart),
+        label = "rocket_offset"
+    )
+
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 0.85f,
+        targetValue = 1.25f,
+        animationSpec = infiniteRepeatable(tween(700, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "dragon_pulse"
+    )
+
+    val rotateAngle by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(4000, easing = LinearEasing), RepeatMode.Restart),
+        label = "rotate_ring"
+    )
+
+    var overlayAlpha by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(giftEvent.id) {
+        overlayAlpha = 1f
+        delay(3800)
+        overlayAlpha = 0f
+        delay(450)
+        onDismiss()
+    }
+
+    val animatedAlpha by animateFloatAsState(
+        targetValue = overlayAlpha,
+        animationSpec = tween(350),
+        label = "overlay_alpha"
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer(alpha = animatedAlpha)
+            .background(Color.Transparent)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+            // 1. Top Sender Announcement Banner
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 70.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(Color.Black.copy(alpha = 0.82f))
+                        .border(1.5.dp, BrandGold, RoundedCornerShape(50))
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .border(1.dp, BrandGold, CircleShape)
+                    ) {
+                        AsyncImage(
+                            model = giftEvent.senderPhoto.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                            contentDescription = giftEvent.senderName,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Column {
+                        Text(
+                            text = "👑 ${giftEvent.senderName} sent ${giftEvent.giftName} ${giftEvent.giftEmoji}!",
+                            color = BrandGold,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Text(
+                            text = "Room-Wide Broadcast • %,d 💎".format(giftEvent.cost),
+                            color = Color.White,
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+            }
+
+            // 2. Full-Screen Transparent Animation Visuals
+            when (giftEvent.animationType) {
+                "car" -> {
+                    // Cyber Supercar Drifting across the screen
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .offset(x = carOffset.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("🏎️💨", fontSize = 72.sp)
+                            Text(
+                                text = "⚡ CYBER SUPERCAR DRIFT! ⚡",
+                                color = BrandGold,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
+                    }
+                }
+
+                "rocket" -> {
+                    // Galactic Rocket Launching upwards
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .offset(y = rocketOffsetY.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("🚀", fontSize = 76.sp)
+                            Text("🔥", fontSize = 28.sp)
+                            Text(
+                                text = "✨ GALACTIC ROCKET BLASTOFF! ✨",
+                                color = BrandCyan,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
+                    }
+                }
+
+                "dragon" -> {
+                    // Golden Flaming Dragon with Rotating Aura
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.size(240.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(200.dp)
+                                .graphicsLayer(rotationZ = rotateAngle)
+                                .border(2.dp, Brush.sweepGradient(listOf(BrandGold, Color.Transparent, BrandCoral, BrandGold)), CircleShape)
+                        )
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.graphicsLayer(scaleX = pulseScale, scaleY = pulseScale)
+                        ) {
+                            Text("🐉", fontSize = 80.sp)
+                            Text(
+                                text = "🔥 GOLDEN DRAGON ROAR! 🔥",
+                                color = BrandGold,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
+                    }
+                }
+
+                "roses" -> {
+                    // Rose Storm Cascading shower
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.graphicsLayer(scaleX = pulseScale, scaleY = pulseScale)
+                    ) {
+                        Text("🌹 🌹 🌹", fontSize = 48.sp)
+                        Text("🌹 🌹 🌹 🌹", fontSize = 42.sp)
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = "💖 ROSE PETAL SHOWER! 💖",
+                            color = Color(0xFFFF4081),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                }
+
+                "castle" -> {
+                    // Imperial Palace Fireworks
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.graphicsLayer(scaleX = pulseScale, scaleY = pulseScale)
+                    ) {
+                        Text("🎆 🏰 🎆", fontSize = 64.sp)
+                        Text(
+                            text = "👑 IMPERIAL PALACE CELEBRATION! 👑",
+                            color = BrandGold,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                }
+
+                else -> {
+                    // Default luxury gift presentation
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.graphicsLayer(scaleX = pulseScale, scaleY = pulseScale)
+                    ) {
+                        Text(giftEvent.giftEmoji, fontSize = 72.sp)
+                        Text(
+                            text = "✨ ${giftEvent.giftName.uppercase()}! ✨",
+                            color = BrandGold,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                }
+            }
+        }
+    }
+
 
 
