@@ -1,9 +1,15 @@
 @file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 package com.devil.livetogather
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
 import android.net.Uri
 import android.widget.Toast
+import androidx.core.content.ContextCompat
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -40,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -60,6 +67,7 @@ import coil.compose.AsyncImage
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -1844,6 +1852,29 @@ fun AudioHangoutRoomDialog(
     var entranceNotificationUser by remember { mutableStateOf<String?>(null) }
     val knownMemberIds = remember { mutableStateListOf<String>() }
 
+    // 5-Mic Live Stage States
+    val micSeats = remember { mutableStateListOf<MicSeat>() }
+    var selectedSeatForAdmin by remember { mutableStateOf<MicSeat?>(null) }
+    var showInviteListenersDialog by remember { mutableStateOf<MicSeat?>(null) }
+    var selectedOwnSeatForControl by remember { mutableStateOf<MicSeat?>(null) }
+    var isLocalTalking by remember { mutableStateOf(false) }
+    var pendingSeatToJoin by remember { mutableStateOf<MicSeat?>(null) }
+
+    val recordAudioPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            pendingSeatToJoin?.let { seat ->
+                joinMicSeat(db, room.id, seat.seatIndex, currentUser, micSeats)
+                Toast.makeText(context, "You are now on Mic ${seat.seatIndex + 1}! 🎙️", Toast.LENGTH_SHORT).show()
+                pendingSeatToJoin = null
+            }
+        } else {
+            Toast.makeText(context, "Microphone permission is required to speak on stage", Toast.LENGTH_SHORT).show()
+            pendingSeatToJoin = null
+        }
+    }
+
     LaunchedEffect(activeMembers.size) {
         if (knownMemberIds.isEmpty()) {
             knownMemberIds.addAll(activeMembers.map { it.uid })
@@ -2023,6 +2054,171 @@ fun AudioHangoutRoomDialog(
         onDispose {
             commentsListener.remove()
         }
+    }
+
+    // 4. Real-Time 5-Mic Seats Listener (rooms/{roomId}/mic_seats)
+    DisposableEffect(room.id, isUserHost, targetHostId, hostName, hostPhoto) {
+        val micSeatsRef = db.collection("rooms").document(room.id).collection("mic_seats")
+        val micListener = micSeatsRef.orderBy("seatIndex", Query.Direction.ASCENDING)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) return@addSnapshotListener
+                if (snapshot != null) {
+                    if (snapshot.isEmpty) {
+                        // Seed default 5 seats in Firestore
+                        val defaultSeats = listOf(
+                            MicSeat(seatIndex = 0, label = "Host 👑", uid = targetHostId, name = hostName, photo = hostPhoto, role = "host"),
+                            MicSeat(seatIndex = 1, label = "Mic 2", uid = "", name = "", photo = "", role = "speaker"),
+                            MicSeat(seatIndex = 2, label = "Mic 3", uid = "", name = "", photo = "", role = "speaker"),
+                            MicSeat(seatIndex = 3, label = "Mic 4", uid = "", name = "", photo = "", role = "speaker"),
+                            MicSeat(seatIndex = 4, label = "Mic 5", uid = "", name = "", photo = "", role = "speaker")
+                        )
+                        defaultSeats.forEach { s ->
+                            micSeatsRef.document(s.seatIndex.toString()).set(s)
+                        }
+                    } else {
+                        val seats = snapshot.documents.mapNotNull { it.toObject(MicSeat::class.java) }
+                        val fullList = (0..4).map { idx ->
+                            val existing = seats.find { it.seatIndex == idx }
+                            if (existing != null) {
+                                if (idx == 0 && existing.uid.isEmpty() && targetHostId.isNotEmpty()) {
+                                    existing.copy(uid = targetHostId, name = hostName, photo = hostPhoto, role = "host", label = "Host 👑")
+                                } else {
+                                    existing
+                                }
+                            } else {
+                                if (idx == 0) {
+                                    MicSeat(seatIndex = 0, label = "Host 👑", uid = targetHostId, name = hostName, photo = hostPhoto, role = "host")
+                                } else {
+                                    MicSeat(seatIndex = idx, label = "Mic ${idx + 1}", uid = "", name = "", photo = "", role = "speaker")
+                                }
+                            }
+                        }
+                        micSeats.clear()
+                        micSeats.addAll(fullList)
+                    }
+                }
+            }
+
+        onDispose {
+            micListener.remove()
+            val mySeat = micSeats.find { it.uid == currentUser.uid && it.role != "host" }
+            if (mySeat != null) {
+                micSeatsRef.document(mySeat.seatIndex.toString()).set(
+                    MicSeat(
+                        seatIndex = mySeat.seatIndex,
+                        label = "Mic ${mySeat.seatIndex + 1}",
+                        uid = "",
+                        name = "",
+                        photo = "",
+                        isMuted = false,
+                        isLocked = mySeat.isLocked,
+                        isTalking = false,
+                        role = "speaker"
+                    )
+                )
+            }
+        }
+    }
+
+    // Host Seat 0 Auto-Assignment
+    LaunchedEffect(isUserHost, targetHostId, micSeats.size) {
+        if (isUserHost && micSeats.isNotEmpty()) {
+            val seat0 = micSeats.firstOrNull { it.seatIndex == 0 }
+            if (seat0 != null && (seat0.uid != currentUser.uid || seat0.name != currentUser.name || seat0.photo != currentUser.photo)) {
+                db.collection("rooms").document(room.id).collection("mic_seats").document("0")
+                    .set(
+                        MicSeat(
+                            seatIndex = 0,
+                            label = "Host 👑",
+                            uid = currentUser.uid,
+                            name = currentUser.name,
+                            photo = currentUser.photo,
+                            isMuted = false,
+                            isLocked = false,
+                            isTalking = false,
+                            role = "host"
+                        )
+                    )
+            }
+        }
+    }
+
+    // AudioRecord amplitude speech capture when current user is seated and unmuted
+    val myCurrentMicSeat = micSeats.find { it.uid == currentUser.uid }
+    val isCurrentUserActiveSpeaker = myCurrentMicSeat != null && !myCurrentMicSeat.isMuted
+
+    LaunchedEffect(isCurrentUserActiveSpeaker) {
+        if (!isCurrentUserActiveSpeaker) {
+            isLocalTalking = false
+            return@LaunchedEffect
+        }
+
+        val hasAudioPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        if (!hasAudioPerm) {
+            isLocalTalking = false
+            return@LaunchedEffect
+        }
+
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val sampleRate = 16000
+            val channelConfig = AudioFormat.CHANNEL_IN_MONO
+            val audioFormat = AudioFormat.ENCODING_PCM_16BIT
+            val minBuf = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat).coerceAtLeast(2048)
+            var audioRecord: AudioRecord? = null
+
+            try {
+                audioRecord = AudioRecord(
+                    MediaRecorder.AudioSource.MIC,
+                    sampleRate,
+                    channelConfig,
+                    audioFormat,
+                    minBuf
+                )
+                if (audioRecord.state != AudioRecord.STATE_INITIALIZED) {
+                    audioRecord.release()
+                    return@withContext
+                }
+                audioRecord.startRecording()
+                val pcmBuffer = ShortArray(1024)
+
+                while (isActive && isCurrentUserActiveSpeaker) {
+                    val read = audioRecord.read(pcmBuffer, 0, pcmBuffer.size)
+                    if (read > 0) {
+                        var maxAmp = 0
+                        for (i in 0 until read) {
+                            val v = Math.abs(pcmBuffer[i].toInt())
+                            if (v > maxAmp) maxAmp = v
+                        }
+                        val talking = maxAmp > 1200
+                        if (isLocalTalking != talking) {
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                isLocalTalking = talking
+                            }
+                        }
+                    }
+                    kotlinx.coroutines.delay(120)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                try {
+                    audioRecord?.stop()
+                    audioRecord?.release()
+                } catch (e: Exception) {}
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    isLocalTalking = false
+                }
+            }
+        }
+    }
+
+    // Sync speech detection to Firestore for remote participants
+    LaunchedEffect(isLocalTalking, myCurrentMicSeat?.seatIndex) {
+        val seatIdx = myCurrentMicSeat?.seatIndex ?: return@LaunchedEffect
+        try {
+            db.collection("rooms").document(room.id).collection("mic_seats").document(seatIdx.toString())
+                .update("isTalking", isLocalTalking)
+        } catch (e: Exception) {}
     }
 
     // Host pulse animation
@@ -2691,6 +2887,64 @@ fun AudioHangoutRoomDialog(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     // ---------------------------------------------------------
+                    // 2.5 REAL 5-MIC LIVE AUDIO STAGE (DIRECTLY BENEATH EQUALIZER)
+                    // ---------------------------------------------------------
+                    FiveMicStageSection(
+                        seats = if (micSeats.isNotEmpty()) micSeats else listOf(
+                            MicSeat(seatIndex = 0, label = "Host 👑", uid = targetHostId, name = hostName, photo = hostPhoto, role = "host"),
+                            MicSeat(seatIndex = 1, label = "Mic 2", uid = "", name = "", photo = "", role = "speaker"),
+                            MicSeat(seatIndex = 2, label = "Mic 3", uid = "", name = "", photo = "", role = "speaker"),
+                            MicSeat(seatIndex = 3, label = "Mic 4", uid = "", name = "", photo = "", role = "speaker"),
+                            MicSeat(seatIndex = 4, label = "Mic 5", uid = "", name = "", photo = "", role = "speaker")
+                        ),
+                        currentUserId = currentUser.uid,
+                        isHost = isUserHost,
+                        isLocalTalking = isLocalTalking,
+                        onSeatClick = { seat ->
+                            if (isUserHost) {
+                                selectedSeatForAdmin = seat
+                            } else {
+                                if (seat.uid == currentUser.uid) {
+                                    selectedOwnSeatForControl = seat
+                                } else if (seat.uid.isNotEmpty()) {
+                                    selectedMemberForSheet = RoomMember(
+                                        uid = seat.uid,
+                                        name = seat.name,
+                                        photoUrl = seat.photo,
+                                        role = seat.role
+                                    )
+                                } else if (seat.isLocked) {
+                                    Toast.makeText(context, "This microphone is locked by the host 🔒", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    val hasPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                                    if (hasPerm) {
+                                        joinMicSeat(db, room.id, seat.seatIndex, currentUser, micSeats)
+                                        Toast.makeText(context, "You are now live on Mic ${seat.seatIndex + 1}! 🎙️", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        pendingSeatToJoin = seat
+                                        recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                    }
+                                }
+                            }
+                        },
+                        onQuickToggleMute = {
+                            myCurrentMicSeat?.let { seat ->
+                                toggleMuteMicSeat(db, room.id, seat.seatIndex, seat.isMuted)
+                            }
+                        },
+                        onQuickLeaveStage = {
+                            myCurrentMicSeat?.let { seat ->
+                                if (seat.seatIndex != 0) {
+                                    vacateMicSeat(db, room.id, seat.seatIndex, seat.isLocked)
+                                    Toast.makeText(context, "You stepped down from the stage", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // ---------------------------------------------------------
                     // 3. LIVE STREAMING AUDIENCE STRIP (REAL-TIME, NO DUMMY DATA)
                     // ---------------------------------------------------------
                     val audienceListState = rememberLazyListState()
@@ -3174,6 +3428,91 @@ fun AudioHangoutRoomDialog(
                 }
             }
         }
+
+        // 7. Host Seat Admin Dialog
+        if (selectedSeatForAdmin != null) {
+            val seat = selectedSeatForAdmin!!
+            HostSeatAdminDialog(
+                seat = seat,
+                currentUserId = currentUser.uid,
+                onDismiss = { selectedSeatForAdmin = null },
+                onToggleMute = {
+                    toggleMuteMicSeat(db, room.id, seat.seatIndex, seat.isMuted)
+                    selectedSeatForAdmin = null
+                },
+                onToggleLock = {
+                    toggleLockMicSeat(db, room.id, seat.seatIndex, seat.isLocked)
+                    selectedSeatForAdmin = null
+                },
+                onKickToAudience = {
+                    vacateMicSeat(db, room.id, seat.seatIndex, seat.isLocked)
+                    Toast.makeText(context, "Removed ${seat.name} from stage", Toast.LENGTH_SHORT).show()
+                    selectedSeatForAdmin = null
+                },
+                onInviteListener = {
+                    showInviteListenersDialog = seat
+                    selectedSeatForAdmin = null
+                },
+                onViewProfile = {
+                    selectedMemberForSheet = RoomMember(
+                        uid = seat.uid,
+                        name = seat.name,
+                        photoUrl = seat.photo,
+                        role = seat.role
+                    )
+                    selectedSeatForAdmin = null
+                }
+            )
+        }
+
+        // 8. Invite Listener Dialog
+        if (showInviteListenersDialog != null) {
+            val seat = showInviteListenersDialog!!
+            InviteListenerDialog(
+                seat = seat,
+                availableAudience = displayAudience.filter { aud -> micSeats.none { it.uid == aud.uid } },
+                onDismiss = { showInviteListenersDialog = null },
+                onSelectMember = { member ->
+                    db.collection("rooms").document(room.id).collection("mic_seats").document(seat.seatIndex.toString())
+                        .set(
+                            MicSeat(
+                                seatIndex = seat.seatIndex,
+                                label = if (seat.seatIndex == 0) "Host 👑" else "Mic ${seat.seatIndex + 1}",
+                                uid = member.uid,
+                                name = member.name,
+                                photo = member.photoUrl,
+                                isMuted = false,
+                                isLocked = false,
+                                isTalking = false,
+                                role = "speaker"
+                            )
+                        )
+                    Toast.makeText(context, "Invited ${member.name} to Mic ${seat.seatIndex + 1}! 🎙️", Toast.LENGTH_SHORT).show()
+                    showInviteListenersDialog = null
+                }
+            )
+        }
+
+        // 9. Speaker Own Seat Control Dialog
+        if (selectedOwnSeatForControl != null) {
+            val seat = selectedOwnSeatForControl!!
+            SpeakerSeatControlDialog(
+                seat = seat,
+                isTalking = isLocalTalking,
+                onDismiss = { selectedOwnSeatForControl = null },
+                onToggleMute = {
+                    toggleMuteMicSeat(db, room.id, seat.seatIndex, seat.isMuted)
+                    selectedOwnSeatForControl = null
+                },
+                onLeaveStage = {
+                    if (seat.seatIndex != 0) {
+                        vacateMicSeat(db, room.id, seat.seatIndex, seat.isLocked)
+                        Toast.makeText(context, "You stepped down from the stage", Toast.LENGTH_SHORT).show()
+                    }
+                    selectedOwnSeatForControl = null
+                }
+            )
+        }
     }
 }
 
@@ -3572,4 +3911,826 @@ fun CategoryHubLobbyDialog(
         }
     }
 }
+
+// -------------------------------------------------------------
+// 8. 5-MIC LIVE AUDIO STAGE COMPONENTS & HELPERS
+// -------------------------------------------------------------
+
+fun joinMicSeat(
+    db: FirebaseFirestore,
+    roomId: String,
+    seatIndex: Int,
+    user: UserProfile,
+    allSeats: List<MicSeat>
+) {
+    val prevSeat = allSeats.find { it.uid == user.uid && it.seatIndex != seatIndex }
+    if (prevSeat != null) {
+        db.collection("rooms").document(roomId).collection("mic_seats").document(prevSeat.seatIndex.toString())
+            .set(
+                MicSeat(
+                    seatIndex = prevSeat.seatIndex,
+                    label = if (prevSeat.seatIndex == 0) "Host 👑" else "Mic ${prevSeat.seatIndex + 1}",
+                    uid = "",
+                    name = "",
+                    photo = "",
+                    isMuted = false,
+                    isLocked = prevSeat.isLocked,
+                    isTalking = false,
+                    role = if (prevSeat.seatIndex == 0) "host" else "speaker"
+                )
+            )
+    }
+
+    db.collection("rooms").document(roomId).collection("mic_seats").document(seatIndex.toString())
+        .set(
+            MicSeat(
+                seatIndex = seatIndex,
+                label = if (seatIndex == 0) "Host 👑" else "Mic ${seatIndex + 1}",
+                uid = user.uid,
+                name = user.name,
+                photo = user.photo,
+                isMuted = false,
+                isLocked = false,
+                isTalking = false,
+                role = if (seatIndex == 0) "host" else "speaker"
+            )
+        )
+}
+
+fun vacateMicSeat(
+    db: FirebaseFirestore,
+    roomId: String,
+    seatIndex: Int,
+    isLocked: Boolean = false
+) {
+    db.collection("rooms").document(roomId).collection("mic_seats").document(seatIndex.toString())
+        .set(
+            MicSeat(
+                seatIndex = seatIndex,
+                label = if (seatIndex == 0) "Host 👑" else "Mic ${seatIndex + 1}",
+                uid = "",
+                name = "",
+                photo = "",
+                isMuted = false,
+                isLocked = isLocked,
+                isTalking = false,
+                role = if (seatIndex == 0) "host" else "speaker"
+            )
+        )
+}
+
+fun toggleMuteMicSeat(
+    db: FirebaseFirestore,
+    roomId: String,
+    seatIndex: Int,
+    currentMuted: Boolean
+) {
+    db.collection("rooms").document(roomId).collection("mic_seats").document(seatIndex.toString())
+        .update("isMuted", !currentMuted)
+}
+
+fun toggleLockMicSeat(
+    db: FirebaseFirestore,
+    roomId: String,
+    seatIndex: Int,
+    currentLocked: Boolean
+) {
+    db.collection("rooms").document(roomId).collection("mic_seats").document(seatIndex.toString())
+        .update("isLocked", !currentLocked)
+}
+
+@Composable
+fun FiveMicStageSection(
+    seats: List<MicSeat>,
+    currentUserId: String,
+    isHost: Boolean,
+    isLocalTalking: Boolean,
+    onSeatClick: (MicSeat) -> Unit,
+    onQuickToggleMute: () -> Unit,
+    onQuickLeaveStage: () -> Unit
+) {
+    val mySeat = seats.find { it.uid == currentUserId }
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = BrandCard.copy(alpha = 0.95f)),
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, BrandBorder.copy(alpha = 0.9f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 8.dp)
+        ) {
+            // Stage Header Bar
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.Mic,
+                        contentDescription = "Mic Stage",
+                        tint = BrandCoral,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "LIVE AUDIO STAGE",
+                        color = BrandCoral,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 0.5.sp
+                    )
+                    Text(
+                        text = " • 5 Seats",
+                        color = Color.Gray,
+                        fontSize = 10.sp
+                    )
+                }
+
+                if (isHost) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(BrandGold.copy(alpha = 0.15f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "👑 Host Admin",
+                            color = BrandGold,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                } else if (mySeat != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(BrandGreen.copy(alpha = 0.15f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "🎙️ On Stage",
+                            color = BrandGreen,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                } else {
+                    Text(
+                        text = "Tap open mic to speak",
+                        color = Color.Gray,
+                        fontSize = 9.sp
+                    )
+                }
+            }
+
+            // Quick Controller Strip when Current User is On Stage
+            if (mySeat != null) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (mySeat.isMuted) Color(0xFF2C1619) else Color(0xFF14291B))
+                        .border(
+                            1.dp,
+                            if (mySeat.isMuted) Color(0xFFFF5252).copy(alpha = 0.5f) else BrandGreen.copy(alpha = 0.5f),
+                            RoundedCornerShape(8.dp)
+                        )
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(7.dp)
+                                .clip(CircleShape)
+                                .background(if (mySeat.isMuted) Color.Red else if (isLocalTalking) BrandGreen else Color(0xFF4CAF50))
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (mySeat.isMuted) "Mic Muted 🔇" else if (isLocalTalking) "Speaking... 🟢" else "Live on Stage 🎙️",
+                            color = if (mySeat.isMuted) Color(0xFFFF8A80) else BrandGreen,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        // Quick Mute / Unmute
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(if (mySeat.isMuted) BrandCoral else Color.White.copy(alpha = 0.15f))
+                                .clickable { onQuickToggleMute() }
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                        ) {
+                            Text(
+                                text = if (mySeat.isMuted) "🎙️ Unmute" else "🔇 Mute",
+                                color = Color.White,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        // Step Down button (for non-host speakers)
+                        if (mySeat.seatIndex != 0) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .background(Color.Red.copy(alpha = 0.25f))
+                                    .clickable { onQuickLeaveStage() }
+                                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                            ) {
+                                Text(
+                                    text = "🚪 Leave Mic",
+                                    color = Color(0xFFFF8A80),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 5 Seats in Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceAround,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                for (i in 0..4) {
+                    val seat = seats.find { it.seatIndex == i } ?: MicSeat(
+                        seatIndex = i,
+                        label = if (i == 0) "Host 👑" else "Mic ${i + 1}",
+                        uid = "",
+                        name = "",
+                        photo = "",
+                        role = if (i == 0) "host" else "speaker"
+                    )
+                    MicSeatView(
+                        seat = seat,
+                        isCurrentSelf = seat.uid.isNotEmpty() && seat.uid == currentUserId,
+                        isLocalTalking = isLocalTalking,
+                        isHost = isHost,
+                        onClick = { onSeatClick(seat) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun MicSeatView(
+    seat: MicSeat,
+    isCurrentSelf: Boolean,
+    isLocalTalking: Boolean,
+    isHost: Boolean,
+    onClick: () -> Unit
+) {
+    val isSpeaking = if (isCurrentSelf) (isLocalTalking && !seat.isMuted) else (seat.isTalking && !seat.isMuted)
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse_${seat.seatIndex}")
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 1.0f,
+        targetValue = 1.25f,
+        animationSpec = infiniteRepeatable(tween(550, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "scale_${seat.seatIndex}"
+    )
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .clickable { onClick() }
+            .padding(2.dp)
+    ) {
+        Box(
+            modifier = Modifier.size(46.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            // Pulsing speech ring animation
+            if (isSpeaking) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer(scaleX = pulseScale, scaleY = pulseScale)
+                        .clip(CircleShape)
+                        .background(BrandGreen.copy(alpha = 0.35f))
+                        .border(1.5.dp, BrandGreen, CircleShape)
+                )
+            }
+
+            if (seat.uid.isNotEmpty()) {
+                // Occupied Avatar
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .border(
+                            width = if (isSpeaking) 2.dp else 1.5.dp,
+                            color = if (isSpeaking) BrandGreen else if (seat.seatIndex == 0) BrandGold else BrandCoral,
+                            shape = CircleShape
+                        )
+                ) {
+                    AsyncImage(
+                        model = seat.photo.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                        contentDescription = seat.name,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                }
+
+                // Crown overlay for Seat 0 (Host)
+                if (seat.seatIndex == 0) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .offset(x = 2.dp, y = (-3).dp)
+                            .size(14.dp)
+                            .clip(CircleShape)
+                            .background(BrandDark)
+                            .border(1.dp, BrandGold, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("👑", fontSize = 8.sp)
+                    }
+                }
+
+                // Mic Mute / Unmute Status Badge at bottom-right
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .offset(x = 2.dp, y = 2.dp)
+                        .size(14.dp)
+                        .clip(CircleShape)
+                        .background(if (seat.isMuted) Color(0xFFD32F2F) else BrandGreen)
+                        .border(1.dp, BrandDark, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (seat.isMuted) Icons.Default.MicOff else Icons.Default.Mic,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(9.dp)
+                    )
+                }
+            } else if (seat.isLocked) {
+                // Locked Seat
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(Color.Red.copy(alpha = 0.12f))
+                        .border(1.dp, Color.Red.copy(alpha = 0.5f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.Lock,
+                        contentDescription = "Locked",
+                        tint = Color.Red.copy(alpha = 0.85f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            } else {
+                // Empty & Unlocked Seat
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.06f))
+                        .border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.Mic,
+                        contentDescription = "Take Mic",
+                        tint = Color.White.copy(alpha = 0.5f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .offset(x = 2.dp, y = 2.dp)
+                            .size(12.dp)
+                            .clip(CircleShape)
+                            .background(BrandCoral),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(8.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(2.dp))
+
+        // Label / Subtitle
+        if (seat.uid.isNotEmpty()) {
+            Text(
+                text = if (isCurrentSelf) "You" else seat.name.substringBefore(' ').take(7),
+                color = Color.White,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.width(48.dp)
+            )
+            Text(
+                text = if (seat.seatIndex == 0) "Host" else "Mic ${seat.seatIndex + 1}",
+                color = if (seat.seatIndex == 0) BrandGold else BrandCoral,
+                fontSize = 8.sp,
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.Center
+            )
+        } else if (seat.isLocked) {
+            Text(
+                text = "Mic ${seat.seatIndex + 1}",
+                color = Color.Gray,
+                fontSize = 9.sp,
+                textAlign = TextAlign.Center
+            )
+            Text(
+                text = "Locked",
+                color = Color.Red.copy(alpha = 0.7f),
+                fontSize = 8.sp,
+                textAlign = TextAlign.Center
+            )
+        } else {
+            Text(
+                text = "Mic ${seat.seatIndex + 1}",
+                color = Color.Gray,
+                fontSize = 9.sp,
+                textAlign = TextAlign.Center
+            )
+            Text(
+                text = "Join +",
+                color = BrandGreen,
+                fontSize = 8.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+@Composable
+fun HostSeatAdminDialog(
+    seat: MicSeat,
+    currentUserId: String,
+    onDismiss: () -> Unit,
+    onToggleMute: () -> Unit,
+    onToggleLock: () -> Unit,
+    onKickToAudience: () -> Unit,
+    onInviteListener: () -> Unit,
+    onViewProfile: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(dismissOnBackPress = true, dismissOnClickOutside = true)
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF161214)),
+            shape = RoundedCornerShape(20.dp),
+            border = BorderStroke(1.dp, BrandBorder),
+            modifier = Modifier.fillMaxWidth().padding(16.dp)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(18.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "👑 Stage Seat ${seat.seatIndex + 1} Admin Controls",
+                    color = BrandGold,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                if (seat.uid.isNotEmpty()) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color.White.copy(alpha = 0.05f))
+                            .padding(10.dp)
+                    ) {
+                        AsyncImage(
+                            model = seat.photo.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                            contentDescription = seat.name,
+                            modifier = Modifier.size(44.dp).clip(CircleShape),
+                            contentScale = ContentScale.Crop
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = seat.name,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                            Text(
+                                text = if (seat.seatIndex == 0) "Room Host 👑" else "Speaker (Mic ${seat.seatIndex + 1})",
+                                color = if (seat.seatIndex == 0) BrandGold else BrandCoral,
+                                fontSize = 11.sp
+                            )
+                            Text(
+                                text = if (seat.isMuted) "Status: Muted 🔇" else "Status: Live 🎙️",
+                                color = if (seat.isMuted) Color.Red else BrandGreen,
+                                fontSize = 10.sp
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Mute / Unmute Button
+                    Button(
+                        onClick = onToggleMute,
+                        colors = ButtonDefaults.buttonColors(containerColor = if (seat.isMuted) BrandGreen else Color(0xFF424242)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().height(40.dp)
+                    ) {
+                        Text(
+                            text = if (seat.isMuted) "🎙️ Unmute Speaker" else "🔇 Mute Speaker",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    // If not host self: Remove from stage
+                    if (seat.seatIndex != 0 && seat.uid != currentUserId) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = onKickToAudience,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F)),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth().height(40.dp)
+                        ) {
+                            Text(
+                                text = "🚫 Remove from Stage (To Audience)",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = onViewProfile,
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, BrandBorder),
+                            modifier = Modifier.fillMaxWidth().height(40.dp)
+                        ) {
+                            Text("👤 View User Profile", color = Color.White, fontSize = 12.sp)
+                        }
+                    }
+                } else {
+                    // Empty seat controls
+                    Text(
+                        text = "This microphone seat is currently empty.",
+                        color = Color.LightGray,
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Button(
+                        onClick = onInviteListener,
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().height(40.dp)
+                    ) {
+                        Text("📨 Invite Listener to this Mic", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedButton(
+                        onClick = onToggleLock,
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, if (seat.isLocked) BrandGreen else Color.Red),
+                        modifier = Modifier.fillMaxWidth().height(40.dp)
+                    ) {
+                        Text(
+                            text = if (seat.isLocked) "🔓 Unlock Seat for Everyone" else "🔒 Lock Seat (Keep Empty)",
+                            color = if (seat.isLocked) BrandGreen else Color.Red,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Close", color = Color.Gray, fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun InviteListenerDialog(
+    seat: MicSeat,
+    availableAudience: List<RoomMember>,
+    onDismiss: () -> Unit,
+    onSelectMember: (RoomMember) -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(dismissOnBackPress = true, dismissOnClickOutside = true)
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF161214)),
+            shape = RoundedCornerShape(20.dp),
+            border = BorderStroke(1.dp, BrandBorder),
+            modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp).padding(16.dp)
+        ) {
+            Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                Text(
+                    text = "📨 Invite Audience to Mic ${seat.seatIndex + 1}",
+                    color = BrandCoral,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Select a listener to invite to this microphone seat:",
+                    color = Color.LightGray,
+                    fontSize = 11.sp
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (availableAudience.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().weight(1f, fill = false).padding(20.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "No listeners available in audience right now.",
+                            color = Color.Gray,
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(availableAudience, key = { it.uid }) { member ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color.White.copy(alpha = 0.05f))
+                                    .clickable { onSelectMember(member) }
+                                    .padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                AsyncImage(
+                                    model = member.photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                                    contentDescription = member.name,
+                                    modifier = Modifier.size(38.dp).clip(CircleShape),
+                                    contentScale = ContentScale.Crop
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = member.name,
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
+                                    Text(
+                                        text = member.tier,
+                                        color = if (member.tier.contains("VIP", true)) BrandGold else Color.Gray,
+                                        fontSize = 10.sp
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(50))
+                                        .background(BrandCoral)
+                                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Text("Invite 🎙️", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Cancel", color = Color.Gray, fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SpeakerSeatControlDialog(
+    seat: MicSeat,
+    isTalking: Boolean,
+    onDismiss: () -> Unit,
+    onToggleMute: () -> Unit,
+    onLeaveStage: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(dismissOnBackPress = true, dismissOnClickOutside = true)
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF161214)),
+            shape = RoundedCornerShape(20.dp),
+            border = BorderStroke(1.dp, BrandBorder),
+            modifier = Modifier.fillMaxWidth().padding(16.dp)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(18.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "🎙️ Your Microphone (Mic ${seat.seatIndex + 1})",
+                    color = BrandCoral,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = if (seat.isMuted) "Your microphone is currently MUTED 🔇" else if (isTalking) "You are currently SPEAKING 🟢" else "Your microphone is LIVE 🎙️",
+                    color = if (seat.isMuted) Color(0xFFFF8A80) else BrandGreen,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Button(
+                    onClick = onToggleMute,
+                    colors = ButtonDefaults.buttonColors(containerColor = if (seat.isMuted) BrandGreen else Color(0xFF424242)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().height(42.dp)
+                ) {
+                    Text(
+                        text = if (seat.isMuted) "🎙️ Unmute Microphone" else "🔇 Mute Microphone",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                if (seat.seatIndex != 0) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Button(
+                        onClick = onLeaveStage,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().height(42.dp)
+                    ) {
+                        Text(
+                            text = "🚪 Step Down / Leave Stage",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Close", color = Color.Gray, fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
 

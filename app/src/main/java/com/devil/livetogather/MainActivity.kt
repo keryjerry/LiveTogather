@@ -45,6 +45,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
@@ -392,14 +393,9 @@ fun LiveTogatherApp() {
             saveMomentsToPrefs(prefs, DEFAULT_MOMENTS_SEED)
         }
 
-        // Initialize Default Dummy Profiles into Firestore if not present
+        // Initialize Default Dummy Profiles into Firestore so all 15 realistic profiles are synced
         DEFAULT_DUMMY_PROFILES.forEach { dummyProfile ->
-            db.collection("users").document(dummyProfile.uid).get()
-                .addOnSuccessListener { doc ->
-                    if (doc == null || !doc.exists()) {
-                        db.collection("users").document(dummyProfile.uid).set(dummyProfile, SetOptions.merge())
-                    }
-                }
+            db.collection("users").document(dummyProfile.uid).set(dummyProfile, SetOptions.merge())
         }
         if (discoverProfiles.isEmpty()) {
             discoverProfiles.addAll(DEFAULT_DUMMY_PROFILES.filter { it.uid != currentUserId })
@@ -1600,68 +1596,17 @@ fun LiveTogatherApp() {
             )
         }
 
-        // 7. Mutual Match Celebration Dialog
+        // 7. Mutual Match Celebration Dialog with Connected Hearts Animation
         if (matchedPartner != null) {
-            AlertDialog(
-                onDismissRequest = { matchedPartner = null },
-                containerColor = BrandCard,
-                title = {
-                    Text(
-                        "IT'S A MATCH! 🎉",
-                        color = BrandCoral,
-                        fontWeight = FontWeight.Black,
-                        fontSize = 22.sp
-                    )
+            MutualMatchCelebrationDialog(
+                currentUser = currentUser,
+                partner = matchedPartner!!,
+                onChat = {
+                    val partner = matchedPartner
+                    matchedPartner = null
+                    activeChatPartner = partner
                 },
-                text = {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            "You and ${matchedPartner?.name} liked each other!",
-                            color = Color.White,
-                            fontSize = 14.sp,
-                            textAlign = TextAlign.Center
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Row(horizontalArrangement = Arrangement.Center) {
-                            AsyncImage(
-                                model = currentUser.photo,
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .size(60.dp)
-                                    .clip(CircleShape)
-                                    .border(2.dp, BrandCoral, CircleShape),
-                                contentScale = ContentScale.Crop
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            AsyncImage(
-                                model = matchedPartner?.photo,
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .size(60.dp)
-                                    .clip(CircleShape)
-                                    .border(2.dp, BrandOrange, CircleShape),
-                                contentScale = ContentScale.Crop
-                            )
-                        }
-                    }
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            val partner = matchedPartner
-                            matchedPartner = null
-                            activeChatPartner = partner
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral)
-                    ) {
-                        Text("Send Instant Message", fontWeight = FontWeight.Bold)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { matchedPartner = null }) {
-                        Text("Keep Exploring", color = Color.Gray)
-                    }
-                }
+                onDismiss = { matchedPartner = null }
             )
         }
 
@@ -4175,6 +4120,254 @@ fun ProfileAttributeRow(
 }
 
 @Composable
+fun MutualMatchCelebrationDialog(
+    currentUser: UserProfile,
+    partner: UserProfile,
+    onChat: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val progress = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        progress.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(durationMillis = 850, easing = FastOutSlowInEasing)
+        )
+    }
+
+    val infiniteTransition = rememberInfiniteTransition(label = "heartPulse")
+    val heartScale by infiniteTransition.animateFloat(
+        initialValue = 0.95f,
+        targetValue = 1.15f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(700, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "scale"
+    )
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.88f))
+                .clickable { onDismiss() },
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth(0.9f)
+                    .clickable(enabled = false) {},
+                shape = RoundedCornerShape(28.dp),
+                color = BrandDark,
+                border = BorderStroke(1.5.dp, Brush.linearGradient(listOf(BrandCoral, BrandGold, BrandOrange)))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // Top Celebration Headline
+                    Text(
+                        text = "IT'S A MATCH! 🎉",
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Black,
+                        color = BrandGold,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        text = "You and ${partner.name} liked each other!",
+                        color = Color.LightGray,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // Animated Connected Hearts Arena
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(130.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        val travel = (1f - progress.value) * 120f
+
+                        // Left Heart moving right
+                        Icon(
+                            imageVector = Icons.Default.Favorite,
+                            contentDescription = null,
+                            tint = BrandCoral,
+                            modifier = Modifier
+                                .size(50.dp)
+                                .offset(x = (-travel).dp, y = (-20).dp)
+                                .graphicsLayer {
+                                    alpha = if (progress.value < 0.8f) 0.9f else (1f - (progress.value - 0.8f) * 5f).coerceAtLeast(0f)
+                                }
+                        )
+
+                        // Right Heart moving left
+                        Icon(
+                            imageVector = Icons.Default.Favorite,
+                            contentDescription = null,
+                            tint = BrandOrange,
+                            modifier = Modifier
+                                .size(50.dp)
+                                .offset(x = travel.dp, y = (-20).dp)
+                                .graphicsLayer {
+                                    alpha = if (progress.value < 0.8f) 0.9f else (1f - (progress.value - 0.8f) * 5f).coerceAtLeast(0f)
+                                }
+                        )
+
+                        // Connected Pulsing Fusion Heart in the Center (Appears once hearts merge)
+                        if (progress.value >= 0.7f) {
+                            val mergeAlpha = ((progress.value - 0.7f) / 0.3f).coerceIn(0f, 1f)
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .graphicsLayer {
+                                        scaleX = heartScale
+                                        scaleY = heartScale
+                                        alpha = mergeAlpha
+                                    }
+                            ) {
+                                // Halo glow
+                                Box(
+                                    modifier = Modifier
+                                        .size(90.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            Brush.radialGradient(
+                                                listOf(BrandCoral.copy(alpha = 0.45f), Color.Transparent)
+                                            )
+                                        )
+                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Favorite,
+                                        contentDescription = "Connected Hearts",
+                                        tint = BrandCoral,
+                                        modifier = Modifier.size(56.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(-16.dp))
+                                    Icon(
+                                        imageVector = Icons.Default.Favorite,
+                                        contentDescription = "Connected Hearts",
+                                        tint = BrandGold,
+                                        modifier = Modifier.size(46.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Connected Avatars with Linking Bridge
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // User Avatar
+                        Box(contentAlignment = Alignment.Center) {
+                            AsyncImage(
+                                model = currentUser.photo,
+                                contentDescription = currentUser.name,
+                                modifier = Modifier
+                                    .size(68.dp)
+                                    .clip(CircleShape)
+                                    .border(2.5.dp, BrandCoral, CircleShape),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+
+                        // Connecting Beam / Heart Chain
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(horizontal = 8.dp)
+                        ) {
+                            Text(
+                                text = "❤️ Connected ❤️",
+                                color = BrandGold,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .width(48.dp)
+                                    .height(2.dp)
+                                    .background(
+                                        Brush.horizontalGradient(
+                                            listOf(BrandCoral, BrandGold, BrandOrange)
+                                        )
+                                    )
+                            )
+                        }
+
+                        // Partner Avatar
+                        Box(contentAlignment = Alignment.Center) {
+                            AsyncImage(
+                                model = partner.photo,
+                                contentDescription = partner.name,
+                                modifier = Modifier
+                                    .size(68.dp)
+                                    .clip(CircleShape)
+                                    .border(2.5.dp, BrandOrange, CircleShape),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(26.dp))
+
+                    // Send Instant Message Button
+                    Button(
+                        onClick = onChat,
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Send Instant Message 💬",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = Color.White
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Keep Exploring TextButton
+                    TextButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Keep Swiping 🔥",
+                            color = Color.Gray,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun SubscriptionPlansModal(
     currentPlan: String,
     customNotice: String? = null,
@@ -6172,6 +6365,20 @@ fun checkAndHandleMutualMatch(
     partner: UserProfile,
     onMatch: () -> Unit
 ) {
+    val isDummy = partner.uid.startsWith("dummy_")
+    if (isDummy) {
+        val matchId = listOf(currentUser.uid, partner.uid).sorted().joinToString("_")
+        val match = MatchItem(
+            matchId = matchId,
+            users = listOf(currentUser.uid, partner.uid),
+            matchedIntent = currentUser.activeIntent,
+            lastMessage = "It's a Match! Say hello."
+        )
+        db.collection("matches").document(matchId).set(match)
+        onMatch()
+        return
+    }
+
     val reverseSwipeId = "${partner.uid}_${currentUser.uid}"
     db.collection("swipes").document(reverseSwipeId).get().addOnSuccessListener { snapshot ->
         val action = snapshot.getString("action")
