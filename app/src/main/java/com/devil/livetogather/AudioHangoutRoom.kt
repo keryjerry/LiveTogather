@@ -16,8 +16,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -3105,31 +3107,38 @@ fun AudioHangoutRoomDialog(
                                 .padding(10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Host Avatar (Clickable to open host profile!)
+                            // Host Avatar with Luxury Floral Frame (Clickable to open host profile!)
                             Box(
+                                contentAlignment = Alignment.Center,
                                 modifier = Modifier
-                                    .size(54.dp)
-                                    .clip(CircleShape)
+                                    .size(68.dp)
                                     .clickable {
                                         selectedMemberForSheet = hostMemberObj
                                     }
-                                    .border(
-                                        width = 2.5.dp,
-                                        brush = Brush.sweepGradient(
-                                            listOf(
-                                                BrandCoral.copy(alpha = hostBorderAlpha),
-                                                BrandGold.copy(alpha = hostBorderAlpha),
-                                                BrandCoral.copy(alpha = hostBorderAlpha)
-                                            )
-                                        ),
-                                        shape = CircleShape
-                                    )
                             ) {
-                                AsyncImage(
-                                    model = hostPhoto.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
-                                    contentDescription = "Host",
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(CircleShape)
+                                        .border(
+                                            width = 1.dp,
+                                            color = BrandGold.copy(alpha = 0.6f),
+                                            shape = CircleShape
+                                        )
+                                ) {
+                                    AsyncImage(
+                                        model = hostPhoto.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                                        contentDescription = "Host",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                }
+
+                                Image(
+                                    painter = painterResource(id = R.drawable.luxury_host_frame),
+                                    contentDescription = "Host Luxury Frame",
+                                    modifier = Modifier.size(68.dp),
+                                    contentScale = ContentScale.Fit
                                 )
                             }
 
@@ -4860,20 +4869,16 @@ fun MicSeatView(
                     )
                 }
 
-                // Crown overlay for Seat 0 (Host)
+                // Luxury Floral Frame Overlay for Seat 0 (Host)
                 if (seat.seatIndex == 0) {
-                    Box(
+                    Image(
+                        painter = painterResource(id = R.drawable.luxury_host_frame),
+                        contentDescription = "Host Luxury Frame",
                         modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .offset(x = 2.dp, y = (-3).dp)
-                            .size(14.dp)
-                            .clip(CircleShape)
-                            .background(BrandDark)
-                            .border(1.dp, BrandGold, CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("👑", fontSize = 8.sp)
-                    }
+                            .size(68.dp)
+                            .align(Alignment.Center),
+                        contentScale = ContentScale.Fit
+                    )
                 }
 
                 // Mic Mute / Unmute Status Badge at bottom-right
