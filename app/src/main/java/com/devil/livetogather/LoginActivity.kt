@@ -77,9 +77,31 @@ class LoginActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_login)
 
         auth = FirebaseAuth.getInstance()
+
+        // Persistent Session / Auto-Login:
+        // If user has already signed in, do not display login screen on relaunch / kill from recents
+        val currentUser = auth.currentUser
+        if (currentUser != null) {
+            val prefs = getSharedPreferences("livetogather_user_prefs", Context.MODE_PRIVATE)
+            val profileName = prefs.getString("profile_name", "") ?: ""
+            if (profileName.isNotBlank()) {
+                val intent = Intent(this, MainActivity::class.java)
+                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                startActivity(intent)
+                finish()
+                return
+            } else {
+                val intent = Intent(this, ProfileSetupActivity::class.java)
+                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                startActivity(intent)
+                finish()
+                return
+            }
+        }
+
+        setContentView(R.layout.activity_login)
 
         // 1. Initialize Views
         etEmail = findViewById(R.id.etEmail)
@@ -103,8 +125,7 @@ class LoginActivity : ComponentActivity() {
             FacebookSdk.setApplicationId(getString(R.string.facebook_app_id))
             FacebookSdk.setClientToken(getString(R.string.facebook_client_token))
             FacebookSdk.sdkInitialize(applicationContext)
-            // Use WEB_ONLY to bypass old/outdated device Facebook Katana apps that fail TLS/SSL validation
-            LoginManager.getInstance().setLoginBehavior(LoginBehavior.WEB_ONLY)
+            LoginManager.getInstance().setLoginBehavior(LoginBehavior.NATIVE_WITH_FALLBACK)
         } catch (e: Exception) {
             android.util.Log.e("LoginActivity", "FacebookSdk init error", e)
         }

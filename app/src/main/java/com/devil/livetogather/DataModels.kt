@@ -216,7 +216,7 @@ data class UserProfile(
     val interests: String = "",
     val profession: String = "Designer",
     val education: String = "Graduate",
-    val plan: String = "VIP LEVEL ★",
+    val plan: String = "Free",
     val distanceKm: Int = 12,
 
     // Real-time Intent Room tracking
@@ -254,10 +254,41 @@ data class UserProfile(
 
     val blockedUserIds: List<String> = emptyList(),
     val followerCount: Int = 0,
-    val followingCount: Int = 0
+    val followingCount: Int = 0,
+
+    // Daily swipe limits & App Launch 7-Day Host Trial
+    val dailySwipeCount: Int = 0,
+    val lastSwipeDate: String = "",
+    val hostTrialStartDate: Long = 0L
 ) {
+    fun isPaidSubscriber(): Boolean {
+        return plan.isNotBlank() && !plan.equals("Free", ignoreCase = true)
+    }
+
     fun isVipOrPlatinum(): Boolean {
         return plan.contains("VIP", ignoreCase = true) || plan.contains("Platinum", ignoreCase = true)
+    }
+
+    fun isHostTrialActive(): Boolean {
+        if (hostTrialStartDate == 0L) return true
+        val sevenDaysMs = 7L * 24 * 60 * 60 * 1000L
+        return (System.currentTimeMillis() - hostTrialStartDate) < sevenDaysMs
+    }
+
+    fun getHostTrialDaysLeft(): Int {
+        if (hostTrialStartDate == 0L) return 7
+        val elapsedDays = (System.currentTimeMillis() - hostTrialStartDate) / (1000L * 60 * 60 * 24)
+        return maxOf(0, (7 - elapsedDays).toInt())
+    }
+
+    fun canHostRoom(): Boolean {
+        return isVipOrPlatinum() || isHostTrialActive()
+    }
+
+    fun canSwipe(todayDate: String): Boolean {
+        if (isPaidSubscriber()) return true
+        if (lastSwipeDate != todayDate) return true
+        return dailySwipeCount < 15
     }
 }
 

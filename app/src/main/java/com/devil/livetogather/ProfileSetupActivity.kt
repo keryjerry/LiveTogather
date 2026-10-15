@@ -404,7 +404,11 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
                         bio = bio.trim(),
                         interestedIn = interestedIn,
                         isLocationSet = true,
-                        locationName = city.trim()
+                        locationName = city.trim(),
+                        plan = "Free",
+                        dailySwipeCount = 0,
+                        lastSwipeDate = "",
+                        hostTrialStartDate = System.currentTimeMillis()
                     )
 
                     // 1. Immediately persist to SharedPreferences (instant & offline safe)

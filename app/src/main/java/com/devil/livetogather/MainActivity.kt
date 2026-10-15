@@ -281,7 +281,7 @@ fun LiveTogatherApp() {
                 interests = prefs.getString("profile_interests", "Travel, Cafe, Night Drives") ?: "",
                 profession = prefs.getString("profile_profession", "UX Designer") ?: "",
                 education = prefs.getString("profile_education", "Masters in Design") ?: "",
-                plan = prefs.getString("profile_plan", "VIP LEVEL ★") ?: "VIP LEVEL ★",
+                plan = prefs.getString("profile_plan", "Free") ?: "Free",
                 locationName = prefs.getString("profile_location", "New Town, Kolkata") ?: "New Town, Kolkata",
                 latitude = prefs.getString("profile_latitude", "22.5726")?.toDoubleOrNull() ?: 22.5726,
                 longitude = prefs.getString("profile_longitude", "88.3639")?.toDoubleOrNull() ?: 88.3639,
@@ -291,7 +291,10 @@ fun LiveTogatherApp() {
                 interestedIn = prefs.getString("profile_interested_in", "Women") ?: "Women",
                 minAge = prefs.getInt("profile_min_age", 21),
                 maxAge = prefs.getInt("profile_max_age", 29),
-                current_room = prefs.getString("profile_current_room", "") ?: ""
+                current_room = prefs.getString("profile_current_room", "") ?: "",
+                dailySwipeCount = prefs.getInt("profile_daily_swipe_count", 0),
+                lastSwipeDate = prefs.getString("profile_last_swipe_date", "") ?: "",
+                hostTrialStartDate = prefs.getLong("profile_host_trial_start", 0L)
             )
         )
     }
@@ -322,6 +325,9 @@ fun LiveTogatherApp() {
     var activeCategoryHub by remember { mutableStateOf<IntentCategory?>(null) }
     var matchedPartner by remember { mutableStateOf<UserProfile?>(null) }
     var activeChatPartner by remember { mutableStateOf<UserProfile?>(null) }
+    var showMainSubscriptionModal by remember { mutableStateOf(false) }
+    var subscriptionPaywallNotice by remember { mutableStateOf<String?>(null) }
+    var showHostTrialOfferDialog by remember { mutableStateOf(false) }
 
     // Real-time Lists from Firestore
     val discoverProfiles = remember { mutableStateListOf<UserProfile>() }
@@ -775,26 +781,58 @@ fun LiveTogatherApp() {
                             }
 
                             if (discoverTab == "cards") {
+                                val todayDateStr = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()) }
+
                                 DiscoverScreenContent(
                                     profiles = filteredProfiles,
                                     selectedCategory = selectedCategory,
                                     currentUser = currentUser,
                                     onSelectCategory = { selectedCategory = it },
                                     onPass = { profile ->
-                                        recordSwipe(db, currentUserId, profile.uid, "pass")
-                                        Toast.makeText(context, "Passed ${profile.name}", Toast.LENGTH_SHORT).show()
+                                        val isToday = currentUser.lastSwipeDate == todayDateStr
+                                        val currentDailyCount = if (isToday) currentUser.dailySwipeCount else 0
+
+                                        if (!currentUser.isPaidSubscriber() && currentDailyCount >= 15) {
+                                            subscriptionPaywallNotice = "Daily Free Limit Reached (15/15 Swipes) 🔒\nUpgrade your membership for unlimited swipes & instant matching!"
+                                            showMainSubscriptionModal = true
+                                        } else {
+                                            val newCount = currentDailyCount + 1
+                                            currentUser = currentUser.copy(
+                                                dailySwipeCount = newCount,
+                                                lastSwipeDate = todayDateStr
+                                            )
+                                            saveProfileToPrefs(prefs, currentUser)
+                                            db.collection("users").document(currentUserId).update(
+                                                mapOf(
+                                                    "dailySwipeCount" to newCount,
+                                                    "lastSwipeDate" to todayDateStr
+                                                )
+                                            )
+                                            recordSwipe(db, currentUserId, profile.uid, "pass")
+                                            val remaining = maxOf(0, 15 - newCount)
+                                            if (!currentUser.isPaidSubscriber()) {
+                                                Toast.makeText(context, "Passed ${profile.name} ($remaining free swipes left today)", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                Toast.makeText(context, "Passed ${profile.name}", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
                                     },
                                     onSuperStar = { profile ->
-                                        recordSwipe(db, currentUserId, profile.uid, "superstar")
-                                        sendNotification(
-                                            db = db,
-                                            targetUserId = profile.uid,
-                                            sender = currentUser,
-                                            type = "superstar",
-                                            title = "⭐ SuperStar Received!",
-                                            message = "${currentUser.name} gave you a SuperStar!"
-                                        )
-                                        Toast.makeText(context, "SuperStar sent to ${profile.name}!", Toast.LENGTH_SHORT).show()
+                                        if (!currentUser.isPaidSubscriber()) {
+                                            subscriptionPaywallNotice = "⭐ SuperStar is a Premium Feature!\nUpgrade your membership to send SuperStars, stand out, and get noticed instantly."
+                                            showMainSubscriptionModal = true
+                                        } else {
+                                            recordSwipe(db, currentUserId, profile.uid, "superstar")
+                                            sendNotification(
+                                                db = db,
+                                                targetUserId = profile.uid,
+                                                sender = currentUser,
+                                                type = "superstar",
+                                                title = "⭐ SuperStar Received!",
+                                                message = "${currentUser.name} gave you a SuperStar!"
+                                            )
+                                            Toast.makeText(context, "SuperStar sent to ${profile.name}!", Toast.LENGTH_SHORT).show()
+                                        }
                                     },
                                     onDirectMessage = { profile ->
                                         // Tier Rule Check: VIP / Platinum only
@@ -809,13 +847,37 @@ fun LiveTogatherApp() {
                                         }
                                     },
                                     onLike = { profile ->
-                                        recordSwipe(db, currentUserId, profile.uid, "like")
-                                        checkAndHandleMutualMatch(
-                                            db = db,
-                                            currentUser = currentUser,
-                                            partner = profile,
-                                            onMatch = { matchedPartner = profile }
-                                        )
+                                        val isToday = currentUser.lastSwipeDate == todayDateStr
+                                        val currentDailyCount = if (isToday) currentUser.dailySwipeCount else 0
+
+                                        if (!currentUser.isPaidSubscriber() && currentDailyCount >= 15) {
+                                            subscriptionPaywallNotice = "Daily Free Limit Reached (15/15 Swipes) 🔒\nUpgrade your membership for unlimited swipes & instant matching!"
+                                            showMainSubscriptionModal = true
+                                        } else {
+                                            val newCount = currentDailyCount + 1
+                                            currentUser = currentUser.copy(
+                                                dailySwipeCount = newCount,
+                                                lastSwipeDate = todayDateStr
+                                            )
+                                            saveProfileToPrefs(prefs, currentUser)
+                                            db.collection("users").document(currentUserId).update(
+                                                mapOf(
+                                                    "dailySwipeCount" to newCount,
+                                                    "lastSwipeDate" to todayDateStr
+                                                )
+                                            )
+                                            recordSwipe(db, currentUserId, profile.uid, "like")
+                                            checkAndHandleMutualMatch(
+                                                db = db,
+                                                currentUser = currentUser,
+                                                partner = profile,
+                                                onMatch = { matchedPartner = profile }
+                                            )
+                                            val remaining = maxOf(0, 15 - newCount)
+                                            if (!currentUser.isPaidSubscriber()) {
+                                                Toast.makeText(context, "Liked ${profile.name}! ($remaining free swipes left today)", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
                                     }
                                 )
                             } else {
@@ -830,7 +892,15 @@ fun LiveTogatherApp() {
                                     },
                                     onJoinRoom = { room ->
                                         // 1. Register presence in rooms/{roomId}/members/{userId}
-                                        val isHost = room.hostId == currentUserId || (room.hostId.isEmpty() && room.isCustom)
+                                        val isHostCandidate = room.hostId == currentUserId || (room.hostId.isEmpty() && room.isCustom)
+                                        val canActuallyHost = !isHostCandidate || currentUser.canHostRoom()
+
+                                        if (isHostCandidate && !canActuallyHost) {
+                                            subscriptionPaywallNotice = "👑 Host Access Criteria: Minimum Platinum Membership Required!\nYour 7-day launch trial has ended. Upgrade to Platinum (₹249/mo) or VIP to host."
+                                            showMainSubscriptionModal = true
+                                        }
+
+                                        val isHost = isHostCandidate && canActuallyHost
                                         val member = RoomMember(
                                             uid = currentUserId,
                                             name = currentUser.name,
@@ -882,6 +952,11 @@ fun LiveTogatherApp() {
                         LikesScreenContent(
                             swipes = incomingSwipes,
                             db = db,
+                            currentUser = currentUser,
+                            onOpenSubscription = {
+                                subscriptionPaywallNotice = "👑 Unlock Who Liked You!\nUpgrade your membership to see photos, names, and match back instantly."
+                                showMainSubscriptionModal = true
+                            },
                             onMatchBack = { liker ->
                                 recordSwipe(db, currentUserId, liker.uid, "like")
                                 checkAndHandleMutualMatch(
@@ -1077,10 +1152,35 @@ fun LiveTogatherApp() {
                 onDismiss = { activeCategoryHub = null },
                 onCreateRoom = {
                     createRoomInitialCategory = cat.id
-                    showCreateRoomDialog = true
+                    activeCategoryHub = null
+
+                    // 7 Days Free Trial For App Launch & Minimum Platinum Criteria
+                    if (currentUser.hostTrialStartDate == 0L) {
+                        val now = System.currentTimeMillis()
+                        currentUser = currentUser.copy(hostTrialStartDate = now)
+                        saveProfileToPrefs(prefs, currentUser)
+                        db.collection("users").document(currentUserId).update("hostTrialStartDate", now)
+                    }
+
+                    if (currentUser.isHostTrialActive()) {
+                        showHostTrialOfferDialog = true
+                    } else if (currentUser.isVipOrPlatinum()) {
+                        showCreateRoomDialog = true
+                    } else {
+                        subscriptionPaywallNotice = "👑 Host Access Criteria: Minimum Platinum Membership Required!\nYour 7-day launch trial has ended. Upgrade to Platinum (₹249/mo) or VIP to create audio rooms and go live."
+                        showMainSubscriptionModal = true
+                    }
                 },
                 onJoinRoom = { room ->
-                    val isHost = room.hostId == currentUserId || (room.hostId.isEmpty() && room.isCustom)
+                    val isHostCandidate = room.hostId == currentUserId || (room.hostId.isEmpty() && room.isCustom)
+                    val canActuallyHost = !isHostCandidate || currentUser.canHostRoom()
+
+                    if (isHostCandidate && !canActuallyHost) {
+                        subscriptionPaywallNotice = "👑 Host Access Criteria: Minimum Platinum Membership Required!\nYour 7-day launch trial has ended. Upgrade to Platinum (₹249/mo) or VIP to host."
+                        showMainSubscriptionModal = true
+                    }
+
+                    val isHost = isHostCandidate && canActuallyHost
                     val member = RoomMember(
                         uid = currentUserId,
                         name = currentUser.name,
@@ -1117,6 +1217,88 @@ fun LiveTogatherApp() {
                         .update("current_room", room.id)
 
                     activeAudioRoom = room
+                }
+            )
+        }
+
+        // Subscription Paywall Modal
+        if (showMainSubscriptionModal) {
+            SubscriptionPlansModal(
+                currentPlan = currentUser.plan,
+                customNotice = subscriptionPaywallNotice,
+                onDismiss = {
+                    showMainSubscriptionModal = false
+                    subscriptionPaywallNotice = null
+                },
+                onSelectPlan = { plan ->
+                    currentUser = currentUser.copy(plan = plan.title)
+                    saveProfileToPrefs(prefs, currentUser)
+                    db.collection("users").document(currentUserId).update("plan", plan.title)
+                    Toast.makeText(context, "Upgraded to ${plan.title}! 🎉", Toast.LENGTH_SHORT).show()
+                    showMainSubscriptionModal = false
+                    subscriptionPaywallNotice = null
+                }
+            )
+        }
+
+        // 7 Days Free Trial Host Offer Dialog
+        if (showHostTrialOfferDialog) {
+            val daysLeft = currentUser.getHostTrialDaysLeft()
+            AlertDialog(
+                onDismissRequest = { showHostTrialOfferDialog = false },
+                containerColor = BrandCard,
+                icon = { Text("🎉", fontSize = 36.sp) },
+                title = {
+                    Text(
+                        "7 Days Free Trial For App Launch!",
+                        color = BrandGold,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+                },
+                text = {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Surface(
+                            color = BrandCoral.copy(alpha = 0.2f),
+                            shape = RoundedCornerShape(50),
+                            border = BorderStroke(1.dp, BrandCoral)
+                        ) {
+                            Text(
+                                text = "Launch Offer • $daysLeft Days Remaining",
+                                color = BrandCoral,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+                        Text(
+                            text = "Enjoy 100% free room hosting during our launch celebration! You can create live rooms, stream music, and speak on stage.\n\nNote: After 7 days, a minimum Platinum recharge will be mandatory to continue hosting live rooms.",
+                            color = Color.LightGray,
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showHostTrialOfferDialog = false
+                            showCreateRoomDialog = true
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Got It! Create Room 🎙️", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showHostTrialOfferDialog = false }) {
+                        Text("Cancel", color = Color.Gray)
+                    }
                 }
             )
         }
@@ -2392,6 +2574,8 @@ fun DiscoverScreenContent(
 fun LikesScreenContent(
     swipes: List<SwipeRecord>,
     db: FirebaseFirestore,
+    currentUser: UserProfile,
+    onOpenSubscription: () -> Unit,
     onMatchBack: (UserProfile) -> Unit
 ) {
     val likerProfiles = remember { mutableStateListOf<UserProfile>() }
@@ -2406,8 +2590,71 @@ fun LikesScreenContent(
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Text("Who Liked You", color = BrandCoral, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Who Liked You", color = BrandCoral, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            if (!currentUser.isPaidSubscriber()) {
+                Surface(
+                    color = BrandGold.copy(alpha = 0.2f),
+                    shape = RoundedCornerShape(50),
+                    border = BorderStroke(1.dp, BrandGold)
+                ) {
+                    Text(
+                        "👑 VIP FEATURE",
+                        color = BrandGold,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
+                }
+            }
+        }
         Spacer(modifier = Modifier.height(12.dp))
+
+        if (!currentUser.isPaidSubscriber()) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 14.dp),
+                colors = CardDefaults.cardColors(containerColor = BrandCard),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.5.dp, Brush.horizontalGradient(listOf(BrandGold, BrandCoral)))
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("🔒", fontSize = 20.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "Secret Admirers (${likerProfiles.size})",
+                            color = BrandGold,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        "Free members cannot see who liked or visited their profile. Upgrade your membership to reveal photos, names, and match back instantly!",
+                        color = Color.LightGray,
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = onOpenSubscription,
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Unlock Who Liked You 👑", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                }
+            }
+        }
 
         if (likerProfiles.isEmpty()) {
             Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -2416,31 +2663,72 @@ fun LikesScreenContent(
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(likerProfiles) { liker ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = BrandCard)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                    if (!currentUser.isPaidSubscriber()) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onOpenSubscription() },
+                            colors = CardDefaults.cardColors(containerColor = BrandCard),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, BrandBorder)
                         ) {
-                            AsyncImage(
-                                model = liker.photo,
-                                contentDescription = null,
-                                modifier = Modifier.size(50.dp).clip(CircleShape),
-                                contentScale = ContentScale.Crop
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("${liker.name}, ${liker.age}", color = Color.White, fontWeight = FontWeight.Bold)
-                                Text("Intent: ${liker.activeIntent.replace('_', ' ')}", color = BrandOrange, fontSize = 11.sp)
-                                Text("📍 ${liker.city}", color = Color.Gray, fontSize = 11.sp)
-                            }
-                            Button(
-                                onClick = { onMatchBack(liker) },
-                                colors = ButtonDefaults.buttonColors(containerColor = BrandCoral)
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Match Back", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Box(
+                                    modifier = Modifier
+                                        .size(50.dp)
+                                        .clip(CircleShape)
+                                        .background(BrandDark)
+                                        .border(1.dp, BrandGold.copy(alpha = 0.5f), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("🔒", fontSize = 22.sp)
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Someone Liked You", color = Color.White, fontWeight = FontWeight.Bold)
+                                    Text("Upgrade to reveal profile", color = BrandGold, fontSize = 11.sp)
+                                    Text("📍 Near you in ${liker.city}", color = Color.Gray, fontSize = 11.sp)
+                                }
+                                Button(
+                                    onClick = onOpenSubscription,
+                                    colors = ButtonDefaults.buttonColors(containerColor = BrandGold.copy(alpha = 0.2f)),
+                                    border = BorderStroke(1.dp, BrandGold),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Text("Unlock 🔒", color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    } else {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = BrandCard)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                AsyncImage(
+                                    model = liker.photo,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(50.dp).clip(CircleShape),
+                                    contentScale = ContentScale.Crop
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("${liker.name}, ${liker.age}", color = Color.White, fontWeight = FontWeight.Bold)
+                                    Text("Intent: ${liker.activeIntent.replace('_', ' ')}", color = BrandOrange, fontSize = 11.sp)
+                                    Text("📍 ${liker.city}", color = Color.Gray, fontSize = 11.sp)
+                                }
+                                Button(
+                                    onClick = { onMatchBack(liker) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = BrandCoral)
+                                ) {
+                                    Text("Match Back", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     }
@@ -3889,6 +4177,7 @@ fun ProfileAttributeRow(
 @Composable
 fun SubscriptionPlansModal(
     currentPlan: String,
+    customNotice: String? = null,
     onDismiss: () -> Unit,
     onSelectPlan: (SubscriptionPlanItem) -> Unit
 ) {
@@ -3952,6 +4241,25 @@ fun SubscriptionPlansModal(
                             contentDescription = "Close",
                             tint = Color.White,
                             modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+
+                if (!customNotice.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Surface(
+                        color = BrandCoral.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, BrandCoral.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = customNotice,
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(10.dp),
+                            textAlign = TextAlign.Center
                         )
                     }
                 }
@@ -5831,6 +6139,9 @@ fun saveProfileToPrefs(prefs: android.content.SharedPreferences, user: UserProfi
         .putInt("profile_min_age", user.minAge)
         .putInt("profile_max_age", user.maxAge)
         .putString("profile_current_room", user.current_room)
+        .putInt("profile_daily_swipe_count", user.dailySwipeCount)
+        .putString("profile_last_swipe_date", user.lastSwipeDate)
+        .putLong("profile_host_trial_start", user.hostTrialStartDate)
         .apply()
 }
 
