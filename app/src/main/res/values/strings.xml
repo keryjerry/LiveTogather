@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">LiveTogather</string>
+    <string name="facebook_app_id">935008662737605</string>
+    <string name="fb_login_protocol_scheme">fb935008662737605</string>
+    <string name="facebook_client_token">bb77d19df42663b0457feb5676c89160</string>
+    <string name="default_web_client_id">427307595210-964d0a6ircr7fn5a0ompnsf70ah0v2m1.apps.googleusercontent.com</string>
 </resources>
