@@ -1925,7 +1925,7 @@ fun IntentRoomsGrid(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(205.dp)
+                        .height(224.dp)
                         .clip(RoundedCornerShape(18.dp))
                         .border(1.dp, BrandBorder, RoundedCornerShape(18.dp))
                         .clickable { onOpenCategoryHub(category) }
@@ -2016,7 +2016,7 @@ fun IntentRoomsGrid(
                             }
                         }
 
-                        // Bottom Title & Enter Hub Button
+                        // Bottom Title, Colorful Large Equalizer & Enter Hub Button
                         Column {
                             Text(
                                 text = category.label,
@@ -2027,22 +2027,37 @@ fun IntentRoomsGrid(
                                 overflow = TextOverflow.Ellipsis
                             )
 
-                            // Equalizer Wave or Status Line
+                            // 13 LIVE INTENT CATEGORIES VIBRANT COLORFUL LARGE EQUALIZER
+                            CategoryEqualizerThemeVisualizer(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                isLive = isAnyRoomLive,
+                                isPlaying = isAnyAudioPlaying
+                            )
+
+                            // Status Line
                             Row(
-                                modifier = Modifier.padding(vertical = 3.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 3.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                MusicVisualizerWave(isPlaying = isAnyRoomLive && isAnyAudioPlaying)
-                                Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = if (isAnyRoomLive) "🔴 Room is Live" else "⏳ Host will be live soon",
-                                    color = if (isAnyRoomLive) BrandGreen else Color.LightGray,
+                                    text = if (isAnyRoomLive) "🔴 LIVE NOW" else "✨ Audio Lounge",
+                                    color = if (isAnyRoomLive) BrandGreen else BrandGold,
                                     fontSize = 9.sp,
-                                    fontWeight = FontWeight.SemiBold
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = if (subRoomsCount > 0) "$subRoomsCount Rooms" else "Active Hub",
+                                    color = Color.LightGray,
+                                    fontSize = 9.sp
                                 )
                             }
 
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(2.dp))
 
                             Button(
                                 onClick = { onOpenCategoryHub(category) },

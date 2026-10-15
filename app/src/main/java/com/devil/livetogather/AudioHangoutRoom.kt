@@ -51,6 +51,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
@@ -250,77 +251,474 @@ fun CreateRoomDialog(
 }
 
 // -------------------------------------------------------------
-// 2. MUSIC VISUALIZER WAVE COMPONENT
+// 1B. EDIT ROOM DIALOG (HOST EDIT TITLE, CATEGORY, THEME, STATUS)
+// -------------------------------------------------------------
+@Composable
+fun EditRoomDialog(
+    room: RoomItem,
+    db: FirebaseFirestore,
+    onDismiss: () -> Unit,
+    onRoomUpdated: (RoomItem) -> Unit
+) {
+    val context = LocalContext.current
+    var roomTitle by remember { mutableStateOf(room.title) }
+    var selectedCategory by remember { mutableStateOf(room.category.ifEmpty { "free_tonight" }) }
+    var selectedTheme by remember { mutableStateOf(room.banner_image_url.ifEmpty { ROOM_THEME_PRESETS[0].imageUrl }) }
+    var statusMessage by remember { mutableStateOf(room.statusMessage) }
+    var isSaving by remember { mutableStateOf(false) }
+
+    val isKeyboardOpen = WindowInsets.isImeVisible
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+
+    Dialog(
+        onDismissRequest = {
+            if (isKeyboardOpen) {
+                keyboardController?.hide()
+                focusManager.clearFocus()
+            } else {
+                onDismiss()
+            }
+        },
+        properties = DialogProperties(
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true
+        )
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = BrandCard),
+            shape = RoundedCornerShape(24.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp)
+                .border(1.dp, BrandBorder, RoundedCornerShape(24.dp))
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "✏️ Edit Hangout Room",
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Update title, category hub & luxury atmosphere",
+                            color = Color.Gray,
+                            fontSize = 11.sp
+                        )
+                    }
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Room Title
+                Text("Room Title", color = BrandCoral, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(4.dp))
+                OutlinedTextField(
+                    value = roomTitle,
+                    onValueChange = { roomTitle = it },
+                    placeholder = { Text("e.g. Saturday Rooftop Vibe Lounge", color = Color.Gray, fontSize = 13.sp) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = BrandCoral,
+                        unfocusedBorderColor = BrandBorder,
+                        focusedContainerColor = BrandDark,
+                        unfocusedContainerColor = BrandDark
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Intent Category Selector
+                Text("Select Intent Category", color = BrandCoral, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(6.dp))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(CATEGORY_LIST.filter { it.id != "all" }) { cat ->
+                        val isSelected = selectedCategory == cat.id
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(
+                                    if (isSelected) Brush.horizontalGradient(listOf(BrandCoral, BrandOrange))
+                                    else Brush.linearGradient(listOf(BrandDark, BrandDark))
+                                )
+                                .border(1.dp, if (isSelected) Color.Transparent else BrandBorder, RoundedCornerShape(50))
+                                .clickable { selectedCategory = cat.id }
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Text(cat.label, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Theme Selector
+                Text("Choose Atmosphere Theme", color = BrandCoral, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(6.dp))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(ROOM_THEME_PRESETS) { theme ->
+                        val isSelected = selectedTheme == theme.imageUrl
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.clickable { selectedTheme = theme.imageUrl }
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(70.dp, 48.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .border(
+                                        width = if (isSelected) 2.dp else 1.dp,
+                                        color = if (isSelected) BrandCoral else BrandBorder,
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
+                            ) {
+                                AsyncImage(
+                                    model = theme.imageUrl,
+                                    contentDescription = theme.name,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = theme.name,
+                                color = if (isSelected) BrandCoral else Color.Gray,
+                                fontSize = 9.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.width(70.dp),
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Status Message / Topic
+                Text("Status / Topic Notice", color = BrandGold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(4.dp))
+                OutlinedTextField(
+                    value = statusMessage,
+                    onValueChange = { statusMessage = it },
+                    placeholder = { Text("e.g. Chill Music & Late Night Chats", color = Color.Gray, fontSize = 12.sp) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = BrandGold,
+                        unfocusedBorderColor = BrandBorder,
+                        focusedContainerColor = BrandDark,
+                        unfocusedContainerColor = BrandDark
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = {
+                        keyboardController?.hide()
+                        focusManager.clearFocus()
+                    })
+                )
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // Action Buttons (Cancel / Save Changes)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f).height(44.dp),
+                        shape = RoundedCornerShape(50),
+                        border = BorderStroke(1.dp, BrandBorder)
+                    ) {
+                        Text("Cancel", color = Color.White, fontSize = 12.sp)
+                    }
+
+                    Button(
+                        onClick = {
+                            val finalTitle = roomTitle.trim().ifEmpty { room.title }
+                            isSaving = true
+                            val updates = mapOf(
+                                "title" to finalTitle,
+                                "category" to selectedCategory,
+                                "banner_image_url" to selectedTheme,
+                                "statusMessage" to statusMessage.trim()
+                            )
+                            db.collection("rooms").document(room.id).update(updates)
+                                .addOnSuccessListener {
+                                    val updated = room.copy(
+                                        title = finalTitle,
+                                        category = selectedCategory,
+                                        banner_image_url = selectedTheme,
+                                        statusMessage = statusMessage.trim()
+                                    )
+                                    onRoomUpdated(updated)
+                                    Toast.makeText(context, "Room updated successfully! 🚀", Toast.LENGTH_SHORT).show()
+                                    onDismiss()
+                                }
+                                .addOnFailureListener { e ->
+                                    isSaving = false
+                                    Toast.makeText(context, "Failed to update room: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
+                        },
+                        modifier = Modifier.weight(1.5f).height(44.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                        shape = RoundedCornerShape(50),
+                        enabled = !isSaving
+                    ) {
+                        Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(if (isSaving) "Saving..." else "Save Changes 💾", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// 1C. ROOM DELETE CONFIRMATION POPUP DIALOG
+// -------------------------------------------------------------
+@Composable
+fun RoomDeleteConfirmationDialog(
+    roomTitle: String,
+    onDismiss: () -> Unit,
+    onConfirmDelete: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("⚠️", fontSize = 22.sp)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Delete Room Permanently?",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
+            }
+        },
+        text = {
+            Text(
+                text = "Are you sure you want to permanently delete \"$roomTitle\"? All live mic stages, chat messages, and member sessions will be ended. This action cannot be undone.",
+                color = Color.LightGray,
+                fontSize = 13.sp,
+                lineHeight = 18.sp
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirmDelete,
+                colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text("Yes, Delete Room 🗑️", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            }
+        },
+        dismissButton = {
+            OutlinedButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(1.dp, BrandBorder)
+            ) {
+                Text("Cancel", color = Color.White, fontSize = 12.sp)
+            }
+        },
+        containerColor = BrandCard,
+        shape = RoundedCornerShape(20.dp)
+    )
+}
+
+// -------------------------------------------------------------
+// 2. MUSIC VISUALIZER WAVE COMPONENT (VIBRANT COLORFUL GRADIENTS)
 // -------------------------------------------------------------
 @Composable
 fun MusicVisualizerWave(isPlaying: Boolean, modifier: Modifier = Modifier) {
     val infiniteTransition = rememberInfiniteTransition(label = "wave")
 
     val h1 by infiniteTransition.animateFloat(
-        initialValue = 6f,
-        targetValue = if (isPlaying) 22f else 6f,
+        initialValue = if (isPlaying) 8f else 6f,
+        targetValue = if (isPlaying) 26f else 15f,
         animationSpec = infiniteRepeatable(tween(380, easing = LinearEasing), RepeatMode.Reverse),
         label = "h1"
     )
     val h2 by infiniteTransition.animateFloat(
-        initialValue = 18f,
-        targetValue = if (isPlaying) 8f else 6f,
+        initialValue = if (isPlaying) 22f else 14f,
+        targetValue = if (isPlaying) 10f else 6f,
         animationSpec = infiniteRepeatable(tween(290, easing = LinearEasing), RepeatMode.Reverse),
         label = "h2"
     )
     val h3 by infiniteTransition.animateFloat(
-        initialValue = 10f,
-        targetValue = if (isPlaying) 26f else 6f,
+        initialValue = if (isPlaying) 12f else 8f,
+        targetValue = if (isPlaying) 28f else 18f,
         animationSpec = infiniteRepeatable(tween(440, easing = LinearEasing), RepeatMode.Reverse),
         label = "h3"
     )
     val h4 by infiniteTransition.animateFloat(
-        initialValue = 20f,
-        targetValue = if (isPlaying) 6f else 6f,
+        initialValue = if (isPlaying) 24f else 16f,
+        targetValue = if (isPlaying) 8f else 6f,
         animationSpec = infiniteRepeatable(tween(330, easing = LinearEasing), RepeatMode.Reverse),
         label = "h4"
     )
     val h5 by infiniteTransition.animateFloat(
-        initialValue = 8f,
-        targetValue = if (isPlaying) 24f else 6f,
+        initialValue = if (isPlaying) 10f else 7f,
+        targetValue = if (isPlaying) 27f else 16f,
         animationSpec = infiniteRepeatable(tween(480, easing = LinearEasing), RepeatMode.Reverse),
         label = "h5"
     )
     val h6 by infiniteTransition.animateFloat(
-        initialValue = 16f,
-        targetValue = if (isPlaying) 7f else 6f,
+        initialValue = if (isPlaying) 20f else 13f,
+        targetValue = if (isPlaying) 9f else 7f,
         animationSpec = infiniteRepeatable(tween(310, easing = LinearEasing), RepeatMode.Reverse),
         label = "h6"
     )
     val h7 by infiniteTransition.animateFloat(
-        initialValue = 6f,
-        targetValue = if (isPlaying) 20f else 6f,
+        initialValue = if (isPlaying) 8f else 6f,
+        targetValue = if (isPlaying) 24f else 14f,
         animationSpec = infiniteRepeatable(tween(360, easing = LinearEasing), RepeatMode.Reverse),
         label = "h7"
     )
 
     val waveHeights = listOf(h1, h2, h3, h4, h5, h6, h7, h2, h5, h1, h6, h3, h7, h4)
+    val neonBrushes = listOf(
+        Brush.verticalGradient(listOf(Color(0xFFFF5E62), Color(0xFFFFD700))),
+        Brush.verticalGradient(listOf(Color(0xFF00F2FE), Color(0xFF4FACFE))),
+        Brush.verticalGradient(listOf(Color(0xFFFF0844), Color(0xFFFFB199))),
+        Brush.verticalGradient(listOf(Color(0xFF00F5A0), Color(0xFF00D9F5))),
+        Brush.verticalGradient(listOf(Color(0xFFA855F7), Color(0xFFEC4899))),
+        Brush.verticalGradient(listOf(Color(0xFFFF9966), Color(0xFFFF5E62)))
+    )
+
     Row(
         modifier = modifier.height(28.dp),
         horizontalArrangement = Arrangement.spacedBy(3.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         waveHeights.forEachIndexed { idx, h ->
-            val barBrush = if (isPlaying) {
-                when (idx % 3) {
-                    0 -> Brush.verticalGradient(listOf(BrandCoral, BrandGold))
-                    1 -> Brush.verticalGradient(listOf(BrandGold, BrandOrange))
-                    else -> Brush.verticalGradient(listOf(BrandCyan, BrandCoral))
-                }
-            } else {
-                Brush.verticalGradient(listOf(Color.DarkGray, Color.Gray))
-            }
+            val barBrush = neonBrushes[idx % neonBrushes.size]
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .height(h.dp)
                     .clip(RoundedCornerShape(50))
                     .background(barBrush)
+            )
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// 2B. LARGE CATEGORY EQUALIZER THEME VISUALIZER (OUTSIDE 13 GRIDS)
+// -------------------------------------------------------------
+@Composable
+fun CategoryEqualizerThemeVisualizer(
+    modifier: Modifier = Modifier,
+    isLive: Boolean = true,
+    isPlaying: Boolean = true
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "cat_equalizer")
+
+    val b1 by infiniteTransition.animateFloat(
+        initialValue = 8f,
+        targetValue = if (isLive || isPlaying) 28f else 16f,
+        animationSpec = infiniteRepeatable(tween(340, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "b1"
+    )
+    val b2 by infiniteTransition.animateFloat(
+        initialValue = 24f,
+        targetValue = if (isLive || isPlaying) 10f else 8f,
+        animationSpec = infiniteRepeatable(tween(270, easing = LinearEasing), RepeatMode.Reverse),
+        label = "b2"
+    )
+    val b3 by infiniteTransition.animateFloat(
+        initialValue = 12f,
+        targetValue = if (isLive || isPlaying) 30f else 18f,
+        animationSpec = infiniteRepeatable(tween(430, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "b3"
+    )
+    val b4 by infiniteTransition.animateFloat(
+        initialValue = 26f,
+        targetValue = if (isLive || isPlaying) 8f else 10f,
+        animationSpec = infiniteRepeatable(tween(310, easing = LinearEasing), RepeatMode.Reverse),
+        label = "b4"
+    )
+    val b5 by infiniteTransition.animateFloat(
+        initialValue = 10f,
+        targetValue = if (isLive || isPlaying) 29f else 15f,
+        animationSpec = infiniteRepeatable(tween(460, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "b5"
+    )
+    val b6 by infiniteTransition.animateFloat(
+        initialValue = 22f,
+        targetValue = if (isLive || isPlaying) 11f else 8f,
+        animationSpec = infiniteRepeatable(tween(290, easing = LinearEasing), RepeatMode.Reverse),
+        label = "b6"
+    )
+    val b7 by infiniteTransition.animateFloat(
+        initialValue = 8f,
+        targetValue = if (isLive || isPlaying) 27f else 14f,
+        animationSpec = infiniteRepeatable(tween(380, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "b7"
+    )
+    val b8 by infiniteTransition.animateFloat(
+        initialValue = 19f,
+        targetValue = if (isLive || isPlaying) 9f else 12f,
+        animationSpec = infiniteRepeatable(tween(330, easing = LinearEasing), RepeatMode.Reverse),
+        label = "b8"
+    )
+
+    val bars = listOf(b1, b2, b3, b4, b5, b6, b7, b8, b2, b5, b1, b6, b3, b7, b4, b8)
+    val neonBrushes = listOf(
+        Brush.verticalGradient(listOf(Color(0xFFFF5E62), Color(0xFFFFD700))), // Coral -> Gold
+        Brush.verticalGradient(listOf(Color(0xFF00F2FE), Color(0xFF4FACFE))), // Cyan -> Sky Blue
+        Brush.verticalGradient(listOf(Color(0xFFFF0844), Color(0xFFFFB199))), // Magenta -> Rose
+        Brush.verticalGradient(listOf(Color(0xFF00F5A0), Color(0xFF00D9F5))), // Emerald -> Mint
+        Brush.verticalGradient(listOf(Color(0xFFA855F7), Color(0xFFEC4899))), // Purple -> Pink
+        Brush.verticalGradient(listOf(Color(0xFFFF9966), Color(0xFFFF5E62)))  // Orange -> Coral
+    )
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(34.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color.Black.copy(alpha = 0.55f))
+            .border(0.6.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(10.dp))
+            .padding(horizontal = 7.dp, vertical = 3.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.5.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        bars.forEachIndexed { idx, h ->
+            val brush = neonBrushes[idx % neonBrushes.size]
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(h.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(brush)
             )
         }
     }
@@ -1409,7 +1807,9 @@ fun RoomSettingsDialog(
     onDismiss: () -> Unit,
     onUpdateTheme: (String) -> Unit,
     onKickMember: ((RoomMember) -> Unit)? = null,
-    onBanMember: ((RoomMember) -> Unit)? = null
+    onBanMember: ((RoomMember) -> Unit)? = null,
+    onEditRoom: (() -> Unit)? = null,
+    onDeleteRoom: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     var scheduledTimeText by remember { mutableStateOf(room.scheduledTime) }
@@ -1818,6 +2218,67 @@ fun RoomSettingsDialog(
                             }
                         }
                     }
+
+                    // 7. EDIT ROOM DETAILS (HOST ONLY)
+                    if (isHost && onEditRoom != null) {
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
+                                shape = RoundedCornerShape(14.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text("✏️ Edit Room Information", color = BrandCoral, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("Change room title, category hub, luxury atmosphere wallpaper, or status.", color = Color.Gray, fontSize = 11.sp)
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Button(
+                                        onClick = {
+                                            onDismiss()
+                                            onEditRoom()
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.fillMaxWidth().height(36.dp)
+                                    ) {
+                                        Icon(Icons.Default.Edit, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Edit Room Details", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 8. DELETE ROOM PERMANENTLY (HOST ONLY)
+                    if (isHost && onDeleteRoom != null) {
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color.Red.copy(alpha = 0.15f)),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, Color.Red.copy(alpha = 0.5f))
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text("🚨 Danger Zone: Delete Room", color = Color.Red, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("Permanently delete this room from Firestore. All live members will be disconnected.", color = Color.LightGray, fontSize = 11.sp)
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Button(
+                                        onClick = {
+                                            onDismiss()
+                                            onDeleteRoom()
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.fillMaxWidth().height(36.dp)
+                                    ) {
+                                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Delete Room Permanently 🗑️", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1845,6 +2306,8 @@ fun AudioHangoutRoomDialog(
     // Modals
     var showTrackSelector by remember { mutableStateOf(false) }
     var showRoomSettingsDialog by remember { mutableStateOf(false) }
+    var showEditRoomDialog by remember { mutableStateOf(false) }
+    var showDeleteConfirmation by remember { mutableStateOf(false) }
     var showAllViewersDialog by remember { mutableStateOf(false) }
     var isFollowingHost by remember { mutableStateOf(false) }
     var showFollowCelebrationDialog by remember { mutableStateOf(false) }
@@ -2329,6 +2792,39 @@ fun AudioHangoutRoomDialog(
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (isUserHost) {
+                                // Edit Room
+                                IconButton(
+                                    onClick = { showEditRoomDialog = true },
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .background(BrandCard.copy(alpha = 0.85f), CircleShape)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Edit,
+                                        contentDescription = "Edit Room",
+                                        tint = BrandCoral,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(6.dp))
+
+                                // Delete Room (with Confirmation Popup)
+                                IconButton(
+                                    onClick = { showDeleteConfirmation = true },
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .background(Color.Red.copy(alpha = 0.25f), CircleShape)
+                                        .border(1.dp, Color.Red.copy(alpha = 0.6f), CircleShape)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Delete Room",
+                                        tint = Color.Red,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(6.dp))
+
                                 IconButton(
                                     onClick = { showRoomSettingsDialog = true },
                                     modifier = Modifier
@@ -3439,7 +3935,7 @@ fun AudioHangoutRoomDialog(
             )
         }
 
-        // 4. Room Settings & Controls Dialog (Host controls: Privacy, Schedule, Theme, Kick/Ban)
+        // 4. Room Settings & Controls Dialog (Host controls: Privacy, Schedule, Theme, Kick/Ban, Edit, Delete)
         if (showRoomSettingsDialog) {
             RoomSettingsDialog(
                 room = room,
@@ -3455,6 +3951,40 @@ fun AudioHangoutRoomDialog(
                 },
                 onBanMember = { banned ->
                     room = room.copy(bannedUserIds = room.bannedUserIds + banned.uid)
+                },
+                onEditRoom = { showEditRoomDialog = true },
+                onDeleteRoom = { showDeleteConfirmation = true }
+            )
+        }
+
+        // 4A. Edit Room Dialog (Host Only)
+        if (showEditRoomDialog) {
+            EditRoomDialog(
+                room = room,
+                db = db,
+                onDismiss = { showEditRoomDialog = false },
+                onRoomUpdated = { updated ->
+                    room = updated
+                }
+            )
+        }
+
+        // 4B. Room Delete Confirmation Dialog (Host Only)
+        if (showDeleteConfirmation) {
+            RoomDeleteConfirmationDialog(
+                roomTitle = room.title,
+                onDismiss = { showDeleteConfirmation = false },
+                onConfirmDelete = {
+                    showDeleteConfirmation = false
+                    showRoomSettingsDialog = false
+                    db.collection("rooms").document(room.id).delete()
+                        .addOnSuccessListener {
+                            Toast.makeText(context, "Room \"${room.title}\" deleted successfully", Toast.LENGTH_SHORT).show()
+                            onDismiss()
+                        }
+                        .addOnFailureListener { e ->
+                            Toast.makeText(context, "Failed to delete room: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
                 }
             )
         }
@@ -3631,12 +4161,15 @@ fun AudioHangoutRoomDialog(
 fun CategorySubRoomCard(
     room: RoomItem,
     activeCount: Int,
-    onJoin: () -> Unit
+    isHost: Boolean = false,
+    onJoin: () -> Unit,
+    onEdit: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null
 ) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(200.dp)
+            .height(205.dp)
             .clip(RoundedCornerShape(18.dp))
             .border(1.dp, BrandBorder, RoundedCornerShape(18.dp))
     ) {
@@ -3746,14 +4279,50 @@ fun CategorySubRoomCard(
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                Button(
-                    onClick = onJoin,
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
-                    shape = RoundedCornerShape(50),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                    modifier = Modifier.fillMaxWidth().height(32.dp)
-                ) {
-                    Text("Join Room", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                if (isHost) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().height(32.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            onClick = { onEdit?.invoke() },
+                            modifier = Modifier
+                                .size(30.dp)
+                                .background(BrandCard, CircleShape)
+                                .border(1.dp, BrandCoral.copy(alpha = 0.8f), CircleShape)
+                        ) {
+                            Icon(Icons.Default.Edit, contentDescription = "Edit", tint = BrandCoral, modifier = Modifier.size(13.dp))
+                        }
+                        IconButton(
+                            onClick = { onDelete?.invoke() },
+                            modifier = Modifier
+                                .size(30.dp)
+                                .background(Color.Red.copy(alpha = 0.2f), CircleShape)
+                                .border(1.dp, Color.Red.copy(alpha = 0.7f), CircleShape)
+                        ) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red, modifier = Modifier.size(13.dp))
+                        }
+                        Button(
+                            onClick = onJoin,
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                            shape = RoundedCornerShape(50),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                            modifier = Modifier.weight(1f).height(30.dp)
+                        ) {
+                            Text("Join 🎙️", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                } else {
+                    Button(
+                        onClick = onJoin,
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                        shape = RoundedCornerShape(50),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                        modifier = Modifier.fillMaxWidth().height(32.dp)
+                    ) {
+                        Text("Join Room", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
@@ -3775,6 +4344,11 @@ fun CategoryHubLobbyDialog(
     onJoinRoom: (RoomItem) -> Unit
 ) {
     // Rooms belonging to this category (dynamically reactive to Firestore real-time updates)
+    val context = LocalContext.current
+    val db = remember { FirebaseFirestore.getInstance() }
+    var roomToEdit by remember { mutableStateOf<RoomItem?>(null) }
+    var roomToDelete by remember { mutableStateOf<RoomItem?>(null) }
+
     val categoryRooms = remember(allRooms.size, allRooms.map { it.id to it.isHostLive }, category.id) {
         allRooms.filter { it.category == category.id && it.title.isNotBlank() }
     }
@@ -3958,10 +4532,14 @@ fun CategoryHubLobbyDialog(
                     ) {
                         items(categoryRooms) { room ->
                             val activeCount = allUsers.count { it.current_room == room.id }
+                            val isHost = room.hostId == currentUser.uid || (room.hostName.isNotBlank() && room.hostName == currentUser.name)
                             CategorySubRoomCard(
                                 room = room,
                                 activeCount = activeCount,
-                                onJoin = { onJoinRoom(room) }
+                                isHost = isHost,
+                                onJoin = { onJoinRoom(room) },
+                                onEdit = { roomToEdit = room },
+                                onDelete = { roomToDelete = room }
                             )
                         }
 
@@ -4004,6 +4582,36 @@ fun CategoryHubLobbyDialog(
                     }
                 }
             }
+        }
+
+        // Host Edit Room Dialog
+        if (roomToEdit != null) {
+            EditRoomDialog(
+                room = roomToEdit!!,
+                db = db,
+                onDismiss = { roomToEdit = null },
+                onRoomUpdated = { roomToEdit = null }
+            )
+        }
+
+        // Host Delete Room Confirmation Dialog
+        if (roomToDelete != null) {
+            val target = roomToDelete!!
+            RoomDeleteConfirmationDialog(
+                roomTitle = target.title,
+                onDismiss = { roomToDelete = null },
+                onConfirmDelete = {
+                    val id = target.id
+                    roomToDelete = null
+                    db.collection("rooms").document(id).delete()
+                        .addOnSuccessListener {
+                            Toast.makeText(context, "Room \"${target.title}\" deleted successfully", Toast.LENGTH_SHORT).show()
+                        }
+                        .addOnFailureListener { e ->
+                            Toast.makeText(context, "Failed to delete room: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                }
+            )
         }
     }
 }
