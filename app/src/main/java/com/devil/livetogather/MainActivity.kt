@@ -51,12 +51,14 @@ import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -583,11 +585,18 @@ fun LiveTogatherApp() {
     }
 
     val isKeyboardOpen = WindowInsets.isImeVisible
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
 
-    // When keyboard is closed and user is on another screen, system back button returns to Discover tab.
-    // When keyboard is open, Android OS IME handles back button natively to dismiss keyboard without flicker.
-    BackHandler(enabled = !isKeyboardOpen && currentScreen != "discover") {
-        currentScreen = "discover"
+    // Never bounce back to discover if the keyboard is open!
+    // If keyboard is open, pressing back dismisses keyboard & clears focus cleanly, staying on the current screen.
+    BackHandler(enabled = currentScreen != "discover") {
+        if (isKeyboardOpen) {
+            keyboardController?.hide()
+            focusManager.clearFocus()
+        } else {
+            currentScreen = "discover"
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize().background(BrandDark)) {
@@ -3082,6 +3091,15 @@ fun ProfileScreenContent(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
+            .imePadding()
+            .navigationBarsPadding()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) {
+                keyboardController?.hide()
+                focusManager.clearFocus()
+            }
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -3775,6 +3793,7 @@ fun ProfileScreenContent(
             onDismissRequest = {
                 if (isKeyboardOpen) {
                     keyboardController?.hide()
+                    focusManager.clearFocus()
                 } else {
                     isEditing = false
                 }
@@ -3782,7 +3801,8 @@ fun ProfileScreenContent(
             properties = DialogProperties(
                 usePlatformDefaultWidth = false,
                 dismissOnBackPress = true,
-                dismissOnClickOutside = true
+                dismissOnClickOutside = true,
+                decorFitsSystemWindows = false
             )
         ) {
             Card(
@@ -3790,17 +3810,16 @@ fun ProfileScreenContent(
                 shape = RoundedCornerShape(20.dp),
                 border = BorderStroke(1.dp, BrandBorder),
                 modifier = Modifier
-                    .fillMaxWidth(0.94f)
-                    .fillMaxHeight(0.88f)
-                    .navigationBarsPadding()
+                    .fillMaxWidth(0.95f)
+                    .fillMaxHeight(if (isKeyboardOpen) 0.95f else 0.88f)
                     .imePadding()
+                    .navigationBarsPadding()
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null
                     ) {
-                        if (isKeyboardOpen) {
-                            keyboardController?.hide()
-                        }
+                        keyboardController?.hide()
+                        focusManager.clearFocus()
                     }
             ) {
                 Column(
@@ -3917,6 +3936,9 @@ fun ProfileScreenContent(
                             onValueChange = { name = it },
                             label = { Text("Full Name", color = Color.Gray, fontSize = 11.sp) },
                             colors = outlinedFieldColors(),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                             modifier = Modifier.fillMaxWidth()
                         )
 
@@ -3926,6 +3948,9 @@ fun ProfileScreenContent(
                                 onValueChange = { age = it },
                                 label = { Text("Age", color = Color.Gray, fontSize = 11.sp) },
                                 colors = outlinedFieldColors(),
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                                 modifier = Modifier.weight(1f)
                             )
                             OutlinedTextField(
@@ -3933,6 +3958,9 @@ fun ProfileScreenContent(
                                 onValueChange = { city = it },
                                 label = { Text("City", color = Color.Gray, fontSize = 11.sp) },
                                 colors = outlinedFieldColors(),
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                                 modifier = Modifier.weight(1f)
                             )
                         }
@@ -3942,6 +3970,9 @@ fun ProfileScreenContent(
                             onValueChange = { profession = it },
                             label = { Text("Profession", color = Color.Gray, fontSize = 11.sp) },
                             colors = outlinedFieldColors(),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                             modifier = Modifier.fillMaxWidth()
                         )
 
@@ -3950,6 +3981,9 @@ fun ProfileScreenContent(
                             onValueChange = { education = it },
                             label = { Text("Education", color = Color.Gray, fontSize = 11.sp) },
                             colors = outlinedFieldColors(),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                             modifier = Modifier.fillMaxWidth()
                         )
 
@@ -3958,6 +3992,9 @@ fun ProfileScreenContent(
                             onValueChange = { hobbies = it },
                             label = { Text("Interests & Hobbies (comma-separated)", color = Color.Gray, fontSize = 11.sp) },
                             colors = outlinedFieldColors(),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                             modifier = Modifier.fillMaxWidth()
                         )
 
@@ -3967,7 +4004,12 @@ fun ProfileScreenContent(
                             label = { Text("Bio / Status Quote", color = Color.Gray, fontSize = 11.sp) },
                             colors = outlinedFieldColors(),
                             modifier = Modifier.fillMaxWidth(),
-                            maxLines = 3
+                            maxLines = 3,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(onDone = {
+                                keyboardController?.hide()
+                                focusManager.clearFocus()
+                            })
                         )
 
                         Text("Your Gender", color = BrandCoral, fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -3984,7 +4026,11 @@ fun ProfileScreenContent(
                                             else Brush.linearGradient(listOf(BrandCard, BrandCard))
                                         )
                                         .border(1.dp, if (isSelected) Color.Transparent else BrandBorder, RoundedCornerShape(50))
-                                        .clickable { gender = optVal }
+                                        .clickable {
+                                            keyboardController?.hide()
+                                            focusManager.clearFocus()
+                                            gender = optVal
+                                        }
                                         .padding(vertical = 7.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -4007,12 +4053,31 @@ fun ProfileScreenContent(
                                             else Brush.linearGradient(listOf(BrandCard, BrandCard))
                                         )
                                         .border(1.dp, if (isSelected) Color.Transparent else BrandBorder, RoundedCornerShape(50))
-                                        .clickable { interestedIn = optVal }
+                                        .clickable {
+                                            keyboardController?.hide()
+                                            focusManager.clearFocus()
+                                            interestedIn = optVal
+                                        }
                                         .padding(vertical = 7.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(opt, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                 }
+                            }
+                        }
+
+                        if (isKeyboardOpen) {
+                            OutlinedButton(
+                                onClick = {
+                                    keyboardController?.hide()
+                                    focusManager.clearFocus()
+                                },
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = BrandGold),
+                                border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.6f)),
+                                shape = RoundedCornerShape(50),
+                                modifier = Modifier.fillMaxWidth().height(36.dp)
+                            ) {
+                                Text("⌨️ Close Keyboard To Review & Save", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -4739,6 +4804,7 @@ fun LocationSetupDialog(
         onDismissRequest = {
             if (isKeyboardOpen) {
                 keyboardController?.hide()
+                focusManager.clearFocus()
             } else {
                 onDismiss()
             }
@@ -4746,7 +4812,8 @@ fun LocationSetupDialog(
         properties = DialogProperties(
             usePlatformDefaultWidth = false,
             dismissOnBackPress = true,
-            dismissOnClickOutside = true
+            dismissOnClickOutside = true,
+            decorFitsSystemWindows = false
         )
     ) {
         Card(
@@ -4754,17 +4821,16 @@ fun LocationSetupDialog(
             shape = RoundedCornerShape(20.dp),
             border = BorderStroke(1.dp, BrandBorder),
             modifier = Modifier
-                .fillMaxWidth(0.94f)
-                .fillMaxHeight(0.85f)
-                .navigationBarsPadding()
+                .fillMaxWidth(0.95f)
+                .fillMaxHeight(if (isKeyboardOpen) 0.95f else 0.85f)
                 .imePadding()
+                .navigationBarsPadding()
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null
                 ) {
-                    if (isKeyboardOpen) {
-                        keyboardController?.hide()
-                    }
+                    keyboardController?.hide()
+                    focusManager.clearFocus()
                 }
         ) {
             Column(
@@ -4795,15 +4861,33 @@ fun LocationSetupDialog(
                             )
                         }
                     }
-                    IconButton(
-                        onClick = {
-                            keyboardController?.hide()
-                            focusManager.clearFocus()
-                            onDismiss()
-                        },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (isKeyboardOpen) {
+                            Button(
+                                onClick = {
+                                    keyboardController?.hide()
+                                    focusManager.clearFocus()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = BrandCardSubtle),
+                                border = BorderStroke(1.dp, BrandBorder),
+                                shape = RoundedCornerShape(20.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.height(28.dp)
+                            ) {
+                                Text("⌨️ Done", color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
+                        IconButton(
+                            onClick = {
+                                keyboardController?.hide()
+                                focusManager.clearFocus()
+                                onDismiss()
+                            },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray)
+                        }
                     }
                 }
 
@@ -4916,6 +5000,12 @@ fun LocationSetupDialog(
                         label = { Text("Exact Area / Neighborhood", color = Color.Gray, fontSize = 11.sp) },
                         placeholder = { Text("e.g. New Town Action Area 1", color = Color.DarkGray, fontSize = 11.sp) },
                         colors = outlinedFieldColors(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = {
+                            keyboardController?.hide()
+                            focusManager.clearFocus()
+                        }),
                         modifier = Modifier.fillMaxWidth()
                     )
 
@@ -5013,11 +5103,13 @@ fun SettingsDialog(
     var socialMedia by remember { mutableStateOf(user.socialMedia) }
     val isKeyboardOpen = WindowInsets.isImeVisible
     val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
 
     Dialog(
         onDismissRequest = {
             if (isKeyboardOpen) {
                 keyboardController?.hide()
+                focusManager.clearFocus()
             } else {
                 onDismiss()
             }
@@ -5025,11 +5117,23 @@ fun SettingsDialog(
         properties = DialogProperties(
             usePlatformDefaultWidth = false,
             dismissOnBackPress = true,
-            dismissOnClickOutside = true
+            dismissOnClickOutside = true,
+            decorFitsSystemWindows = false
         )
     ) {
         Scaffold(
             containerColor = Color(0xFFF5F5F7),
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding()
+                .navigationBarsPadding()
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) {
+                    keyboardController?.hide()
+                    focusManager.clearFocus()
+                },
             topBar = {
                 Row(
                     modifier = Modifier
@@ -5702,6 +5806,7 @@ fun PostMomentDialog(
 
     val isKeyboardOpen = WindowInsets.isImeVisible
     val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
 
     val canPost = !isUploading && (pickedMediaUrls.isNotEmpty() || caption.isNotBlank())
 
@@ -5709,6 +5814,7 @@ fun PostMomentDialog(
         onDismissRequest = {
             if (isKeyboardOpen) {
                 keyboardController?.hide()
+                focusManager.clearFocus()
             } else if (!isUploading) {
                 onDismiss()
             }
@@ -5943,11 +6049,13 @@ fun EditMomentDialog(
 
     val isKeyboardOpen = WindowInsets.isImeVisible
     val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
 
     Dialog(
         onDismissRequest = {
             if (isKeyboardOpen) {
                 keyboardController?.hide()
+                focusManager.clearFocus()
             } else if (!isUploading) {
                 onDismiss()
             }
@@ -6131,11 +6239,13 @@ fun DirectMessageDialog(
     var messageText by remember { mutableStateOf("") }
     val isKeyboardOpen = WindowInsets.isImeVisible
     val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
 
     Dialog(
         onDismissRequest = {
             if (isKeyboardOpen) {
                 keyboardController?.hide()
+                focusManager.clearFocus()
             } else {
                 onDismiss()
             }
@@ -6220,11 +6330,13 @@ fun CommentsDialog(
     }
     val isKeyboardOpen = WindowInsets.isImeVisible
     val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
 
     Dialog(
         onDismissRequest = {
             if (isKeyboardOpen) {
                 keyboardController?.hide()
+                focusManager.clearFocus()
             } else {
                 onDismiss()
             }

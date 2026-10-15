@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -14,10 +15,12 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -27,11 +30,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -75,7 +82,7 @@ class ProfileSetupActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ProfileSetupScreen(onComplete: () -> Unit) {
     val context = LocalContext.current
@@ -106,6 +113,16 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
     var localAvatarUri by remember { mutableStateOf<Uri?>(null) }
     var isSaving by remember { mutableStateOf(false) }
     var isUploadingPhoto by remember { mutableStateOf(false) }
+
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val isKeyboardOpen = WindowInsets.isImeVisible
+
+    // Intercept back press when keyboard is open: dismiss keyboard & clear focus instead of exiting or falling back
+    BackHandler(enabled = isKeyboardOpen) {
+        keyboardController?.hide()
+        focusManager.clearFocus()
+    }
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -156,6 +173,23 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
                         )
                     }
                 },
+                actions = {
+                    if (isKeyboardOpen) {
+                        Button(
+                            onClick = {
+                                keyboardController?.hide()
+                                focusManager.clearFocus()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = CoralAccent),
+                            shape = RoundedCornerShape(20.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                            modifier = Modifier.height(30.dp)
+                        ) {
+                            Text("Done ⌨️", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = CardBackground,
                     titleContentColor = Color.White
@@ -167,6 +201,15 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                .imePadding()
+                .navigationBarsPadding()
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) {
+                    keyboardController?.hide()
+                    focusManager.clearFocus()
+                }
                 .verticalScroll(rememberScrollState())
                 .padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -245,6 +288,8 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
                         placeholder = { Text("e.g. Maya") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                        keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = CoralAccent,
                             unfocusedBorderColor = BorderColor,
@@ -260,7 +305,8 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
                         onValueChange = { ageText = it.filter { ch -> ch.isDigit() }.take(2) },
                         label = { Text("Age (18+)") },
                         placeholder = { Text("24") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                        keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
@@ -289,7 +335,11 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
                                     border = BorderStroke(1.dp, if (selected) CoralAccent else BorderColor),
                                     modifier = Modifier
                                         .weight(1f)
-                                        .clickable { gender = opt }
+                                        .clickable {
+                                            keyboardController?.hide()
+                                            focusManager.clearFocus()
+                                            gender = opt
+                                        }
                                 ) {
                                     Text(
                                         text = opt,
@@ -320,7 +370,11 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
                                     border = BorderStroke(1.dp, if (selected) OrangeAccent else BorderColor),
                                     modifier = Modifier
                                         .weight(1f)
-                                        .clickable { interestedIn = opt }
+                                        .clickable {
+                                            keyboardController?.hide()
+                                            focusManager.clearFocus()
+                                            interestedIn = opt
+                                        }
                                 ) {
                                     Text(
                                         text = opt,
@@ -342,6 +396,8 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
                         placeholder = { Text("Kolkata") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                        keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = CoralAccent,
                             unfocusedBorderColor = BorderColor,
@@ -359,6 +415,11 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
                         placeholder = { Text("Love late night drives & deep conversations...") },
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 3,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = {
+                            keyboardController?.hide()
+                            focusManager.clearFocus()
+                        }),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = CoralAccent,
                             unfocusedBorderColor = BorderColor,
@@ -368,6 +429,21 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
                             unfocusedLabelColor = Color.Gray
                         )
                     )
+                }
+            }
+
+            if (isKeyboardOpen) {
+                OutlinedButton(
+                    onClick = {
+                        keyboardController?.hide()
+                        focusManager.clearFocus()
+                    },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = CoralAccent),
+                    border = BorderStroke(1.dp, CoralAccent.copy(alpha = 0.6f)),
+                    shape = RoundedCornerShape(50),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                ) {
+                    Text("⌨️ Hide Keyboard To View All Options", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
 
