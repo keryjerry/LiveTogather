@@ -1,6 +1,7 @@
 package com.devil.livetogather
 
 import android.app.AlertDialog
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.util.Patterns
@@ -11,6 +12,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import com.facebook.CallbackManager
 import com.facebook.FacebookCallback
 import com.facebook.FacebookException
+import com.facebook.FacebookSdk
+import com.facebook.login.LoginBehavior
 import com.facebook.login.LoginManager
 import com.facebook.login.LoginResult
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -95,7 +98,16 @@ class LoginActivity : ComponentActivity() {
             .build()
         googleSignInClient = GoogleSignIn.getClient(this, gso)
 
-        // 3. Setup Facebook Login SDK CallbackManager
+        // 3. Setup Facebook Login SDK
+        try {
+            FacebookSdk.setApplicationId(getString(R.string.facebook_app_id))
+            FacebookSdk.setClientToken(getString(R.string.facebook_client_token))
+            FacebookSdk.sdkInitialize(applicationContext)
+            LoginManager.getInstance().setLoginBehavior(LoginBehavior.NATIVE_WITH_FALLBACK)
+        } catch (e: Exception) {
+            android.util.Log.e("LoginActivity", "FacebookSdk init error", e)
+        }
+
         callbackManager = CallbackManager.Factory.create()
         LoginManager.getInstance().registerCallback(
             callbackManager,
@@ -111,7 +123,8 @@ class LoginActivity : ComponentActivity() {
 
                 override fun onError(error: FacebookException) {
                     setLoading(false)
-                    Toast.makeText(this@LoginActivity, "Facebook error: ${error.message}", Toast.LENGTH_LONG).show()
+                    val errorMsg = error.message ?: "Authentication error"
+                    Toast.makeText(this@LoginActivity, "Facebook error: $errorMsg", Toast.LENGTH_LONG).show()
                 }
             }
         )
@@ -276,6 +289,13 @@ class LoginActivity : ComponentActivity() {
      */
     private fun navigateToProfileSetup() {
         setLoading(false)
+        val uid = auth.currentUser?.uid
+        if (!uid.isNullOrBlank()) {
+            getSharedPreferences("livetogather_user_prefs", Context.MODE_PRIVATE)
+                .edit()
+                .putString("user_uid", uid)
+                .apply()
+        }
         val intent = Intent(this, ProfileSetupActivity::class.java)
         intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         startActivity(intent)

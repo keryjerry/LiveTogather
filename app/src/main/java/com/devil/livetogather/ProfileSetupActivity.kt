@@ -54,6 +54,14 @@ private val BorderColor = Color(0xFF2A2226)
 class ProfileSetupActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val imageLoader = coil.ImageLoader.Builder(this)
+            .components {
+                add(DataUriFetcher.Factory(this@ProfileSetupActivity))
+                add(DataUriFetcher.StringFactory(this@ProfileSetupActivity))
+            }
+            .build()
+        coil.Coil.setImageLoader(imageLoader)
+
         setContent {
             ProfileSetupScreen(
                 onComplete = {
@@ -95,6 +103,7 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
     var bio by remember { mutableStateOf(prefs.getString("profile_bio", "Love late-night coffee and spontaneous road trips 🚗") ?: "") }
     var interestedIn by remember { mutableStateOf(prefs.getString("profile_interested_in", "Everyone") ?: "Everyone") }
     var photoUrl by remember { mutableStateOf(initialPhoto) }
+    var localAvatarUri by remember { mutableStateOf<Uri?>(null) }
     var isSaving by remember { mutableStateOf(false) }
     var isUploadingPhoto by remember { mutableStateOf(false) }
 
@@ -102,6 +111,8 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
+            localAvatarUri = uri
+            photoUrl = uri.toString()
             isUploadingPhoto = true
             coroutineScope.launch(Dispatchers.IO) {
                 try {
@@ -114,7 +125,7 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
                     }
                 } catch (e: Exception) {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "Failed to load image", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Failed to compress image, using original", Toast.LENGTH_SHORT).show()
                     }
                 } finally {
                     withContext(Dispatchers.Main) {
@@ -171,8 +182,9 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
                         .padding(4.dp)
                 ) {
                     AsyncImage(
-                        model = photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80" },
+                        model = localAvatarUri ?: photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80" },
                         contentDescription = "Profile Photo",
+                        imageLoader = coil.Coil.imageLoader(context),
                         modifier = Modifier
                             .fillMaxSize()
                             .clip(CircleShape),
@@ -371,10 +383,18 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
                         Toast.makeText(context, "You must be 18+ to use LiveTogether", Toast.LENGTH_SHORT).show()
                         return@Button
                     }
+                    if (isUploadingPhoto) {
+                        Toast.makeText(context, "Optimizing photo, please wait a moment...", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
 
                     isSaving = true
+                    val effectiveUid = auth.currentUser?.uid
+                        ?: prefs.getString("user_uid", null)
+                        ?: currentUid.ifBlank { "user_${UUID.randomUUID().toString().take(8)}" }
+
                     val profile = UserProfile(
-                        uid = currentUid,
+                        uid = effectiveUid,
                         deviceId = deviceId,
                         name = name.trim(),
                         age = ageVal,
@@ -387,17 +407,28 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
                         locationName = city.trim()
                     )
 
-                    // Persist to SharedPreferences
+                    // 1. Immediately persist to SharedPreferences (instant & offline safe)
                     saveProfileToPrefs(prefs, profile)
+                    prefs.edit().putString("user_uid", effectiveUid).apply()
 
-                    // Persist to Firebase Firestore
-                    db.collection("users").document(currentUid)
-                        .set(profile, SetOptions.merge())
-                        .addOnCompleteListener {
-                            isSaving = false
-                            Toast.makeText(context, "Welcome to LiveTogether, ${profile.name}! 🎉", Toast.LENGTH_SHORT).show()
-                            onComplete()
-                        }
+                    // 2. Persist to Firebase Firestore asynchronously without locking the UI
+                    try {
+                        db.collection("users").document(effectiveUid)
+                            .set(profile, SetOptions.merge())
+                            .addOnSuccessListener {
+                                android.util.Log.d("ProfileSetup", "Firestore profile updated successfully")
+                            }
+                            .addOnFailureListener { e ->
+                                android.util.Log.w("ProfileSetup", "Firestore sync postponed or failed: ${e.message}")
+                            }
+                    } catch (e: Exception) {
+                        android.util.Log.e("ProfileSetup", "Firestore write error: ${e.message}")
+                    }
+
+                    // 3. Immediately dismiss loading, show welcome Toast, and proceed to MainActivity
+                    Toast.makeText(context, "Welcome to LiveTogether, ${profile.name}! 🎉", Toast.LENGTH_SHORT).show()
+                    isSaving = false
+                    onComplete()
                 },
                 enabled = !isSaving,
                 colors = ButtonDefaults.buttonColors(containerColor = CoralAccent),
