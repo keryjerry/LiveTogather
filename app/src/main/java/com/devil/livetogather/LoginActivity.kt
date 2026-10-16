@@ -97,7 +97,12 @@ class LoginActivity : ComponentActivity() {
                 db.collection("users").document(currentUser.uid).get()
                     .addOnSuccessListener { doc ->
                         if (doc != null && doc.exists()) {
-                            val userObj = parseUserProfileFromDoc(doc)
+                            var userObj = parseUserProfileFromDoc(doc)
+                            if (userObj.userId.isBlank()) {
+                                val genId = (100000..999999).random().toString()
+                                userObj = userObj.copy(userId = genId)
+                                db.collection("users").document(currentUser.uid).update("userId", genId)
+                            }
                             if (userObj.name.isNotBlank()) {
                                 saveProfileToPrefs(prefs, userObj)
                                 val intent = Intent(this, MainActivity::class.java)
@@ -341,7 +346,12 @@ class LoginActivity : ComponentActivity() {
             db.collection("users").document(uid).get()
                 .addOnSuccessListener { doc ->
                     if (doc != null && doc.exists()) {
-                        val userObj = parseUserProfileFromDoc(doc)
+                        var userObj = parseUserProfileFromDoc(doc)
+                        if (userObj.userId.isBlank()) {
+                            val genId = (100000..999999).random().toString()
+                            userObj = userObj.copy(userId = genId)
+                            db.collection("users").document(uid).update("userId", genId)
+                        }
                         if (userObj.name.isNotBlank()) {
                             saveProfileToPrefs(prefs, userObj)
                             val intent = Intent(this, MainActivity::class.java)

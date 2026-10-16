@@ -230,8 +230,11 @@ val SETTINGS_TOPIC_OPTIONS = mapOf(
 )
 
 class MainActivity : ComponentActivity() {
+    private var initialDeepLinkRoomId: String? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        initialDeepLinkRoomId = extractRoomId(intent)
         val imageLoader = ImageLoader.Builder(this)
             .components {
                 add(DataUriFetcher.Factory(this@MainActivity))
@@ -240,14 +243,35 @@ class MainActivity : ComponentActivity() {
             .build()
         Coil.setImageLoader(imageLoader)
         setContent {
-            LiveTogatherApp()
+            LiveTogatherApp(initialRoomId = initialDeepLinkRoomId)
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val roomId = extractRoomId(intent)
+        if (!roomId.isNullOrBlank()) {
+            pendingDeepLinkRoomId.value = roomId
+        }
+    }
+
+    private fun extractRoomId(intent: Intent?): String? {
+        if (intent == null) return null
+        return intent.getStringExtra("ROOM_ID")
+            ?: intent.getStringExtra("extra_room_id")
+            ?: intent.getStringExtra("roomId")
+            ?: intent.data?.getQueryParameter("roomId")
+    }
+
+    companion object {
+        val pendingDeepLinkRoomId = mutableStateOf<String?>(null)
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LiveTogatherApp() {
+fun LiveTogatherApp(initialRoomId: String? = null) {
     val context = LocalContext.current
     val db = remember { FirebaseFirestore.getInstance() }
     val auth = remember { FirebaseAuth.getInstance() }
@@ -272,6 +296,7 @@ fun LiveTogatherApp() {
         mutableStateOf(
             UserProfile(
                 uid = currentUserId,
+                userId = prefs.getString("profile_user_id", "") ?: "",
                 deviceId = prefs.getString("profile_device_id", deviceId) ?: deviceId,
                 name = prefs.getString("profile_name", "Maya") ?: "Maya",
                 age = prefs.getInt("profile_age", 24),
@@ -305,6 +330,79 @@ fun LiveTogatherApp() {
         )
     }
 
+    // Auto-generate unique 6-digit User ID if missing and persist to Firestore + Prefs
+    LaunchedEffect(currentUser.userId, currentUserId) {
+        if (currentUserId.isNotBlank()) {
+            if (currentUser.userId.isBlank()) {
+                val genId = (100000..999999).random().toString()
+                currentUser = currentUser.copy(userId = genId)
+                saveProfileToPrefs(prefs, currentUser)
+                db.collection("users").document(currentUserId).update("userId", genId)
+            } else {
+                db.collection("users").document(currentUserId).update("userId", currentUser.userId)
+            }
+        }
+    }
+
+    // Top Search Bar State (Dual-Mode: Room vs User)
+    var isSearchExpanded by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var searchMode by remember { mutableStateOf("room") } // "room" or "user"
+    val searchRoomResults = remember { mutableStateListOf<RoomItem>() }
+    val searchUserResults = remember { mutableStateListOf<UserProfile>() }
+    var isSearching by remember { mutableStateOf(false) }
+
+    LaunchedEffect(searchQuery, searchMode) {
+        val q = searchQuery.trim()
+        if (q.isBlank()) {
+            searchRoomResults.clear()
+            searchUserResults.clear()
+            isSearching = false
+            return@LaunchedEffect
+        }
+        isSearching = true
+        if (searchMode == "room") {
+            db.collection("rooms").limit(50).get()
+                .addOnSuccessListener { snapshot ->
+                    val list = mutableListOf<RoomItem>()
+                    for (doc in snapshot.documents) {
+                        val r = parseRoomFromDoc(doc)
+                        if (r.id.contains(q, ignoreCase = true) ||
+                            r.roomId.contains(q, ignoreCase = true) ||
+                            r.title.contains(q, ignoreCase = true) ||
+                            r.roomName.contains(q, ignoreCase = true) ||
+                            r.hostName.contains(q, ignoreCase = true)
+                        ) {
+                            list.add(r)
+                        }
+                    }
+                    searchRoomResults.clear()
+                    searchRoomResults.addAll(list)
+                    isSearching = false
+                }
+                .addOnFailureListener { isSearching = false }
+        } else {
+            db.collection("users").limit(50).get()
+                .addOnSuccessListener { snapshot ->
+                    val list = mutableListOf<UserProfile>()
+                    for (doc in snapshot.documents) {
+                        val u = parseUserProfileFromDoc(doc)
+                        if (u.uid.contains(q, ignoreCase = true) ||
+                            u.userId.contains(q, ignoreCase = true) ||
+                            u.name.contains(q, ignoreCase = true) ||
+                            u.city.contains(q, ignoreCase = true)
+                        ) {
+                            list.add(u)
+                        }
+                    }
+                    searchUserResults.clear()
+                    searchUserResults.addAll(list)
+                    isSearching = false
+                }
+                .addOnFailureListener { isSearching = false }
+        }
+    }
+
     var currentScreen by remember { mutableStateOf("discover") }
     var discoverTab by remember { mutableStateOf("cards") } // "cards" or "rooms"
     var selectedCategory by remember { mutableStateOf("all") }
@@ -326,6 +424,21 @@ fun LiveTogatherApp() {
     var showCommentsMoment by remember { mutableStateOf<MomentItem?>(null) }
     var activeRoomDeck by remember { mutableStateOf<RoomItem?>(null) }
     var activeAudioRoom by remember { mutableStateOf<RoomItem?>(null) }
+
+    // Automatic Live Room Deep-Linking from FCM Notification Intent
+    val pendingDeepLink = MainActivity.pendingDeepLinkRoomId.value ?: initialRoomId
+    LaunchedEffect(pendingDeepLink) {
+        if (!pendingDeepLink.isNullOrBlank()) {
+            db.collection("rooms").document(pendingDeepLink).get()
+                .addOnSuccessListener { doc ->
+                    if (doc != null && doc.exists()) {
+                        val r = parseRoomFromDoc(doc)
+                        activeAudioRoom = r
+                    }
+                    MainActivity.pendingDeepLinkRoomId.value = null
+                }
+        }
+    }
     var showCreateRoomDialog by remember { mutableStateOf(false) }
     var createRoomInitialCategory by remember { mutableStateOf("free_tonight") }
     var activeCategoryHub by remember { mutableStateOf<IntentCategory?>(null) }
@@ -604,83 +717,365 @@ fun LiveTogatherApp() {
         Scaffold(
             containerColor = BrandDark,
             topBar = {
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(BrandCard)
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.LocalFireDepartment,
-                            contentDescription = null,
-                            tint = BrandCoral,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "LiveTogather",
-                            color = BrandCoral,
-                            fontWeight = FontWeight.Black,
-                            fontSize = 20.sp
-                        )
-                    }
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Real-Time Cloud Firestore Server Refresh Action
-                        val infiniteTransition = rememberInfiniteTransition(label = "refreshAnim")
-                        val rotation by infiniteTransition.animateFloat(
-                            initialValue = 0f,
-                            targetValue = 360f,
-                            animationSpec = infiniteRepeatable(
-                                animation = tween(1000, easing = LinearEasing)
-                            ),
-                            label = "refreshRotation"
-                        )
-                        IconButton(
-                            onClick = triggerRefresh,
-                            enabled = !refreshEngine.isRefreshing
-                        ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = "Refresh Cloud Firestore",
-                                modifier = Modifier.rotate(if (refreshEngine.isRefreshing) rotation else 0f),
-                                tint = if (refreshEngine.isRefreshing) BrandCoral else Color.White
+                                imageVector = Icons.Default.LocalFireDepartment,
+                                contentDescription = null,
+                                tint = BrandCoral,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "LiveTogather",
+                                color = BrandCoral,
+                                fontWeight = FontWeight.Black,
+                                fontSize = 20.sp
                             )
                         }
 
-                        // Real-time Notification Bell with Badge
-                        IconButton(onClick = { showNotificationsDialog = true }) {
-                            BadgedBox(
-                                badge = {
-                                    if (unreadNotificationsCount > 0) {
-                                        Badge(
-                                            containerColor = BrandCoral,
-                                            contentColor = Color.White
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            // Real-Time Cloud Firestore Server Refresh Action
+                            val infiniteTransition = rememberInfiniteTransition(label = "refreshAnim")
+                            val rotation by infiniteTransition.animateFloat(
+                                initialValue = 0f,
+                                targetValue = 360f,
+                                animationSpec = infiniteRepeatable(
+                                    animation = tween(1000, easing = LinearEasing)
+                                ),
+                                label = "refreshRotation"
+                            )
+                            IconButton(
+                                onClick = triggerRefresh,
+                                enabled = !refreshEngine.isRefreshing
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Refresh Cloud Firestore",
+                                    modifier = Modifier.rotate(if (refreshEngine.isRefreshing) rotation else 0f),
+                                    tint = if (refreshEngine.isRefreshing) BrandCoral else Color.White
+                                )
+                            }
+
+                            // Sleek Dual-Mode Search Button
+                            IconButton(onClick = {
+                                isSearchExpanded = !isSearchExpanded
+                                if (!isSearchExpanded) {
+                                    searchQuery = ""
+                                    searchRoomResults.clear()
+                                    searchUserResults.clear()
+                                }
+                            }) {
+                                Icon(
+                                    imageVector = if (isSearchExpanded) Icons.Default.Close else Icons.Default.Search,
+                                    contentDescription = "Search",
+                                    tint = if (isSearchExpanded) BrandCoral else Color.White
+                                )
+                            }
+
+                            // Real-time Notification Bell with Badge
+                            IconButton(onClick = { showNotificationsDialog = true }) {
+                                BadgedBox(
+                                    badge = {
+                                        if (unreadNotificationsCount > 0) {
+                                            Badge(
+                                                containerColor = BrandCoral,
+                                                contentColor = Color.White
+                                            ) {
+                                                Text("$unreadNotificationsCount", fontSize = 10.sp)
+                                            }
+                                        }
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Notifications,
+                                        contentDescription = "Notifications",
+                                        tint = if (unreadNotificationsCount > 0) BrandOrange else Color.White
+                                    )
+                                }
+                            }
+
+                            // Profile Settings Gear Icon (Visible exclusively on real main profile screen)
+                            if (currentScreen == "profile") {
+                                IconButton(onClick = { showSettingsDialog = true }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Settings,
+                                        contentDescription = "Profile Settings",
+                                        tint = Color.White
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Sleek, Minimal Search Bar & Toggle Drawer
+                    AnimatedVisibility(
+                        visible = isSearchExpanded,
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut()
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(BrandCard)
+                                .padding(horizontal = 16.dp, vertical = 6.dp)
+                        ) {
+                            // Dual-Mode Pill Toggle ("Room" vs "User")
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 8.dp),
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(20.dp),
+                                    color = BrandDark,
+                                    border = BorderStroke(1.dp, BrandBorder)
+                                ) {
+                                    Row(modifier = Modifier.padding(2.dp)) {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(16.dp))
+                                                .background(if (searchMode == "room") BrandCoral else Color.Transparent)
+                                                .clickable { searchMode = "room" }
+                                                .padding(horizontal = 16.dp, vertical = 5.dp)
                                         ) {
-                                            Text("$unreadNotificationsCount", fontSize = 10.sp)
+                                            Text(
+                                                text = "🎙️ Room",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (searchMode == "room") Color.White else Color.Gray
+                                            )
+                                        }
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(16.dp))
+                                                .background(if (searchMode == "user") BrandCoral else Color.Transparent)
+                                                .clickable { searchMode = "user" }
+                                                .padding(horizontal = 16.dp, vertical = 5.dp)
+                                        ) {
+                                            Text(
+                                                text = "👤 User",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (searchMode == "user") Color.White else Color.Gray
+                                            )
                                         }
                                     }
                                 }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Notifications,
-                                    contentDescription = "Notifications",
-                                    tint = if (unreadNotificationsCount > 0) BrandOrange else Color.White
-                                )
                             }
-                        }
 
-                        // Profile Settings Gear Icon (Visible exclusively on real main profile screen)
-                        if (currentScreen == "profile") {
-                            IconButton(onClick = { showSettingsDialog = true }) {
-                                Icon(
-                                    imageVector = Icons.Default.Settings,
-                                    contentDescription = "Profile Settings",
-                                    tint = Color.White
+                            // Search Input Field
+                            OutlinedTextField(
+                                value = searchQuery,
+                                onValueChange = { searchQuery = it },
+                                modifier = Modifier.fillMaxWidth().height(50.dp),
+                                placeholder = {
+                                    Text(
+                                        text = if (searchMode == "room") "Search 6-digit Room ID or Name..." else "Search 6-digit User ID or Username...",
+                                        fontSize = 12.sp,
+                                        color = Color.Gray
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Search,
+                                        contentDescription = null,
+                                        tint = BrandCoral,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                },
+                                trailingIcon = {
+                                    if (searchQuery.isNotEmpty()) {
+                                        IconButton(onClick = { searchQuery = "" }) {
+                                            Icon(
+                                                imageVector = Icons.Default.Clear,
+                                                contentDescription = "Clear",
+                                                tint = Color.Gray,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+                                },
+                                singleLine = true,
+                                shape = RoundedCornerShape(24.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedContainerColor = BrandDark,
+                                    unfocusedContainerColor = BrandDark,
+                                    focusedBorderColor = BrandCoral,
+                                    unfocusedBorderColor = BrandBorder,
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White
                                 )
+                            )
+
+                            // Live Firestore Search Results List
+                            if (searchQuery.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(containerColor = BrandDark),
+                                    border = BorderStroke(1.dp, BrandBorder),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    if (isSearching) {
+                                        Box(
+                                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(20.dp),
+                                                color = BrandCoral,
+                                                strokeWidth = 2.dp
+                                            )
+                                        }
+                                    } else if (searchMode == "room") {
+                                        if (searchRoomResults.isEmpty()) {
+                                            Text(
+                                                text = "No live rooms found for \"$searchQuery\"",
+                                                color = Color.Gray,
+                                                fontSize = 12.sp,
+                                                modifier = Modifier.padding(12.dp)
+                                            )
+                                        } else {
+                                            LazyColumn(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .heightIn(max = 240.dp)
+                                                    .padding(6.dp)
+                                            ) {
+                                                items(searchRoomResults) { room ->
+                                                    Row(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .clip(RoundedCornerShape(8.dp))
+                                                            .clickable {
+                                                                isSearchExpanded = false
+                                                                activeAudioRoom = room
+                                                            }
+                                                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .size(36.dp)
+                                                                .clip(CircleShape)
+                                                                .background(BrandCard),
+                                                            contentAlignment = Alignment.Center
+                                                        ) {
+                                                            Text(room.emoji.ifBlank { "🎙️" }, fontSize = 16.sp)
+                                                        }
+                                                        Spacer(modifier = Modifier.width(10.dp))
+                                                        Column(modifier = Modifier.weight(1f)) {
+                                                            Text(
+                                                                text = room.title.ifBlank { room.roomName.ifBlank { "Live Room" } },
+                                                                color = Color.White,
+                                                                fontWeight = FontWeight.Bold,
+                                                                fontSize = 13.sp,
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis
+                                                            )
+                                                            Text(
+                                                                text = "ID: ${room.roomId.ifBlank { room.id }} • Host: ${room.hostName}",
+                                                                color = Color.Gray,
+                                                                fontSize = 11.sp
+                                                            )
+                                                        }
+                                                        Button(
+                                                            onClick = {
+                                                                isSearchExpanded = false
+                                                                activeAudioRoom = room
+                                                            },
+                                                            colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                                            shape = RoundedCornerShape(12.dp),
+                                                            modifier = Modifier.height(28.dp)
+                                                        ) {
+                                                            Text("Join", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        if (searchUserResults.isEmpty()) {
+                                            Text(
+                                                text = "No users found for \"$searchQuery\"",
+                                                color = Color.Gray,
+                                                fontSize = 12.sp,
+                                                modifier = Modifier.padding(12.dp)
+                                            )
+                                        } else {
+                                            LazyColumn(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .heightIn(max = 240.dp)
+                                                    .padding(6.dp)
+                                            ) {
+                                                items(searchUserResults) { user ->
+                                                    Row(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .clip(RoundedCornerShape(8.dp))
+                                                            .clickable {
+                                                                isSearchExpanded = false
+                                                                showDirectMessageDialog = user
+                                                            }
+                                                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        AsyncImage(
+                                                            model = user.photo.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80" },
+                                                            contentDescription = user.name,
+                                                            modifier = Modifier.size(36.dp).clip(CircleShape),
+                                                            contentScale = ContentScale.Crop
+                                                        )
+                                                        Spacer(modifier = Modifier.width(10.dp))
+                                                        Column(modifier = Modifier.weight(1f)) {
+                                                            Text(
+                                                                text = user.name,
+                                                                color = Color.White,
+                                                                fontWeight = FontWeight.Bold,
+                                                                fontSize = 13.sp,
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis
+                                                            )
+                                                            Text(
+                                                                text = "User ID: ${user.userId.ifBlank { user.uid.take(8) }} • ${user.city}",
+                                                                color = Color.Gray,
+                                                                fontSize = 11.sp
+                                                            )
+                                                        }
+                                                        Button(
+                                                            onClick = {
+                                                                isSearchExpanded = false
+                                                                showDirectMessageDialog = user
+                                                            },
+                                                            colors = ButtonDefaults.buttonColors(containerColor = BrandCardSubtle),
+                                                            border = BorderStroke(1.dp, BrandBorder),
+                                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                                            shape = RoundedCornerShape(12.dp),
+                                                            modifier = Modifier.height(28.dp)
+                                                        ) {
+                                                            Text("View", fontSize = 11.sp, color = Color.White)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1344,16 +1739,20 @@ fun LiveTogatherApp() {
                 initialCategory = createRoomInitialCategory,
                 onDismiss = { showCreateRoomDialog = false },
                 onCreate = { title, categoryId, themeUrl ->
-                    val roomId = "custom_" + UUID.randomUUID().toString().take(8)
+                    val generatedRoomCode = (100000..999999).random().toString()
+                    val roomId = generatedRoomCode
                     val catEmoji = CATEGORY_LIST.find { it.id == categoryId }?.label?.take(2)?.trim() ?: "🎙️"
                     val finalBanner = if (themeUrl.isNotBlank()) themeUrl else getCategoryBanner(categoryId)
                     val newRoom = RoomItem(
                         id = roomId,
+                        roomId = roomId,
                         title = title,
+                        roomName = title,
                         category = categoryId,
                         emoji = catEmoji,
                         banner_image_url = finalBanner,
                         hostId = currentUserId,
+                        hostUid = currentUserId,
                         hostName = currentUser.name,
                         hostPhotoUrl = currentUser.photo,
                         nowPlayingTitle = "",
@@ -1364,6 +1763,7 @@ fun LiveTogatherApp() {
                         isPlaying = false,
                         isCustom = true,
                         isHostLive = true,
+                        isLive = true,
                         statusMessage = "LIVE NOW",
                         createdAt = System.currentTimeMillis()
                     )
@@ -1371,6 +1771,14 @@ fun LiveTogatherApp() {
                     db.collection("rooms").document(roomId).set(newRoom)
                         .addOnSuccessListener {
                             Log.d("Firestore", "Room $roomId successfully created in Firestore")
+                            // Notify all followers about host going live
+                            sendHostLiveNotification(
+                                db = db,
+                                hostId = currentUserId,
+                                hostName = currentUser.name,
+                                hostPhoto = currentUser.photo,
+                                room = newRoom
+                            )
                         }
                         .addOnFailureListener { e ->
                             Log.e("Firestore", "Failed to create room $roomId: ${e.message}")
@@ -1493,6 +1901,14 @@ fun LiveTogatherApp() {
             NotificationsDialog(
                 notifications = notifications,
                 onDismiss = { showNotificationsDialog = false },
+                onOpenRoom = { rId ->
+                    db.collection("rooms").document(rId).get()
+                        .addOnSuccessListener { doc ->
+                            if (doc != null && doc.exists()) {
+                                activeAudioRoom = parseRoomFromDoc(doc)
+                            }
+                        }
+                },
                 onMarkAllRead = {
                     notifications.forEach { notif ->
                         if (!notif.isRead) {
@@ -5696,6 +6112,7 @@ fun SettingsTopicSelectionDialog(
 fun NotificationsDialog(
     notifications: List<NotificationItem>,
     onDismiss: () -> Unit,
+    onOpenRoom: ((String) -> Unit)? = null,
     onMarkAllRead: () -> Unit
 ) {
     Dialog(onDismissRequest = onDismiss) {
@@ -5735,6 +6152,14 @@ fun NotificationsDialog(
                     ) {
                         items(notifications) { notif ->
                             Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        if (notif.roomId.isNotBlank()) {
+                                            onOpenRoom?.invoke(notif.roomId)
+                                            onDismiss()
+                                        }
+                                    },
                                 colors = CardDefaults.cardColors(
                                     containerColor = if (notif.isRead) BrandDark else BrandCardSubtle
                                 ),
@@ -6558,6 +6983,42 @@ fun sendNotification(
         isRead = false
     )
     db.collection("notifications").document(notif.id).set(notif)
+}
+
+fun sendHostLiveNotification(
+    db: FirebaseFirestore,
+    hostId: String,
+    hostName: String,
+    hostPhoto: String,
+    room: RoomItem
+) {
+    if (hostId.isBlank()) return
+    db.collection("users").document(hostId).collection("followers")
+        .get()
+        .addOnSuccessListener { snapshot ->
+            for (doc in snapshot.documents) {
+                val followerUid = doc.id
+                if (followerUid.isNotBlank() && followerUid != hostId) {
+                    val notif = NotificationItem(
+                        id = UUID.randomUUID().toString(),
+                        targetUserId = followerUid,
+                        senderId = hostId,
+                        senderName = hostName,
+                        senderPhoto = hostPhoto,
+                        type = "LIVE",
+                        title = "🔴 $hostName is LIVE!",
+                        message = "Tap to join '${room.title.ifBlank { room.roomName }}' (Room ID: ${room.roomId})",
+                        timestamp = System.currentTimeMillis(),
+                        isRead = false,
+                        roomId = room.id
+                    )
+                    db.collection("notifications").document(notif.id).set(notif)
+                }
+            }
+        }
+        .addOnFailureListener { e ->
+            Log.e("MainActivity", "Failed to query followers for live notification: ${e.message}")
+        }
 }
 
 fun toggleMomentLike(db: FirebaseFirestore, moment: MomentItem, currentUserId: String) {

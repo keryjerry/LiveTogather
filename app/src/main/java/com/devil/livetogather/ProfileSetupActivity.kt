@@ -469,8 +469,10 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
                         ?: prefs.getString("user_uid", null)
                         ?: currentUid.ifBlank { "user_${UUID.randomUUID().toString().take(8)}" }
 
+                    val generatedUserId = (100000..999999).random().toString()
                     val profile = UserProfile(
                         uid = effectiveUid,
+                        userId = generatedUserId,
                         deviceId = deviceId,
                         name = name.trim(),
                         age = ageVal,

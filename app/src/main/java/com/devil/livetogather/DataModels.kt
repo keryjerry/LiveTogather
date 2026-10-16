@@ -52,7 +52,11 @@ data class RoomItem(
     @get:PropertyName("bannedUserIds") @set:PropertyName("bannedUserIds") var bannedUserIds: List<String> = emptyList(),
     @get:PropertyName("kickedUserIds") @set:PropertyName("kickedUserIds") var kickedUserIds: List<String> = emptyList(),
     @get:PropertyName("adminUserIds") @set:PropertyName("adminUserIds") var adminUserIds: List<String> = emptyList(),
-    @get:PropertyName("createdAt") @set:PropertyName("createdAt") var createdAt: Long = System.currentTimeMillis()
+    @get:PropertyName("createdAt") @set:PropertyName("createdAt") var createdAt: Long = System.currentTimeMillis(),
+    @get:PropertyName("roomId") @set:PropertyName("roomId") var roomId: String = "",
+    @get:PropertyName("roomName") @set:PropertyName("roomName") var roomName: String = "",
+    @get:PropertyName("hostUid") @set:PropertyName("hostUid") var hostUid: String = "",
+    @get:PropertyName("isLive") @set:PropertyName("isLive") var isLive: Boolean = true
 )
 
 data class MicSeat(
@@ -68,12 +72,12 @@ data class MicSeat(
 )
 
 fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
-    val id = doc.getString("id") ?: doc.id
-    val title = doc.getString("title") ?: ""
+    val id = doc.getString("roomId") ?: doc.getString("id") ?: doc.id
+    val title = doc.getString("roomName") ?: doc.getString("title") ?: ""
     val emoji = doc.getString("emoji") ?: "🎙️"
     val bannerUrl = doc.getString("banner_image_url") ?: ""
     val activeCount = (doc.getLong("activeUserCount") ?: 0L).toInt()
-    val hostId = doc.getString("hostId") ?: ""
+    val hostId = doc.getString("hostUid") ?: doc.getString("hostId") ?: ""
     val hostName = doc.getString("hostName") ?: ""
     val hostPhotoUrl = doc.getString("hostPhotoUrl") ?: ""
     val category = doc.getString("category") ?: ""
@@ -85,7 +89,7 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
     val playbackPosition = doc.getLong("playbackPosition") ?: 0L
     val isPlaying = doc.getBoolean("isPlaying") ?: doc.getBoolean("playing") ?: false
     val isCustom = doc.getBoolean("isCustom") ?: doc.getBoolean("custom") ?: true
-    val isHostLive = doc.getBoolean("isHostLive") ?: doc.getBoolean("hostLive") ?: true
+    val isHostLive = doc.getBoolean("isLive") ?: doc.getBoolean("isHostLive") ?: doc.getBoolean("hostLive") ?: true
     val scheduledTime = doc.getString("scheduledTime") ?: ""
     val statusMessage = doc.getString("statusMessage") ?: ""
     val privacy = doc.getString("privacy") ?: "public"
@@ -96,6 +100,10 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
     @Suppress("UNCHECKED_CAST")
     val adminUserIds = (doc.get("adminUserIds") as? List<String>) ?: emptyList()
     val createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
+    val roomId = doc.getString("roomId") ?: id
+    val roomName = doc.getString("roomName") ?: title
+    val hostUid = doc.getString("hostUid") ?: hostId
+    val isLive = doc.getBoolean("isLive") ?: isHostLive
 
     return RoomItem(
         id = id,
@@ -122,7 +130,11 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
         bannedUserIds = bannedUserIds,
         kickedUserIds = kickedUserIds,
         adminUserIds = adminUserIds,
-        createdAt = createdAt
+        createdAt = createdAt,
+        roomId = roomId,
+        roomName = roomName,
+        hostUid = hostUid,
+        isLive = isLive
     )
 }
 
@@ -167,6 +179,7 @@ val SUBSCRIPTION_PLANS = listOf(
 
 data class UserProfile(
     val uid: String = "",
+    val userId: String = "",
     val deviceId: String = "",
     val name: String = "",
     val age: Int = 24,
@@ -275,6 +288,7 @@ data class UserProfile(
 
 fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
     val uid = doc.getString("uid") ?: doc.id
+    val userId = doc.getString("userId") ?: doc.getString("user_id") ?: ""
     val deviceId = doc.getString("deviceId") ?: ""
     val name = doc.getString("name") ?: ""
     val age = (doc.getLong("age") ?: 24L).toInt()
@@ -331,6 +345,7 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
 
     return UserProfile(
         uid = uid,
+        userId = userId,
         deviceId = deviceId,
         name = name,
         age = age,
@@ -388,6 +403,7 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
 fun saveProfileToPrefs(prefs: SharedPreferences, user: UserProfile) {
     prefs.edit()
         .putString("user_uid", user.uid)
+        .putString("profile_user_id", user.userId)
         .putString("profile_device_id", user.deviceId)
         .putString("profile_name", user.name)
         .putInt("profile_age", user.age)
@@ -522,7 +538,8 @@ data class NotificationItem(
     val title: String = "",
     val message: String = "",
     val timestamp: Long = System.currentTimeMillis(),
-    val isRead: Boolean = false
+    val isRead: Boolean = false,
+    val roomId: String = ""
 )
 
 data class RoomMember(

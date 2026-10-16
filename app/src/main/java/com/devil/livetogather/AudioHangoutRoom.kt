@@ -4,6 +4,7 @@ package com.devil.livetogather
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.util.Log
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
@@ -1592,10 +1593,24 @@ fun RoomMemberProfileSheet(
                                 )
                                 db.collection("users").document(member.uid)
                                     .collection("followers").document(currentUser.uid).set(record)
+                                db.collection("users").document(currentUser.uid)
+                                    .collection("following").document(member.uid).set(
+                                        mapOf(
+                                            "hostUid" to member.uid,
+                                            "hostName" to member.name,
+                                            "timestamp" to System.currentTimeMillis()
+                                        )
+                                    )
                                 db.collection("users").document(member.uid)
                                     .update("followerCount", FieldValue.increment(1))
                                 db.collection("users").document(currentUser.uid)
                                     .update("followingCount", FieldValue.increment(1))
+                                try {
+                                    com.google.firebase.messaging.FirebaseMessaging.getInstance()
+                                        .subscribeToTopic("host_${member.uid}")
+                                } catch (e: Exception) {
+                                    Log.w("AudioHangoutRoom", "FCM topic subscribe failed: ${e.message}")
+                                }
                                 sendNotification(
                                     db = db,
                                     targetUserId = member.uid,
@@ -1614,10 +1629,18 @@ fun RoomMemberProfileSheet(
                             if (member.uid.isNotBlank() && member.uid != currentUser.uid) {
                                 db.collection("users").document(member.uid)
                                     .collection("followers").document(currentUser.uid).delete()
+                                db.collection("users").document(currentUser.uid)
+                                    .collection("following").document(member.uid).delete()
                                 db.collection("users").document(member.uid)
                                     .update("followerCount", FieldValue.increment(-1))
                                 db.collection("users").document(currentUser.uid)
                                     .update("followingCount", FieldValue.increment(-1))
+                                try {
+                                    com.google.firebase.messaging.FirebaseMessaging.getInstance()
+                                        .unsubscribeFromTopic("host_${member.uid}")
+                                } catch (e: Exception) {
+                                    Log.w("AudioHangoutRoom", "FCM topic unsubscribe failed: ${e.message}")
+                                }
                             } else {
                                 db.collection("users").document(currentUser.uid)
                                     .update("followerCount", FieldValue.increment(-1))
@@ -1848,7 +1871,8 @@ fun broadcastLiveNotificationToFollowers(
                             message = "$hostName just went LIVE in '${room.title}'! Tap to join.",
                             type = "host_live",
                             timestamp = System.currentTimeMillis(),
-                            isRead = false
+                            isRead = false,
+                            roomId = room.id
                         )
                         db.collection("users").document(followerId)
                             .collection("notifications").document(notifId).set(notif)
@@ -2515,15 +2539,34 @@ fun AudioHangoutRoomDialog(
         }
     }
 
-    // Ensure current user is registered in rooms/{roomId}/members in Firestore and deleted on exit
+    // Ensure current user is registered in rooms/{roomId}/members in Firestore, Agora Voice joined and cleaned up on exit
     DisposableEffect(room.id, currentUser.uid) {
         db.collection("rooms").document(room.id)
             .collection("members").document(currentUser.uid).set(currentMember)
 
+        val agoraUid = currentUser.userId.toIntOrNull() ?: (currentUser.uid.hashCode() and 0x7FFFFFFF)
+        val initialMute = !isUserHost
+        com.devil.livetogather.agora.AgoraVoiceManager.joinRoom(
+            context = context,
+            roomId = room.id,
+            uid = agoraUid,
+            startMuted = initialMute
+        )
+
         onDispose {
             db.collection("rooms").document(room.id)
                 .collection("members").document(currentUser.uid).delete()
+            com.devil.livetogather.agora.AgoraVoiceManager.leaveRoom()
         }
+    }
+
+    val myActiveMicSeat = micSeats.find { it.uid == currentUser.uid }
+    val isUserOnStage = myActiveMicSeat != null
+    val isMicMutedState = myActiveMicSeat?.isMuted ?: true
+
+    LaunchedEffect(isUserOnStage, isMicMutedState) {
+        val shouldMute = !isUserOnStage || isMicMutedState
+        com.devil.livetogather.agora.AgoraVoiceManager.muteLocalAudio(shouldMute)
     }
 
     val targetHostId = room.hostId.ifEmpty { activeMembers.firstOrNull { it.role == "host" }?.uid ?: if (isUserHost) currentUser.uid else "" }
@@ -3337,10 +3380,24 @@ fun AudioHangoutRoomDialog(
                                         )
                                         db.collection("users").document(targetHostId)
                                             .collection("followers").document(currentUser.uid).set(record)
+                                        db.collection("users").document(currentUser.uid)
+                                            .collection("following").document(targetHostId).set(
+                                                mapOf(
+                                                    "hostUid" to targetHostId,
+                                                    "hostName" to hostName,
+                                                    "timestamp" to System.currentTimeMillis()
+                                                )
+                                            )
                                         db.collection("users").document(targetHostId)
                                             .update("followerCount", FieldValue.increment(1))
                                         db.collection("users").document(currentUser.uid)
                                             .update("followingCount", FieldValue.increment(1))
+                                        try {
+                                            com.google.firebase.messaging.FirebaseMessaging.getInstance()
+                                                .subscribeToTopic("host_$targetHostId")
+                                        } catch (e: Exception) {
+                                            Log.w("AudioHangoutRoom", "FCM topic subscribe failed: ${e.message}")
+                                        }
 
                                         sendNotification(
                                             db = db,
@@ -3361,10 +3418,18 @@ fun AudioHangoutRoomDialog(
                                     if (targetHostId.isNotBlank() && targetHostId != currentUser.uid) {
                                         db.collection("users").document(targetHostId)
                                             .collection("followers").document(currentUser.uid).delete()
+                                        db.collection("users").document(currentUser.uid)
+                                            .collection("following").document(targetHostId).delete()
                                         db.collection("users").document(targetHostId)
                                             .update("followerCount", FieldValue.increment(-1))
                                         db.collection("users").document(currentUser.uid)
                                             .update("followingCount", FieldValue.increment(-1))
+                                        try {
+                                            com.google.firebase.messaging.FirebaseMessaging.getInstance()
+                                                .unsubscribeFromTopic("host_$targetHostId")
+                                        } catch (e: Exception) {
+                                            Log.w("AudioHangoutRoom", "FCM topic unsubscribe failed: ${e.message}")
+                                        }
                                     } else {
                                         db.collection("users").document(currentUser.uid)
                                             .update("followerCount", FieldValue.increment(-1))
