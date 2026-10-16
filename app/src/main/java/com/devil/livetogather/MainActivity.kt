@@ -352,6 +352,20 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
         }
     }
 
+    // In-App Auto-Update System
+    var availableAppUpdate by remember { mutableStateOf<AppUpdateInfo?>(null) }
+    var updateDownloadProgress by remember { mutableFloatStateOf(-1f) }
+    var isDownloadingUpdate by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        AppUpdateManager.checkForUpdate(
+            context = context,
+            onUpdateAvailable = { updateInfo ->
+                availableAppUpdate = updateInfo
+            }
+        )
+    }
+
     // Top Search Bar State (Dual-Mode: Room vs User)
     var isSearchExpanded by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
@@ -2296,6 +2310,40 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                     }
                 }
             }
+        }
+
+        // 9. In-App Auto-Update Notification Dialog
+        if (availableAppUpdate != null) {
+            AppUpdateDialog(
+                updateInfo = availableAppUpdate!!,
+                downloadProgress = updateDownloadProgress,
+                isDownloading = isDownloadingUpdate,
+                onUpdateClick = { info ->
+                    isDownloadingUpdate = true
+                    updateDownloadProgress = 0f
+                    AppUpdateManager.downloadAndInstallApk(
+                        context = context,
+                        apkUrl = info.apkUrl,
+                        onProgress = { progress ->
+                            updateDownloadProgress = progress
+                        },
+                        onSuccess = {
+                            isDownloadingUpdate = false
+                            updateDownloadProgress = 1f
+                        },
+                        onError = { err ->
+                            isDownloadingUpdate = false
+                            updateDownloadProgress = -1f
+                            Toast.makeText(context, "Update error: $err", Toast.LENGTH_LONG).show()
+                        }
+                    )
+                },
+                onDismiss = {
+                    if (!availableAppUpdate!!.isForceUpdate) {
+                        availableAppUpdate = null
+                    }
+                }
+            )
         }
     }
 }

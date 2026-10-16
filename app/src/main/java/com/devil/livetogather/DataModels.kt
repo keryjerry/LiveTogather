@@ -56,8 +56,12 @@ data class RoomItem(
     @get:PropertyName("roomId") @set:PropertyName("roomId") var roomId: String = "",
     @get:PropertyName("roomName") @set:PropertyName("roomName") var roomName: String = "",
     @get:PropertyName("hostUid") @set:PropertyName("hostUid") var hostUid: String = "",
-    @get:PropertyName("isLive") @set:PropertyName("isLive") var isLive: Boolean = true
-)
+    @get:PropertyName("isLive") @set:PropertyName("isLive") var isLive: Boolean = true,
+    @get:PropertyName("announcement") @set:PropertyName("announcement") var announcement: String = "",
+    @get:PropertyName("isLocked") @set:PropertyName("isLocked") var isLocked: Boolean = false
+) {
+    val isVipRoom: Boolean get() = privacy.equals("vip_only", ignoreCase = true)
+}
 
 data class MicSeat(
     @get:PropertyName("seatIndex") @set:PropertyName("seatIndex") var seatIndex: Int = 0,         // 0 to 4 (Mic 1, Mic 2, Mic 3, Mic 4, Mic 5)
@@ -112,6 +116,9 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
     val hostUid = doc.getString("hostUid") ?: hostId
     val isLive = doc.getBoolean("isLive") ?: isHostLive
 
+    val announcement = doc.getString("announcement") ?: ""
+    val isLocked = doc.getBoolean("isLocked") ?: doc.getBoolean("locked") ?: false
+
     return RoomItem(
         id = id,
         title = title,
@@ -141,7 +148,9 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
         roomId = roomId,
         roomName = roomName,
         hostUid = hostUid,
-        isLive = isLive
+        isLive = isLive,
+        announcement = announcement,
+        isLocked = isLocked
     )
 }
 
@@ -707,12 +716,21 @@ data class RoomThemePreset(
 )
 
 val ROOM_THEME_PRESETS = listOf(
-    RoomThemePreset("theme_neon_lounge", "Neon Velvet Lounge", "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=800&q=80"),
-    RoomThemePreset("theme_rooftop_sunset", "Rooftop Sunset Coral", "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?auto=format&fit=crop&w=800&q=80"),
-    RoomThemePreset("theme_midnight_club", "Midnight Cyber Club", "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=800&q=80"),
-    RoomThemePreset("theme_acoustic_cafe", "Candlelit Acoustic Cafe", "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=800&q=80"),
-    RoomThemePreset("theme_coastal_drive", "Coastal Night Drive", "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80"),
-    RoomThemePreset("theme_party_vibes", "Golden Hour Festival", "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=800&q=80")
+    RoomThemePreset("theme_dubai_marina", "🏙️ Dubai Marina Night", "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?auto=format&fit=crop&w=1080&q=80"),
+    RoomThemePreset("theme_paris_eiffel", "🗼 Paris Eiffel Skyline", "https://images.unsplash.com/photo-1502602898657-3e91760cbb34?auto=format&fit=crop&w=1080&q=80"),
+    RoomThemePreset("theme_las_vegas", "🎰 Las Vegas Neon Club", "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1080&q=80"),
+    RoomThemePreset("theme_goa_beach", "🏖️ Goa Beach Sunset", "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1080&q=80"),
+    RoomThemePreset("theme_ibiza_club", "🎧 Ibiza Party Lounge", "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1080&q=80"),
+    RoomThemePreset("theme_tokyo_cyber", "🌃 Tokyo Cyberpunk", "https://images.unsplash.com/photo-1503899036084-c55cdd92da26?auto=format&fit=crop&w=1080&q=80"),
+    RoomThemePreset("theme_bali_villa", "🌴 Bali Tropical Villa", "https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=1080&q=80"),
+    RoomThemePreset("theme_santorini", "🌅 Santorini Caldera", "https://images.unsplash.com/photo-1570077188670-e3a8d69ac5ff?auto=format&fit=crop&w=1080&q=80"),
+    RoomThemePreset("theme_swiss_chalet", "🏔️ Swiss Alps Chalet", "https://images.unsplash.com/photo-1502784444187-359ac186c5bb?auto=format&fit=crop&w=1080&q=80"),
+    RoomThemePreset("theme_new_york", "🗽 NYC Times Square", "https://images.unsplash.com/photo-1534430480872-3498386e7856?auto=format&fit=crop&w=1080&q=80"),
+    RoomThemePreset("theme_london_bridge", "🌉 London Tower Bridge", "https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?auto=format&fit=crop&w=1080&q=80"),
+    RoomThemePreset("theme_maldives_villa", "🌊 Maldives Ocean Villa", "https://images.unsplash.com/photo-1514282401047-d79a71a590e8?auto=format&fit=crop&w=1080&q=80"),
+    RoomThemePreset("theme_monaco_yacht", "🛥️ Monaco VIP Yacht", "https://images.unsplash.com/photo-1569263979104-865ab7cd8d17?auto=format&fit=crop&w=1080&q=80"),
+    RoomThemePreset("theme_rio_carnival", "🎭 Rio Carnival Fiesta", "https://images.unsplash.com/photo-1517457373958-b7bdd4587205?auto=format&fit=crop&w=1080&q=80"),
+    RoomThemePreset("theme_sydney_opera", "🎆 Sydney Opera Harbour", "https://images.unsplash.com/photo-1506973035872-a4ec16b8e8d9?auto=format&fit=crop&w=1080&q=80")
 )
 
 val DEFAULT_MOMENTS_SEED = listOf(

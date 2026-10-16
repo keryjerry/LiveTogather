@@ -1929,6 +1929,7 @@ fun broadcastLiveNotificationToFollowers(
 fun RoomSettingsDialog(
     room: RoomItem,
     isHost: Boolean,
+    currentUser: UserProfile,
     activeMembers: List<RoomMember>,
     db: FirebaseFirestore,
     onDismiss: () -> Unit,
@@ -1939,6 +1940,11 @@ fun RoomSettingsDialog(
     onDeleteRoom: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
+    var announcementText by remember { mutableStateOf(room.announcement) }
+    var isRoomLocked by remember { mutableStateOf(room.isLocked) }
+    var isRoomVip by remember { mutableStateOf(room.privacy == "vip_only") }
+    var feedbackText by remember { mutableStateOf("") }
+    var isSendingFeedback by remember { mutableStateOf(false) }
     var scheduledTimeText by remember { mutableStateOf(room.scheduledTime) }
     var selectedPrivacy by remember { mutableStateOf(room.privacy) }
     val isKeyboardOpen = WindowInsets.isImeVisible
@@ -2006,6 +2012,86 @@ fun RoomSettingsDialog(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
+                    // 0. ROOM ANNOUNCEMENT (PINNED BANNER & BROADCAST IN CHAT)
+                    item {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("📢 Room Announcement", color = BrandGold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    if (isHost && announcementText.isNotBlank()) {
+                                        Text(
+                                            text = "Clear",
+                                            color = Color.Red,
+                                            fontSize = 11.sp,
+                                            modifier = Modifier.clickable {
+                                                announcementText = ""
+                                                db.collection("rooms").document(room.id).update("announcement", "")
+                                                Toast.makeText(context, "Announcement cleared", Toast.LENGTH_SHORT).show()
+                                            }
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("Pinned at the top of the room and broadcast to all occupants.", color = Color.Gray, fontSize = 11.sp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                if (isHost) {
+                                    OutlinedTextField(
+                                        value = announcementText,
+                                        onValueChange = { announcementText = it },
+                                        placeholder = { Text("Write announcement (e.g. Welcome to our live stage! 🎉)", color = Color.Gray, fontSize = 11.sp) },
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedTextColor = Color.White,
+                                            unfocusedTextColor = Color.White,
+                                            focusedBorderColor = BrandGold,
+                                            unfocusedBorderColor = BrandBorder,
+                                            focusedContainerColor = BrandDark,
+                                            unfocusedContainerColor = BrandDark
+                                        ),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Button(
+                                        onClick = {
+                                            if (announcementText.isNotBlank()) {
+                                                db.collection("rooms").document(room.id).update("announcement", announcementText.trim())
+                                                val comment = LiveRoomComment(
+                                                    id = UUID.randomUUID().toString(),
+                                                    roomId = room.id,
+                                                    userId = currentUser.uid,
+                                                    userName = "📢 ANNOUNCEMENT",
+                                                    message = announcementText.trim(),
+                                                    timestamp = System.currentTimeMillis()
+                                                )
+                                                db.collection("rooms").document(room.id)
+                                                    .collection("live_comments").document(comment.id).set(comment)
+                                                Toast.makeText(context, "Announcement updated & broadcasted! 📢", Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.fillMaxWidth().height(36.dp)
+                                    ) {
+                                        Text("Broadcast Announcement 📢", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                    }
+                                } else {
+                                    Text(
+                                        text = if (room.announcement.isNotBlank()) room.announcement else "No active announcement at this moment.",
+                                        color = if (room.announcement.isNotBlank()) BrandGold else Color.LightGray,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     // 1. LIVE / OFFLINE BROADCAST STATUS
                     item {
                         Card(
@@ -2153,6 +2239,75 @@ fun RoomSettingsDialog(
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text(label, color = if (isSelected) Color.White else Color.LightGray, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                    }
+                                }
+
+                                if (isHost) {
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    HorizontalDivider(color = BrandBorder)
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    // Lock Room Toggle
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text("🔒 Lock Room", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                            Text(
+                                                text = if (isRoomLocked) "Room is currently locked 🔒" else "Room is open for everyone",
+                                                color = if (isRoomLocked) Color(0xFFFF8A80) else Color.Gray,
+                                                fontSize = 10.sp
+                                            )
+                                        }
+                                        Switch(
+                                            checked = isRoomLocked,
+                                            onCheckedChange = { locked ->
+                                                isRoomLocked = locked
+                                                db.collection("rooms").document(room.id).update("isLocked", locked)
+                                                Toast.makeText(context, if (locked) "Room is now locked 🔒" else "Room is now unlocked 🔓", Toast.LENGTH_SHORT).show()
+                                            },
+                                            colors = SwitchDefaults.colors(
+                                                checkedThumbColor = Color.White,
+                                                checkedTrackColor = Color.Red
+                                            )
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    // Room Premium (VIP) Toggle
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text("⭐ Room Premium (VIP)", color = BrandGold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                            Text(
+                                                text = if (isRoomVip) "Exclusive VIP room mode enabled ⭐" else "Standard room mode",
+                                                color = if (isRoomVip) BrandGold else Color.Gray,
+                                                fontSize = 10.sp
+                                            )
+                                        }
+                                        Switch(
+                                            checked = isRoomVip,
+                                            onCheckedChange = { vip ->
+                                                isRoomVip = vip
+                                                db.collection("rooms").document(room.id).update(
+                                                    mapOf(
+                                                        "isVipRoom" to vip,
+                                                        "privacy" to if (vip) "vip_only" else "public"
+                                                    )
+                                                )
+                                                Toast.makeText(context, if (vip) "Room set to Premium VIP ⭐" else "Room set to Standard Mode", Toast.LENGTH_SHORT).show()
+                                            },
+                                            colors = SwitchDefaults.colors(
+                                                checkedThumbColor = Color.Black,
+                                                checkedTrackColor = BrandGold
+                                            )
+                                        )
                                     }
                                 }
                             }
@@ -2406,6 +2561,73 @@ fun RoomSettingsDialog(
                             }
                         }
                     }
+
+                    // 9. FEEDBACK & SUPPORT SECTION (OPEN TO ALL USERS)
+                    item {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text("💬 Feedback & Support", color = BrandCoral, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("Have feedback or reporting an issue? Send a direct note to the LiveTogather support team.", color = Color.Gray, fontSize = 11.sp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                OutlinedTextField(
+                                    value = feedbackText,
+                                    onValueChange = { feedbackText = it },
+                                    placeholder = { Text("Write your feedback or bug report here...", color = Color.Gray, fontSize = 11.sp) },
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedTextColor = Color.White,
+                                        unfocusedTextColor = Color.White,
+                                        focusedBorderColor = BrandCoral,
+                                        unfocusedBorderColor = BrandBorder,
+                                        focusedContainerColor = BrandDark,
+                                        unfocusedContainerColor = BrandDark
+                                    ),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Button(
+                                    onClick = {
+                                        if (feedbackText.isNotBlank()) {
+                                            isSendingFeedback = true
+                                            val feedbackDoc = mapOf(
+                                                "userId" to currentUser.uid,
+                                                "userName" to currentUser.name,
+                                                "roomId" to room.id,
+                                                "roomTitle" to room.title,
+                                                "message" to feedbackText.trim(),
+                                                "timestamp" to FieldValue.serverTimestamp()
+                                            )
+                                            db.collection("feedback").add(feedbackDoc)
+                                                .addOnSuccessListener {
+                                                    feedbackText = ""
+                                                    isSendingFeedback = false
+                                                    Toast.makeText(context, "Feedback submitted! Thank you 🙏", Toast.LENGTH_SHORT).show()
+                                                }
+                                                .addOnFailureListener { e ->
+                                                    isSendingFeedback = false
+                                                    Toast.makeText(context, "Failed to send feedback: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                }
+                                        }
+                                    },
+                                    enabled = feedbackText.isNotBlank() && !isSendingFeedback,
+                                    colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.fillMaxWidth().height(36.dp)
+                                ) {
+                                    Text(
+                                        text = if (isSendingFeedback) "Submitting..." else "Submit Feedback 📨",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -2559,7 +2781,7 @@ fun AudioHangoutRoomDialog(
         }
     }
 
-    val isUserHost = currentUser.uid == room.hostId || (room.hostId.isEmpty() && activeMembers.firstOrNull()?.uid == currentUser.uid)
+    val isUserHost = currentUser.uid == room.hostId || currentUser.uid == room.hostUid || (room.hostId.isEmpty() && room.hostUid.isEmpty() && activeMembers.firstOrNull()?.uid == currentUser.uid)
     val isUserAdmin = isUserHost || (currentUser.uid in room.adminUserIds)
     val isMuted by AudioPlayerManager.isMutedState
     val localPlaying by AudioPlayerManager.isPlayingState
@@ -3000,7 +3222,7 @@ fun AudioHangoutRoomDialog(
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Text(
-                                                text = "ID: $displayRoomId",
+                                                text = "Room ID: $displayRoomId",
                                                 color = BrandGold,
                                                 fontSize = 10.sp,
                                                 fontWeight = FontWeight.ExtraBold
@@ -3066,22 +3288,20 @@ fun AudioHangoutRoomDialog(
 
                             Spacer(modifier = Modifier.width(6.dp))
 
-                            if (isUserHost) {
-                                IconButton(
-                                    onClick = { showRoomSettingsDialog = true },
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .background(BrandCard.copy(alpha = 0.85f), CircleShape)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Settings,
-                                        contentDescription = "Room Settings",
-                                        tint = BrandGold,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(6.dp))
+                            IconButton(
+                                onClick = { showRoomSettingsDialog = true },
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .background(BrandCard.copy(alpha = 0.85f), CircleShape)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "Room Options & Settings",
+                                    tint = BrandGold,
+                                    modifier = Modifier.size(18.dp)
+                                )
                             }
+                            Spacer(modifier = Modifier.width(6.dp))
 
                             // Leave / Close Room Button
                             Button(
@@ -3432,7 +3652,7 @@ fun AudioHangoutRoomDialog(
                                 }
                             }
                             Text(
-                                text = "ID: $hostDisplayUserId • 👥 $hostFollowerCount Followers",
+                                text = "Host User ID: $hostDisplayUserId • 👥 $hostFollowerCount Followers",
                                 color = Color.Gray,
                                 fontSize = 9.sp
                             )
@@ -3527,6 +3747,44 @@ fun AudioHangoutRoomDialog(
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold
                             )
+                        }
+                    }
+
+                    // Pinned Room Announcement Banner
+                    if (room.announcement.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = BrandGold.copy(alpha = 0.15f)),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.5f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    if (isUserAdmin) {
+                                        showRoomSettingsDialog = true
+                                    }
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("📢", fontSize = 12.sp)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = room.announcement,
+                                    color = BrandGold,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (isUserAdmin) {
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Edit", color = Color.LightGray, fontSize = 9.sp)
+                                }
+                            }
                         }
                     }
 
@@ -3974,6 +4232,18 @@ fun AudioHangoutRoomDialog(
                         db.collection("rooms").document(room.id)
                             .update("adminUserIds", FieldValue.arrayRemove(targetMember.uid))
                         room = room.copy(adminUserIds = room.adminUserIds - targetMember.uid)
+                        val revokeComment = LiveRoomComment(
+                            id = UUID.randomUUID().toString(),
+                            roomId = room.id,
+                            userId = "system_notice",
+                            userName = "🛡️ Room System",
+                            userPhoto = hostPhoto,
+                            tier = "Standard",
+                            message = "ℹ️ ${targetMember.name} is no longer an Admin of this room.",
+                            timestamp = System.currentTimeMillis()
+                        )
+                        db.collection("rooms").document(room.id)
+                            .collection("live_comments").document(revokeComment.id).set(revokeComment)
                         Toast.makeText(context, "🛡️ Removed ${targetMember.name} from Room Admins", Toast.LENGTH_SHORT).show()
                     } else {
                         if (room.adminUserIds.size >= 10) {
@@ -3982,6 +4252,18 @@ fun AudioHangoutRoomDialog(
                             db.collection("rooms").document(room.id)
                                 .update("adminUserIds", FieldValue.arrayUnion(targetMember.uid))
                             room = room.copy(adminUserIds = room.adminUserIds + targetMember.uid)
+                            val congratsComment = LiveRoomComment(
+                                id = UUID.randomUUID().toString(),
+                                roomId = room.id,
+                                userId = "system_congrats",
+                                userName = "👑 Room Host Announcement",
+                                userPhoto = hostPhoto,
+                                tier = "VIP",
+                                message = "🎉 Congratulations ${targetMember.name}! You have been appointed as an Admin of this room! 🛡️✨",
+                                timestamp = System.currentTimeMillis()
+                            )
+                            db.collection("rooms").document(room.id)
+                                .collection("live_comments").document(congratsComment.id).set(congratsComment)
                             Toast.makeText(context, "👑 Appointed ${targetMember.name} as Room Admin! (${room.adminUserIds.size}/10)", Toast.LENGTH_SHORT).show()
                         }
                     }
@@ -4082,7 +4364,8 @@ fun AudioHangoutRoomDialog(
         if (showRoomSettingsDialog) {
             RoomSettingsDialog(
                 room = room,
-                isHost = isUserHost,
+                isHost = isUserAdmin,
+                currentUser = currentUser,
                 activeMembers = activeMembers,
                 db = db,
                 onDismiss = { showRoomSettingsDialog = false },
@@ -4223,6 +4506,13 @@ fun AudioHangoutRoomDialog(
                 },
                 onToggleLock = {
                     toggleLockMicSeat(db, room.id, seat.seatIndex, seat.isLocked)
+                    val lockMsg = if (seat.isLocked) "Mic ${seat.seatIndex + 1} unlocked 🔓" else "Mic ${seat.seatIndex + 1} locked 🔒"
+                    Toast.makeText(context, lockMsg, Toast.LENGTH_SHORT).show()
+                    selectedSeatForAdmin = null
+                },
+                onTakeMic = {
+                    joinMicSeat(db, room.id, seat.seatIndex, currentUser, micSeats)
+                    Toast.makeText(context, "You are now on Mic ${seat.seatIndex + 1}! 🎙️", Toast.LENGTH_SHORT).show()
                     selectedSeatForAdmin = null
                 },
                 onKickToAudience = {
@@ -5151,6 +5441,7 @@ fun HostSeatAdminDialog(
     onDismiss: () -> Unit,
     onToggleMute: () -> Unit,
     onToggleLock: () -> Unit,
+    onTakeMic: (() -> Unit)? = null,
     onKickToAudience: () -> Unit,
     onKickOutOfRoom: () -> Unit = {},
     onBanFromRoom: () -> Unit = {},
@@ -5171,13 +5462,50 @@ fun HostSeatAdminDialog(
                 modifier = Modifier.fillMaxWidth().padding(18.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(
-                    text = "👑 Stage Seat ${seat.seatIndex + 1} Admin Controls",
-                    color = BrandGold,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "🎙️ Mic ${seat.seatIndex + 1} Admin Controls",
+                        color = BrandGold,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Primary Quick Lock / Unlock Action (Only for guest seats 1..9, seat 0 is host seat)
+                if (seat.seatIndex != 0) {
+                    Button(
+                        onClick = onToggleLock,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (seat.isLocked) Color(0xFF1B5E20) else Color(0xFFB71C1C)
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().height(42.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (seat.isLocked) Icons.Default.LockOpen else Icons.Default.Lock,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (seat.isLocked) "🔓 Unlock Mic (Allow Anyone)" else "🔒 Lock Mic (Prevent Users)",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
 
                 if (seat.uid.isNotEmpty()) {
                     Row(
@@ -5232,7 +5560,7 @@ fun HostSeatAdminDialog(
                         )
                     }
 
-                    // If not host self: Full admin moderation on speaker
+                    // Moderation on other speakers
                     if (seat.seatIndex != 0 && seat.uid != currentUserId) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Button(
@@ -5242,7 +5570,7 @@ fun HostSeatAdminDialog(
                             modifier = Modifier.fillMaxWidth().height(38.dp)
                         ) {
                             Text(
-                                text = "🚫 Remove from Stage (To Audience)",
+                                text = "🚫 Move Speaker to Audience",
                                 color = Color.White,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
@@ -5276,20 +5604,6 @@ fun HostSeatAdminDialog(
 
                         Spacer(modifier = Modifier.height(6.dp))
                         OutlinedButton(
-                            onClick = onToggleLock,
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, if (seat.isLocked) BrandGreen else Color.Red),
-                            modifier = Modifier.fillMaxWidth().height(36.dp)
-                        ) {
-                            Text(
-                                text = if (seat.isLocked) "🔓 Unlock Seat" else "🔒 Lock Seat",
-                                color = if (seat.isLocked) BrandGreen else Color.Red,
-                                fontSize = 11.sp
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(6.dp))
-                        OutlinedButton(
                             onClick = onViewProfile,
                             shape = RoundedCornerShape(12.dp),
                             border = BorderStroke(1.dp, BrandBorder),
@@ -5301,12 +5615,24 @@ fun HostSeatAdminDialog(
                 } else {
                     // Empty seat controls
                     Text(
-                        text = "This microphone seat is currently empty.",
-                        color = Color.LightGray,
+                        text = if (seat.isLocked) "🔒 This microphone is currently LOCKED." else "This microphone seat is currently empty.",
+                        color = if (seat.isLocked) Color(0xFFFF8A80) else Color.LightGray,
                         fontSize = 12.sp,
                         textAlign = TextAlign.Center
                     )
                     Spacer(modifier = Modifier.height(14.dp))
+
+                    if (onTakeMic != null) {
+                        Button(
+                            onClick = onTakeMic,
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth().height(40.dp)
+                        ) {
+                            Text("🎙️ Take this Mic (Sit Here)", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
 
                     Button(
                         onClick = onInviteListener,
@@ -5316,24 +5642,9 @@ fun HostSeatAdminDialog(
                     ) {
                         Text("📨 Invite Listener to this Mic", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedButton(
-                        onClick = onToggleLock,
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, if (seat.isLocked) BrandGreen else Color.Red),
-                        modifier = Modifier.fillMaxWidth().height(40.dp)
-                    ) {
-                        Text(
-                            text = if (seat.isLocked) "🔓 Unlock Seat for Everyone" else "🔒 Lock Seat (Keep Empty)",
-                            color = if (seat.isLocked) BrandGreen else Color.Red,
-                            fontSize = 12.sp
-                        )
-                    }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
                 TextButton(
                     onClick = onDismiss,
                     modifier = Modifier.fillMaxWidth()
