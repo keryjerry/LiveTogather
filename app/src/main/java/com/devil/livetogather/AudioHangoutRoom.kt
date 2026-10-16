@@ -1533,6 +1533,48 @@ fun RoomMemberProfileSheet(
                     modifier = Modifier.padding(top = 4.dp)
                 )
 
+                // 6-digit User ID Chip with Click-to-Copy
+                val memberUserId = remember(userProfile?.userId, member.uid) {
+                    val raw = userProfile?.userId ?: ""
+                    if (raw.isNotBlank() && raw.length >= 6 && raw.all { it.isDigit() }) {
+                        raw
+                    } else if (member.uid.length >= 6 && member.uid.all { it.isDigit() }) {
+                        member.uid
+                    } else {
+                        (kotlin.math.abs(member.uid.hashCode() % 900000) + 100000).toString()
+                    }
+                }
+                Surface(
+                    color = Color.White.copy(alpha = 0.08f),
+                    shape = RoundedCornerShape(6.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+                    modifier = Modifier.padding(top = 6.dp).clickable {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        val clip = android.content.ClipData.newPlainText("User ID", memberUserId)
+                        clipboard.setPrimaryClip(clip)
+                        Toast.makeText(context, "User ID $memberUserId copied! 📋", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "User ID: $memberUserId",
+                            color = BrandGold,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            Icons.Default.ContentCopy,
+                            contentDescription = "Copy User ID",
+                            tint = BrandGold,
+                            modifier = Modifier.size(11.dp)
+                        )
+                    }
+                }
+
                 val bioText = userProfile?.bio?.ifEmpty { "Excited to meet and hangout with awesome people!" }
                     ?: "Excited to meet and hangout with awesome people!"
                 Text(
@@ -2405,6 +2447,33 @@ fun AudioHangoutRoomDialog(
     var entranceNotificationUser by remember { mutableStateOf<String?>(null) }
     val knownMemberIds = remember { mutableStateListOf<String>() }
 
+    val displayRoomId = remember(room.roomId, room.id) {
+        val raw = room.roomId
+        if (raw.isNotBlank() && raw.length >= 6 && raw.all { it.isDigit() }) {
+            raw
+        } else if (room.id.length >= 6 && room.id.all { it.isDigit() }) {
+            room.id
+        } else {
+            (kotlin.math.abs(room.id.hashCode() % 900000) + 100000).toString()
+        }
+    }
+
+    // Auto-sync 6-digit numeric Room ID to Firestore if missing
+    LaunchedEffect(displayRoomId, room.id) {
+        if (room.roomId != displayRoomId) {
+            room = room.copy(roomId = displayRoomId)
+            try {
+                db.collection("rooms").document(room.id).update("roomId", displayRoomId)
+                if (room.category.isNotBlank()) {
+                    db.collection("intent_categories").document(room.category)
+                        .collection("rooms").document(room.id).update("roomId", displayRoomId)
+                }
+            } catch (e: Exception) {
+                Log.w("AudioHangoutRoom", "Error syncing roomId to firestore: ${e.message}")
+            }
+        }
+    }
+
     // Diamond Wallet & Equipped Frame States
     var userDiamonds by remember { mutableStateOf(currentUser.diamonds) }
     var activeUserFrame by remember { mutableStateOf(currentUser.activeFrame) }
@@ -2548,7 +2617,7 @@ fun AudioHangoutRoomDialog(
         val initialMute = !isUserHost
         com.devil.livetogather.agora.AgoraVoiceManager.joinRoom(
             context = context,
-            roomId = room.id,
+            roomId = displayRoomId,
             uid = agoraUid,
             startMuted = initialMute
         )
@@ -2953,21 +3022,59 @@ fun AudioHangoutRoomDialog(
                                 )
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.clickable { showAllViewersDialog = true }
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(6.dp)
-                                            .clip(CircleShape)
-                                            .background(BrandGreen)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "${activeMembers.size} Active in Room",
-                                        color = BrandGreen,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
+                                    // 6-digit Room ID Chip with Click-to-Copy
+                                    Surface(
+                                        color = BrandCoral.copy(alpha = 0.22f),
+                                        shape = RoundedCornerShape(4.dp),
+                                        border = BorderStroke(1.dp, BrandCoral.copy(alpha = 0.6f)),
+                                        modifier = Modifier.clickable {
+                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                            val clip = android.content.ClipData.newPlainText("Room ID", displayRoomId)
+                                            clipboard.setPrimaryClip(clip)
+                                            Toast.makeText(context, "Room ID $displayRoomId copied! 📋", Toast.LENGTH_SHORT).show()
+                                        }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "ID: $displayRoomId",
+                                                color = BrandGold,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.ExtraBold
+                                            )
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Icon(
+                                                Icons.Default.ContentCopy,
+                                                contentDescription = "Copy Room ID",
+                                                tint = BrandGold,
+                                                modifier = Modifier.size(10.dp)
+                                            )
+                                        }
+                                    }
+
+                                    // Active in Room indicator
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.clickable { showAllViewersDialog = true }
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(6.dp)
+                                                .clip(CircleShape)
+                                                .background(BrandGreen)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "${activeMembers.size} Active",
+                                            color = BrandGreen,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -3355,8 +3462,18 @@ fun AudioHangoutRoomDialog(
                                 fontWeight = FontWeight.SemiBold
                             )
 
+                            val hostDisplayUserId = remember(hostFromProfiles?.userId, targetHostId) {
+                                val raw = hostFromProfiles?.userId ?: ""
+                                if (raw.isNotBlank() && raw.length >= 6 && raw.all { it.isDigit() }) {
+                                    raw
+                                } else if (targetHostId.length >= 6 && targetHostId.all { it.isDigit() }) {
+                                    targetHostId
+                                } else {
+                                    (kotlin.math.abs(targetHostId.hashCode() % 900000) + 100000).toString()
+                                }
+                            }
                             Text(
-                                text = "👥 $hostFollowerCount Followers",
+                                text = "ID: $hostDisplayUserId • 👥 $hostFollowerCount Followers",
                                 color = Color.Gray,
                                 fontSize = 9.sp
                             )

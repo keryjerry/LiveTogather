@@ -100,7 +100,14 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
     @Suppress("UNCHECKED_CAST")
     val adminUserIds = (doc.get("adminUserIds") as? List<String>) ?: emptyList()
     val createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
-    val roomId = doc.getString("roomId") ?: id
+    val rawRoomId = doc.getString("roomId") ?: ""
+    val roomId = if (rawRoomId.isNotBlank() && rawRoomId.length >= 6 && rawRoomId.all { it.isDigit() }) {
+        rawRoomId
+    } else if (id.length >= 6 && id.all { it.isDigit() }) {
+        id
+    } else {
+        (kotlin.math.abs(id.hashCode() % 900000) + 100000).toString()
+    }
     val roomName = doc.getString("roomName") ?: title
     val hostUid = doc.getString("hostUid") ?: hostId
     val isLive = doc.getBoolean("isLive") ?: isHostLive
@@ -288,7 +295,14 @@ data class UserProfile(
 
 fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
     val uid = doc.getString("uid") ?: doc.id
-    val userId = doc.getString("userId") ?: doc.getString("user_id") ?: ""
+    val rawUserId = doc.getString("userId") ?: doc.getString("user_id") ?: ""
+    val userId = if (rawUserId.isNotBlank() && rawUserId.length >= 6 && rawUserId.all { it.isDigit() }) {
+        rawUserId
+    } else if (uid.length >= 6 && uid.all { it.isDigit() }) {
+        uid
+    } else {
+        (kotlin.math.abs(uid.hashCode() % 900000) + 100000).toString()
+    }
     val deviceId = doc.getString("deviceId") ?: ""
     val name = doc.getString("name") ?: ""
     val age = (doc.getLong("age") ?: 24L).toInt()

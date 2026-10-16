@@ -293,10 +293,16 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
 
     // Hydrate initial UserProfile from SharedPreferences (ensures profile survives reinstall)
     var currentUser by remember {
+        val savedUserId = prefs.getString("profile_user_id", "") ?: ""
+        val initialUserId = if (savedUserId.isNotBlank() && savedUserId.length >= 6 && savedUserId.all { it.isDigit() }) {
+            savedUserId
+        } else {
+            (kotlin.math.abs(currentUserId.hashCode() % 900000) + 100000).toString()
+        }
         mutableStateOf(
             UserProfile(
                 uid = currentUserId,
-                userId = prefs.getString("profile_user_id", "") ?: "",
+                userId = initialUserId,
                 deviceId = prefs.getString("profile_device_id", deviceId) ?: deviceId,
                 name = prefs.getString("profile_name", "Maya") ?: "Maya",
                 age = prefs.getInt("profile_age", 24),
@@ -333,14 +339,16 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
     // Auto-generate unique 6-digit User ID if missing and persist to Firestore + Prefs
     LaunchedEffect(currentUser.userId, currentUserId) {
         if (currentUserId.isNotBlank()) {
-            if (currentUser.userId.isBlank()) {
-                val genId = (100000..999999).random().toString()
-                currentUser = currentUser.copy(userId = genId)
-                saveProfileToPrefs(prefs, currentUser)
-                db.collection("users").document(currentUserId).update("userId", genId)
+            val validUserId = if (currentUser.userId.isNotBlank() && currentUser.userId.length >= 6 && currentUser.userId.all { it.isDigit() }) {
+                currentUser.userId
             } else {
-                db.collection("users").document(currentUserId).update("userId", currentUser.userId)
+                (kotlin.math.abs(currentUserId.hashCode() % 900000) + 100000).toString()
             }
+            if (currentUser.userId != validUserId) {
+                currentUser = currentUser.copy(userId = validUserId)
+                saveProfileToPrefs(prefs, currentUser)
+            }
+            db.collection("users").document(currentUserId).update("userId", validUserId)
         }
     }
 
@@ -551,6 +559,9 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                 currentUser = fresh.copy(deviceId = deviceId)
                 // Cache to SharedPreferences
                 saveProfileToPrefs(prefs, currentUser)
+                if (snapshot.getString("userId").isNullOrBlank()) {
+                    userDoc.update("userId", fresh.userId)
+                }
             } else {
                 // If profile doesn't exist for currentUserId yet, check if there's a profile for this deviceId
                 // (e.g. from prior installation before reinstall)
@@ -3698,6 +3709,48 @@ fun ProfileScreenContent(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("✏️", fontSize = 11.sp)
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // 6-digit User ID Chip with Click-to-Copy
+                val displayProfileUserId = remember(currentUser.userId, currentUser.uid) {
+                    val uidVal = currentUser.uid.ifBlank { currentUserId }
+                    if (currentUser.userId.isNotBlank() && currentUser.userId.length >= 6 && currentUser.userId.all { it.isDigit() }) {
+                        currentUser.userId
+                    } else {
+                        (kotlin.math.abs(uidVal.hashCode() % 900000) + 100000).toString()
+                    }
+                }
+                Surface(
+                    color = Color.White.copy(alpha = 0.08f),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
+                    modifier = Modifier.clickable {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        val clip = android.content.ClipData.newPlainText("User ID", displayProfileUserId)
+                        clipboard.setPrimaryClip(clip)
+                        Toast.makeText(context, "User ID $displayProfileUserId copied! 📋", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "User ID: $displayProfileUserId",
+                            color = BrandGold,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.width(5.dp))
+                        Icon(
+                            Icons.Default.ContentCopy,
+                            contentDescription = "Copy User ID",
+                            tint = BrandGold,
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
                 }
             }
         }
