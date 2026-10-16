@@ -55,14 +55,22 @@ public class Utils {
      * Encodes bytes as a Base64 string.
      */
     public static String base64Encode(byte[] data) {
-        return Base64.encodeToString(data, Base64.NO_WRAP);
+        try {
+            return Base64.encodeToString(data, Base64.NO_WRAP);
+        } catch (Throwable t) {
+            return java.util.Base64.getEncoder().encodeToString(data);
+        }
     }
 
     /**
      * Decodes a Base64 string into bytes.
      */
     public static byte[] base64Decode(String data) {
-        return Base64.decode(data, Base64.NO_WRAP);
+        try {
+            return Base64.decode(data, Base64.NO_WRAP);
+        } catch (Throwable t) {
+            return java.util.Base64.getDecoder().decode(data);
+        }
     }
 
     /**

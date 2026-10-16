@@ -5,9 +5,6 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.util.Log
-import android.media.AudioFormat
-import android.media.AudioRecord
-import android.media.MediaRecorder
 import android.net.Uri
 import android.widget.Toast
 import android.widget.VideoView
@@ -2533,8 +2530,17 @@ fun AudioHangoutRoomDialog(
                 pendingSeatToJoin = null
             }
         } else {
-            Toast.makeText(context, "Microphone permission is required to speak on stage", Toast.LENGTH_SHORT).show()
-            pendingSeatToJoin = null
+            if (pendingSeatToJoin != null) {
+                Toast.makeText(context, "Microphone permission is required to speak on stage", Toast.LENGTH_SHORT).show()
+                pendingSeatToJoin = null
+            }
+        }
+    }
+
+    // Proactively request RECORD_AUDIO permission upon entering room so microphone is authorized
+    LaunchedEffect(Unit) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
     }
 
@@ -2609,11 +2615,11 @@ fun AudioHangoutRoomDialog(
     }
 
     // Ensure current user is registered in rooms/{roomId}/members in Firestore, Agora Voice joined and cleaned up on exit
-    DisposableEffect(room.id, currentUser.uid) {
+    DisposableEffect(displayRoomId, currentUser.uid) {
         db.collection("rooms").document(room.id)
             .collection("members").document(currentUser.uid).set(currentMember)
 
-        val agoraUid = currentUser.userId.toIntOrNull() ?: (currentUser.uid.hashCode() and 0x7FFFFFFF)
+        val agoraUid = (currentUser.userId.toIntOrNull() ?: (currentUser.uid.hashCode() and 0x7FFFFFFF)).coerceAtLeast(1)
         val initialMute = !isUserHost
         com.devil.livetogather.agora.AgoraVoiceManager.joinRoom(
             context = context,
@@ -2630,8 +2636,8 @@ fun AudioHangoutRoomDialog(
     }
 
     val myActiveMicSeat = micSeats.find { it.uid == currentUser.uid }
-    val isUserOnStage = myActiveMicSeat != null
-    val isMicMutedState = myActiveMicSeat?.isMuted ?: true
+    val isUserOnStage = if (isUserHost) true else (myActiveMicSeat != null)
+    val isMicMutedState = if (isUserHost) (myActiveMicSeat?.isMuted ?: false) else (myActiveMicSeat?.isMuted ?: true)
 
     LaunchedEffect(isUserOnStage, isMicMutedState) {
         val shouldMute = !isUserOnStage || isMicMutedState
@@ -2864,71 +2870,24 @@ fun AudioHangoutRoomDialog(
         }
     }
 
-    // AudioRecord amplitude speech capture when current user is seated and unmuted
+    // Speech volume animation for current user via Agora's native volume engine (no mic hardware contention)
     val myCurrentMicSeat = micSeats.find { it.uid == currentUser.uid }
-    val isCurrentUserActiveSpeaker = myCurrentMicSeat != null && !myCurrentMicSeat.isMuted
+    val isCurrentUserActiveSpeaker = if (isUserHost) !isMicMutedState else (myCurrentMicSeat != null && !myCurrentMicSeat.isMuted)
 
-    LaunchedEffect(isCurrentUserActiveSpeaker) {
+    DisposableEffect(isCurrentUserActiveSpeaker) {
         if (!isCurrentUserActiveSpeaker) {
             isLocalTalking = false
-            return@LaunchedEffect
-        }
-
-        val hasAudioPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-        if (!hasAudioPerm) {
-            isLocalTalking = false
-            return@LaunchedEffect
-        }
-
-        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            val sampleRate = 16000
-            val channelConfig = AudioFormat.CHANNEL_IN_MONO
-            val audioFormat = AudioFormat.ENCODING_PCM_16BIT
-            val minBuf = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat).coerceAtLeast(2048)
-            var audioRecord: AudioRecord? = null
-
-            try {
-                audioRecord = AudioRecord(
-                    MediaRecorder.AudioSource.MIC,
-                    sampleRate,
-                    channelConfig,
-                    audioFormat,
-                    minBuf
-                )
-                if (audioRecord.state != AudioRecord.STATE_INITIALIZED) {
-                    audioRecord.release()
-                    return@withContext
+            com.devil.livetogather.agora.AgoraVoiceManager.onLocalTalkingStateChanged = null
+            onDispose { }
+        } else {
+            com.devil.livetogather.agora.AgoraVoiceManager.onLocalTalkingStateChanged = { talking ->
+                if (isLocalTalking != talking) {
+                    isLocalTalking = talking
                 }
-                audioRecord.startRecording()
-                val pcmBuffer = ShortArray(1024)
-
-                while (isActive && isCurrentUserActiveSpeaker) {
-                    val read = audioRecord.read(pcmBuffer, 0, pcmBuffer.size)
-                    if (read > 0) {
-                        var maxAmp = 0
-                        for (i in 0 until read) {
-                            val v = Math.abs(pcmBuffer[i].toInt())
-                            if (v > maxAmp) maxAmp = v
-                        }
-                        val talking = maxAmp > 1200
-                        if (isLocalTalking != talking) {
-                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                isLocalTalking = talking
-                            }
-                        }
-                    }
-                    kotlinx.coroutines.delay(120)
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            } finally {
-                try {
-                    audioRecord?.stop()
-                    audioRecord?.release()
-                } catch (e: Exception) {}
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    isLocalTalking = false
-                }
+            }
+            onDispose {
+                com.devil.livetogather.agora.AgoraVoiceManager.onLocalTalkingStateChanged = null
+                isLocalTalking = false
             }
         }
     }

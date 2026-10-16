@@ -2,6 +2,7 @@ package com.devil.livetogather.agora
 
 import android.content.Context
 import android.util.Log
+import io.agora.rtc2.ChannelMediaOptions
 import io.agora.rtc2.Constants
 import io.agora.rtc2.IRtcEngineEventHandler
 import io.agora.rtc2.RtcEngine
@@ -19,6 +20,8 @@ object AgoraVoiceManager {
     private var currentChannel: String? = null
     private var isMuted: Boolean = false
 
+    var onLocalTalkingStateChanged: ((Boolean) -> Unit)? = null
+
     interface VoiceEventListener {
         fun onUserJoined(uid: Int) {}
         fun onUserOffline(uid: Int, reason: Int) {}
@@ -34,16 +37,17 @@ object AgoraVoiceManager {
 
     private val rtcEventHandler = object : IRtcEngineEventHandler() {
         override fun onJoinChannelSuccess(channel: String?, uid: Int, elapsed: Int) {
-            Log.d(TAG, "Successfully joined Agora voice channel: " + channel + ", uid: " + uid + ", elapsed: " + elapsed)
+            Log.d(TAG, "Successfully joined Agora voice channel: $channel, uid: $uid, elapsed: $elapsed")
+            rtcEngine?.setEnableSpeakerphone(true)
         }
 
         override fun onUserJoined(uid: Int, elapsed: Int) {
-            Log.d(TAG, "Remote user joined Agora channel: " + uid)
+            Log.d(TAG, "Remote user joined Agora channel: $uid")
             eventListener?.onUserJoined(uid)
         }
 
         override fun onUserOffline(uid: Int, reason: Int) {
-            Log.d(TAG, "Remote user went offline: " + uid + ", reason: " + reason)
+            Log.d(TAG, "Remote user went offline: $uid, reason: $reason")
             eventListener?.onUserOffline(uid, reason)
         }
 
@@ -52,10 +56,18 @@ object AgoraVoiceManager {
             totalVolume: Int
         ) {
             eventListener?.onAudioVolumeIndication(speakers, totalVolume)
+            if (speakers != null) {
+                for (speaker in speakers) {
+                    if (speaker.uid == 0) {
+                        val talking = speaker.volume > 15 && !isMuted
+                        onLocalTalkingStateChanged?.invoke(talking)
+                    }
+                }
+            }
         }
 
         override fun onError(err: Int) {
-            Log.e(TAG, "Agora RTC Error: " + err)
+            Log.e(TAG, "Agora RTC Error: $err")
             eventListener?.onError(err)
         }
     }
@@ -69,17 +81,22 @@ object AgoraVoiceManager {
                 mAppId = AGORA_APP_ID
                 mEventHandler = rtcEventHandler
                 mChannelProfile = Constants.CHANNEL_PROFILE_LIVE_BROADCASTING
+                mAudioScenario = Constants.AUDIO_SCENARIO_GAME_STREAMING
             }
             rtcEngine = RtcEngine.create(config)
 
             rtcEngine?.apply {
                 setChannelProfile(Constants.CHANNEL_PROFILE_LIVE_BROADCASTING)
-                setClientRole(Constants.CLIENT_ROLE_BROADCASTER)
+                setAudioProfile(Constants.AUDIO_PROFILE_DEFAULT, Constants.AUDIO_SCENARIO_GAME_STREAMING)
                 enableAudio()
-                enableAudioVolumeIndication(200, 3, true)
+                enableLocalAudio(true)
+                setDefaultAudioRoutetoSpeakerphone(true)
                 setEnableSpeakerphone(true)
+                adjustRecordingSignalVolume(100)
+                adjustPlaybackSignalVolume(100)
+                enableAudioVolumeIndication(200, 3, true)
             }
-            Log.d(TAG, "Agora RtcEngine initialized successfully")
+            Log.d(TAG, "Agora RtcEngine initialized successfully with GAME_STREAMING scenario")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize Agora RtcEngine: " + e.message, e)
         }
@@ -93,6 +110,12 @@ object AgoraVoiceManager {
     ) {
         init(context)
         val engine = rtcEngine ?: return
+
+        if (currentChannel == roomId) {
+            Log.d(TAG, "Already in channel $roomId, applying mute state: $startMuted")
+            muteLocalAudio(startMuted)
+            return
+        }
 
         if (currentChannel != null && currentChannel != roomId) {
             leaveRoom()
@@ -111,24 +134,59 @@ object AgoraVoiceManager {
             )
 
             engine.setChannelProfile(Constants.CHANNEL_PROFILE_LIVE_BROADCASTING)
-            engine.setClientRole(Constants.CLIENT_ROLE_BROADCASTER)
+            engine.setAudioProfile(Constants.AUDIO_PROFILE_DEFAULT, Constants.AUDIO_SCENARIO_GAME_STREAMING)
             engine.enableAudio()
+            engine.setDefaultAudioRoutetoSpeakerphone(true)
             engine.setEnableSpeakerphone(true)
 
-            val result = engine.joinChannel(token, roomId, "", uid)
-            Log.d(TAG, "joinChannel result for room '" + roomId + "' with uid " + uid + ": " + result)
+            val mediaOptions = ChannelMediaOptions().apply {
+                channelProfile = Constants.CHANNEL_PROFILE_LIVE_BROADCASTING
+                clientRoleType = if (!startMuted) Constants.CLIENT_ROLE_BROADCASTER else Constants.CLIENT_ROLE_AUDIENCE
+                autoSubscribeAudio = true
+                publishMicrophoneTrack = !startMuted
+            }
+
+            val result = engine.joinChannel(token, roomId, uid, mediaOptions)
+            Log.d(TAG, "joinChannel result for room '$roomId' with uid $uid: $result")
             currentChannel = roomId
 
             muteLocalAudio(startMuted)
         } catch (e: Exception) {
-            Log.e(TAG, "Error joining Agora room '" + roomId + "': " + e.message, e)
+            Log.e(TAG, "Error joining Agora room '$roomId': ${e.message}", e)
         }
     }
 
     fun muteLocalAudio(mute: Boolean) {
         isMuted = mute
-        rtcEngine?.muteLocalAudioStream(mute)
-        Log.d(TAG, "Local microphone muted: " + mute)
+        val engine = rtcEngine ?: return
+        try {
+            if (mute) {
+                engine.muteLocalAudioStream(true)
+                engine.enableLocalAudio(false)
+                val options = ChannelMediaOptions().apply {
+                    publishMicrophoneTrack = false
+                    clientRoleType = Constants.CLIENT_ROLE_AUDIENCE
+                    autoSubscribeAudio = true
+                }
+                engine.updateChannelMediaOptions(options)
+                engine.setClientRole(Constants.CLIENT_ROLE_AUDIENCE)
+            } else {
+                engine.setClientRole(Constants.CLIENT_ROLE_BROADCASTER)
+                engine.enableLocalAudio(true)
+                engine.muteLocalAudioStream(false)
+                engine.adjustRecordingSignalVolume(100)
+                val options = ChannelMediaOptions().apply {
+                    publishMicrophoneTrack = true
+                    clientRoleType = Constants.CLIENT_ROLE_BROADCASTER
+                    autoSubscribeAudio = true
+                }
+                engine.updateChannelMediaOptions(options)
+            }
+            engine.setEnableSpeakerphone(true)
+            Log.d(TAG, "Local microphone state updated: muted=$mute")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating local audio mute state: ${e.message}")
+        }
     }
 
     fun isLocalAudioMuted(): Boolean = isMuted
@@ -136,11 +194,12 @@ object AgoraVoiceManager {
     fun leaveRoom() {
         try {
             rtcEngine?.leaveChannel()
-            Log.d(TAG, "Left Agora voice channel: " + currentChannel)
+            Log.d(TAG, "Left Agora voice channel: $currentChannel")
         } catch (e: Exception) {
-            Log.e(TAG, "Error leaving channel: " + e.message, e)
+            Log.e(TAG, "Error leaving channel: ${e.message}", e)
         } finally {
             currentChannel = null
+            onLocalTalkingStateChanged?.invoke(false)
         }
     }
 
