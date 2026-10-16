@@ -3133,7 +3133,9 @@ fun ProfileScreenContent(
                         fontWeight = FontWeight.ExtraBold
                     )
                     Spacer(modifier = Modifier.width(5.dp))
-                    if (currentUser.isVipOrPlatinum()) {
+                    if (currentUser.getVipLevel() > 0) {
+                        Text("👑 VIP ${currentUser.getVipLevel()}", color = BrandGold, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
+                    } else if (currentUser.isVipOrPlatinum()) {
                         Text("👑", fontSize = 14.sp)
                     }
                 }
@@ -3146,36 +3148,21 @@ fun ProfileScreenContent(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Royal Golden Sweep Gradient Ring Avatar
+                // Flowing Animated Avatar Frame (Outer outline fit & uncropped HD avatar)
                 Box(contentAlignment = Alignment.Center) {
-                    Box(
-                        modifier = Modifier
-                            .size(86.dp)
-                            .clip(CircleShape)
-                            .border(
-                                width = 2.5.dp,
-                                brush = Brush.sweepGradient(
-                                    if (currentUser.isVipOrPlatinum()) listOf(BrandGold, BrandCoral, BrandOrange, BrandGold)
-                                    else listOf(BrandCoral, BrandOrange, BrandCoral)
-                                ),
-                                shape = CircleShape
-                            )
-                            .padding(3.5.dp)
-                    ) {
-                        AsyncImage(
-                            model = photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80" },
-                            contentDescription = name,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clip(CircleShape),
-                            contentScale = ContentScale.Crop
-                        )
-                    }
+                    FlowingAvatarFrame(
+                        photoUrl = photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80" },
+                        frameId = currentUser.activeFrame,
+                        avatarSize = 66.dp,
+                        frameSize = 118.dp,
+                        vipLevel = currentUser.getVipLevel(),
+                        onClick = { imagePickerLauncher.launch("image/*") }
+                    )
 
                     if (isUploadingPhoto) {
                         Box(
                             modifier = Modifier
-                                .size(86.dp)
+                                .size(66.dp)
                                 .clip(CircleShape)
                                 .background(Color.Black.copy(alpha = 0.55f)),
                             contentAlignment = Alignment.Center
@@ -3196,6 +3183,7 @@ fun ProfileScreenContent(
                             .background(BrandGreen)
                             .border(2.dp, BrandDark, CircleShape)
                             .align(Alignment.TopEnd)
+                            .offset(x = (-8).dp, y = 8.dp)
                     )
 
                     // Photo Change Camera Button

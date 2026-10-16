@@ -51,6 +51,7 @@ data class RoomItem(
     @get:PropertyName("privacy") @set:PropertyName("privacy") var privacy: String = "public", // "public", "vip_only", "private"
     @get:PropertyName("bannedUserIds") @set:PropertyName("bannedUserIds") var bannedUserIds: List<String> = emptyList(),
     @get:PropertyName("kickedUserIds") @set:PropertyName("kickedUserIds") var kickedUserIds: List<String> = emptyList(),
+    @get:PropertyName("adminUserIds") @set:PropertyName("adminUserIds") var adminUserIds: List<String> = emptyList(),
     @get:PropertyName("createdAt") @set:PropertyName("createdAt") var createdAt: Long = System.currentTimeMillis()
 )
 
@@ -92,6 +93,8 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
     val bannedUserIds = (doc.get("bannedUserIds") as? List<String>) ?: emptyList()
     @Suppress("UNCHECKED_CAST")
     val kickedUserIds = (doc.get("kickedUserIds") as? List<String>) ?: emptyList()
+    @Suppress("UNCHECKED_CAST")
+    val adminUserIds = (doc.get("adminUserIds") as? List<String>) ?: emptyList()
     val createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
 
     return RoomItem(
@@ -118,6 +121,7 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
         privacy = privacy,
         bannedUserIds = bannedUserIds,
         kickedUserIds = kickedUserIds,
+        adminUserIds = adminUserIds,
         createdAt = createdAt
     )
 }
@@ -254,6 +258,19 @@ data class UserProfile(
         if (lastSwipeDate != todayDate) return true
         return dailySwipeCount < 15
     }
+
+    fun getVipLevel(): Int {
+        val frame = AVATAR_FRAMES_CATALOG.find { it.id == activeFrame }
+        if (frame != null && frame.vipLevel > 0) return frame.vipLevel
+        if (plan.contains("VIP 6", ignoreCase = true)) return 6
+        if (plan.contains("VIP 5", ignoreCase = true)) return 5
+        if (plan.contains("VIP 4", ignoreCase = true)) return 4
+        if (plan.contains("VIP 3", ignoreCase = true)) return 3
+        if (plan.contains("VIP 2", ignoreCase = true)) return 2
+        if (plan.contains("VIP", ignoreCase = true)) return 1
+        if (plan.contains("Platinum", ignoreCase = true)) return 2
+        return 0
+    }
 }
 
 data class FollowerRecord(
@@ -273,7 +290,7 @@ data class GiftEvent(
     val giftName: String = "",
     val giftEmoji: String = "🎁",
     val cost: Long = 0L,
-    val animationType: String = "car", // "car", "rocket", "dragon", "roses", "castle"
+    val animationType: String = "car", // "car", "lion", "dragon", "rocket", "jet", "yacht", "roses", "castle", "crown"
     val timestamp: Long = System.currentTimeMillis()
 )
 
@@ -283,15 +300,23 @@ data class VideoGiftItem(
     val emoji: String,
     val cost: Long,
     val animationType: String,
-    val description: String
+    val description: String,
+    val rawResId: Int = 0,
+    val thumbnailResId: Int = 0
 )
 
 val VIDEO_GIFT_CATALOG = listOf(
+    VideoGiftItem("lamborghini_mp4", "Cyber Lamborghini HD", "🏎️", 20000L, "video_mp4", "Real HD Lamborghini drift video overlay", R.raw.lamborgini_car, R.drawable.thumb_lamborgini_car),
+    VideoGiftItem("king_entry_mp4", "King Entry Coronation", "👑", 50000L, "video_mp4", "Royal King Coronation HD video overlay", R.raw.king_entry, R.drawable.thumb_king_entry),
     VideoGiftItem("rose_storm", "Rose Storm", "🌹", 5000L, "roses", "Romantic cascading rose petals shower"),
     VideoGiftItem("supercar", "Cyber Supercar", "🏎️", 10000L, "car", "Ultra luxury roaring sports car drift"),
+    VideoGiftItem("roaring_lion", "Roaring Lion King", "🦁", 15000L, "lion", "Fierce majestic lion with solar shockwave"),
     VideoGiftItem("rocket", "Galactic Rocket", "🚀", 20000L, "rocket", "Cosmic space blastoff across the sky"),
+    VideoGiftItem("luxury_jet", "Private Falcon Jet", "✈️", 25000L, "jet", "Supersonic luxury jet crossing screen"),
     VideoGiftItem("golden_palace", "Imperial Palace", "🏰", 35000L, "castle", "Majestic golden palace fireworks"),
-    VideoGiftItem("dragon", "Golden Dragon", "🐉", 50000L, "dragon", "Legendary flaming golden dragon roar")
+    VideoGiftItem("luxury_yacht", "Billionaire Yacht", "🛥️", 40000L, "yacht", "High-seas mega luxury yacht cruise"),
+    VideoGiftItem("dragon", "Golden Dragon", "🐉", 50000L, "dragon", "Legendary flaming golden dragon roar"),
+    VideoGiftItem("crown_coronation", "Imperial Crown", "👑", 60000L, "crown", "Royal diamond crown coronation shower")
 )
 
 data class SwipeRecord(
@@ -1170,93 +1195,291 @@ data class AvatarFrameItem(
     val id: String,
     val name: String,
     val description: String,
-    val cost: Long = 25000L,
-    val drawableRes: Int
+    val cost: Long = 75000L,
+    val drawableRes: Int,
+    val isAnimated: Boolean = true,
+    val vipLevel: Int = 0,
+    val auraColors: List<Long> = listOf(0xFFFFD700, 0xFFFF7043, 0xFFFFD700)
 )
 
 val AVATAR_FRAMES_CATALOG = listOf(
+    // -------------------------------------------------------------
+    // VIP TIER FRAMES (VIP 1 to VIP 5: 2.5 Lakh to 50 Lakh Diamonds)
+    // -------------------------------------------------------------
     AvatarFrameItem(
-        id = "frame_angel_wings",
-        name = "Divine Archangel Wings & Halo",
-        description = "Pure celestial gold feathers with radiant diamond halo",
-        cost = 25000L,
-        drawableRes = R.drawable.frame_angel_wings
+        id = "frame_vip1_archangel",
+        name = "VIP 1 • Noble Archangel",
+        description = "Platinum celestial wings with rotating halo & diamond dust",
+        cost = 250000L,
+        drawableRes = R.drawable.frame_vip1_archangel,
+        isAnimated = true,
+        vipLevel = 1,
+        auraColors = listOf(0xFFE0E0E0, 0xFFFFFFFF, 0xFFB0BEC5, 0xFFE0E0E0)
     ),
+    AvatarFrameItem(
+        id = "frame_vip2_sunburst",
+        name = "VIP 2 • Imperial Solar Gold",
+        description = "Radiant golden wings with pulsating solar sunburst crown",
+        cost = 500000L,
+        drawableRes = R.drawable.frame_vip2_sunburst,
+        isAnimated = true,
+        vipLevel = 2,
+        auraColors = listOf(0xFFFFD700, 0xFFFFA000, 0xFFFFE082, 0xFFFFD700)
+    ),
+    AvatarFrameItem(
+        id = "frame_vip3_sapphire",
+        name = "VIP 3 • Sapphire Sky King",
+        description = "Electric royal sapphire crystal wings with spinning diamond ring",
+        cost = 1000000L,
+        drawableRes = R.drawable.frame_vip3_sapphire,
+        isAnimated = true,
+        vipLevel = 3,
+        auraColors = listOf(0xFF00E5FF, 0xFF2979FF, 0xFF80D8FF, 0xFF00E5FF)
+    ),
+    AvatarFrameItem(
+        id = "frame_vip4_amethyst",
+        name = "VIP 4 • Cyan Divine Blade",
+        description = "Radiant cyan crystal wings with twin swords & diamond crown",
+        cost = 2500000L,
+        drawableRes = R.drawable.frame_vip4_amethyst,
+        isAnimated = true,
+        vipLevel = 4,
+        auraColors = listOf(0xFF00E5FF, 0xFF1DE9B6, 0xFFE0F2F1, 0xFF00E5FF)
+    ),
+    AvatarFrameItem(
+        id = "frame_vip5_god_emperor",
+        name = "VIP 5 • Emerald Realm Knight",
+        description = "Royal emerald gold wings with twin broadswords & emerald crown",
+        cost = 5000000L,
+        drawableRes = R.drawable.frame_vip5_god_emperor,
+        isAnimated = true,
+        vipLevel = 5,
+        auraColors = listOf(0xFF00E676, 0xFFFFD700, 0xFF00C853, 0xFF00E676)
+    ),
+    AvatarFrameItem(
+        id = "frame_vip6_imperial_eagle",
+        name = "VIP 6 • Imperial Supreme Eagles",
+        description = "Dual golden imperial eagles with massive spreading wings & high crown",
+        cost = 10000000L,
+        drawableRes = R.drawable.frame_vip6_imperial_eagle,
+        isAnimated = true,
+        vipLevel = 6,
+        auraColors = listOf(0xFFFFD700, 0xFF00C853, 0xFFFFFFFF, 0xFFFFD700)
+    ),
+
+    // -------------------------------------------------------------
+    // FLOWING ANIMATED LUXURY FRAMES (75,000 to 200,000 Diamonds)
+    // -------------------------------------------------------------
     AvatarFrameItem(
         id = "frame_phoenix_fire",
         name = "Blazing Phoenix Solar Crown",
         description = "Fiery mythical wings with molten embers & solar sunburst crown",
-        cost = 25000L,
-        drawableRes = R.drawable.frame_phoenix_fire
+        cost = 75000L,
+        drawableRes = R.drawable.frame_phoenix_fire,
+        isAnimated = true,
+        vipLevel = 0,
+        auraColors = listOf(0xFFFF5722, 0xFFFF9800, 0xFFFFEB3B, 0xFFFF5722)
     ),
     AvatarFrameItem(
-        id = "frame_dark_angel",
-        name = "Dark Gothic Fallen Angel",
-        description = "Obsidian shadow wings with crimson aura & ruby demon tiara",
-        cost = 25000L,
-        drawableRes = R.drawable.frame_dark_angel
-    ),
-    AvatarFrameItem(
-        id = "frame_moon_celestial",
-        name = "Celestial Moon Seraph",
-        description = "Platinum lunar archangel wings with sparkling blue moon halo",
-        cost = 25000L,
-        drawableRes = R.drawable.frame_moon_celestial
-    ),
-    AvatarFrameItem(
-        id = "frame_ice_valkyrie",
-        name = "Ice Valkyrie Frost Crown",
-        description = "Frozen glacial crystal wings with diamond frost tiara & cyan mist",
-        cost = 25000L,
-        drawableRes = R.drawable.frame_ice_valkyrie
-    ),
-    AvatarFrameItem(
-        id = "frame_imperial_gold",
-        name = "Imperial Golden Eagle King",
-        description = "Majestic eagle golden wings with red velvet royal imperial crown",
-        cost = 25000L,
-        drawableRes = R.drawable.frame_imperial_gold
-    ),
-    AvatarFrameItem(
-        id = "frame_rose_seraph",
-        name = "Rose Gold Seraph of Love",
-        description = "Shimmering pink & rose gold feather wings with crystal heart tiara",
-        cost = 25000L,
-        drawableRes = R.drawable.frame_rose_seraph
-    ),
-    AvatarFrameItem(
-        id = "frame_amethyst_seraph",
-        name = "Royal Amethyst Mystic Wings",
-        description = "Deep violet royal seraph wings with glowing amethyst gem tiara",
-        cost = 25000L,
-        drawableRes = R.drawable.frame_amethyst_seraph
+        id = "frame_angel_wings",
+        name = "Divine Celestial Wings",
+        description = "Pure celestial gold feathers with radiant diamond halo",
+        cost = 75000L,
+        drawableRes = R.drawable.frame_angel_wings,
+        isAnimated = true,
+        vipLevel = 0,
+        auraColors = listOf(0xFFFFD700, 0xFFFFFFFF, 0xFFFFD700)
     ),
     AvatarFrameItem(
         id = "frame_emerald_valkyrie",
         name = "Emerald Crystal Valkyrie",
         description = "Vibrant jade emerald crystal wings with enchanted forest crown",
-        cost = 25000L,
-        drawableRes = R.drawable.frame_emerald_valkyrie
+        cost = 80000L,
+        drawableRes = R.drawable.frame_emerald_valkyrie,
+        isAnimated = true,
+        vipLevel = 0,
+        auraColors = listOf(0xFF00E676, 0xFF1DE9B6, 0xFF69F0AE, 0xFF00E676)
     ),
     AvatarFrameItem(
-        id = "frame_sapphire_king",
-        name = "Sapphire Royal Sky King",
-        description = "Electric sapphire blue archangel wings with regal azure crown",
-        cost = 25000L,
-        drawableRes = R.drawable.frame_sapphire_king
+        id = "frame_ice_valkyrie",
+        name = "Glacial Frost Valkyrie",
+        description = "Frozen glacial crystal wings with diamond frost tiara & cyan mist",
+        cost = 85000L,
+        drawableRes = R.drawable.frame_ice_valkyrie,
+        isAnimated = true,
+        vipLevel = 0,
+        auraColors = listOf(0xFF80D8FF, 0xFF00B0FF, 0xFFE0F7FA, 0xFF80D8FF)
+    ),
+    AvatarFrameItem(
+        id = "frame_crimson_dragon",
+        name = "Crimson Flame Seraph",
+        description = "Ruby red demon wings with blazing embers & crimson tiara",
+        cost = 85000L,
+        drawableRes = R.drawable.frame_dark_angel,
+        isAnimated = true,
+        vipLevel = 0,
+        auraColors = listOf(0xFFFF1744, 0xFFFF5722, 0xFFFF8A80, 0xFFFF1744)
+    ),
+    AvatarFrameItem(
+        id = "frame_cyber_neon",
+        name = "Cyber Neon Matrix",
+        description = "Electric cyan & magenta lasers with holographic 360 ring",
+        cost = 90000L,
+        drawableRes = R.drawable.frame_sapphire_king,
+        isAnimated = true,
+        vipLevel = 0,
+        auraColors = listOf(0xFF00E5FF, 0xFFFF007F, 0xFF76FF03, 0xFF00E5FF)
+    ),
+    AvatarFrameItem(
+        id = "frame_dark_angel",
+        name = "Dark Gothic Fallen Angel",
+        description = "Obsidian shadow wings with crimson aura & ruby demon tiara",
+        cost = 95000L,
+        drawableRes = R.drawable.frame_dark_angel,
+        isAnimated = true,
+        vipLevel = 0,
+        auraColors = listOf(0xFFD50000, 0xFF212121, 0xFFFF1744, 0xFFD50000)
     ),
     AvatarFrameItem(
         id = "luxury_host_frame",
-        name = "Imperial Rose & Gold VIP Frame",
+        name = "Imperial Rose Luxury Wreath",
         description = "Original luxury golden floral wreath with ruby accents",
-        cost = 25000L,
-        drawableRes = R.drawable.luxury_host_frame
+        cost = 95000L,
+        drawableRes = R.drawable.luxury_host_frame,
+        isAnimated = true,
+        vipLevel = 0,
+        auraColors = listOf(0xFFFFD700, 0xFFFF4081, 0xFFFFD700)
+    ),
+    AvatarFrameItem(
+        id = "frame_moon_celestial",
+        name = "Celestial Moon Seraph",
+        description = "Platinum lunar archangel wings with sparkling blue moon halo",
+        cost = 100000L,
+        drawableRes = R.drawable.frame_moon_celestial,
+        isAnimated = true,
+        vipLevel = 0,
+        auraColors = listOf(0xFFB388FF, 0xFF8C9EFF, 0xFFEDE7F6, 0xFFB388FF)
+    ),
+    AvatarFrameItem(
+        id = "frame_rose_seraph",
+        name = "Rose Gold Seraph of Love",
+        description = "Shimmering pink & rose gold feather wings with crystal heart tiara",
+        cost = 110000L,
+        drawableRes = R.drawable.frame_rose_seraph,
+        isAnimated = true,
+        vipLevel = 0,
+        auraColors = listOf(0xFFFF4081, 0xFFFF80AB, 0xFFFFE4E1, 0xFFFF4081)
+    ),
+    AvatarFrameItem(
+        id = "frame_mystic_violet",
+        name = "Mystic Amethyst Dream",
+        description = "Enchanted twilight violet seraph wings with starry mist",
+        cost = 115000L,
+        drawableRes = R.drawable.frame_amethyst_seraph,
+        isAnimated = true,
+        vipLevel = 0,
+        auraColors = listOf(0xFF9C27B0, 0xFFBA68C8, 0xFFE1BEE7, 0xFF9C27B0)
+    ),
+    AvatarFrameItem(
+        id = "frame_ocean_poseidon",
+        name = "Poseidon Ocean Emperor",
+        description = "Deep ocean sapphire waves with shimmering pearl trident crown",
+        cost = 120000L,
+        drawableRes = R.drawable.frame_sapphire_king,
+        isAnimated = true,
+        vipLevel = 0,
+        auraColors = listOf(0xFF0091EA, 0xFF00B8D4, 0xFF84FFFF, 0xFF0091EA)
+    ),
+    AvatarFrameItem(
+        id = "frame_aurora_lights",
+        name = "Northern Aurora Borealis",
+        description = "Curtains of emerald green & violet cosmic aurora waves",
+        cost = 130000L,
+        drawableRes = R.drawable.frame_emerald_valkyrie,
+        isAnimated = true,
+        vipLevel = 0,
+        auraColors = listOf(0xFF00E676, 0xFF7C4DFF, 0xFF18FFFF, 0xFF00E676)
+    ),
+    AvatarFrameItem(
+        id = "frame_thunder_zeus",
+        name = "Thunder Zeus Lightning",
+        description = "Electric golden lightning bolts with Olympus storm crown",
+        cost = 140000L,
+        drawableRes = R.drawable.frame_imperial_gold,
+        isAnimated = true,
+        vipLevel = 0,
+        auraColors = listOf(0xFFFFEA00, 0xFFFFD600, 0xFFFFFFFF, 0xFFFFEA00)
+    ),
+    AvatarFrameItem(
+        id = "frame_black_gold_vip",
+        name = "Black Velvet Royale",
+        description = "Matte obsidian velvet with gilded 24K gold feather trims",
+        cost = 150000L,
+        drawableRes = R.drawable.frame_dark_angel,
+        isAnimated = true,
+        vipLevel = 0,
+        auraColors = listOf(0xFFFFD700, 0xFF212121, 0xFFFFC107, 0xFFFFD700)
+    ),
+    AvatarFrameItem(
+        id = "frame_ruby_emperor",
+        name = "Royal Ruby Sovereign",
+        description = "Deep crimson Burmese rubies embedded in ornate golden filigree",
+        cost = 160000L,
+        drawableRes = R.drawable.luxury_host_frame,
+        isAnimated = true,
+        vipLevel = 0,
+        auraColors = listOf(0xFFFF1744, 0xFFC2185B, 0xFFFF5252, 0xFFFF1744)
+    ),
+    AvatarFrameItem(
+        id = "frame_diamond_glacier",
+        name = "Eternal Diamond Prism",
+        description = "Pure brilliant cut diamonds refracting full rainbow beams",
+        cost = 170000L,
+        drawableRes = R.drawable.frame_ice_valkyrie,
+        isAnimated = true,
+        vipLevel = 0,
+        auraColors = listOf(0xFFE0F7FA, 0xFF80DEEA, 0xFFFFFFFF, 0xFFE0F7FA)
+    ),
+    AvatarFrameItem(
+        id = "frame_solar_flare",
+        name = "Solar Eclipse Inferno",
+        description = "Blazing solar corona prominence with rotating molten fire halo",
+        cost = 180000L,
+        drawableRes = R.drawable.frame_phoenix_fire,
+        isAnimated = true,
+        vipLevel = 0,
+        auraColors = listOf(0xFFFF3D00, 0xFFFF9100, 0xFFFFD600, 0xFFFF3D00)
+    ),
+    AvatarFrameItem(
+        id = "frame_dark_void",
+        name = "Dark Void Nebula",
+        description = "Deep space violet singularity vortex with orbiting micro stars",
+        cost = 190000L,
+        drawableRes = R.drawable.frame_amethyst_seraph,
+        isAnimated = true,
+        vipLevel = 0,
+        auraColors = listOf(0xFF651FFF, 0xFF3D5AFE, 0xFFB388FF, 0xFF651FFF)
+    ),
+    AvatarFrameItem(
+        id = "frame_golden_peacock",
+        name = "Golden Peacock Majesty",
+        description = "Iridescent royal golden peacock crest with emerald eye gems",
+        cost = 200000L,
+        drawableRes = R.drawable.frame_imperial_gold,
+        isAnimated = true,
+        vipLevel = 0,
+        auraColors = listOf(0xFFFFD700, 0xFF00C853, 0xFF00B0FF, 0xFFFFD700)
     )
 )
 
 fun getAvatarFrameDrawable(frameId: String): Int {
     return AVATAR_FRAMES_CATALOG.find { it.id == frameId }?.drawableRes ?: R.drawable.frame_angel_wings
 }
+
+fun getAvatarFrameItem(frameId: String): AvatarFrameItem? {
+    return AVATAR_FRAMES_CATALOG.find { it.id == frameId }
+}
+
 
 
 
