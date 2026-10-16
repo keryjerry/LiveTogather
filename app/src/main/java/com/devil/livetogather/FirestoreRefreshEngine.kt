@@ -65,12 +65,11 @@ class FirestoreRefreshEngine(
                         db.collection("users").document(currentUserId).get().await()
                     }
                     if (userSnap != null && userSnap.exists()) {
-                        userSnap.toObject(UserProfile::class.java)?.let { freshProfile ->
-                            val profileWithDevice = freshProfile.copy(deviceId = deviceId)
-                            withContext(Dispatchers.Main) {
-                                onUpdateUser(profileWithDevice)
-                                saveProfileToPrefs(prefs, profileWithDevice)
-                            }
+                        val freshProfile = parseUserProfileFromDoc(userSnap)
+                        val profileWithDevice = freshProfile.copy(deviceId = deviceId)
+                        withContext(Dispatchers.Main) {
+                            onUpdateUser(profileWithDevice)
+                            saveProfileToPrefs(prefs, profileWithDevice)
                         }
                     }
                 } catch (e: Exception) {
@@ -86,7 +85,7 @@ class FirestoreRefreshEngine(
                 } catch (_: Exception) {
                     db.collection("users").get().await()
                 }
-                val freshUsers = usersSnap.documents.mapNotNull { it.toObject(UserProfile::class.java) }
+                val freshUsers = usersSnap.documents.mapNotNull { parseUserProfileFromDoc(it) }
                     .filter { it.uid != currentUserId && !it.uid.startsWith("USER_") && !currentUser.blockedUserIds.contains(it.uid) }
                 userCount = freshUsers.size
                 withContext(Dispatchers.Main) {

@@ -297,7 +297,10 @@ fun LiveTogatherApp() {
                 current_room = prefs.getString("profile_current_room", "") ?: "",
                 dailySwipeCount = prefs.getInt("profile_daily_swipe_count", 0),
                 lastSwipeDate = prefs.getString("profile_last_swipe_date", "") ?: "",
-                hostTrialStartDate = prefs.getLong("profile_host_trial_start", 0L)
+                hostTrialStartDate = prefs.getLong("profile_host_trial_start", 0L),
+                activeFrame = prefs.getString("profile_active_frame", "") ?: "",
+                ownedFrames = prefs.getStringSet("profile_owned_frames", emptySet())?.toList() ?: emptyList(),
+                diamonds = prefs.getLong("profile_diamonds", 0L)
             )
         )
     }
@@ -431,11 +434,10 @@ fun LiveTogatherApp() {
                 return@addSnapshotListener
             }
             if (snapshot != null && snapshot.exists()) {
-                snapshot.toObject(UserProfile::class.java)?.let {
-                    currentUser = it.copy(deviceId = deviceId)
-                    // Cache to SharedPreferences
-                    saveProfileToPrefs(prefs, currentUser)
-                }
+                val fresh = parseUserProfileFromDoc(snapshot)
+                currentUser = fresh.copy(deviceId = deviceId)
+                // Cache to SharedPreferences
+                saveProfileToPrefs(prefs, currentUser)
             } else {
                 // If profile doesn't exist for currentUserId yet, check if there's a profile for this deviceId
                 // (e.g. from prior installation before reinstall)
@@ -443,15 +445,13 @@ fun LiveTogatherApp() {
                     db.collection("users").whereEqualTo("deviceId", deviceId).limit(1).get()
                         .addOnSuccessListener { prevDocs ->
                             if (prevDocs != null && !prevDocs.isEmpty) {
-                                val prevProfile = prevDocs.documents[0].toObject(UserProfile::class.java)
-                                if (prevProfile != null) {
-                                    val restored = prevProfile.copy(uid = currentUserId, deviceId = deviceId)
-                                    currentUser = restored
-                                    saveProfileToPrefs(prefs, restored)
-                                    userDoc.set(restored, SetOptions.merge())
-                                    Log.d("Firestore", "Restored existing profile from previous install for device $deviceId")
-                                    return@addOnSuccessListener
-                                }
+                                val prevProfile = parseUserProfileFromDoc(prevDocs.documents[0])
+                                val restored = prevProfile.copy(uid = currentUserId, deviceId = deviceId)
+                                currentUser = restored
+                                saveProfileToPrefs(prefs, restored)
+                                userDoc.set(restored, SetOptions.merge())
+                                Log.d("Firestore", "Restored existing profile from previous install for device $deviceId")
+                                return@addOnSuccessListener
                             }
                             val initial = currentUser.copy(uid = currentUserId, deviceId = deviceId)
                             currentUser = initial
@@ -475,7 +475,7 @@ fun LiveTogatherApp() {
                 return@addSnapshotListener
             }
             if (snapshot != null) {
-                val list = snapshot.documents.mapNotNull { it.toObject(UserProfile::class.java) }
+                val list = snapshot.documents.mapNotNull { parseUserProfileFromDoc(it) }
                     .filter { it.uid != currentUserId && !it.uid.startsWith("USER_") && !currentUser.blockedUserIds.contains(it.uid) }
                 discoverProfiles.clear()
                 if (list.isNotEmpty()) {
@@ -1080,13 +1080,30 @@ fun LiveTogatherApp() {
                             onOpenLocationSetup = { showLocationSetupDialog = true },
                             onOpenPrivacyPolicy = { showPrivacyPolicy = true },
                             onLogout = {
+                                try {
+                                    auth.signOut()
+                                } catch (_: Exception) {}
                                 prefs.edit().clear().apply()
                                 Toast.makeText(context, "Logged out successfully", Toast.LENGTH_SHORT).show()
+                                val intent = Intent(context, LoginActivity::class.java)
+                                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                                context.startActivity(intent)
+                                (context as? android.app.Activity)?.finish()
                             },
                             onDeleteAccount = {
+                                val uidToDelete = currentUserId
+                                try {
+                                    auth.signOut()
+                                } catch (_: Exception) {}
                                 prefs.edit().clear().apply()
-                                db.collection("users").document(currentUserId).delete()
+                                if (uidToDelete.isNotBlank()) {
+                                    db.collection("users").document(uidToDelete).delete()
+                                }
                                 Toast.makeText(context, "Account deleted", Toast.LENGTH_LONG).show()
+                                val intent = Intent(context, LoginActivity::class.java)
+                                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                                context.startActivity(intent)
+                                (context as? android.app.Activity)?.finish()
                             }
                         )
                     }
@@ -1860,129 +1877,6 @@ fun LiveTogatherApp() {
 // 1. INTENT ROOMS 2-COLUMN GRID (REQUIREMENT 1)
 // -------------------------------------------------------------
 @Composable
-fun LiveRoomCard(
-    room: RoomItem,
-    onJoin: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .width(230.dp)
-            .height(138.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(BrandCard)
-            .border(1.dp, BrandCoral.copy(alpha = 0.6f), RoundedCornerShape(16.dp))
-            .clickable { onJoin() }
-    ) {
-        // Background banner with gradient
-        AsyncImage(
-            model = room.banner_image_url.ifEmpty { getCategoryBanner(room.category) },
-            contentDescription = room.title,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        listOf(Color.Black.copy(alpha = 0.45f), Color.Black.copy(alpha = 0.92f))
-                    )
-                )
-        )
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(10.dp),
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            // Top Row: LIVE badge + Category tag
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(Color(0xFFD32F2F))
-                        .padding(horizontal = 7.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(modifier = Modifier.size(5.dp).clip(CircleShape).background(Color.White))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("LIVE", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Black)
-                }
-
-                val catLabel = CATEGORY_LIST.find { it.id == room.category }?.label ?: room.category
-                Text(
-                    text = "${room.emoji} $catLabel",
-                    color = BrandGold,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(50))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                )
-            }
-
-            // Middle: Host Info + Title
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                AsyncImage(
-                    model = room.hostPhotoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
-                    contentDescription = room.hostName,
-                    modifier = Modifier
-                        .size(34.dp)
-                        .clip(CircleShape)
-                        .border(1.5.dp, BrandCoral, CircleShape),
-                    contentScale = ContentScale.Crop
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = room.title.ifEmpty { "Live Audio Hangout" },
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = "👑 Host: ${room.hostName.ifEmpty { "Host" }}",
-                        color = BrandGold,
-                        fontSize = 10.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-
-            // Bottom: Join Button
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(24.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(BrandCoral),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "Join Room 🎙️",
-                    color = Color.White,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
-    }
-}
-
-@Composable
 fun IntentRoomsGrid(
     categories: List<IntentCategory> = CATEGORY_LIST.filter { it.id != "all" },
     catalogRooms: List<RoomItem> = emptyList(),
@@ -2004,14 +1898,14 @@ fun IntentRoomsGrid(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Live Hangouts & Intents",
+                    text = "Live Intent Categories",
                     color = BrandGold,
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 0.5.sp
                 )
                 Text(
-                    text = "Join active audio rooms directly or explore 13 category hubs.",
+                    text = "Explore 13 curated category hubs to meet active members and join live rooms.",
                     color = Color.Gray,
                     fontSize = 11.sp
                 )
@@ -2027,63 +1921,13 @@ fun IntentRoomsGrid(
             }
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // 🔴 REAL-TIME LIVE AUDIO ROOMS CAROUSEL (DIRECTLY ON MAIN SCREEN)
-        if (rooms.isNotEmpty()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 6.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(Color.Red)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "LIVE NOW (${rooms.size})",
-                        color = Color.White,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = 0.5.sp
-                    )
-                }
-                Text(
-                    text = "Tap to Join 🎙️",
-                    color = BrandGold,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 12.dp)
-            ) {
-                items(rooms, key = { it.id }) { roomItem ->
-                    LiveRoomCard(
-                        room = roomItem,
-                        onJoin = { onJoinRoom(roomItem) }
-                    )
-                }
-            }
-        }
+        Spacer(modifier = Modifier.height(12.dp))
 
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
+            modifier = Modifier.fillMaxSize()
         ) {
             items(categories) { category ->
                 val bannerUrl = getCategoryBanner(category.id)
@@ -6626,38 +6470,6 @@ fun CommentsDialog(
 // -------------------------------------------------------------
 // HELPER FUNCTIONS, PERSISTENCE & FIRESTORE ACTIONS
 // -------------------------------------------------------------
-fun saveProfileToPrefs(prefs: android.content.SharedPreferences, user: UserProfile) {
-    prefs.edit()
-        .putString("user_uid", user.uid)
-        .putString("profile_device_id", user.deviceId)
-        .putString("profile_name", user.name)
-        .putInt("profile_age", user.age)
-        .putString("profile_gender", user.gender)
-        .putString("profile_city", user.city)
-        .putString("profile_photo", user.photo)
-        .putString("profile_active_intent", user.activeIntent)
-        .putString("profile_bio", user.bio)
-        .putString("profile_hobbies", user.hobbies)
-        .putString("profile_interests", user.interests)
-        .putString("profile_profession", user.profession)
-        .putString("profile_education", user.education)
-        .putString("profile_plan", user.plan)
-        .putString("profile_location", user.locationName)
-        .putString("profile_latitude", user.latitude.toString())
-        .putString("profile_longitude", user.longitude.toString())
-        .putBoolean("profile_is_location_set", user.isLocationSet)
-        .putInt("profile_max_distance", user.maxDistanceKm)
-        .putBoolean("profile_show_further", user.showFurtherAway)
-        .putString("profile_interested_in", user.interestedIn)
-        .putInt("profile_min_age", user.minAge)
-        .putInt("profile_max_age", user.maxAge)
-        .putString("profile_current_room", user.current_room)
-        .putInt("profile_daily_swipe_count", user.dailySwipeCount)
-        .putString("profile_last_swipe_date", user.lastSwipeDate)
-        .putLong("profile_host_trial_start", user.hostTrialStartDate)
-        .apply()
-}
-
 @Composable
 fun outlinedFieldColors() = OutlinedTextFieldDefaults.colors(
     focusedContainerColor = BrandDark,

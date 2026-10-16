@@ -4201,6 +4201,12 @@ fun AudioHangoutRoomDialog(
                         userDiamonds = newDiamonds
                         userOwnedFrames = newOwned
                         activeUserFrame = frameId
+                        val prefs = context.getSharedPreferences("livetogather_user_prefs", Context.MODE_PRIVATE)
+                        prefs.edit()
+                            .putLong("profile_diamonds", newDiamonds)
+                            .putStringSet("profile_owned_frames", newOwned.toSet())
+                            .putString("profile_active_frame", frameId)
+                            .apply()
                         Toast.makeText(context, "👑 Frame Purchased & Equipped!", Toast.LENGTH_SHORT).show()
                     } else {
                         Toast.makeText(context, "⚠️ Insufficient Diamonds! Needed: %,d 💎 (Available: %,d 💎). Please recharge.".format(cost, userDiamonds), Toast.LENGTH_LONG).show()
@@ -4210,6 +4216,10 @@ fun AudioHangoutRoomDialog(
                     val targetFrame = if (activeUserFrame == frameId) "" else frameId
                     db.collection("users").document(currentUser.uid).update("activeFrame", targetFrame)
                     activeUserFrame = targetFrame
+                    val prefs = context.getSharedPreferences("livetogather_user_prefs", Context.MODE_PRIVATE)
+                    prefs.edit()
+                        .putString("profile_active_frame", targetFrame)
+                        .apply()
                     Toast.makeText(context, if (targetFrame.isEmpty()) "Frame removed" else "👑 Frame equipped!", Toast.LENGTH_SHORT).show()
                 },
                 onSendGift = { giftItem ->
@@ -4394,12 +4404,30 @@ fun CategoryHubLobbyDialog(
     onCreateRoom: () -> Unit,
     onJoinRoom: (RoomItem) -> Unit
 ) {
-    // Rooms belonging to this category (dynamically reactive to Firestore real-time updates)
     val context = LocalContext.current
     val db = remember { FirebaseFirestore.getInstance() }
+    val liveCategoryRooms = remember { mutableStateListOf<RoomItem>() }
+    LaunchedEffect(category.id) {
+        db.collection("rooms")
+            .whereEqualTo("category", category.id)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    android.util.Log.w("CategoryHub", "Error listening to category rooms: ${error.message}")
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val fetched = snapshot.documents.mapNotNull { parseRoomFromDoc(it) }
+                    liveCategoryRooms.clear()
+                    liveCategoryRooms.addAll(fetched)
+                }
+            }
+    }
 
-    val categoryRooms = remember(allRooms.size, allRooms.map { it.id to it.isHostLive }, category.id) {
-        allRooms.filter { it.category == category.id && it.title.isNotBlank() }
+    val categoryRooms = remember(liveCategoryRooms.size, liveCategoryRooms.map { it.id to it.isHostLive }, allRooms.size, allRooms.map { it.id to it.isHostLive }, category.id) {
+        val map = linkedMapOf<String, RoomItem>()
+        allRooms.filter { it.category == category.id && it.title.isNotBlank() }.forEach { map[it.id] = it }
+        liveCategoryRooms.filter { it.category == category.id && it.title.isNotBlank() }.forEach { map[it.id] = it }
+        map.values.toList()
     }
 
     // Active members in this category across users
@@ -4832,10 +4860,14 @@ fun MicSeatView(
     )
 
     val seatOccupantProfile = if (seat.uid.isNotEmpty()) allProfiles.find { it.uid == seat.uid } else null
-    val hasEquippedFrame = (isCurrentSelf && userActiveFrame.isNotBlank()) ||
-            (seatOccupantProfile?.activeFrame?.isNotBlank() == true) ||
-            (seat.seatIndex == 0)
-    val shouldShowFrame = seat.uid.isNotEmpty() && hasEquippedFrame
+    val seatFrameId = if (isCurrentSelf && userActiveFrame.isNotBlank()) {
+        userActiveFrame
+    } else if (seatOccupantProfile?.activeFrame?.isNotBlank() == true) {
+        seatOccupantProfile.activeFrame
+    } else {
+        ""
+    }
+    val shouldShowFrame = seat.uid.isNotEmpty() && seatFrameId.isNotBlank()
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -4865,15 +4897,6 @@ fun MicSeatView(
             }
 
             if (seat.uid.isNotEmpty()) {
-                val seatFrameId = if (isCurrentSelf && userActiveFrame.isNotBlank()) {
-                    userActiveFrame
-                } else if (seatOccupantProfile?.activeFrame?.isNotBlank() == true) {
-                    seatOccupantProfile.activeFrame
-                } else if (shouldShowFrame) {
-                    "frame_vip1_archangel"
-                } else {
-                    ""
-                }
                 val frameItem = getAvatarFrameItem(seatFrameId)
                 val seatVipLvl = seatOccupantProfile?.getVipLevel() ?: (frameItem?.vipLevel ?: 0)
 

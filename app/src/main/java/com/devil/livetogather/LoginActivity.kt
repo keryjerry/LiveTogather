@@ -93,10 +93,31 @@ class LoginActivity : ComponentActivity() {
                 finish()
                 return
             } else {
-                val intent = Intent(this, ProfileSetupActivity::class.java)
-                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                startActivity(intent)
-                finish()
+                val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                db.collection("users").document(currentUser.uid).get()
+                    .addOnSuccessListener { doc ->
+                        if (doc != null && doc.exists()) {
+                            val userObj = parseUserProfileFromDoc(doc)
+                            if (userObj.name.isNotBlank()) {
+                                saveProfileToPrefs(prefs, userObj)
+                                val intent = Intent(this, MainActivity::class.java)
+                                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                                startActivity(intent)
+                                finish()
+                                return@addOnSuccessListener
+                            }
+                        }
+                        val intent = Intent(this, ProfileSetupActivity::class.java)
+                        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                        startActivity(intent)
+                        finish()
+                    }
+                    .addOnFailureListener {
+                        val intent = Intent(this, ProfileSetupActivity::class.java)
+                        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                        startActivity(intent)
+                        finish()
+                    }
                 return
             }
         }
@@ -313,15 +334,40 @@ class LoginActivity : ComponentActivity() {
         setLoading(false)
         val uid = auth.currentUser?.uid
         if (!uid.isNullOrBlank()) {
-            getSharedPreferences("livetogather_user_prefs", Context.MODE_PRIVATE)
-                .edit()
-                .putString("user_uid", uid)
-                .apply()
+            val prefs = getSharedPreferences("livetogather_user_prefs", Context.MODE_PRIVATE)
+            prefs.edit().putString("user_uid", uid).apply()
+
+            val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+            db.collection("users").document(uid).get()
+                .addOnSuccessListener { doc ->
+                    if (doc != null && doc.exists()) {
+                        val userObj = parseUserProfileFromDoc(doc)
+                        if (userObj.name.isNotBlank()) {
+                            saveProfileToPrefs(prefs, userObj)
+                            val intent = Intent(this, MainActivity::class.java)
+                            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                            startActivity(intent)
+                            finish()
+                            return@addOnSuccessListener
+                        }
+                    }
+                    val intent = Intent(this, ProfileSetupActivity::class.java)
+                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                    startActivity(intent)
+                    finish()
+                }
+                .addOnFailureListener {
+                    val intent = Intent(this, ProfileSetupActivity::class.java)
+                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                    startActivity(intent)
+                    finish()
+                }
+        } else {
+            val intent = Intent(this, ProfileSetupActivity::class.java)
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            startActivity(intent)
+            finish()
         }
-        val intent = Intent(this, ProfileSetupActivity::class.java)
-        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-        startActivity(intent)
-        finish()
     }
 
     private fun setLoading(loading: Boolean) {

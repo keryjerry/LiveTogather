@@ -273,6 +273,153 @@ data class UserProfile(
     }
 }
 
+fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
+    val uid = doc.getString("uid") ?: doc.id
+    val deviceId = doc.getString("deviceId") ?: ""
+    val name = doc.getString("name") ?: ""
+    val age = (doc.getLong("age") ?: 24L).toInt()
+    val gender = doc.getString("gender") ?: "Woman"
+    val city = doc.getString("city") ?: "Kolkata"
+    val photo = doc.getString("photo") ?: ""
+    val bio = doc.getString("bio") ?: ""
+    val activeIntent = doc.getString("activeIntent") ?: "free_tonight"
+    val hobbies = doc.getString("hobbies") ?: ""
+    val interests = doc.getString("interests") ?: ""
+    val profession = doc.getString("profession") ?: "Designer"
+    val education = doc.getString("education") ?: "Graduate"
+    val plan = doc.getString("plan") ?: "Free"
+    val distanceKm = (doc.getLong("distanceKm") ?: 12L).toInt()
+    val current_room = doc.getString("current_room") ?: ""
+    val hasBio = doc.getBoolean("hasBio") ?: true
+    val lookingFor = doc.getString("lookingFor") ?: "Long-term relationship"
+    val openTo = doc.getString("openTo") ?: "New connections"
+    val languages = doc.getString("languages") ?: "English, Hindi, Bengali"
+    val zodiac = doc.getString("zodiac") ?: "Leo"
+    val familyPlans = doc.getString("familyPlans") ?: "Open to kids"
+    val communicationStyle = doc.getString("communicationStyle") ?: "Big time texter"
+    val loveStyle = doc.getString("loveStyle") ?: "Quality time"
+    val pets = doc.getString("pets") ?: "Dog lover"
+    val drinking = doc.getString("drinking") ?: "Socially"
+    val smoking = doc.getString("smoking") ?: "No"
+    val workout = doc.getString("workout") ?: "Active"
+    val socialMedia = doc.getString("socialMedia") ?: "@maya_livetogather"
+    val locationName = doc.getString("locationName") ?: "New Town, West Bengal"
+    val latitude = doc.getDouble("latitude") ?: 22.5726
+    val longitude = doc.getDouble("longitude") ?: 88.3639
+    val isLocationSet = doc.getBoolean("isLocationSet") ?: doc.getBoolean("locationSet") ?: false
+    val maxDistanceKm = (doc.getLong("maxDistanceKm") ?: 53L).toInt()
+    val showFurtherAway = doc.getBoolean("showFurtherAway") ?: true
+    val interestedIn = doc.getString("interestedIn") ?: "Everyone"
+    val minAge = (doc.getLong("minAge") ?: 21L).toInt()
+    val maxAge = (doc.getLong("maxAge") ?: 29L).toInt()
+    val showOutsideAge = doc.getBoolean("showOutsideAge") ?: true
+    val visibilityMode = doc.getString("visibilityMode") ?: "Standard"
+    val enableDiscovery = doc.getBoolean("enableDiscovery") ?: true
+    val myMove = doc.getBoolean("myMove") ?: false
+    val photoVerifiedChat = doc.getBoolean("photoVerifiedChat") ?: false
+    @Suppress("UNCHECKED_CAST")
+    val blockedUserIds = (doc.get("blockedUserIds") as? List<String>) ?: emptyList()
+    val followerCount = (doc.getLong("followerCount") ?: 0L).toInt()
+    val followingCount = (doc.getLong("followingCount") ?: 0L).toInt()
+    val dailySwipeCount = (doc.getLong("dailySwipeCount") ?: 0L).toInt()
+    val lastSwipeDate = doc.getString("lastSwipeDate") ?: ""
+    val hostTrialStartDate = doc.getLong("hostTrialStartDate") ?: 0L
+    val diamonds = doc.getLong("diamonds") ?: 0L
+    val activeFrame = doc.getString("activeFrame") ?: ""
+    @Suppress("UNCHECKED_CAST")
+    val ownedFrames = (doc.get("ownedFrames") as? List<String>) ?: emptyList()
+
+    return UserProfile(
+        uid = uid,
+        deviceId = deviceId,
+        name = name,
+        age = age,
+        gender = gender,
+        city = city,
+        photo = photo,
+        bio = bio,
+        activeIntent = activeIntent,
+        hobbies = hobbies,
+        interests = interests,
+        profession = profession,
+        education = education,
+        plan = plan,
+        distanceKm = distanceKm,
+        current_room = current_room,
+        hasBio = hasBio,
+        lookingFor = lookingFor,
+        openTo = openTo,
+        languages = languages,
+        zodiac = zodiac,
+        familyPlans = familyPlans,
+        communicationStyle = communicationStyle,
+        loveStyle = loveStyle,
+        pets = pets,
+        drinking = drinking,
+        smoking = smoking,
+        workout = workout,
+        socialMedia = socialMedia,
+        locationName = locationName,
+        latitude = latitude,
+        longitude = longitude,
+        isLocationSet = isLocationSet,
+        maxDistanceKm = maxDistanceKm,
+        showFurtherAway = showFurtherAway,
+        interestedIn = interestedIn,
+        minAge = minAge,
+        maxAge = maxAge,
+        showOutsideAge = showOutsideAge,
+        visibilityMode = visibilityMode,
+        enableDiscovery = enableDiscovery,
+        myMove = myMove,
+        photoVerifiedChat = photoVerifiedChat,
+        blockedUserIds = blockedUserIds,
+        followerCount = followerCount,
+        followingCount = followingCount,
+        dailySwipeCount = dailySwipeCount,
+        lastSwipeDate = lastSwipeDate,
+        hostTrialStartDate = hostTrialStartDate,
+        diamonds = diamonds,
+        activeFrame = activeFrame,
+        ownedFrames = ownedFrames
+    )
+}
+
+fun saveProfileToPrefs(prefs: SharedPreferences, user: UserProfile) {
+    prefs.edit()
+        .putString("user_uid", user.uid)
+        .putString("profile_device_id", user.deviceId)
+        .putString("profile_name", user.name)
+        .putInt("profile_age", user.age)
+        .putString("profile_gender", user.gender)
+        .putString("profile_city", user.city)
+        .putString("profile_photo", user.photo)
+        .putString("profile_active_intent", user.activeIntent)
+        .putString("profile_bio", user.bio)
+        .putString("profile_hobbies", user.hobbies)
+        .putString("profile_interests", user.interests)
+        .putString("profile_profession", user.profession)
+        .putString("profile_education", user.education)
+        .putString("profile_plan", user.plan)
+        .putString("profile_location", user.locationName)
+        .putString("profile_latitude", user.latitude.toString())
+        .putString("profile_longitude", user.longitude.toString())
+        .putBoolean("profile_is_location_set", user.isLocationSet)
+        .putInt("profile_max_distance", user.maxDistanceKm)
+        .putBoolean("profile_show_further", user.showFurtherAway)
+        .putString("profile_interested_in", user.interestedIn)
+        .putInt("profile_min_age", user.minAge)
+        .putInt("profile_max_age", user.maxAge)
+        .putString("profile_current_room", user.current_room)
+        .putInt("profile_daily_swipe_count", user.dailySwipeCount)
+        .putString("profile_last_swipe_date", user.lastSwipeDate)
+        .putLong("profile_host_trial_start", user.hostTrialStartDate)
+        .putString("profile_active_frame", user.activeFrame)
+        .putStringSet("profile_owned_frames", user.ownedFrames.toSet())
+        .putLong("profile_diamonds", user.diamonds)
+        .apply()
+}
+
 data class FollowerRecord(
     val uid: String = "",
     val name: String = "",
