@@ -20,12 +20,22 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file(project.findProperty("RELEASE_STORE_FILE")?.toString() ?: "release.jks")
+            storePassword = project.findProperty("RELEASE_STORE_PASSWORD")?.toString() ?: "livetogather123"
+            keyAlias = project.findProperty("RELEASE_KEY_ALIAS")?.toString() ?: "livetogather"
+            keyPassword = project.findProperty("RELEASE_KEY_PASSWORD")?.toString() ?: "livetogather123"
+        }
+    }
+
     buildTypes {
         debug {
             enableAndroidTestCoverage = false
             enableUnitTestCoverage = false
         }
         release {
+            signingConfig = signingConfigs.getByName("release")
             optimization {
                 enable = false
             }
