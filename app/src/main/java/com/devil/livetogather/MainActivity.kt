@@ -413,9 +413,10 @@ fun LiveTogatherApp() {
             }
             if (snapshot != null) {
                 val fetchedRooms = snapshot.documents.mapNotNull { parseRoomFromDoc(it) }
+                val localUnsynced = roomsList.filter { local -> local.hostId == currentUserId && fetchedRooms.none { it.id == local.id } }
                 roomsList.clear()
-                roomsList.addAll(fetchedRooms)
-                Log.d("Firestore", "Loaded ${fetchedRooms.size} real-time rooms from Firestore")
+                roomsList.addAll(localUnsynced + fetchedRooms)
+                Log.d("Firestore", "Loaded ${fetchedRooms.size} real-time rooms from Firestore (total ${roomsList.size})")
             }
         }
     }
@@ -1384,6 +1385,9 @@ fun LiveTogatherApp() {
                     db.collection("users").document(currentUserId).update("current_room", roomId)
 
                     showCreateRoomDialog = false
+                    if (roomsList.none { it.id == roomId }) {
+                        roomsList.add(0, newRoom)
+                    }
                     activeAudioRoom = newRoom
                     Toast.makeText(context, "Room \"$title\" created! You are Host 👑", Toast.LENGTH_SHORT).show()
                 }
@@ -1856,6 +1860,129 @@ fun LiveTogatherApp() {
 // 1. INTENT ROOMS 2-COLUMN GRID (REQUIREMENT 1)
 // -------------------------------------------------------------
 @Composable
+fun LiveRoomCard(
+    room: RoomItem,
+    onJoin: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .width(230.dp)
+            .height(138.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(BrandCard)
+            .border(1.dp, BrandCoral.copy(alpha = 0.6f), RoundedCornerShape(16.dp))
+            .clickable { onJoin() }
+    ) {
+        // Background banner with gradient
+        AsyncImage(
+            model = room.banner_image_url.ifEmpty { getCategoryBanner(room.category) },
+            contentDescription = room.title,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color.Black.copy(alpha = 0.45f), Color.Black.copy(alpha = 0.92f))
+                    )
+                )
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(10.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Top Row: LIVE badge + Category tag
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(Color(0xFFD32F2F))
+                        .padding(horizontal = 7.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(modifier = Modifier.size(5.dp).clip(CircleShape).background(Color.White))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("LIVE", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                }
+
+                val catLabel = CATEGORY_LIST.find { it.id == room.category }?.label ?: room.category
+                Text(
+                    text = "${room.emoji} $catLabel",
+                    color = BrandGold,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(50))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
+
+            // Middle: Host Info + Title
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AsyncImage(
+                    model = room.hostPhotoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                    contentDescription = room.hostName,
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .border(1.5.dp, BrandCoral, CircleShape),
+                    contentScale = ContentScale.Crop
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = room.title.ifEmpty { "Live Audio Hangout" },
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "👑 Host: ${room.hostName.ifEmpty { "Host" }}",
+                        color = BrandGold,
+                        fontSize = 10.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            // Bottom: Join Button
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(24.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(BrandCoral),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Join Room 🎙️",
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
+@Composable
 fun IntentRoomsGrid(
     categories: List<IntentCategory> = CATEGORY_LIST.filter { it.id != "all" },
     catalogRooms: List<RoomItem> = emptyList(),
@@ -1877,14 +2004,14 @@ fun IntentRoomsGrid(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Live Intent Categories",
+                    text = "Live Hangouts & Intents",
                     color = BrandGold,
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 0.5.sp
                 )
                 Text(
-                    text = "Explore 13 curated category hubs to meet active members and join live rooms.",
+                    text = "Join active audio rooms directly or explore 13 category hubs.",
                     color = Color.Gray,
                     fontSize = 11.sp
                 )
@@ -1900,13 +2027,63 @@ fun IntentRoomsGrid(
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // 🔴 REAL-TIME LIVE AUDIO ROOMS CAROUSEL (DIRECTLY ON MAIN SCREEN)
+        if (rooms.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(Color.Red)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "LIVE NOW (${rooms.size})",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 0.5.sp
+                    )
+                }
+                Text(
+                    text = "Tap to Join 🎙️",
+                    color = BrandGold,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp)
+            ) {
+                items(rooms, key = { it.id }) { roomItem ->
+                    LiveRoomCard(
+                        room = roomItem,
+                        onJoin = { onJoinRoom(roomItem) }
+                    )
+                }
+            }
+        }
 
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
         ) {
             items(categories) { category ->
                 val bannerUrl = getCategoryBanner(category.id)
