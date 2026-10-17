@@ -113,6 +113,54 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
     var localAvatarUri by remember { mutableStateOf<Uri?>(null) }
     var isSaving by remember { mutableStateOf(false) }
     var isUploadingPhoto by remember { mutableStateOf(false) }
+    var isDetectingGps by remember { mutableStateOf(false) }
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val fineGranted = permissions[android.Manifest.permission.ACCESS_FINE_LOCATION] == true
+        val coarseGranted = permissions[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (fineGranted || coarseGranted) {
+            isDetectingGps = true
+            coroutineScope.launch(Dispatchers.IO) {
+                try {
+                    val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? android.location.LocationManager
+                    val loc = if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                        locationManager?.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER)
+                            ?: locationManager?.getLastKnownLocation(android.location.LocationManager.NETWORK_PROVIDER)
+                    } else {
+                        locationManager?.getLastKnownLocation(android.location.LocationManager.NETWORK_PROVIDER)
+                    }
+                    if (loc != null) {
+                        val geocoder = android.location.Geocoder(context, Locale.getDefault())
+                        @Suppress("DEPRECATION")
+                        val addresses = geocoder.getFromLocation(loc.latitude, loc.longitude, 1)
+                        if (!addresses.isNullOrEmpty()) {
+                            val addr = addresses[0]
+                            val locality = addr.locality ?: addr.subAdminArea ?: addr.adminArea
+                            val subLocality = addr.subLocality ?: addr.featureName ?: locality
+                            withContext(Dispatchers.Main) {
+                                if (!locality.isNullOrBlank()) {
+                                    city = if (!subLocality.isNullOrBlank() && subLocality != locality) {
+                                        "$subLocality, $locality"
+                                    } else {
+                                        locality
+                                    }
+                                    Toast.makeText(context, "📍 Detected: $city", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    // silently handle
+                } finally {
+                    withContext(Dispatchers.Main) {
+                        isDetectingGps = false
+                    }
+                }
+            }
+        }
+    }
 
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -394,6 +442,28 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
                         onValueChange = { city = it },
                         label = { Text("City / Neighborhood") },
                         placeholder = { Text("Kolkata") },
+                        trailingIcon = {
+                            IconButton(
+                                onClick = {
+                                    locationPermissionLauncher.launch(
+                                        arrayOf(
+                                            android.Manifest.permission.ACCESS_FINE_LOCATION,
+                                            android.Manifest.permission.ACCESS_COARSE_LOCATION
+                                        )
+                                    )
+                                }
+                            ) {
+                                if (isDetectingGps) {
+                                    CircularProgressIndicator(color = CoralAccent, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.MyLocation,
+                                        contentDescription = "Auto-Detect GPS",
+                                        tint = CoralAccent
+                                    )
+                                }
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),

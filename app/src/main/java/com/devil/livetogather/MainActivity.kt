@@ -9,6 +9,7 @@ import android.location.Geocoder
 import android.location.Location
 import android.location.LocationManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
@@ -432,10 +433,35 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
     var showLocationSetupDialog by remember { mutableStateOf(false) }
     var showPrivacyPolicy by remember { mutableStateOf(false) }
 
-    // Prompt user to set their real location on login / initial launch if not configured yet
-    LaunchedEffect(currentUser.isLocationSet, currentUserId) {
-        if (currentUserId.isNotBlank() && !currentUser.isLocationSet) {
-            showLocationSetupDialog = true
+    // Background GPS Auto-Detect Engine (silent background update like Tinder without blocking UI or dialog popups)
+    val backgroundLocationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
+        val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (fineGranted || coarseGranted) {
+            silentlyUpdateGpsLocation(context, currentUserId, currentUser, db, prefs) { updated ->
+                currentUser = updated
+            }
+        }
+    }
+
+    LaunchedEffect(currentUserId) {
+        if (currentUserId.isNotBlank()) {
+            val hasFine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            val hasCoarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            if (hasFine || hasCoarse) {
+                silentlyUpdateGpsLocation(context, currentUserId, currentUser, db, prefs) { updated ->
+                    currentUser = updated
+                }
+            } else {
+                backgroundLocationPermissionLauncher.launch(
+                    arrayOf(
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                    )
+                )
+            }
         }
     }
     var showNotificationsDialog by remember { mutableStateOf(false) }
@@ -827,6 +853,17 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                                         imageVector = Icons.Default.Notifications,
                                         contentDescription = "Notifications",
                                         tint = if (unreadNotificationsCount > 0) BrandOrange else Color.White
+                                    )
+                                }
+                            }
+
+                            // Discovery Filters (Manual distance, age & city filter)
+                            if (currentScreen == "discover") {
+                                IconButton(onClick = { showSettingsDialog = true }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Tune,
+                                        contentDescription = "Discovery Filters",
+                                        tint = Color.White
                                     )
                                 }
                             }
@@ -4506,6 +4543,29 @@ fun ProfileScreenContent(
                             )
                         }
 
+                        // Manual Location & Area selector shortcut
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(BrandCardSubtle)
+                                .border(1.dp, BrandBorder, RoundedCornerShape(8.dp))
+                                .clickable { onOpenLocationSetup() }
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("📍", fontSize = 13.sp)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Column {
+                                    Text("Exact Real Location & Area", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                    Text("Select city, neighborhood & coordinates", color = Color.Gray, fontSize = 9.sp)
+                                }
+                            }
+                            Text("Change ✏️", color = BrandCoral, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
                         OutlinedTextField(
                             value = profession,
                             onValueChange = { profession = it },
@@ -7162,4 +7222,106 @@ fun seedInitialCommunityProfiles(db: FirebaseFirestore) {
 
 fun seedInitialMoments(db: FirebaseFirestore) {
     // Disabled: only real user moments are used in Moments feed
+}
+
+fun silentlyUpdateGpsLocation(
+    context: Context,
+    userId: String,
+    currentUser: UserProfile,
+    db: FirebaseFirestore,
+    prefs: android.content.SharedPreferences,
+    onProfileUpdated: (UserProfile) -> Unit
+) {
+    kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+        try {
+            val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return@launch
+            val hasFine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            val hasCoarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            if (!hasFine && !hasCoarse) return@launch
+
+            val loc: Location? = if (hasFine) {
+                locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                    ?: locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+            } else {
+                locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+            }
+
+            if (loc != null) {
+                processAndPersistGpsLocation(context, loc, userId, currentUser, db, prefs, onProfileUpdated)
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                try {
+                    val provider = if (hasFine) LocationManager.GPS_PROVIDER else LocationManager.NETWORK_PROVIDER
+                    locationManager.getCurrentLocation(provider, null, context.mainExecutor) { freshLoc ->
+                        if (freshLoc != null) {
+                            processAndPersistGpsLocation(context, freshLoc, userId, currentUser, db, prefs, onProfileUpdated)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w("MainActivity", "getCurrentLocation fallback notice: ${e.message}")
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("MainActivity", "Silent background GPS error: ${e.message}")
+        }
+    }
+}
+
+private fun processAndPersistGpsLocation(
+    context: Context,
+    loc: Location,
+    userId: String,
+    currentUser: UserProfile,
+    db: FirebaseFirestore,
+    prefs: android.content.SharedPreferences,
+    onProfileUpdated: (UserProfile) -> Unit
+) {
+    var detectedCity = currentUser.city
+    var detectedArea = currentUser.locationName
+
+    try {
+        val geocoder = Geocoder(context, Locale.getDefault())
+        @Suppress("DEPRECATION")
+        val addresses = geocoder.getFromLocation(loc.latitude, loc.longitude, 1)
+        if (!addresses.isNullOrEmpty()) {
+            val addr = addresses[0]
+            val locality = addr.locality ?: addr.subAdminArea ?: addr.adminArea
+            val subLocality = addr.subLocality ?: addr.featureName ?: locality
+            if (!locality.isNullOrBlank()) {
+                detectedCity = locality
+                detectedArea = if (!subLocality.isNullOrBlank() && subLocality != locality) {
+                    "$subLocality, $locality"
+                } else {
+                    locality
+                }
+            }
+        }
+    } catch (e: Exception) {
+        Log.w("MainActivity", "Geocoder background notice: ${e.message}")
+    }
+
+    val updatedUser = currentUser.copy(
+        latitude = loc.latitude,
+        longitude = loc.longitude,
+        city = detectedCity.ifBlank { "Kolkata" },
+        locationName = detectedArea.ifBlank { detectedCity.ifBlank { "Kolkata" } },
+        isLocationSet = true
+    )
+
+    kotlinx.coroutines.CoroutineScope(Dispatchers.Main).launch {
+        onProfileUpdated(updatedUser)
+        saveProfileToPrefs(prefs, updatedUser)
+    }
+
+    if (userId.isNotBlank()) {
+        db.collection("users").document(userId).set(
+            mapOf(
+                "latitude" to loc.latitude,
+                "longitude" to loc.longitude,
+                "city" to updatedUser.city,
+                "locationName" to updatedUser.locationName,
+                "isLocationSet" to true
+            ),
+            SetOptions.merge()
+        )
+    }
 }
