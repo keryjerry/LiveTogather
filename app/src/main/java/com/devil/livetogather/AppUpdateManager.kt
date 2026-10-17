@@ -2,6 +2,7 @@ package com.devil.livetogather
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -145,15 +146,30 @@ object AppUpdateManager {
                 }
 
                 val fileLength = connection.contentLength
-                val downloadDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.cacheDir
-                val destinationFile = File(downloadDir, "LiveTogather-update.apk")
+                val cacheDir = context.externalCacheDir ?: context.cacheDir
+                if (!cacheDir.exists()) {
+                    cacheDir.mkdirs()
+                }
+
+                // Delete any stale/corrupted APK files before writing
+                try {
+                    cacheDir.listFiles()?.forEach { file ->
+                        if (file.name.startsWith("LiveTogather") || file.name.endsWith(".apk")) {
+                            file.delete()
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error cleaning stale APK files: ${e.message}")
+                }
+
+                val destinationFile = File(cacheDir, "LiveTogather_update_${System.currentTimeMillis()}.apk")
                 if (destinationFile.exists()) {
                     destinationFile.delete()
                 }
 
                 val input = connection.inputStream
                 val output = FileOutputStream(destinationFile)
-                val buffer = ByteArray(4096)
+                val buffer = ByteArray(8192)
                 var total: Long = 0
                 var count: Int
 
@@ -206,17 +222,21 @@ object AppUpdateManager {
                 }
             }
 
-            val apkUri: Uri = FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                apkFile
-            )
+            val apkUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", apkFile)
 
-            val installIntent = Intent(Intent.ACTION_VIEW).apply {
+            val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(apkUri, "application/vnd.android.package-archive")
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }
-            context.startActivity(installIntent)
+
+            val resInfoList = context.packageManager.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
+            for (resolveInfo in resInfoList) {
+                context.grantUriPermission(resolveInfo.activityInfo.packageName, apkUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+
+            context.startActivity(intent)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start APK installer: ${e.message}", e)
             Toast.makeText(context, "Failed to launch installer: ${e.message}", Toast.LENGTH_LONG).show()
