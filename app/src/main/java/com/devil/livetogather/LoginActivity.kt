@@ -55,23 +55,29 @@ class LoginActivity : ComponentActivity() {
     private val googleSignInLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        if (result.resultCode == RESULT_OK) {
-            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-            try {
-                val account = task.getResult(ApiException::class.java)
-                val idToken = account.idToken
-                if (idToken != null) {
-                    firebaseAuthWithGoogle(idToken)
-                } else {
-                    setLoading(false)
-                    Toast.makeText(this, "Could not retrieve Google ID Token", Toast.LENGTH_SHORT).show()
-                }
-            } catch (e: ApiException) {
-                setLoading(false)
-                Toast.makeText(this, "Google Sign-In failed: ${e.statusCode}", Toast.LENGTH_SHORT).show()
+        setLoading(false)
+        val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+        try {
+            val account = task.getResult(ApiException::class.java)
+            val idToken = account.idToken
+            if (idToken != null) {
+                setLoading(true)
+                firebaseAuthWithGoogle(idToken)
+            } else {
+                Toast.makeText(this, "Could not retrieve Google ID Token", Toast.LENGTH_SHORT).show()
             }
-        } else {
-            setLoading(false)
+        } catch (e: ApiException) {
+            val msg = when (e.statusCode) {
+                10 -> "Google Sign-In Error (10: DEVELOPER_ERROR): Release SHA-1 is missing from Firebase Console!"
+                12500 -> "Google Sign-In Error (12500): Google Play Services configuration issue."
+                12501, 12502 -> null // User cancelled or back pressed
+                7 -> "Network error. Please check your internet connection."
+                else -> "Google Sign-In failed (${e.statusCode}): ${e.message}"
+            }
+            if (msg != null) {
+                Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+                android.util.Log.e("LoginActivity", "Google Sign-In ApiException: ${e.statusCode} - ${e.message}", e)
+            }
         }
     }
 
