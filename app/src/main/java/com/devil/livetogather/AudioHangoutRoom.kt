@@ -4,6 +4,8 @@ package com.devil.livetogather
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.util.Log
 import android.net.Uri
 import android.widget.Toast
@@ -92,6 +94,7 @@ fun CreateRoomDialog(
     var roomTitle by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf(if (initialCategory.isNotBlank()) initialCategory else CATEGORY_LIST.getOrNull(1)?.id ?: "free_tonight") }
     var selectedTheme by remember { mutableStateOf(ROOM_THEME_PRESETS[0].imageUrl) }
+    val context = LocalContext.current
 
     val isKeyboardOpen = WindowInsets.isImeVisible
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -175,18 +178,46 @@ fun CreateRoomDialog(
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(CATEGORY_LIST.filter { it.id != "all" }) { cat ->
                         val isSelected = selectedCategory == cat.id
+                        val isVipCat = cat.id == "vip_room"
+                        val isUserVip = currentUser.isVipOrPlatinum() || currentUser.getVipLevel() >= 1
+
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(50))
                                 .background(
-                                    if (isSelected) Brush.horizontalGradient(listOf(BrandCoral, BrandOrange))
-                                    else Brush.linearGradient(listOf(BrandDark, BrandDark))
+                                    if (isSelected) {
+                                        if (isVipCat) Brush.horizontalGradient(listOf(BrandGold, Color(0xFFFFA000)))
+                                        else Brush.horizontalGradient(listOf(BrandCoral, BrandOrange))
+                                    } else Brush.linearGradient(listOf(BrandDark, BrandDark))
                                 )
-                                .border(1.dp, if (isSelected) Color.Transparent else BrandBorder, RoundedCornerShape(50))
-                                .clickable { selectedCategory = cat.id }
+                                .border(
+                                    1.dp,
+                                    if (isSelected) Color.Transparent
+                                    else if (isVipCat) BrandGold.copy(alpha = 0.6f)
+                                    else BrandBorder,
+                                    RoundedCornerShape(50)
+                                )
+                                .clickable {
+                                    if (isVipCat && !isUserVip) {
+                                        Toast.makeText(context, "👑 VIP Room can only be created by VIP Level 1+ members!", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        selectedCategory = cat.id
+                                    }
+                                }
                                 .padding(horizontal = 10.dp, vertical = 6.dp)
                         ) {
-                            Text(cat.label, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = cat.label,
+                                    color = if (isVipCat && !isSelected) BrandGold else Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                if (isVipCat && !isUserVip) {
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("🔒", fontSize = 10.sp)
+                                }
+                            }
                         }
                     }
                 }
@@ -239,6 +270,12 @@ fun CreateRoomDialog(
                 // Launch Room Button
                 Button(
                     onClick = {
+                        val isVipCat = selectedCategory == "vip_room"
+                        val isUserVip = currentUser.isVipOrPlatinum() || currentUser.getVipLevel() >= 1
+                        if (isVipCat && !isUserVip) {
+                            Toast.makeText(context, "👑 VIP Room requires VIP Level 1+ membership to create!", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
                         val finalTitle = roomTitle.trim().ifEmpty { "${currentUser.name}'s Hangout" }
                         onCreate(finalTitle, selectedCategory, selectedTheme)
                     },
@@ -262,6 +299,7 @@ fun CreateRoomDialog(
 fun EditRoomDialog(
     room: RoomItem,
     db: FirebaseFirestore,
+    currentUser: UserProfile? = null,
     onDismiss: () -> Unit,
     onRoomUpdated: (RoomItem) -> Unit
 ) {
@@ -359,18 +397,46 @@ fun EditRoomDialog(
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(CATEGORY_LIST.filter { it.id != "all" }) { cat ->
                         val isSelected = selectedCategory == cat.id
+                        val isVipCat = cat.id == "vip_room"
+                        val isUserVip = currentUser?.let { it.isVipOrPlatinum() || it.getVipLevel() >= 1 } ?: true
+
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(50))
                                 .background(
-                                    if (isSelected) Brush.horizontalGradient(listOf(BrandCoral, BrandOrange))
-                                    else Brush.linearGradient(listOf(BrandDark, BrandDark))
+                                    if (isSelected) {
+                                        if (isVipCat) Brush.horizontalGradient(listOf(BrandGold, Color(0xFFFFA000)))
+                                        else Brush.horizontalGradient(listOf(BrandCoral, BrandOrange))
+                                    } else Brush.linearGradient(listOf(BrandDark, BrandDark))
                                 )
-                                .border(1.dp, if (isSelected) Color.Transparent else BrandBorder, RoundedCornerShape(50))
-                                .clickable { selectedCategory = cat.id }
+                                .border(
+                                    1.dp,
+                                    if (isSelected) Color.Transparent
+                                    else if (isVipCat) BrandGold.copy(alpha = 0.6f)
+                                    else BrandBorder,
+                                    RoundedCornerShape(50)
+                                )
+                                .clickable {
+                                    if (isVipCat && !isUserVip) {
+                                        Toast.makeText(context, "👑 VIP Room can only be selected by VIP Level 1+ members!", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        selectedCategory = cat.id
+                                    }
+                                }
                                 .padding(horizontal = 10.dp, vertical = 6.dp)
                         ) {
-                            Text(cat.label, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = cat.label,
+                                    color = if (isVipCat && !isSelected) BrandGold else Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                if (isVipCat && !isUserVip) {
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("🔒", fontSize = 10.sp)
+                                }
+                            }
                         }
                     }
                 }
@@ -464,12 +530,14 @@ fun EditRoomDialog(
                     Button(
                         onClick = {
                             val finalTitle = roomTitle.trim().ifEmpty { room.title }
+                            val updatedPrivacy = if (selectedCategory == "vip_room") "vip_only" else room.privacy
                             isSaving = true
                             val updates = mapOf(
                                 "title" to finalTitle,
                                 "category" to selectedCategory,
                                 "banner_image_url" to selectedTheme,
-                                "statusMessage" to statusMessage.trim()
+                                "statusMessage" to statusMessage.trim(),
+                                "privacy" to updatedPrivacy
                             )
                             db.collection("rooms").document(room.id).update(updates)
                                 .addOnSuccessListener {
@@ -477,7 +545,8 @@ fun EditRoomDialog(
                                         title = finalTitle,
                                         category = selectedCategory,
                                         banner_image_url = selectedTheme,
-                                        statusMessage = statusMessage.trim()
+                                        statusMessage = statusMessage.trim(),
+                                        privacy = updatedPrivacy
                                     )
                                     onRoomUpdated(updated)
                                     Toast.makeText(context, "Room updated successfully! 🚀", Toast.LENGTH_SHORT).show()
@@ -767,6 +836,335 @@ fun CategoryEqualizerThemeVisualizer(
                     .clip(RoundedCornerShape(50))
                     .background(brush)
             )
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// 2C. CATEGORY THEMED PLAYER CONSOLE (14 TAILORED ROOM VISUALIZERS + 4 SOUND FX PADS)
+// -------------------------------------------------------------
+@Composable
+fun CategoryThemedPlayerConsole(
+    room: RoomItem,
+    isPlayingNow: Boolean,
+    isBuffering: Boolean,
+    currentArtwork: String,
+    formattedTime: String,
+    currentPosMs: Int = 0,
+    totalDurationMs: Int = 0,
+    onTogglePlay: () -> Unit,
+    onSelectTrack: () -> Unit,
+    onTriggerSoundFx: (SoundFxItem) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val theme = getCategoryTheme(room.category)
+    val infiniteTransition = rememberInfiniteTransition(label = "console_anim")
+    val rotationAngle by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 8000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "rotation"
+    )
+    val pulseGlow by infiniteTransition.animateFloat(
+        initialValue = 0.6f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1500, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulse_glow"
+    )
+
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = BrandCard)
+    ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            // Background Theme Image with dark overlay
+            val bgBanner = getCategoryBanner(room.category)
+            AsyncImage(
+                model = if (currentArtwork.isNotBlank() && theme.consoleType == "movie_imax") currentArtwork else bgBanner,
+                contentDescription = null,
+                modifier = Modifier.matchParentSize(),
+                contentScale = ContentScale.Crop
+            )
+
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Black.copy(alpha = 0.75f),
+                                Color(0xFF0F0914).copy(alpha = 0.90f)
+                            )
+                        )
+                    )
+            )
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+            ) {
+                // Header Badge
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(theme.emoji, fontSize = 14.sp)
+                        Text(
+                            text = theme.consoleTitle,
+                            color = BrandGold,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Text(
+                        text = if (isBuffering) "⏳ Buffering..." else if (isPlayingNow) "● LIVE STREAM" else "PAUSED",
+                        color = if (isPlayingNow) BrandGreen else Color.Gray,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Custom Central Visualizer according to ConsoleType
+                when (theme.consoleType) {
+                    "movie_imax" -> {
+                        // Cinema Curved Screen Projector projecting Artwork
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(85.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .border(1.5.dp, BrandCoral.copy(alpha = if (isPlayingNow) pulseGlow else 0.4f), RoundedCornerShape(12.dp))
+                                .background(Color.Black),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (currentArtwork.isNotBlank()) {
+                                AsyncImage(
+                                    model = currentArtwork,
+                                    contentDescription = "Screen Projector",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(
+                                            Brush.verticalGradient(
+                                                listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f))
+                                            )
+                                        )
+                                )
+                            } else {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("🍿", fontSize = 28.sp)
+                                    Text("IMAX Premier Screen", color = Color.Gray, fontSize = 10.sp)
+                                }
+                            }
+                            // Bottom screen title banner
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomStart)
+                                    .padding(6.dp)
+                            ) {
+                                Text(
+                                    text = if (room.nowPlayingTitle.isNotBlank()) "🎬 ${room.nowPlayingTitle}" else "🎬 Movie Projector Standby",
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                    else -> {
+                        // Compact Top Section: Rotating Disc / Console Seal + Song Meta + Controls
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Rotating Theme Disc (Vinyl / Compass / Moon / Globe / etc.)
+                            Box(
+                                modifier = Modifier
+                                    .size(46.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        when (theme.consoleType) {
+                                            "vip_gramophone" -> Brush.sweepGradient(listOf(Color(0xFFFFD700), Color(0xFFFFA000), Color(0xFFFFD700)))
+                                            "moon_observatory" -> Brush.radialGradient(listOf(Color(0xFF38BDF8), Color(0xFF0F172A)))
+                                            "sunset_beach" -> Brush.linearGradient(listOf(Color(0xFFF97316), Color(0xFFEC4899)))
+                                            "campfire_expedition" -> Brush.radialGradient(listOf(Color(0xFFD97706), Color(0xFF1C271E)))
+                                            "gameboy_retro" -> Brush.linearGradient(listOf(Color(0xFFA855F7), Color(0xFF14B8A6)))
+                                            "neon_fiesta" -> Brush.sweepGradient(listOf(Color(0xFFF43F5E), Color(0xFFFACC15), Color(0xFFF43F5E)))
+                                            "speakeasy_bar" -> Brush.linearGradient(listOf(Color(0xFF059669), Color(0xFFD97706)))
+                                            "roadtrip_globe" -> Brush.radialGradient(listOf(Color(0xFF0284C7), Color(0xFFF59E0B)))
+                                            "bistro_dining" -> Brush.linearGradient(listOf(Color(0xFFDC2626), Color(0xFFF59E0B)))
+                                            "aviation_radar" -> Brush.radialGradient(listOf(Color(0xFF06B6D4), Color(0xFF082F49)))
+                                            "club_turntable" -> Brush.sweepGradient(listOf(Color(0xFF8B5CF6), Color(0xFF06B6D4), Color(0xFF8B5CF6)))
+                                            else -> Brush.sweepGradient(listOf(BrandCoral, BrandGold, BrandCoral))
+                                        }
+                                    )
+                                    .border(1.dp, BrandGold.copy(alpha = 0.7f), CircleShape)
+                                    .graphicsLayer(rotationZ = if (isPlayingNow) rotationAngle else 0f),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (currentArtwork.isNotBlank() && theme.consoleType !in listOf("vip_gramophone", "moon_observatory", "gameboy_retro")) {
+                                    AsyncImage(
+                                        model = currentArtwork,
+                                        contentDescription = null,
+                                        modifier = Modifier.fillMaxSize().clip(CircleShape),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
+                                    Text(theme.emoji, fontSize = 20.sp)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(10.dp))
+
+                            // Track Info
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (room.nowPlayingTitle.isNotBlank()) room.nowPlayingTitle else "Lounge Music Idle",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = if (room.nowPlayingArtist.isNotBlank()) room.nowPlayingArtist else theme.consoleSubtitle,
+                                    color = BrandGold.copy(alpha = 0.85f),
+                                    fontSize = 10.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(6.dp))
+
+                            // Select Track Button
+                            IconButton(
+                                onClick = onSelectTrack,
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                                    .border(1.dp, BrandBorder, CircleShape)
+                            ) {
+                                Icon(Icons.Default.QueueMusic, contentDescription = "Select Song", tint = BrandCyan, modifier = Modifier.size(16.dp))
+                            }
+
+                            Spacer(modifier = Modifier.width(6.dp))
+
+                            // Play/Pause Button
+                            IconButton(
+                                onClick = onTogglePlay,
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (isPlayingNow) Brush.horizontalGradient(listOf(BrandCoral, BrandOrange))
+                                        else Brush.horizontalGradient(listOf(BrandDark, Color(0xFF281E22)))
+                                    )
+                                    .border(1.dp, if (isPlayingNow) BrandGold else BrandBorder, CircleShape)
+                            ) {
+                                Icon(
+                                    imageVector = if (isPlayingNow) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    contentDescription = if (isPlayingNow) "Pause" else "Play",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Dense Equalizer Waveform
+                MusicVisualizerWave(
+                    isPlaying = isPlayingNow,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(28.dp)
+                        .padding(vertical = 1.dp)
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Progress Bar & Timer
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val progress = if (totalDurationMs > 0) (currentPosMs.toFloat() / totalDurationMs.toFloat()).coerceIn(0f, 1f) else 0f
+                    LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(3.dp)
+                            .clip(RoundedCornerShape(2.dp)),
+                        color = BrandCoral,
+                        trackColor = Color.White.copy(alpha = 0.15f)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = formattedTime,
+                        color = if (isPlayingNow) BrandGold else Color.Gray,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // 4 Interactive Category Sound FX Pads
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    theme.soundEffects.forEach { fx ->
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color.Black.copy(alpha = 0.5f))
+                                .border(0.8.dp, BrandGold.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
+                                .clickable { onTriggerSoundFx(fx) }
+                                .padding(vertical = 5.dp, horizontal = 2.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(fx.emoji, fontSize = 14.sp)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = fx.name,
+                                    color = Color.White,
+                                    fontSize = 8.5.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -3133,6 +3531,68 @@ fun AudioHangoutRoomDialog(
         label = "pulse"
     )
 
+    val isVipRoomCategory = room.category == "vip_room" || room.isVipRoom
+    val isUserVip = currentUser.isVipOrPlatinum() || currentUser.getVipLevel() >= 1
+
+    if (isVipRoomCategory && !isUserVip) {
+        Dialog(
+            onDismissRequest = onDismiss,
+            properties = DialogProperties(dismissOnBackPress = true, dismissOnClickOutside = true)
+        ) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF191224)),
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.5.dp, BrandGold.copy(alpha = 0.8f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(60.dp)
+                            .clip(CircleShape)
+                            .background(Brush.sweepGradient(listOf(BrandGold, Color(0xFFFFA000), BrandGold)))
+                            .border(2.dp, Color.White.copy(alpha = 0.8f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("👑", fontSize = 28.sp)
+                    }
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text(
+                        text = "VIP Access Only",
+                        color = BrandGold,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "This royal VIP audio lounge is exclusively reserved for VIP Level 1+ members.\n\nUpgrade your VIP level to unlock private royal lounges, gramophone music consoles, and premium mic seats!",
+                        color = Color.LightGray,
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 18.sp
+                    )
+                    Spacer(modifier = Modifier.height(18.dp))
+                    Button(
+                        onClick = onDismiss,
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                        shape = RoundedCornerShape(50),
+                        modifier = Modifier.fillMaxWidth().height(42.dp)
+                    ) {
+                        Text("Understood", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                }
+            }
+        }
+        return
+    }
+
     val isKeyboardOpen = WindowInsets.isImeVisible
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
@@ -3792,8 +4252,9 @@ fun AudioHangoutRoomDialog(
                     Spacer(modifier = Modifier.height(4.dp))
 
                     // ---------------------------------------------------------
-                    // 2. FULL EQUALIZER MUSIC BOX WITH ALBUM ART BACKGROUND & LIVE TIMER
+                    // 2. CATEGORY THEMED PLAYER CONSOLE (14 ROOM DESIGNS + 4 SOUND FX PADS)
                     // ---------------------------------------------------------
+                    val currentTheme = getCategoryTheme(room.category)
                     val currentArtwork = room.nowPlayingArtworkUrl.ifEmpty { AudioPlayerManager.currentTrackArtworkUrlState.value }
                     val isPlayingNow = AudioPlayerManager.isPlayingState.value
                     val isBuffering by AudioPlayerManager.isBufferingState
@@ -3801,197 +4262,69 @@ fun AudioHangoutRoomDialog(
                     val currentPosMs by AudioPlayerManager.currentPositionMsState
                     val totalDurationMs by AudioPlayerManager.durationMsState
 
-                    Card(
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Box(modifier = Modifier.fillMaxWidth()) {
-                            // 1. Full Thumbnail in Transparency as Background
-                            if (currentArtwork.isNotBlank()) {
-                                AsyncImage(
-                                    model = currentArtwork,
-                                    contentDescription = null,
-                                    modifier = Modifier.matchParentSize(),
-                                    contentScale = ContentScale.Crop
-                                )
+                    CategoryThemedPlayerConsole(
+                        room = room,
+                        isPlayingNow = isPlayingNow,
+                        isBuffering = isBuffering,
+                        currentArtwork = currentArtwork,
+                        formattedTime = formattedTime,
+                        currentPosMs = currentPosMs,
+                        totalDurationMs = totalDurationMs,
+                        onTogglePlay = {
+                            val willPlay = !isPlayingNow
+                            if (willPlay) {
+                                if (AudioPlayerManager.currentTrackUrlState.value.isNotBlank()) {
+                                    AudioPlayerManager.resume(context)
+                                } else {
+                                    val defaultUrl = room.nowPlayingUrl.ifEmpty { CURATED_HANGOUT_TRACKS[0].url }
+                                    val defaultTitle = room.nowPlayingTitle.ifEmpty { CURATED_HANGOUT_TRACKS[0].title }
+                                    val defaultArt = room.nowPlayingArtworkUrl.ifEmpty { CURATED_HANGOUT_TRACKS[0].artworkUrl }
+                                    AudioPlayerManager.play(context, defaultUrl, defaultTitle, defaultArt)
+                                }
+                            } else {
+                                AudioPlayerManager.pause()
                             }
-
-                            // 2. Translucent Dark Gradient Overlay
-                            Box(
-                                modifier = Modifier
-                                    .matchParentSize()
-                                    .background(
-                                        Brush.verticalGradient(
-                                            colors = listOf(
-                                                Color.Black.copy(alpha = 0.72f),
-                                                Color(0xFF140F12).copy(alpha = 0.88f)
-                                            )
-                                        )
-                                    )
+                            room = room.copy(isPlaying = willPlay)
+                            db.collection("rooms").document(room.id).set(
+                                mapOf(
+                                    "isPlaying" to willPlay,
+                                    "nowPlayingTitle" to AudioPlayerManager.currentTrackTitleState.value.ifEmpty { room.nowPlayingTitle },
+                                    "nowPlayingArtist" to room.nowPlayingArtist,
+                                    "nowPlayingUrl" to AudioPlayerManager.currentTrackUrlState.value.ifEmpty { room.nowPlayingUrl },
+                                    "nowPlayingArtworkUrl" to AudioPlayerManager.currentTrackArtworkUrlState.value.ifEmpty { room.nowPlayingArtworkUrl }
+                                ),
+                                SetOptions.merge()
                             )
-
-                            // 3. Main Content Inside Full Equalizer Box
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 10.dp)
-                            ) {
-                                // Top Row: Thumbnail + Track Title/Artist + Buttons
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    // Small Thumbnail with Live Ring
-                                    Box(
-                                        modifier = Modifier
-                                            .size(42.dp)
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .border(
-                                                1.dp,
-                                                if (isPlayingNow) BrandCoral else BrandBorder,
-                                                RoundedCornerShape(10.dp)
-                                            ),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (currentArtwork.isNotBlank()) {
-                                            AsyncImage(
-                                                model = currentArtwork,
-                                                contentDescription = "Artwork",
-                                                modifier = Modifier.fillMaxSize(),
-                                                contentScale = ContentScale.Crop
-                                            )
-                                        } else {
-                                            Icon(Icons.Default.MusicNote, contentDescription = null, tint = BrandGold, modifier = Modifier.size(20.dp))
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.width(10.dp))
-
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = if (room.nowPlayingTitle.isNotBlank()) room.nowPlayingTitle else "Lounge Music Idle",
-                                            color = Color.White,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 12.sp,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Text(
-                                            text = if (isBuffering) "⏳ Buffering audio stream..."
-                                            else if (room.nowPlayingArtist.isNotBlank()) room.nowPlayingArtist
-                                            else if (isPlayingNow) "Playing Live across Room"
-                                            else "Select a track to play",
-                                            color = if (isPlayingNow) BrandGold else Color.Gray,
-                                            fontSize = 10.sp,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-
-                                    Spacer(modifier = Modifier.width(8.dp))
-
-                                    // Select Song Button
-                                    IconButton(
-                                        onClick = { showTrackSelector = true },
-                                        modifier = Modifier
-                                            .size(32.dp)
-                                            .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                                            .border(1.dp, BrandBorder, CircleShape)
-                                    ) {
-                                        Icon(Icons.Default.QueueMusic, contentDescription = "Select Song", tint = BrandCyan, modifier = Modifier.size(16.dp))
-                                    }
-
-                                    Spacer(modifier = Modifier.width(6.dp))
-
-                                    // Responsive Play/Pause Toggle
-                                    IconButton(
-                                        onClick = {
-                                            val willPlay = !isPlayingNow
-                                            if (willPlay) {
-                                                if (AudioPlayerManager.currentTrackUrlState.value.isNotBlank()) {
-                                                    AudioPlayerManager.resume(context)
-                                                } else {
-                                                    val defaultUrl = room.nowPlayingUrl.ifEmpty { CURATED_HANGOUT_TRACKS[0].url }
-                                                    val defaultTitle = room.nowPlayingTitle.ifEmpty { CURATED_HANGOUT_TRACKS[0].title }
-                                                    val defaultArt = room.nowPlayingArtworkUrl.ifEmpty { CURATED_HANGOUT_TRACKS[0].artworkUrl }
-                                                    AudioPlayerManager.play(context, defaultUrl, defaultTitle, defaultArt)
-                                                }
-                                            } else {
-                                                AudioPlayerManager.pause()
-                                            }
-                                            room = room.copy(isPlaying = willPlay)
-                                            db.collection("rooms").document(room.id).set(
-                                                mapOf(
-                                                    "isPlaying" to willPlay,
-                                                    "nowPlayingTitle" to AudioPlayerManager.currentTrackTitleState.value.ifEmpty { room.nowPlayingTitle },
-                                                    "nowPlayingArtist" to room.nowPlayingArtist,
-                                                    "nowPlayingUrl" to AudioPlayerManager.currentTrackUrlState.value.ifEmpty { room.nowPlayingUrl },
-                                                    "nowPlayingArtworkUrl" to AudioPlayerManager.currentTrackArtworkUrlState.value.ifEmpty { room.nowPlayingArtworkUrl }
-                                                ),
-                                                SetOptions.merge()
-                                            )
-                                        },
-                                        modifier = Modifier
-                                            .size(36.dp)
-                                            .clip(CircleShape)
-                                            .background(
-                                                if (isPlayingNow) Brush.horizontalGradient(listOf(BrandCoral, BrandOrange))
-                                                else Brush.horizontalGradient(listOf(BrandDark, Color(0xFF281E22)))
-                                            )
-                                            .border(1.dp, if (isPlayingNow) BrandGold else BrandBorder, CircleShape)
-                                    ) {
-                                        Icon(
-                                            imageVector = if (isPlayingNow) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                            contentDescription = if (isPlayingNow) "Pause" else "Play",
-                                            tint = Color.White,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
+                        },
+                        onSelectTrack = { showTrackSelector = true },
+                        onTriggerSoundFx = { fx ->
+                            try {
+                                val toneGen = ToneGenerator(AudioManager.STREAM_MUSIC, 75)
+                                when (fx.id) {
+                                    "applause", "toast", "cheers" -> toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, 250)
+                                    "cheer", "horn", "horn_party" -> toneGen.startTone(ToneGenerator.TONE_PROP_BEEP2, 300)
+                                    "bell", "champagne", "ice_clink" -> toneGen.startTone(ToneGenerator.TONE_PROP_ACK, 200)
+                                    else -> toneGen.startTone(ToneGenerator.TONE_PROP_PROMPT, 200)
                                 }
-
-                                Spacer(modifier = Modifier.height(6.dp))
-
-                                // FULL EQUALIZER VISUALIZER WAVE (Spans card width)
-                                MusicVisualizerWave(
-                                    isPlaying = isPlayingNow,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(36.dp)
-                                        .padding(vertical = 2.dp)
-                                )
-
-                                Spacer(modifier = Modifier.height(6.dp))
-
-                                // Live Playback Progress Bar + Song Duration Timer
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    val progress = if (totalDurationMs > 0) (currentPosMs.toFloat() / totalDurationMs.toFloat()).coerceIn(0f, 1f) else 0f
-
-                                    LinearProgressIndicator(
-                                        progress = { progress },
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .height(3.dp)
-                                            .clip(RoundedCornerShape(2.dp)),
-                                        color = BrandCoral,
-                                        trackColor = Color.White.copy(alpha = 0.15f)
-                                    )
-
-                                    Spacer(modifier = Modifier.width(8.dp))
-
-                                    Text(
-                                        text = formattedTime,
-                                        color = if (isPlayingNow) BrandGold else Color.Gray,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
+                            } catch (e: Exception) {
+                                Log.w("AudioHangoutRoom", "Error playing sound fx tone: ${e.message}")
                             }
+                            val fxComment = LiveRoomComment(
+                                id = UUID.randomUUID().toString(),
+                                roomId = room.id,
+                                userId = currentUser.uid,
+                                userName = currentUser.name,
+                                userPhoto = currentUser.photo,
+                                tier = if (currentUser.isVipOrPlatinum()) "VIP" else "Standard",
+                                message = "${fx.emoji} triggered sound fx: [${fx.name}]!",
+                                timestamp = System.currentTimeMillis()
+                            )
+                            db.collection("rooms").document(room.id)
+                                .collection("live_comments").document(fxComment.id)
+                                .set(fxComment)
+                            Toast.makeText(context, "${fx.emoji} ${fx.name}!", Toast.LENGTH_SHORT).show()
                         }
-                    }
+                    )
 
                     Spacer(modifier = Modifier.height(8.dp))
 
@@ -4001,13 +4334,15 @@ fun AudioHangoutRoomDialog(
                     TenMicStageSection(
                         seats = if (micSeats.isNotEmpty()) micSeats else (0..9).map { idx ->
                             if (idx == 0) MicSeat(seatIndex = 0, label = "Host 👑", uid = targetHostId, name = hostName, photo = hostPhoto, role = "host")
-                            else MicSeat(seatIndex = idx, label = "Seat ${idx + 1}", uid = "", name = "", photo = "", role = "speaker")
+                            else MicSeat(seatIndex = idx, label = "${currentTheme.seatTypeLabel} ${idx + 1}", uid = "", name = "", photo = "", role = "speaker")
                         },
                         currentUserId = currentUser.uid,
                         isHost = isUserAdmin,
                         isLocalTalking = isLocalTalking,
                         allProfiles = allProfiles,
                         userActiveFrame = activeUserFrame,
+                        categorySeatEmoji = currentTheme.seatEmoji,
+                        categorySeatLabel = currentTheme.seatTypeLabel,
                         onSeatClick = { seat ->
                             if (isUserAdmin) {
                                 selectedSeatForAdmin = seat
@@ -4389,6 +4724,7 @@ fun AudioHangoutRoomDialog(
             EditRoomDialog(
                 room = room,
                 db = db,
+                currentUser = currentUser,
                 onDismiss = { showEditRoomDialog = false },
                 onRoomUpdated = { updated ->
                     room = updated
@@ -5203,6 +5539,8 @@ fun TenMicStageSection(
     isLocalTalking: Boolean,
     allProfiles: List<UserProfile> = emptyList(),
     userActiveFrame: String = "",
+    categorySeatEmoji: String = "🎙️",
+    categorySeatLabel: String = "Seat",
     onSeatClick: (MicSeat) -> Unit,
     onQuickToggleMute: () -> Unit,
     onQuickLeaveStage: () -> Unit
@@ -5223,7 +5561,7 @@ fun TenMicStageSection(
             for (i in 0..4) {
                 val seat = seats.find { it.seatIndex == i } ?: MicSeat(
                     seatIndex = i,
-                    label = if (i == 0) "Host 👑" else "Seat ${i + 1}",
+                    label = if (i == 0) "Host 👑" else "$categorySeatLabel ${i + 1}",
                     uid = "",
                     name = "",
                     photo = "",
@@ -5236,6 +5574,8 @@ fun TenMicStageSection(
                     isHost = isHost,
                     allProfiles = allProfiles,
                     userActiveFrame = userActiveFrame,
+                    categorySeatEmoji = categorySeatEmoji,
+                    categorySeatLabel = categorySeatLabel,
                     onClick = { onSeatClick(seat) }
                 )
             }
@@ -5252,7 +5592,7 @@ fun TenMicStageSection(
             for (i in 5..9) {
                 val seat = seats.find { it.seatIndex == i } ?: MicSeat(
                     seatIndex = i,
-                    label = "Seat ${i + 1}",
+                    label = "$categorySeatLabel ${i + 1}",
                     uid = "",
                     name = "",
                     photo = "",
@@ -5265,6 +5605,8 @@ fun TenMicStageSection(
                     isHost = isHost,
                     allProfiles = allProfiles,
                     userActiveFrame = userActiveFrame,
+                    categorySeatEmoji = categorySeatEmoji,
+                    categorySeatLabel = categorySeatLabel,
                     onClick = { onSeatClick(seat) }
                 )
             }
@@ -5280,6 +5622,8 @@ fun MicSeatView(
     isHost: Boolean,
     allProfiles: List<UserProfile> = emptyList(),
     userActiveFrame: String = "",
+    categorySeatEmoji: String = "🎙️",
+    categorySeatLabel: String = "Seat",
     onClick: () -> Unit
 ) {
     val isSpeaking = if (isCurrentSelf) (isLocalTalking && !seat.isMuted) else (seat.isTalking && !seat.isMuted)
@@ -5377,7 +5721,7 @@ fun MicSeatView(
                     )
                 }
             } else {
-                // Empty & Unlocked Seat (Matching HTML: subtle translucent circle with gray mic icon)
+                // Empty & Unlocked Seat (Matching HTML: subtle translucent circle with custom category emoji or mic icon)
                 Box(
                     modifier = Modifier
                         .size(38.dp)
@@ -5386,12 +5730,16 @@ fun MicSeatView(
                         .border(1.dp, Color.White.copy(alpha = 0.15f), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        Icons.Default.Mic,
-                        contentDescription = "Take Mic",
-                        tint = Color(0xFF9E9E9E),
-                        modifier = Modifier.size(16.dp)
-                    )
+                    if (categorySeatEmoji.isNotBlank() && categorySeatEmoji != "🎙️") {
+                        Text(categorySeatEmoji, fontSize = 16.sp)
+                    } else {
+                        Icon(
+                            Icons.Default.Mic,
+                            contentDescription = "Take Mic",
+                            tint = Color(0xFF9E9E9E),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
                 }
             }
         }
@@ -5411,7 +5759,7 @@ fun MicSeatView(
                 modifier = Modifier.width(58.dp)
             )
             Text(
-                text = if (seat.seatIndex == 0) "Host" else "Seat ${seat.seatIndex + 1}",
+                text = if (seat.seatIndex == 0) "Host" else "$categorySeatLabel ${seat.seatIndex + 1}",
                 color = if (seat.seatIndex == 0) BrandGold else BrandCoral,
                 fontSize = 7.5.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -5419,14 +5767,14 @@ fun MicSeatView(
             )
         } else if (seat.isLocked) {
             Text(
-                text = "Seat ${seat.seatIndex + 1}",
+                text = "$categorySeatLabel ${seat.seatIndex + 1}",
                 color = Color(0xFF757575),
                 fontSize = 8.sp,
                 textAlign = TextAlign.Center
             )
         } else {
             Text(
-                text = "Seat ${seat.seatIndex + 1}",
+                text = if (seat.seatIndex == 0) "Host 👑" else "$categorySeatLabel ${seat.seatIndex + 1}",
                 color = Color(0xFF9E9E9E),
                 fontSize = 8.sp,
                 textAlign = TextAlign.Center

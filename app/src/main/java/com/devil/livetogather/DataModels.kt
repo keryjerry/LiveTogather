@@ -12,6 +12,7 @@ data class IntentCategory(val id: String, val label: String)
 
 val CATEGORY_LIST = listOf(
     IntentCategory("all", "🔥 All Profiles"),
+    IntentCategory("vip_room", "👑 VIP Room"),
     IntentCategory("free_tonight", "🍷 Free Tonight"),
     IntentCategory("free_tomorrow", "🌙 Free Tomorrow"),
     IntentCategory("free_weekend", "🎉 Free in Weekend"),
@@ -155,6 +156,7 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
 }
 
 val CATEGORY_BANNERS = mapOf(
+    "vip_room" to "https://images.unsplash.com/photo-1545128485-c400e7702796?auto=format&fit=crop&w=800&q=80",
     "free_tonight" to "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?auto=format&fit=crop&w=800&q=80",
     "free_tomorrow" to "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=800&q=80",
     "free_weekend" to "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=800&q=80",
@@ -171,7 +173,257 @@ val CATEGORY_BANNERS = mapOf(
 )
 
 fun getCategoryBanner(categoryId: String): String {
-    return CATEGORY_BANNERS[categoryId] ?: "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?auto=format&fit=crop&w=800&q=80"
+    return CATEGORY_BANNERS[categoryId] ?: "https://images.unsplash.com/photo-1545128485-c400e7702796?auto=format&fit=crop&w=800&q=80"
+}
+
+data class SoundFxItem(
+    val id: String,
+    val name: String,
+    val emoji: String,
+    val description: String
+)
+
+data class RoomCategoryTheme(
+    val categoryId: String,
+    val displayName: String,
+    val emoji: String,
+    val consoleTitle: String,
+    val consoleSubtitle: String,
+    val consoleType: String,
+    val seatTypeLabel: String,
+    val seatEmoji: String,
+    val soundEffects: List<SoundFxItem>
+)
+
+val ROOM_CATEGORY_THEMES: Map<String, RoomCategoryTheme> = mapOf(
+    "vip_room" to RoomCategoryTheme(
+        categoryId = "vip_room",
+        displayName = "VIP Room",
+        emoji = "👑",
+        consoleTitle = "Royal Gramophone Console",
+        consoleSubtitle = "Antique 3D Golden Gramophone • Royal Fanfare",
+        consoleType = "vip_gramophone",
+        seatTypeLabel = "Imperial Throne",
+        seatEmoji = "👑",
+        soundEffects = listOf(
+            SoundFxItem("fanfare", "Fanfare", "🎺", "Royal Fanfare Trumpet"),
+            SoundFxItem("hail", "Hail King", "👑", "Hail The Monarch"),
+            SoundFxItem("toast", "Crystal Toast", "🥂", "Royal Champagne Toast"),
+            SoundFxItem("fireworks", "Fireworks", "🎆", "Imperial Fireworks")
+        )
+    ),
+    "lets_movie" to RoomCategoryTheme(
+        categoryId = "lets_movie",
+        displayName = "Lets Go For Movie",
+        emoji = "🍿",
+        consoleTitle = "IMAX Cinema Screen",
+        consoleSubtitle = "Active Screen Projector • Cinema Surround Sound",
+        consoleType = "movie_imax",
+        seatTypeLabel = "IMAX Recliner",
+        seatEmoji = "🍿",
+        soundEffects = listOf(
+            SoundFxItem("popcorn", "Popcorn", "🍿", "Movie Theater Popcorn"),
+            SoundFxItem("applause", "Applause", "👏", "Audience Ovation"),
+            SoundFxItem("boom", "Explosion", "💥", "Blockbuster Boom"),
+            SoundFxItem("soda", "Fizzy Soda", "🥤", "Cinema Beverage")
+        )
+    ),
+    "lets_cafe" to RoomCategoryTheme(
+        categoryId = "lets_cafe",
+        displayName = "Lets Go Cafe",
+        emoji = "☕",
+        consoleTitle = "Acoustic Guitar Lo-Fi Console",
+        consoleSubtitle = "Midnight Cafe Session • Coffee Steam Visualizer",
+        consoleType = "cafe_guitar",
+        seatTypeLabel = "Cafe Armchair",
+        seatEmoji = "☕",
+        soundEffects = listOf(
+            SoundFxItem("guitar", "Acoustic Strum", "🎸", "Warm Nylon Guitar Strum"),
+            SoundFxItem("espresso", "Espresso", "☕", "Steaming Espresso Pour"),
+            SoundFxItem("rain", "Window Rain", "🌧️", "Cozy Rain Droplets"),
+            SoundFxItem("bell", "Door Chime", "🔔", "Cafe Welcome Chime")
+        )
+    ),
+    "free_tonight" to RoomCategoryTheme(
+        categoryId = "free_tonight",
+        displayName = "Free Tonight",
+        emoji = "🍷",
+        consoleTitle = "Skyline Saxophone & Jazz Player",
+        consoleSubtitle = "Rooftop Evening Vibe • Crystal Glass Jazz",
+        consoleType = "skyline_jazz",
+        seatTypeLabel = "Skyline Velvet Seat",
+        seatEmoji = "🍷",
+        soundEffects = listOf(
+            SoundFxItem("sax", "Sax Solo", "🎷", "Sultry Saxophone Riff"),
+            SoundFxItem("cheers", "Wine Cheers", "🥂", "Evening Wine Cheers"),
+            SoundFxItem("piano", "Jazz Piano", "🎹", "Smooth Piano Chords"),
+            SoundFxItem("breeze", "Night Breeze", "🌃", "Skyline Evening Breeze")
+        )
+    ),
+    "travel_partner" to RoomCategoryTheme(
+        categoryId = "travel_partner",
+        displayName = "Travel Partner",
+        emoji = "✈️",
+        consoleTitle = "Cockpit Aviation Radar Console",
+        consoleSubtitle = "30,000 Feet Cruiser • First-Class Jetsetter",
+        consoleType = "aviation_radar",
+        seatTypeLabel = "First-Class Recliner",
+        seatEmoji = "✈️",
+        soundEffects = listOf(
+            SoundFxItem("chime", "Flight Chime", "🔔", "Cabin Ding-Dong Chime"),
+            SoundFxItem("jet", "Jet Turbine", "✈️", "Cruising Jet Engine"),
+            SoundFxItem("captain", "Captain Mic", "🎙️", "Flight Crew Notice"),
+            SoundFxItem("clouds", "Turbulence", "☁️", "High Altitude Wind")
+        )
+    ),
+    "going_club" to RoomCategoryTheme(
+        categoryId = "going_club",
+        displayName = "Going to Club",
+        emoji = "🕺",
+        consoleTitle = "Club Velocity DJ Turntable",
+        consoleSubtitle = "Spinning Neon Vinyl • Cyber Nightclub",
+        consoleType = "club_turntable",
+        seatTypeLabel = "Cyber Club Lounge",
+        seatEmoji = "🕺",
+        soundEffects = listOf(
+            SoundFxItem("airhorn", "Club Airhorn", "📢", "Party Siren Blast"),
+            SoundFxItem("bass", "Bass Drop", "🔊", "Subwoofer Bass Punch"),
+            SoundFxItem("crowd", "Crowd Roar", "🙌", "Hype Club Cheers"),
+            SoundFxItem("drums", "Drum Roll", "🥁", "Build-up Roll")
+        )
+    ),
+    "free_tomorrow" to RoomCategoryTheme(
+        categoryId = "free_tomorrow",
+        displayName = "Free Tomorrow",
+        emoji = "🌙",
+        consoleTitle = "Celestial Moon Orb Player",
+        consoleSubtitle = "Glass Dome Planetarium • Midnight Blue Cosmos",
+        consoleType = "moon_observatory",
+        seatTypeLabel = "Observatory Pod",
+        seatEmoji = "🌙",
+        soundEffects = listOf(
+            SoundFxItem("owl", "Night Owl", "🦉", "Gentle Forest Call"),
+            SoundFxItem("star", "Shooting Star", "🌠", "Cosmic Sparkle Chime"),
+            SoundFxItem("wind", "Midnight Wind", "💨", "Gentle Observatory Breeze"),
+            SoundFxItem("bowl", "Celestial Bell", "🔔", "Singing Bowl Meditation")
+        )
+    ),
+    "free_weekend" to RoomCategoryTheme(
+        categoryId = "free_weekend",
+        displayName = "Free in Weekend",
+        emoji = "🎉",
+        consoleTitle = "Tropical Sun DJ Console",
+        consoleSubtitle = "Sunset Poolside Beach Club • Island Beats",
+        consoleType = "sunset_beach",
+        seatTypeLabel = "Poolside Cabana",
+        seatEmoji = "🌴",
+        soundEffects = listOf(
+            SoundFxItem("wave", "Ocean Wave", "🌊", "Rhythmic Surf Crash"),
+            SoundFxItem("bongo", "Bongo Drums", "🪘", "Afro-Caribbean Percussion"),
+            SoundFxItem("whistle", "Party Whistle", "🥳", "Carnival Samba Whistle"),
+            SoundFxItem("champagne", "Champagne Pop", "🍾", "Bottle Cork & Fizz")
+        )
+    ),
+    "ready_travel" to RoomCategoryTheme(
+        categoryId = "ready_travel",
+        displayName = "Ready for Travelling",
+        emoji = "🧳",
+        consoleTitle = "Campfire Acoustic Radio",
+        consoleSubtitle = "Alpine Expedition Camp • Woodgrain Warmth",
+        consoleType = "campfire_expedition",
+        seatTypeLabel = "Safari Camp Chair",
+        seatEmoji = "🏕️",
+        soundEffects = listOf(
+            SoundFxItem("fire", "Crackling Fire", "🪵", "Warm Snapping Timber"),
+            SoundFxItem("crickets", "Night Crickets", "🦗", "Wilderness Night Chorus"),
+            SoundFxItem("wolf", "Wolf Howl", "🐺", "Mountain Ridge Howl"),
+            SoundFxItem("strum", "Folk Strum", "🎸", "Acoustic Fingerpicking")
+        )
+    ),
+    "hangout_partner" to RoomCategoryTheme(
+        categoryId = "hangout_partner",
+        displayName = "Hangout Partner",
+        emoji = "🤝",
+        consoleTitle = "8-Bit Gameboy Synth Console",
+        consoleSubtitle = "Retro Cyber Loft • Level-Up Beats",
+        consoleType = "gameboy_retro",
+        seatTypeLabel = "Gamer Esports Pod",
+        seatEmoji = "🎮",
+        soundEffects = listOf(
+            SoundFxItem("coin", "Level Up", "🪙", "8-Bit Gold Coin Chime"),
+            SoundFxItem("victory", "Victory Fanfare", "🏆", "Boss Defeated Fanfare"),
+            SoundFxItem("laser", "Laser Blaster", "👾", "Space Shooter Blast"),
+            SoundFxItem("highfive", "High Five", "👏", "Friendship Clapping")
+        )
+    ),
+    "free_party" to RoomCategoryTheme(
+        categoryId = "free_party",
+        displayName = "Free for Party",
+        emoji = "🥳",
+        consoleTitle = "Laser Disco Ball Soundboard",
+        consoleSubtitle = "Neon Fiesta Stage • Electro Blast",
+        consoleType = "neon_fiesta",
+        seatTypeLabel = "Celebration Stage Pod",
+        seatEmoji = "🎉",
+        soundEffects = listOf(
+            SoundFxItem("confetti", "Confetti Cannon", "🎊", "Explosive Confetti Pop"),
+            SoundFxItem("horn", "Party Horn", "📣", "Stadium Vuvuzela Horn"),
+            SoundFxItem("applause", "Stadium Applause", "👏", "Crowd Cheering Burst"),
+            SoundFxItem("pop", "Champagne Cork", "🍾", "Celebration Cork Fizz")
+        )
+    ),
+    "join_party" to RoomCategoryTheme(
+        categoryId = "join_party",
+        displayName = "Join Party",
+        emoji = "🍸",
+        consoleTitle = "Art Deco Speakeasy Jukebox",
+        consoleSubtitle = "1920s Emerald Lounge • Brass Shaker Dial",
+        consoleType = "speakeasy_bar",
+        seatTypeLabel = "Velvet Bar Stool",
+        seatEmoji = "🍸",
+        soundEffects = listOf(
+            SoundFxItem("shaker", "Cocktail Shaker", "🍸", "Ice & Shaker Clatter"),
+            SoundFxItem("sax", "Sax Blues Solo", "🎷", "Seductive Blues Lick"),
+            SoundFxItem("toast", "Crystal Toast", "🥂", "Art Deco Glass Clink"),
+            SoundFxItem("ice", "Ice Rock Clink", "🧊", "Whiskey Ice Rock Tumble")
+        )
+    ),
+    "plan_trip" to RoomCategoryTheme(
+        categoryId = "plan_trip",
+        displayName = "Lets Plan Holiday Trip",
+        emoji = "🗺️",
+        consoleTitle = "Adventure Navigation Globe",
+        consoleSubtitle = "Topographic Roadtrip Radio • Highway Anthems",
+        consoleType = "roadtrip_globe",
+        seatTypeLabel = "Traveler Recliner",
+        seatEmoji = "🧭",
+        soundEffects = listOf(
+            SoundFxItem("rev", "Engine Rev", "🚗", "Sporty Highway Acceleration"),
+            SoundFxItem("jet", "Jet Flyby", "✈️", "High Altitude Jet Pass"),
+            SoundFxItem("photo", "Camera Click", "📸", "Film Camera Shutter Flash"),
+            SoundFxItem("ocean", "Seaside Horn", "🌊", "Coastal Harbor Horn")
+        )
+    ),
+    "lets_dinner" to RoomCategoryTheme(
+        categoryId = "lets_dinner",
+        displayName = "Lets Go For Dinner/Lunch",
+        emoji = "🍽️",
+        consoleTitle = "Silver Cloche Bistro Player",
+        consoleSubtitle = "Candlelit Parisian Bistro • French Romance",
+        consoleType = "bistro_dining",
+        seatTypeLabel = "Banquet Dining Chair",
+        seatEmoji = "🍽️",
+        soundEffects = listOf(
+            SoundFxItem("pour", "Wine Pour", "🍷", "Swirling Wine Glass Pour"),
+            SoundFxItem("toast", "Wine Toast", "🥂", "Fine Crystal Wine Clink"),
+            SoundFxItem("fork", "Silver Cutlery", "🍽️", "Fine Porcelain & Silverware"),
+            SoundFxItem("strings", "Violin Romance", "🎻", "Seductive Romance Chords")
+        )
+    )
+)
+
+fun getCategoryTheme(categoryId: String): RoomCategoryTheme {
+    return ROOM_CATEGORY_THEMES[categoryId] ?: ROOM_CATEGORY_THEMES["free_tonight"]!!
 }
 
 // All hardcoded dummy rooms removed - rooms now originate 100% dynamically from Firestore

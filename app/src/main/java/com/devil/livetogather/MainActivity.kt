@@ -1064,8 +1064,12 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                                                             .fillMaxWidth()
                                                             .clip(RoundedCornerShape(8.dp))
                                                             .clickable {
-                                                                isSearchExpanded = false
-                                                                activeAudioRoom = room
+                                                                if ((room.category == "vip_room" || room.isVipRoom) && (!currentUser.isVipOrPlatinum() && currentUser.getVipLevel() < 1)) {
+                                                                    Toast.makeText(context, "👑 VIP Access Only: This room is reserved for VIP Level 1+ members!", Toast.LENGTH_LONG).show()
+                                                                } else {
+                                                                    isSearchExpanded = false
+                                                                    activeAudioRoom = room
+                                                                }
                                                             }
                                                             .padding(horizontal = 10.dp, vertical = 8.dp),
                                                         verticalAlignment = Alignment.CenterVertically
@@ -1097,8 +1101,12 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                                                         }
                                                         Button(
                                                             onClick = {
-                                                                isSearchExpanded = false
-                                                                activeAudioRoom = room
+                                                                if ((room.category == "vip_room" || room.isVipRoom) && (!currentUser.isVipOrPlatinum() && currentUser.getVipLevel() < 1)) {
+                                                                    Toast.makeText(context, "👑 VIP Access Only: This room is reserved for VIP Level 1+ members!", Toast.LENGTH_LONG).show()
+                                                                } else {
+                                                                    isSearchExpanded = false
+                                                                    activeAudioRoom = room
+                                                                }
                                                             },
                                                             colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
                                                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
@@ -1402,9 +1410,17 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                                         }
                                     },
                                     onOpenCategoryHub = { category ->
-                                        activeCategoryHub = category
+                                        if (category.id == "vip_room" && (!currentUser.isVipOrPlatinum() && currentUser.getVipLevel() < 1)) {
+                                            Toast.makeText(context, "👑 VIP Access Only: VIP Room is reserved for VIP Level 1+ members!", Toast.LENGTH_LONG).show()
+                                        } else {
+                                            activeCategoryHub = category
+                                        }
                                     },
                                     onJoinRoom = { room ->
+                                        if ((room.category == "vip_room" || room.isVipRoom) && (!currentUser.isVipOrPlatinum() && currentUser.getVipLevel() < 1)) {
+                                            Toast.makeText(context, "👑 VIP Access Only: This room is reserved for VIP Level 1+ members!", Toast.LENGTH_LONG).show()
+                                            return@IntentRoomsGrid
+                                        }
                                         // 1. Register presence in rooms/{roomId}/members/{userId}
                                         val isHostCandidate = room.hostId == currentUserId || (room.hostId.isEmpty() && room.isCustom)
                                         val canActuallyHost = !isHostCandidate || currentUser.canHostRoom()
@@ -1682,6 +1698,12 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                 currentUser = currentUser,
                 onDismiss = { activeCategoryHub = null },
                 onCreateRoom = {
+                    val isVipCat = cat.id == "vip_room"
+                    val isUserVip = currentUser.isVipOrPlatinum() || currentUser.getVipLevel() >= 1
+                    if (isVipCat && !isUserVip) {
+                        Toast.makeText(context, "👑 VIP Room requires VIP Level 1+ membership to create!", Toast.LENGTH_SHORT).show()
+                        return@CategoryHubLobbyDialog
+                    }
                     createRoomInitialCategory = cat.id
                     activeCategoryHub = null
 
@@ -1703,6 +1725,12 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                     }
                 },
                 onJoinRoom = { room ->
+                    val isVipRoomCategory = room.category == "vip_room" || room.isVipRoom
+                    val isUserVip = currentUser.isVipOrPlatinum() || currentUser.getVipLevel() >= 1
+                    if (isVipRoomCategory && !isUserVip) {
+                        Toast.makeText(context, "👑 VIP Access Only: This room is reserved for VIP Level 1+ members!", Toast.LENGTH_LONG).show()
+                        return@CategoryHubLobbyDialog
+                    }
                     val isHostCandidate = room.hostId == currentUserId || (room.hostId.isEmpty() && room.isCustom)
                     val canActuallyHost = !isHostCandidate || currentUser.canHostRoom()
 
@@ -1868,6 +1896,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                         isHostLive = true,
                         isLive = true,
                         statusMessage = "LIVE NOW",
+                        privacy = if (categoryId == "vip_room") "vip_only" else "public",
                         createdAt = System.currentTimeMillis()
                     )
                     // Save to Firestore rooms/{roomId}
@@ -2468,7 +2497,7 @@ fun IntentRoomsGrid(
                     letterSpacing = 0.5.sp
                 )
                 Text(
-                    text = "Explore 13 curated category hubs to meet active members and join live rooms.",
+                    text = "Explore 14 curated category hubs to meet active members and join live rooms.",
                     color = Color.Gray,
                     fontSize = 11.sp
                 )
@@ -2494,6 +2523,7 @@ fun IntentRoomsGrid(
         ) {
             items(categories) { category ->
                 val bannerUrl = getCategoryBanner(category.id)
+                val isVipCategory = category.id == "vip_room"
 
                 // Dynamic real-time active users in this category
                 val activeCount = allUsers.count {
@@ -2511,7 +2541,11 @@ fun IntentRoomsGrid(
                         .fillMaxWidth()
                         .height(224.dp)
                         .clip(RoundedCornerShape(18.dp))
-                        .border(1.dp, BrandBorder, RoundedCornerShape(18.dp))
+                        .border(
+                            width = if (isVipCategory) 1.5.dp else 1.dp,
+                            brush = if (isVipCategory) Brush.sweepGradient(listOf(BrandGold, Color(0xFFFFA000), BrandGold)) else Brush.linearGradient(listOf(BrandBorder, BrandBorder)),
+                            shape = RoundedCornerShape(18.dp)
+                        )
                         .clickable { onOpenCategoryHub(category) }
                 ) {
                     // Fixed curated system background image (Read-only, system managed)
@@ -2587,7 +2621,18 @@ fun IntentRoomsGrid(
                                 }
                             }
 
-                            if (subRoomsCount > 0) {
+                            if (isVipCategory) {
+                                Text(
+                                    text = "👑 VIP 1+",
+                                    color = BrandGold,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier
+                                        .background(Color(0xFF281802).copy(alpha = 0.85f), RoundedCornerShape(50))
+                                        .border(0.8.dp, BrandGold.copy(alpha = 0.6f), RoundedCornerShape(50))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            } else if (subRoomsCount > 0) {
                                 Text(
                                     text = "🔥 $subRoomsCount Rooms",
                                     color = BrandGold,
