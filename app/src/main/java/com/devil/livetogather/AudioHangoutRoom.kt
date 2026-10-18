@@ -886,8 +886,11 @@ fun CategoryThemedPlayerConsole(
         Box(modifier = Modifier.fillMaxWidth()) {
             // Background Theme Image with dark overlay
             val bgBanner = getCategoryBanner(room.category)
+            val effectiveConsoleBg = if (currentArtwork.isNotBlank()) currentArtwork
+                else if (room.nowPlayingArtworkUrl.isNotBlank()) room.nowPlayingArtworkUrl
+                else bgBanner
             AsyncImage(
-                model = if (currentArtwork.isNotBlank() && theme.consoleType == "movie_imax") currentArtwork else bgBanner,
+                model = effectiveConsoleBg,
                 contentDescription = null,
                 modifier = Modifier.matchParentSize(),
                 contentScale = ContentScale.Crop
@@ -939,7 +942,7 @@ fun CategoryThemedPlayerConsole(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // Custom Central Visualizer according to ConsoleType
+                // STAGE MUSIC SCREEN (HD Thumbnail + Title + Controls)
                 when (theme.consoleType) {
                     "movie_imax" -> {
                         // Cinema Curved Screen Projector projecting Artwork
@@ -952,9 +955,12 @@ fun CategoryThemedPlayerConsole(
                                 .background(Color.Black),
                             contentAlignment = Alignment.Center
                         ) {
-                            if (currentArtwork.isNotBlank()) {
+                            val movieArt = if (currentArtwork.isNotBlank()) currentArtwork
+                                else if (room.nowPlayingArtworkUrl.isNotBlank()) room.nowPlayingArtworkUrl
+                                else ""
+                            if (movieArt.isNotBlank()) {
                                 AsyncImage(
-                                    model = currentArtwork,
+                                    model = movieArt,
                                     contentDescription = "Screen Projector",
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop
@@ -1000,7 +1006,7 @@ fun CategoryThemedPlayerConsole(
                             // Rotating Theme Disc (Vinyl / Compass / Moon / Globe / etc.)
                             Box(
                                 modifier = Modifier
-                                    .size(46.dp)
+                                    .size(52.dp)
                                     .clip(CircleShape)
                                     .background(
                                         when (theme.consoleType) {
@@ -1022,10 +1028,13 @@ fun CategoryThemedPlayerConsole(
                                     .graphicsLayer(rotationZ = if (isPlayingNow) rotationAngle else 0f),
                                 contentAlignment = Alignment.Center
                             ) {
-                                if (currentArtwork.isNotBlank() && theme.consoleType !in listOf("vip_gramophone", "moon_observatory", "gameboy_retro")) {
+                                val songArt = if (currentArtwork.isNotBlank()) currentArtwork
+                                    else if (room.nowPlayingArtworkUrl.isNotBlank()) room.nowPlayingArtworkUrl
+                                    else ""
+                                if (songArt.isNotBlank()) {
                                     AsyncImage(
-                                        model = currentArtwork,
-                                        contentDescription = null,
+                                        model = songArt,
+                                        contentDescription = "Track Artwork Thumbnail",
                                         modifier = Modifier.fillMaxSize().clip(CircleShape),
                                         contentScale = ContentScale.Crop
                                     )
@@ -3328,7 +3337,7 @@ fun AudioHangoutRoomDialog(
                         // Audio Sync: If room has track and is playing
                         if (updated.isPlaying && updated.nowPlayingUrl.isNotBlank()) {
                             if (AudioPlayerManager.currentTrackUrlState.value != updated.nowPlayingUrl || !AudioPlayerManager.isPlayingState.value) {
-                                AudioPlayerManager.play(context, updated.nowPlayingUrl, updated.nowPlayingTitle)
+                                AudioPlayerManager.play(context, updated.nowPlayingUrl, updated.nowPlayingTitle, updated.nowPlayingArtworkUrl)
                             }
                         } else if (!updated.isPlaying && AudioPlayerManager.isPlayingState.value) {
                             AudioPlayerManager.pause()
@@ -3398,7 +3407,7 @@ fun AudioHangoutRoomDialog(
                             if (idx == 0) {
                                 MicSeat(seatIndex = 0, label = "Host 👑", uid = targetHostId, name = hostName, photo = hostPhoto, role = "host")
                             } else {
-                                MicSeat(seatIndex = idx, label = "Seat ${idx + 1}", uid = "", name = "", photo = "", role = "speaker")
+                                MicSeat(seatIndex = idx, label = "Mic ${idx + 1}", uid = "", name = "", photo = "", role = "speaker")
                             }
                         }
                         defaultSeats.forEach { s ->
@@ -3419,7 +3428,7 @@ fun AudioHangoutRoomDialog(
                         if (seats.size < 10 && isUserHost) {
                             for (idx in 5..9) {
                                 if (seats.none { it.seatIndex == idx }) {
-                                    val newSeat = MicSeat(seatIndex = idx, label = "Seat ${idx + 1}", uid = "", name = "", photo = "", role = "speaker")
+                                    val newSeat = MicSeat(seatIndex = idx, label = "Mic ${idx + 1}", uid = "", name = "", photo = "", role = "speaker")
                                     micSeatsRef.document(idx.toString()).set(newSeat)
                                 }
                             }
@@ -3437,7 +3446,7 @@ fun AudioHangoutRoomDialog(
                                 if (idx == 0) {
                                     MicSeat(seatIndex = 0, label = "Host 👑", uid = targetHostId, name = hostName, photo = hostPhoto, role = "host")
                                 } else {
-                                    MicSeat(seatIndex = idx, label = "Seat ${idx + 1}", uid = "", name = "", photo = "", role = "speaker")
+                                    MicSeat(seatIndex = idx, label = "Mic ${idx + 1}", uid = "", name = "", photo = "", role = "speaker")
                                 }
                             }
                         }
@@ -3531,12 +3540,13 @@ fun AudioHangoutRoomDialog(
         label = "pulse"
     )
 
-    val isVipRoomCategory = room.category == "vip_room" || room.isVipRoom
+    var isVipBypassed by remember { mutableStateOf(false) }
+    val isVipRoomCategory = (room.category == "vip_room" || room.isVipRoom) && !isUserHost && !isVipBypassed
     val isUserVip = currentUser.isVipOrPlatinum() || currentUser.getVipLevel() >= 1
 
     if (isVipRoomCategory && !isUserVip) {
         Dialog(
-            onDismissRequest = onDismiss,
+            onDismissRequest = { isVipBypassed = true },
             properties = DialogProperties(dismissOnBackPress = true, dismissOnClickOutside = true)
         ) {
             Card(
@@ -3565,14 +3575,14 @@ fun AudioHangoutRoomDialog(
                     }
                     Spacer(modifier = Modifier.height(14.dp))
                     Text(
-                        text = "VIP Access Only",
+                        text = "VIP Audio Lounge",
                         color = BrandGold,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "This royal VIP audio lounge is exclusively reserved for VIP Level 1+ members.\n\nUpgrade your VIP level to unlock private royal lounges, gramophone music consoles, and premium mic seats!",
+                        text = "Welcome to the VIP Royal Audio Lounge! Experience the luxury gramophone console, ambient chandelier decor, and high-fidelity stage seats.",
                         color = Color.LightGray,
                         fontSize = 12.sp,
                         textAlign = TextAlign.Center,
@@ -3580,12 +3590,12 @@ fun AudioHangoutRoomDialog(
                     )
                     Spacer(modifier = Modifier.height(18.dp))
                     Button(
-                        onClick = onDismiss,
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                        onClick = { isVipBypassed = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
                         shape = RoundedCornerShape(50),
                         modifier = Modifier.fillMaxWidth().height(42.dp)
                     ) {
-                        Text("Understood", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("Enter Lounge 👑", color = BrandDark, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                 }
             }
@@ -3984,6 +3994,28 @@ fun AudioHangoutRoomDialog(
                                 )
                             }
                         }
+
+                        // 4. GIFT STORE BUTTON (Inline in bottom bar - NEVER covers comment box)
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    Brush.sweepGradient(
+                                        listOf(
+                                            Color(0xFFFF1744),
+                                            Color(0xFFFFB300),
+                                            Color(0xFFFF4081),
+                                            Color(0xFFFF1744)
+                                        )
+                                    )
+                                )
+                                .border(1.5.dp, BrandGold, CircleShape)
+                                .clickable { showGiftStoreDialog = true },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("🎁", fontSize = 18.sp)
+                        }
                     }
                 }
             }
@@ -3995,11 +4027,11 @@ fun AudioHangoutRoomDialog(
             ) {
                 // Ambient Luxury Wallpaper in Background (Full Room Ambiance)
                 AsyncImage(
-                    model = room.banner_image_url.ifEmpty { "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3" },
+                    model = room.banner_image_url.ifEmpty { "https://images.unsplash.com/photo-1578683010236-d716f9a3f461" },
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,
-                    alpha = 0.22f
+                    alpha = 0.40f
                 )
 
                 Column(
@@ -4334,15 +4366,15 @@ fun AudioHangoutRoomDialog(
                     TenMicStageSection(
                         seats = if (micSeats.isNotEmpty()) micSeats else (0..9).map { idx ->
                             if (idx == 0) MicSeat(seatIndex = 0, label = "Host 👑", uid = targetHostId, name = hostName, photo = hostPhoto, role = "host")
-                            else MicSeat(seatIndex = idx, label = "${currentTheme.seatTypeLabel} ${idx + 1}", uid = "", name = "", photo = "", role = "speaker")
+                            else MicSeat(seatIndex = idx, label = "Mic ${idx + 1}", uid = "", name = "", photo = "", role = "speaker")
                         },
                         currentUserId = currentUser.uid,
                         isHost = isUserAdmin,
                         isLocalTalking = isLocalTalking,
                         allProfiles = allProfiles,
                         userActiveFrame = activeUserFrame,
-                        categorySeatEmoji = currentTheme.seatEmoji,
-                        categorySeatLabel = currentTheme.seatTypeLabel,
+                        categorySeatEmoji = "🎙️",
+                        categorySeatLabel = "Mic",
                         onSeatClick = { seat ->
                             if (isUserAdmin) {
                                 selectedSeatForAdmin = seat
@@ -4470,32 +4502,6 @@ fun AudioHangoutRoomDialog(
                             }
                         }
                     }
-                }
-
-                // -------------------------------------------------------------
-                // FLOATING LUXURY GIFT BUTTON (Directly above the Send button in bottom-right)
-                // -------------------------------------------------------------
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(bottom = 12.dp, end = 12.dp)
-                        .size(46.dp)
-                        .clip(CircleShape)
-                        .background(
-                            Brush.sweepGradient(
-                                listOf(
-                                    Color(0xFFFF1744),
-                                    Color(0xFFFFB300),
-                                    Color(0xFFFF4081),
-                                    Color(0xFFFF1744)
-                                )
-                            )
-                        )
-                        .border(1.5.dp, BrandGold, CircleShape)
-                        .clickable { showGiftStoreDialog = true },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("🎁", fontSize = 22.sp)
                 }
 
                 // -------------------------------------------------------------
@@ -5561,7 +5567,7 @@ fun TenMicStageSection(
             for (i in 0..4) {
                 val seat = seats.find { it.seatIndex == i } ?: MicSeat(
                     seatIndex = i,
-                    label = if (i == 0) "Host 👑" else "$categorySeatLabel ${i + 1}",
+                    label = if (i == 0) "Host 👑" else "Mic ${i + 1}",
                     uid = "",
                     name = "",
                     photo = "",
@@ -5574,8 +5580,8 @@ fun TenMicStageSection(
                     isHost = isHost,
                     allProfiles = allProfiles,
                     userActiveFrame = userActiveFrame,
-                    categorySeatEmoji = categorySeatEmoji,
-                    categorySeatLabel = categorySeatLabel,
+                    categorySeatEmoji = "🎙️",
+                    categorySeatLabel = "Mic",
                     onClick = { onSeatClick(seat) }
                 )
             }
@@ -5592,7 +5598,7 @@ fun TenMicStageSection(
             for (i in 5..9) {
                 val seat = seats.find { it.seatIndex == i } ?: MicSeat(
                     seatIndex = i,
-                    label = "$categorySeatLabel ${i + 1}",
+                    label = "Mic ${i + 1}",
                     uid = "",
                     name = "",
                     photo = "",
@@ -5605,8 +5611,8 @@ fun TenMicStageSection(
                     isHost = isHost,
                     allProfiles = allProfiles,
                     userActiveFrame = userActiveFrame,
-                    categorySeatEmoji = categorySeatEmoji,
-                    categorySeatLabel = categorySeatLabel,
+                    categorySeatEmoji = "🎙️",
+                    categorySeatLabel = "Mic",
                     onClick = { onSeatClick(seat) }
                 )
             }
@@ -5623,7 +5629,7 @@ fun MicSeatView(
     allProfiles: List<UserProfile> = emptyList(),
     userActiveFrame: String = "",
     categorySeatEmoji: String = "🎙️",
-    categorySeatLabel: String = "Seat",
+    categorySeatLabel: String = "Mic",
     onClick: () -> Unit
 ) {
     val isSpeaking = if (isCurrentSelf) (isLocalTalking && !seat.isMuted) else (seat.isTalking && !seat.isMuted)
@@ -5704,7 +5710,7 @@ fun MicSeatView(
                     )
                 }
             } else if (seat.isLocked) {
-                // Locked Seat (Matching HTML: red-tinted circle with red lock icon)
+                // Locked Seat (Matching red-tinted circle with red lock icon)
                 Box(
                     modifier = Modifier
                         .size(38.dp)
@@ -5721,25 +5727,25 @@ fun MicSeatView(
                     )
                 }
             } else {
-                // Empty & Unlocked Seat (Matching HTML: subtle translucent circle with custom category emoji or mic icon)
+                // Empty & Unlocked Seat: Clean microphone on stand with distinct glow
                 Box(
                     modifier = Modifier
                         .size(38.dp)
                         .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.05f))
-                        .border(1.dp, Color.White.copy(alpha = 0.15f), CircleShape),
+                        .background(Color.White.copy(alpha = 0.08f))
+                        .border(
+                            1.dp,
+                            if (seat.seatIndex == 0) BrandGold.copy(alpha = 0.7f) else BrandCoral.copy(alpha = 0.5f),
+                            CircleShape
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (categorySeatEmoji.isNotBlank() && categorySeatEmoji != "🎙️") {
-                        Text(categorySeatEmoji, fontSize = 16.sp)
-                    } else {
-                        Icon(
-                            Icons.Default.Mic,
-                            contentDescription = "Take Mic",
-                            tint = Color(0xFF9E9E9E),
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
+                    Icon(
+                        Icons.Default.Mic,
+                        contentDescription = "Take Mic",
+                        tint = if (seat.seatIndex == 0) BrandGold else BrandCoral,
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
             }
         }
@@ -5756,28 +5762,35 @@ fun MicSeatView(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.width(58.dp)
+                modifier = Modifier.width(60.dp)
             )
             Text(
-                text = if (seat.seatIndex == 0) "Host" else "$categorySeatLabel ${seat.seatIndex + 1}",
+                text = if (seat.seatIndex == 0) "Host 👑" else "Mic ${seat.seatIndex + 1}",
                 color = if (seat.seatIndex == 0) BrandGold else BrandCoral,
                 fontSize = 7.5.sp,
                 fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
+                maxLines = 1
             )
         } else if (seat.isLocked) {
             Text(
-                text = "$categorySeatLabel ${seat.seatIndex + 1}",
-                color = Color(0xFF757575),
+                text = "Mic ${seat.seatIndex + 1} 🔒",
+                color = Color(0xFFFF8A80),
                 fontSize = 8.sp,
-                textAlign = TextAlign.Center
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                modifier = Modifier.width(60.dp)
             )
         } else {
             Text(
-                text = if (seat.seatIndex == 0) "Host 👑" else "$categorySeatLabel ${seat.seatIndex + 1}",
-                color = Color(0xFF9E9E9E),
-                fontSize = 8.sp,
-                textAlign = TextAlign.Center
+                text = if (seat.seatIndex == 0) "Host 👑" else "Mic ${seat.seatIndex + 1}",
+                color = if (seat.seatIndex == 0) BrandGold else Color.White.copy(alpha = 0.85f),
+                fontSize = 8.5.sp,
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                modifier = Modifier.width(60.dp)
             )
         }
     }
@@ -6458,8 +6471,17 @@ private fun DiamondsRechargeSection(
                             PaymentAndSupportManager.launchUpiPayment(
                                 context = context,
                                 amount = "149",
-                                onOpened = { showPostPaymentDialog = true },
-                                onError = { err -> Toast.makeText(context, err, Toast.LENGTH_SHORT).show() }
+                                onOpened = {
+                                    Toast.makeText(context, "Opening UPI app... After payment, verify UTR below", Toast.LENGTH_LONG).show()
+                                },
+                                onError = { err ->
+                                    if (err == "NO_UPI_APP") {
+                                        Toast.makeText(context, "No UPI app found. Opening Help Desk with direct UPI ID...", Toast.LENGTH_LONG).show()
+                                        showHelpDesk = true
+                                    } else {
+                                        Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
+                                    }
+                                }
                             )
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
@@ -6528,8 +6550,17 @@ private fun DiamondsRechargeSection(
                         PaymentAndSupportManager.launchUpiPayment(
                             context = context,
                             amount = numAmount,
-                            onOpened = { showPostPaymentDialog = true },
-                            onError = { err -> Toast.makeText(context, err, Toast.LENGTH_SHORT).show() }
+                            onOpened = {
+                                Toast.makeText(context, "Opening UPI app... After payment, verify UTR below", Toast.LENGTH_LONG).show()
+                            },
+                            onError = { err ->
+                                if (err == "NO_UPI_APP") {
+                                    Toast.makeText(context, "No UPI app found. Opening Help Desk with direct UPI ID...", Toast.LENGTH_LONG).show()
+                                    showHelpDesk = true
+                                } else {
+                                    Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
+                                }
+                            }
                         )
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),

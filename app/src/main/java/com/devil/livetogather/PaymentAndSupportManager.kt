@@ -112,10 +112,30 @@ object PaymentAndSupportManager {
                 .build()
 
             val intent = Intent(Intent.ACTION_VIEW, upiUri)
-            val chooser = Intent.createChooser(intent, "Pay ₹$cleanAmount via UPI")
-            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(chooser)
-            onOpened()
+            val pm = context.packageManager
+            val canHandle = try {
+                val resolveInfo = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                    pm.queryIntentActivities(
+                        intent,
+                        android.content.pm.PackageManager.ResolveInfoFlags.of(android.content.pm.PackageManager.MATCH_DEFAULT_ONLY.toLong())
+                    )
+                } else {
+                    @Suppress("DEPRECATION")
+                    pm.queryIntentActivities(intent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+                }
+                resolveInfo.isNotEmpty()
+            } catch (e: Exception) {
+                false
+            }
+
+            if (canHandle) {
+                val chooser = Intent.createChooser(intent, "Pay ₹$cleanAmount via UPI")
+                chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(chooser)
+                onOpened()
+            } else {
+                onError("NO_UPI_APP")
+            }
         } catch (e: Exception) {
             android.util.Log.e("UPI", "Launch error: ${e.message}", e)
             onError(e.localizedMessage ?: "No supported UPI payment app found")
@@ -567,6 +587,39 @@ fun HelpDeskModal(
                                             Text(pack.priceInr, color = if (isSelected) BrandGold else Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                             Text("%,d 💎".format(pack.coins), color = Color.Gray, fontSize = 10.sp)
                                         }
+                                    }
+                                }
+                            }
+
+                            // Official UPI ID Copyable Card
+                            Surface(
+                                color = BrandCard,
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.6f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column {
+                                        Text("Official UPI ID", color = Color.Gray, fontSize = 10.sp)
+                                        Text("warsi.1@ptaxis", color = BrandGold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    Button(
+                                        onClick = {
+                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                            val clip = ClipData.newPlainText("UPI ID", "warsi.1@ptaxis")
+                                            clipboard.setPrimaryClip(clip)
+                                            Toast.makeText(context, "UPI ID copied: warsi.1@ptaxis 📋", Toast.LENGTH_SHORT).show()
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                        modifier = Modifier.height(30.dp)
+                                    ) {
+                                        Text("Copy UPI", color = BrandDark, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -1295,10 +1348,16 @@ fun CoinStoreTopUpDialog(
                                         context = context,
                                         amount = pack.numericPrice,
                                         onOpened = {
-                                            showPostPaymentDialog = true
+                                            Toast.makeText(context, "Opening UPI app... Submit 12-digit UTR in Help Desk after payment", Toast.LENGTH_LONG).show()
                                         },
                                         onError = { err ->
-                                            Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
+                                            if (err == "NO_UPI_APP") {
+                                                Toast.makeText(context, "No UPI app found. Please copy UPI ID & pay via any UPI app!", Toast.LENGTH_LONG).show()
+                                                onDismiss()
+                                                onOpenHelpDeskWithPackage(pack)
+                                            } else {
+                                                Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
+                                            }
                                         }
                                     )
                                 }
@@ -1348,10 +1407,16 @@ fun CoinStoreTopUpDialog(
                                             context = context,
                                             amount = pack.numericPrice,
                                             onOpened = {
-                                                showPostPaymentDialog = true
+                                                Toast.makeText(context, "Opening UPI app... Submit 12-digit UTR in Help Desk after payment", Toast.LENGTH_LONG).show()
                                             },
                                             onError = { err ->
-                                                Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
+                                                if (err == "NO_UPI_APP") {
+                                                    Toast.makeText(context, "No UPI app found. Please copy UPI ID & pay via any UPI app!", Toast.LENGTH_LONG).show()
+                                                    onDismiss()
+                                                    onOpenHelpDeskWithPackage(pack)
+                                                } else {
+                                                    Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
+                                                }
                                             }
                                         )
                                     },
