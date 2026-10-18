@@ -332,9 +332,26 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                 hostTrialStartDate = prefs.getLong("profile_host_trial_start", 0L),
                 activeFrame = prefs.getString("profile_active_frame", "") ?: "",
                 ownedFrames = prefs.getStringSet("profile_owned_frames", emptySet())?.toList() ?: emptyList(),
-                diamonds = prefs.getLong("profile_diamonds", 0L)
+                diamonds = prefs.getLong("profile_diamonds", 0L),
+                vipTrialStartDate = prefs.getLong("profile_vip_trial_start", 0L),
+                vipTrialExpiryDate = prefs.getLong("profile_vip_trial_expiry", 0L),
+                hasClaimedWelcomeBonus = prefs.getBoolean("profile_has_claimed_welcome_bonus", false),
+                signupIpAddress = prefs.getString("profile_signup_ip", "") ?: ""
             )
         )
+    }
+
+    // Auto-check and expire VIP 1 7-Day trial if expired
+    LaunchedEffect(Unit) {
+        val verifiedProfile = WelcomeBonusManager.checkAndExpireVipTrialIfNeeded(context, currentUser)
+        if (verifiedProfile != currentUser) {
+            currentUser = verifiedProfile
+        }
+    }
+
+    // First-Time Sign Up Welcome Bonus & 7-Day VIP 1 Dialog State
+    var showWelcomeBonusDialog by remember {
+        mutableStateOf(prefs.getBoolean(WelcomeBonusManager.PREF_SHOW_WELCOME_DIALOG, false))
     }
 
     // Auto-generate unique 6-digit User ID if missing and persist to Firestore + Prefs
@@ -2382,6 +2399,16 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                 }
             )
         }
+
+        // 10. First-Time Sign Up Welcome Bonus & 7-Day VIP 1 Celebration Dialog
+        if (showWelcomeBonusDialog) {
+            WelcomeBonusCelebrationDialog(
+                onClaim = {
+                    prefs.edit().putBoolean(WelcomeBonusManager.PREF_SHOW_WELCOME_DIALOG, false).apply()
+                    showWelcomeBonusDialog = false
+                }
+            )
+        }
     }
 }
 
@@ -3668,6 +3695,10 @@ fun ProfileScreenContent(
                     Spacer(modifier = Modifier.width(5.dp))
                     if (currentUser.getVipLevel() > 0) {
                         Text("👑 VIP ${currentUser.getVipLevel()}", color = BrandGold, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
+                        if (currentUser.isVipTrialActive()) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("(${currentUser.getVipTrialDaysLeft()}d trial)", color = BrandCoral, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
                     } else if (currentUser.isVipOrPlatinum()) {
                         Text("👑", fontSize = 14.sp)
                     }

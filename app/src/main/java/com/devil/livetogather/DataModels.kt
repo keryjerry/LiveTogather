@@ -256,7 +256,13 @@ data class UserProfile(
     // Diamond Economy & Avatar Frames System
     val diamonds: Long = 0L,
     val activeFrame: String = "",
-    val ownedFrames: List<String> = emptyList()
+    val ownedFrames: List<String> = emptyList(),
+
+    // First-Time Sign Up Welcome Bonus & 7-Day VIP 1 Trial
+    val vipTrialStartDate: Long = 0L,
+    val vipTrialExpiryDate: Long = 0L,
+    val hasClaimedWelcomeBonus: Boolean = false,
+    val signupIpAddress: String = ""
 ) {
     fun isPaidSubscriber(): Boolean {
         return plan.isNotBlank() && !plan.equals("Free", ignoreCase = true)
@@ -264,6 +270,19 @@ data class UserProfile(
 
     fun isVipOrPlatinum(): Boolean {
         return plan.contains("VIP", ignoreCase = true) || plan.contains("Platinum", ignoreCase = true)
+    }
+
+    fun isVipTrialActive(): Boolean {
+        if (vipTrialExpiryDate == 0L) return false
+        return System.currentTimeMillis() <= vipTrialExpiryDate
+    }
+
+    fun getVipTrialDaysLeft(): Int {
+        if (vipTrialExpiryDate == 0L) return 0
+        val remainingMs = vipTrialExpiryDate - System.currentTimeMillis()
+        if (remainingMs <= 0L) return 0
+        val days = (remainingMs / (1000L * 60 * 60 * 24)).toInt()
+        return maxOf(1, days + 1)
     }
 
     fun isHostTrialActive(): Boolean {
@@ -279,18 +298,25 @@ data class UserProfile(
     }
 
     fun canHostRoom(): Boolean {
-        return isVipOrPlatinum() || isHostTrialActive()
+        return isVipOrPlatinum() || isHostTrialActive() || isVipTrialActive()
     }
 
     fun canSwipe(todayDate: String): Boolean {
-        if (isPaidSubscriber()) return true
+        if (isPaidSubscriber() || isVipTrialActive()) return true
         if (lastSwipeDate != todayDate) return true
         return dailySwipeCount < 15
     }
 
     fun getVipLevel(): Int {
+        val isTrialActive = isVipTrialActive()
         val frame = AVATAR_FRAMES_CATALOG.find { it.id == activeFrame }
-        if (frame != null && frame.vipLevel > 0) return frame.vipLevel
+        if (frame != null && frame.vipLevel > 0) {
+            if (frame.vipLevel == 1 && vipTrialExpiryDate > 0L && !isTrialActive && !isPaidSubscriber()) {
+                // Trial expired and user did not buy a permanent subscription
+            } else {
+                return frame.vipLevel
+            }
+        }
         if (plan.contains("VIP 6", ignoreCase = true)) return 6
         if (plan.contains("VIP 5", ignoreCase = true)) return 5
         if (plan.contains("VIP 4", ignoreCase = true)) return 4
@@ -298,6 +324,7 @@ data class UserProfile(
         if (plan.contains("VIP 2", ignoreCase = true)) return 2
         if (plan.contains("VIP", ignoreCase = true)) return 1
         if (plan.contains("Platinum", ignoreCase = true)) return 2
+        if (isTrialActive) return 1
         return 0
     }
 }
@@ -365,6 +392,10 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
     val activeFrame = doc.getString("activeFrame") ?: ""
     @Suppress("UNCHECKED_CAST")
     val ownedFrames = (doc.get("ownedFrames") as? List<String>) ?: emptyList()
+    val vipTrialStartDate = doc.getLong("vipTrialStartDate") ?: 0L
+    val vipTrialExpiryDate = doc.getLong("vipTrialExpiryDate") ?: 0L
+    val hasClaimedWelcomeBonus = doc.getBoolean("hasClaimedWelcomeBonus") ?: false
+    val signupIpAddress = doc.getString("signupIpAddress") ?: ""
 
     return UserProfile(
         uid = uid,
@@ -419,7 +450,11 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
         hostTrialStartDate = hostTrialStartDate,
         diamonds = diamonds,
         activeFrame = activeFrame,
-        ownedFrames = ownedFrames
+        ownedFrames = ownedFrames,
+        vipTrialStartDate = vipTrialStartDate,
+        vipTrialExpiryDate = vipTrialExpiryDate,
+        hasClaimedWelcomeBonus = hasClaimedWelcomeBonus,
+        signupIpAddress = signupIpAddress
     )
 }
 
@@ -456,6 +491,10 @@ fun saveProfileToPrefs(prefs: SharedPreferences, user: UserProfile) {
         .putString("profile_active_frame", user.activeFrame)
         .putStringSet("profile_owned_frames", user.ownedFrames.toSet())
         .putLong("profile_diamonds", user.diamonds)
+        .putLong("profile_vip_trial_start", user.vipTrialStartDate)
+        .putLong("profile_vip_trial_expiry", user.vipTrialExpiryDate)
+        .putBoolean("profile_has_claimed_welcome_bonus", user.hasClaimedWelcomeBonus)
+        .putString("profile_signup_ip", user.signupIpAddress)
         .apply()
 }
 

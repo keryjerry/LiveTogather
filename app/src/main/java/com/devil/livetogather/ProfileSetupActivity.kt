@@ -534,53 +534,62 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
                         return@Button
                     }
 
-                    isSaving = true
-                    val effectiveUid = auth.currentUser?.uid
-                        ?: prefs.getString("user_uid", null)
-                        ?: currentUid.ifBlank { "user_${UUID.randomUUID().toString().take(8)}" }
+                    coroutineScope.launch {
+                        isSaving = true
+                        val effectiveUid = auth.currentUser?.uid
+                            ?: prefs.getString("user_uid", null)
+                            ?: currentUid.ifBlank { "user_${UUID.randomUUID().toString().take(8)}" }
 
-                    val generatedUserId = (100000..999999).random().toString()
-                    val profile = UserProfile(
-                        uid = effectiveUid,
-                        userId = generatedUserId,
-                        deviceId = deviceId,
-                        name = name.trim(),
-                        age = ageVal,
-                        gender = gender,
-                        city = city.trim(),
-                        photo = photoUrl,
-                        bio = bio.trim(),
-                        interestedIn = interestedIn,
-                        isLocationSet = true,
-                        locationName = city.trim(),
-                        plan = "Free",
-                        dailySwipeCount = 0,
-                        lastSwipeDate = "",
-                        hostTrialStartDate = System.currentTimeMillis()
-                    )
+                        val generatedUserId = (100000..999999).random().toString()
+                        val initialProfile = UserProfile(
+                            uid = effectiveUid,
+                            userId = generatedUserId,
+                            deviceId = deviceId.ifBlank { WelcomeBonusManager.getDeviceId(context) },
+                            name = name.trim(),
+                            age = ageVal,
+                            gender = gender,
+                            city = city.trim(),
+                            photo = photoUrl,
+                            bio = bio.trim(),
+                            interestedIn = interestedIn,
+                            isLocationSet = true,
+                            locationName = city.trim(),
+                            plan = "Free",
+                            dailySwipeCount = 0,
+                            lastSwipeDate = "",
+                            hostTrialStartDate = System.currentTimeMillis()
+                        )
 
-                    // 1. Immediately persist to SharedPreferences (instant & offline safe)
-                    saveProfileToPrefs(prefs, profile)
-                    prefs.edit().putString("user_uid", effectiveUid).apply()
+                        // Single Device & IP Verification for First-Time Welcome Bonus
+                        val profile = WelcomeBonusManager.checkAndApplyWelcomeBonus(context, effectiveUid, initialProfile)
 
-                    // 2. Persist to Firebase Firestore asynchronously without locking the UI
-                    try {
-                        db.collection("users").document(effectiveUid)
-                            .set(profile, SetOptions.merge())
-                            .addOnSuccessListener {
-                                android.util.Log.d("ProfileSetup", "Firestore profile updated successfully")
-                            }
-                            .addOnFailureListener { e ->
-                                android.util.Log.w("ProfileSetup", "Firestore sync postponed or failed: ${e.message}")
-                            }
-                    } catch (e: Exception) {
-                        android.util.Log.e("ProfileSetup", "Firestore write error: ${e.message}")
+                        // 1. Immediately persist to SharedPreferences (instant & offline safe)
+                        saveProfileToPrefs(prefs, profile)
+                        prefs.edit().putString("user_uid", effectiveUid).apply()
+
+                        // 2. Persist to Firebase Firestore asynchronously without locking the UI
+                        try {
+                            db.collection("users").document(effectiveUid)
+                                .set(profile, SetOptions.merge())
+                                .addOnSuccessListener {
+                                    android.util.Log.d("ProfileSetup", "Firestore profile updated successfully")
+                                }
+                                .addOnFailureListener { e ->
+                                    android.util.Log.w("ProfileSetup", "Firestore sync postponed or failed: ${e.message}")
+                                }
+                        } catch (e: Exception) {
+                            android.util.Log.e("ProfileSetup", "Firestore write error: ${e.message}")
+                        }
+
+                        // 3. Immediately dismiss loading, show welcome Toast, and proceed to MainActivity
+                        if (profile.hasClaimedWelcomeBonus) {
+                            Toast.makeText(context, "🎉 Welcome Gift Unlocked: 1 Crore Diamonds + VIP 1 Frame!", Toast.LENGTH_LONG).show()
+                        } else {
+                            Toast.makeText(context, "Welcome to LiveTogether, ${profile.name}! 🎉", Toast.LENGTH_SHORT).show()
+                        }
+                        isSaving = false
+                        onComplete()
                     }
-
-                    // 3. Immediately dismiss loading, show welcome Toast, and proceed to MainActivity
-                    Toast.makeText(context, "Welcome to LiveTogether, ${profile.name}! 🎉", Toast.LENGTH_SHORT).show()
-                    isSaving = false
-                    onComplete()
                 },
                 enabled = !isSaving,
                 colors = ButtonDefaults.buttonColors(containerColor = CoralAccent),
