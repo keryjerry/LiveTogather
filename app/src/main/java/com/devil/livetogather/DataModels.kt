@@ -255,6 +255,7 @@ data class UserProfile(
 
     // Diamond Economy & Avatar Frames System
     val diamonds: Long = 0L,
+    val coins: Long = 0L,
     val activeFrame: String = "",
     val ownedFrames: List<String> = emptyList(),
 
@@ -262,7 +263,10 @@ data class UserProfile(
     val vipTrialStartDate: Long = 0L,
     val vipTrialExpiryDate: Long = 0L,
     val hasClaimedWelcomeBonus: Boolean = false,
-    val signupIpAddress: String = ""
+    val signupIpAddress: String = "",
+
+    // Administration & Role Control
+    val isAdmin: Boolean = false
 ) {
     fun isPaidSubscriber(): Boolean {
         return plan.isNotBlank() && !plan.equals("Free", ignoreCase = true)
@@ -389,6 +393,7 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
     val lastSwipeDate = doc.getString("lastSwipeDate") ?: ""
     val hostTrialStartDate = doc.getLong("hostTrialStartDate") ?: 0L
     val diamonds = doc.getLong("diamonds") ?: 0L
+    val coins = doc.getLong("coins") ?: diamonds
     val activeFrame = doc.getString("activeFrame") ?: ""
     @Suppress("UNCHECKED_CAST")
     val ownedFrames = (doc.get("ownedFrames") as? List<String>) ?: emptyList()
@@ -396,6 +401,7 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
     val vipTrialExpiryDate = doc.getLong("vipTrialExpiryDate") ?: 0L
     val hasClaimedWelcomeBonus = doc.getBoolean("hasClaimedWelcomeBonus") ?: false
     val signupIpAddress = doc.getString("signupIpAddress") ?: ""
+    val isAdmin = doc.getBoolean("isAdmin") ?: false
 
     return UserProfile(
         uid = uid,
@@ -449,12 +455,14 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
         lastSwipeDate = lastSwipeDate,
         hostTrialStartDate = hostTrialStartDate,
         diamonds = diamonds,
+        coins = coins,
         activeFrame = activeFrame,
         ownedFrames = ownedFrames,
         vipTrialStartDate = vipTrialStartDate,
         vipTrialExpiryDate = vipTrialExpiryDate,
         hasClaimedWelcomeBonus = hasClaimedWelcomeBonus,
-        signupIpAddress = signupIpAddress
+        signupIpAddress = signupIpAddress,
+        isAdmin = isAdmin
     )
 }
 
@@ -491,10 +499,12 @@ fun saveProfileToPrefs(prefs: SharedPreferences, user: UserProfile) {
         .putString("profile_active_frame", user.activeFrame)
         .putStringSet("profile_owned_frames", user.ownedFrames.toSet())
         .putLong("profile_diamonds", user.diamonds)
+        .putLong("profile_coins", user.coins)
         .putLong("profile_vip_trial_start", user.vipTrialStartDate)
         .putLong("profile_vip_trial_expiry", user.vipTrialExpiryDate)
         .putBoolean("profile_has_claimed_welcome_bonus", user.hasClaimedWelcomeBonus)
         .putString("profile_signup_ip", user.signupIpAddress)
+        .putBoolean("profile_is_admin", user.isAdmin)
         .apply()
 }
 

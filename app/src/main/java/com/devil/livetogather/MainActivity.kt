@@ -333,12 +333,36 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                 activeFrame = prefs.getString("profile_active_frame", "") ?: "",
                 ownedFrames = prefs.getStringSet("profile_owned_frames", emptySet())?.toList() ?: emptyList(),
                 diamonds = prefs.getLong("profile_diamonds", 0L),
+                coins = prefs.getLong("profile_coins", prefs.getLong("profile_diamonds", 0L)),
                 vipTrialStartDate = prefs.getLong("profile_vip_trial_start", 0L),
                 vipTrialExpiryDate = prefs.getLong("profile_vip_trial_expiry", 0L),
                 hasClaimedWelcomeBonus = prefs.getBoolean("profile_has_claimed_welcome_bonus", false),
-                signupIpAddress = prefs.getString("profile_signup_ip", "") ?: ""
+                signupIpAddress = prefs.getString("profile_signup_ip", "") ?: "",
+                isAdmin = prefs.getBoolean("profile_is_admin", false)
             )
         )
+    }
+
+    // Real-time synchronization of Admin Role and Wallet Coins/Diamonds
+    LaunchedEffect(currentUserId) {
+        if (currentUserId.isNotBlank()) {
+            db.collection("users").document(currentUserId)
+                .addSnapshotListener { snapshot, _ ->
+                    if (snapshot != null && snapshot.exists()) {
+                        val adminFlag = snapshot.getBoolean("isAdmin") ?: false
+                        val updatedCoins = snapshot.getLong("coins") ?: snapshot.getLong("diamonds") ?: currentUser.coins
+                        val updatedDiamonds = snapshot.getLong("diamonds") ?: currentUser.diamonds
+                        if (currentUser.isAdmin != adminFlag || currentUser.coins != updatedCoins || currentUser.diamonds != updatedDiamonds) {
+                            currentUser = currentUser.copy(isAdmin = adminFlag, coins = updatedCoins, diamonds = updatedDiamonds)
+                            prefs.edit()
+                                .putBoolean("profile_is_admin", adminFlag)
+                                .putLong("profile_coins", updatedCoins)
+                                .putLong("profile_diamonds", updatedDiamonds)
+                                .apply()
+                        }
+                    }
+                }
+        }
     }
 
     // Auto-check and expire VIP 1 7-Day trial if expired
@@ -3616,6 +3640,10 @@ fun ProfileScreenContent(
 
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
     var showSubscriptionModal by remember { mutableStateOf(false) }
+    var showCoinStoreModal by remember { mutableStateOf(false) }
+    var showHelpDeskModal by remember { mutableStateOf(false) }
+    var showAdminDashboardModal by remember { mutableStateOf(false) }
+    var helpDeskPrefilledPackage by remember { mutableStateOf<CoinPackageItem?>(null) }
     var isUploadingPhoto by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -4093,6 +4121,186 @@ fun ProfileScreenContent(
                             )
                         }
                     }
+
+                    // 1. Coin Store & Top-Up
+                    Surface(
+                        color = BrandCardSubtle,
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(0.8.dp, BrandBorder),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showCoinStoreModal = true }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(BrandGold.copy(alpha = 0.15f))
+                                    .border(1.dp, BrandGold.copy(alpha = 0.35f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("💎", fontSize = 18.sp)
+                            }
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Coin Store & Top-Up",
+                                    color = Color.White,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Direct UPI payment with instant UTR verification",
+                                    color = Color.LightGray,
+                                    fontSize = 11.sp,
+                                    lineHeight = 15.sp
+                                )
+                            }
+
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                contentDescription = null,
+                                tint = Color.Gray,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                    }
+
+                    // 2. Help & Support Desk (UTR Submission & Tickets)
+                    Surface(
+                        color = BrandCardSubtle,
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(0.8.dp, BrandBorder),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                helpDeskPrefilledPackage = null
+                                showHelpDeskModal = true
+                            }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(BrandCoral.copy(alpha = 0.15f))
+                                    .border(1.dp, BrandCoral.copy(alpha = 0.35f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("🎧", fontSize = 18.sp)
+                            }
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Help & Support Desk",
+                                    color = Color.White,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Verify payment UTR, report issues & view ticket status",
+                                    color = Color.LightGray,
+                                    fontSize = 11.sp,
+                                    lineHeight = 15.sp
+                                )
+                            }
+
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                contentDescription = null,
+                                tint = Color.Gray,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                    }
+
+                    // 3. Admin Approval Dashboard (STRICTLY VISIBLE ONLY IF currentUser.isAdmin == true)
+                    if (currentUser.isAdmin) {
+                        Surface(
+                            color = BrandCardSubtle,
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.2.dp, BrandGold),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showAdminDashboardModal = true }
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(CircleShape)
+                                        .background(BrandGold.copy(alpha = 0.2f))
+                                        .border(1.2.dp, BrandGold, CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("🛡️", fontSize = 18.sp)
+                                }
+
+                                Spacer(modifier = Modifier.width(12.dp))
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = "Admin Approvals Dashboard",
+                                            color = BrandGold,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.ExtraBold
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Surface(
+                                            color = BrandGold.copy(alpha = 0.2f),
+                                            shape = RoundedCornerShape(4.dp),
+                                            border = BorderStroke(0.6.dp, BrandGold)
+                                        ) {
+                                            Text(
+                                                "ADMIN",
+                                                color = BrandGold,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "Review & approve pending UPI top-up requests",
+                                        color = Color.LightGray,
+                                        fontSize = 11.sp,
+                                        lineHeight = 15.sp
+                                    )
+                                }
+
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                    contentDescription = null,
+                                    tint = BrandGold,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -4393,6 +4601,35 @@ fun ProfileScreenContent(
                 onSelectPlan(plan)
                 showSubscriptionModal = false
             }
+        )
+    }
+
+    if (showCoinStoreModal) {
+        CoinStoreTopUpDialog(
+            currentUser = currentUser,
+            onDismiss = { showCoinStoreModal = false },
+            onOpenHelpDeskWithPackage = { pack ->
+                helpDeskPrefilledPackage = pack
+                showHelpDeskModal = true
+            }
+        )
+    }
+
+    if (showHelpDeskModal) {
+        HelpDeskModal(
+            currentUser = currentUser,
+            prefilledPackage = helpDeskPrefilledPackage,
+            onDismiss = {
+                showHelpDeskModal = false
+                helpDeskPrefilledPackage = null
+            }
+        )
+    }
+
+    if (showAdminDashboardModal && currentUser.isAdmin) {
+        AdminApprovalDashboardModal(
+            adminUser = currentUser,
+            onDismiss = { showAdminDashboardModal = false }
         )
     }
 

@@ -39,6 +39,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
@@ -5977,6 +5978,7 @@ fun GiftStoreDialog(
                 ) {
                     when (selectedTab) {
                         0 -> DiamondsRechargeSection(
+                            currentUser = currentUser,
                             onRecharge = { diamonds -> onDiamondsRecharged(diamonds) }
                         )
                         1 -> AvatarFramesSection(
@@ -6005,8 +6007,33 @@ fun GiftStoreDialog(
 // -------------------------------------------------------------
 @Composable
 private fun DiamondsRechargeSection(
+    currentUser: UserProfile,
     onRecharge: (Long) -> Unit
 ) {
+    val context = LocalContext.current
+    var showPostPaymentDialog by remember { mutableStateOf(false) }
+    var showHelpDesk by remember { mutableStateOf(false) }
+    var selectedPackageToVerify by remember { mutableStateOf<CoinPackageItem?>(null) }
+
+    if (showPostPaymentDialog) {
+        PostPaymentVerificationDialog(
+            selectedPackage = selectedPackageToVerify,
+            onDismiss = { showPostPaymentDialog = false },
+            onSubmitUtrClick = { pack ->
+                showPostPaymentDialog = false
+                showHelpDesk = true
+            }
+        )
+    }
+
+    if (showHelpDesk) {
+        HelpDeskModal(
+            currentUser = currentUser,
+            prefilledPackage = selectedPackageToVerify,
+            onDismiss = { showHelpDesk = false }
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -6077,7 +6104,16 @@ private fun DiamondsRechargeSection(
                     }
 
                     Button(
-                        onClick = { onRecharge(50000L) },
+                        onClick = {
+                            val pack = APP_COIN_PACKAGES.find { it.id == "pack_149" } ?: APP_COIN_PACKAGES[0]
+                            selectedPackageToVerify = pack
+                            PaymentAndSupportManager.launchUpiPayment(
+                                context = context,
+                                amount = "149",
+                                onOpened = { showPostPaymentDialog = true },
+                                onError = { err -> Toast.makeText(context, err, Toast.LENGTH_SHORT).show() }
+                            )
+                        },
                         colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
                         shape = RoundedCornerShape(12.dp)
                     ) {
@@ -6136,7 +6172,18 @@ private fun DiamondsRechargeSection(
                 }
 
                 Button(
-                    onClick = { onRecharge(diamonds) },
+                    onClick = {
+                        val numAmount = price.replace("₹", "").trim()
+                        val pack = APP_COIN_PACKAGES.find { it.coins == diamonds }
+                            ?: CoinPackageItem("pack_$diamonds", diamonds, price, numAmount, label)
+                        selectedPackageToVerify = pack
+                        PaymentAndSupportManager.launchUpiPayment(
+                            context = context,
+                            amount = numAmount,
+                            onOpened = { showPostPaymentDialog = true },
+                            onError = { err -> Toast.makeText(context, err, Toast.LENGTH_SHORT).show() }
+                        )
+                    },
                     colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
                     shape = RoundedCornerShape(10.dp),
                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
@@ -6151,9 +6198,38 @@ private fun DiamondsRechargeSection(
             }
         }
 
+        // Direct Help Desk UTR button
+        Surface(
+            color = BrandCard,
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.5f)),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable {
+                    selectedPackageToVerify = APP_COIN_PACKAGES[0]
+                    showHelpDesk = true
+                }
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("🎧", fontSize = 16.sp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text("Already Paid via UPI?", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("Submit 12-digit UTR in Help Desk to verify & credit", color = BrandGold, fontSize = 10.sp)
+                    }
+                }
+                Icon(Icons.AutoMirrored.Filled.ArrowForwardIos, contentDescription = null, tint = BrandGold, modifier = Modifier.size(12.dp))
+            }
+        }
+
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = "🔒 Secure 1-click mock payment • Instant real-time Firestore sync",
+            text = "🔒 Direct UPI payment via GPay, PhonePe, Paytm, BHIM • Submit UTR for instant credit",
             color = Color.Gray,
             fontSize = 10.sp,
             textAlign = TextAlign.Center,
