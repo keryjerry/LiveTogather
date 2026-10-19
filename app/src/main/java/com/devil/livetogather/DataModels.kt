@@ -510,6 +510,7 @@ data class UserProfile(
     val coins: Long = 0L,
     val activeFrame: String = "",
     val ownedFrames: List<String> = emptyList(),
+    val frameExpiries: Map<String, Long> = emptyMap(),
 
     // First-Time Sign Up Welcome Bonus & 7-Day VIP 1 Trial
     val vipTrialStartDate: Long = 0L,
@@ -518,7 +519,12 @@ data class UserProfile(
     val signupIpAddress: String = "",
 
     // Administration & Role Control
-    val isAdmin: Boolean = false
+    val isAdmin: Boolean = false,
+
+    // Suspension & Moderation Control
+    val isSuspended: Boolean = false,
+    val suspensionExpiry: Long = 0L,
+    val suspensionReason: String = ""
 ) {
     fun isPaidSubscriber(): Boolean {
         return plan.isNotBlank() && !plan.equals("Free", ignoreCase = true)
@@ -655,6 +661,16 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
     val signupIpAddress = doc.getString("signupIpAddress") ?: ""
     val isAdmin = doc.getBoolean("isAdmin") ?: false
 
+    @Suppress("UNCHECKED_CAST")
+    val rawExpiries = doc.get("frameExpiries") as? Map<String, Any>
+    val frameExpiries: Map<String, Long> = rawExpiries?.mapNotNull { (k, v) ->
+        val l = (v as? Number)?.toLong()
+        if (l != null) k to l else null
+    }?.toMap() ?: emptyMap()
+    val isSuspended = doc.getBoolean("isSuspended") ?: false
+    val suspensionExpiry = doc.getLong("suspensionExpiry") ?: 0L
+    val suspensionReason = doc.getString("suspensionReason") ?: ""
+
     return UserProfile(
         uid = uid,
         userId = userId,
@@ -710,11 +726,15 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
         coins = coins,
         activeFrame = activeFrame,
         ownedFrames = ownedFrames,
+        frameExpiries = frameExpiries,
         vipTrialStartDate = vipTrialStartDate,
         vipTrialExpiryDate = vipTrialExpiryDate,
         hasClaimedWelcomeBonus = hasClaimedWelcomeBonus,
         signupIpAddress = signupIpAddress,
-        isAdmin = isAdmin
+        isAdmin = isAdmin,
+        isSuspended = isSuspended,
+        suspensionExpiry = suspensionExpiry,
+        suspensionReason = suspensionReason
     )
 }
 
@@ -757,6 +777,9 @@ fun saveProfileToPrefs(prefs: SharedPreferences, user: UserProfile) {
         .putBoolean("profile_has_claimed_welcome_bonus", user.hasClaimedWelcomeBonus)
         .putString("profile_signup_ip", user.signupIpAddress)
         .putBoolean("profile_is_admin", user.isAdmin)
+        .putBoolean("profile_is_suspended", user.isSuspended)
+        .putLong("profile_suspension_expiry", user.suspensionExpiry)
+        .putString("profile_suspension_reason", user.suspensionReason)
         .apply()
 }
 
@@ -868,11 +891,27 @@ data class NotificationItem(
 
 data class RoomMember(
     val uid: String = "",
+    val userId: String = "",
     val name: String = "",
     val photoUrl: String = "",
     val joinedAt: Long = System.currentTimeMillis(),
     val role: String = "listener", // "host" or "listener"
     val tier: String = "Standard" // "VIP", "Platinum", "Standard"
+)
+
+data class ReportTicket(
+    val reportId: String = "",
+    val reportedUid: String = "",
+    val reportedUserId: String = "",
+    val reportedName: String = "",
+    val reportedPhoto: String = "",
+    val reporterUid: String = "",
+    val reporterUserId: String = "",
+    val reporterName: String = "",
+    val reason: String = "",
+    val details: String = "",
+    val timestamp: Long = System.currentTimeMillis(),
+    val status: String = "PENDING" // PENDING, RESOLVED, DISMISSED
 )
 
 data class MessageRequest(

@@ -105,7 +105,7 @@ class LoginActivity : ComponentActivity() {
                         if (doc != null && doc.exists()) {
                             var userObj = parseUserProfileFromDoc(doc)
                             if (userObj.userId.isBlank()) {
-                                val genId = (100000..999999).random().toString()
+                                val genId = (10000000..99999999).random().toString()
                                 userObj = userObj.copy(userId = genId)
                                 db.collection("users").document(currentUser.uid).update("userId", genId)
                             }
@@ -354,7 +354,7 @@ class LoginActivity : ComponentActivity() {
                     if (doc != null && doc.exists()) {
                         var userObj = parseUserProfileFromDoc(doc)
                         if (userObj.userId.isBlank()) {
-                            val genId = (100000..999999).random().toString()
+                            val genId = (10000000..99999999).random().toString()
                             userObj = userObj.copy(userId = genId)
                             db.collection("users").document(uid).update("userId", genId)
                         }

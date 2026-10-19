@@ -51,7 +51,7 @@ import java.util.UUID
  */
 object WelcomeBonusManager {
 
-    const val WELCOME_BONUS_DIAMONDS = 10_000_000L // 1 Crore Diamonds
+    const val WELCOME_BONUS_DIAMONDS = 50_000L // 50,000 Diamonds
     const val VIP_TRIAL_DURATION_MS = 7L * 24 * 60 * 60 * 1000L // 7 Days
     const val VIP1_FRAME_ID = "frame_vip1_archangel"
     const val PREF_SHOW_WELCOME_DIALOG = "show_welcome_bonus_dialog"
@@ -304,10 +304,10 @@ object WelcomeBonusManager {
             val notification = NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
                 .setSmallIcon(R.drawable.app_logo)
                 .setContentTitle("🎉 First-Time Welcome Gift Unlocked! 🎁")
-                .setContentText("1 Crore Diamonds + VIP 1 Archangel Frame & Badge (7 Days Free) are now in your wallet!")
+                .setContentText("50,000 Diamonds + VIP 1 Archangel Frame & Badge (7 Days Free) are now in your wallet!")
                 .setStyle(
                     NotificationCompat.BigTextStyle()
-                        .bigText("Congratulations on signing up for the first time!\n\n💎 1,00,00,000 Diamonds added to your wallet\n👑 VIP 1 Noble Archangel Frame & Badge unlocked (7 Days)\n\nEnjoy LiveTogether to the fullest!")
+                        .bigText("Congratulations on signing up for the first time!\n\n💎 50,000 Diamonds added to your wallet\n👑 VIP 1 Noble Archangel Frame & Badge unlocked (7 Days)\n\nEnjoy LiveTogether to the fullest!")
                 )
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setAutoCancel(true)
@@ -399,13 +399,13 @@ fun WelcomeBonusCelebrationDialog(
                         Text(text = "💎", fontSize = 26.sp)
                         Column {
                             Text(
-                                text = "1,00,00,000 Diamonds",
+                                text = "50,000 Diamonds",
                                 color = brandCyan,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.ExtraBold
                             )
                             Text(
-                                text = "1 करोड़ डायमंड आपके वॉलेट में क्रेडिट हो गए हैं",
+                                text = "50,000 डायमंड आपके वॉलेट में क्रेडिट हो गए हैं",
                                 color = Color.Gray,
                                 fontSize = 11.sp
                             )

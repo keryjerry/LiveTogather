@@ -540,7 +540,7 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
                             ?: prefs.getString("user_uid", null)
                             ?: currentUid.ifBlank { "user_${UUID.randomUUID().toString().take(8)}" }
 
-                        val generatedUserId = (100000..999999).random().toString()
+                        val generatedUserId = (10000000..99999999).random().toString()
                         val initialProfile = UserProfile(
                             uid = effectiveUid,
                             userId = generatedUserId,
@@ -583,7 +583,7 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
 
                         // 3. Immediately dismiss loading, show welcome Toast, and proceed to MainActivity
                         if (profile.hasClaimedWelcomeBonus) {
-                            Toast.makeText(context, "🎉 Welcome Gift Unlocked: 1 Crore Diamonds + VIP 1 Frame!", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, "🎉 Welcome Gift Unlocked: 50,000 Diamonds + VIP 1 Frame!", Toast.LENGTH_LONG).show()
                         } else {
                             Toast.makeText(context, "Welcome to LiveTogether, ${profile.name}! 🎉", Toast.LENGTH_SHORT).show()
                         }

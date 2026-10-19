@@ -1364,10 +1364,13 @@ fun AdminApprovalDashboardModal(
 ) {
     val context = LocalContext.current
     val pendingRequests = remember { mutableStateListOf<PaymentRequestTicket>() }
+    val pendingReports = remember { mutableStateListOf<ReportTicket>() }
+    var selectedAdminTab by remember { mutableStateOf(0) } // 0: Payments, 1: User Reports
     var processingReqId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         val db = FirebaseFirestore.getInstance()
+        // 1. Pending Payments Listener
         db.collection("payment_requests")
             .whereEqualTo("status", "PENDING")
             .addSnapshotListener { snapshot, _ ->
@@ -1395,6 +1398,37 @@ fun AdminApprovalDashboardModal(
                         }
                     }.sortedByDescending { it.timestamp }
                     pendingRequests.addAll(list)
+                }
+            }
+
+        // 2. Pending User Reports Listener
+        db.collection("reports")
+            .whereEqualTo("status", "PENDING")
+            .addSnapshotListener { snapshot, _ ->
+                if (snapshot != null) {
+                    pendingReports.clear()
+                    val list = snapshot.documents.mapNotNull { doc ->
+                        try {
+                            val ts = doc.getTimestamp("timestamp")?.toDate()?.time
+                                ?: doc.getLong("timestamp") ?: 0L
+                            ReportTicket(
+                                reportId = doc.getString("reportId") ?: doc.id,
+                                reportedUid = doc.getString("reportedUid") ?: "",
+                                reportedUserId = doc.getString("reportedUserId") ?: "",
+                                reportedName = doc.getString("reportedName") ?: "",
+                                reporterUid = doc.getString("reporterUid") ?: "",
+                                reporterUserId = doc.getString("reporterUserId") ?: "",
+                                reporterName = doc.getString("reporterName") ?: "",
+                                reason = doc.getString("reason") ?: "",
+                                details = doc.getString("details") ?: "",
+                                timestamp = ts,
+                                status = doc.getString("status") ?: "PENDING"
+                            )
+                        } catch (e: Exception) {
+                            null
+                        }
+                    }.sortedByDescending { it.timestamp }
+                    pendingReports.addAll(list)
                 }
             }
     }
@@ -1440,8 +1474,8 @@ fun AdminApprovalDashboardModal(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "${pendingRequests.size} Pending Payment Approvals",
-                                color = if (pendingRequests.isNotEmpty()) BrandCoral else Color.Gray,
+                                text = if (selectedAdminTab == 0) "${pendingRequests.size} Pending Payment Approvals" else "${pendingReports.size} Pending User Reports",
+                                color = if ((if (selectedAdminTab == 0) pendingRequests.size else pendingReports.size) > 0) BrandCoral else Color.Gray,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
@@ -1458,65 +1492,284 @@ fun AdminApprovalDashboardModal(
                     }
                 }
 
-                if (pendingRequests.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(24.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("✨", fontSize = 42.sp)
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Text("All Caught Up!", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                            Text("No pending UPI payment requests at this moment.", color = Color.Gray, fontSize = 12.sp)
+                // Dual Navigation Tabs: Payments vs User Reports
+                TabRow(
+                    selectedTabIndex = selectedAdminTab,
+                    containerColor = BrandDark,
+                    contentColor = BrandGold
+                ) {
+                    Tab(
+                        selected = selectedAdminTab == 0,
+                        onClick = { selectedAdminTab = 0 },
+                        text = {
+                            Text(
+                                text = "Payments (${pendingRequests.size})",
+                                fontWeight = if (selectedAdminTab == 0) FontWeight.Bold else FontWeight.Normal,
+                                color = if (selectedAdminTab == 0) BrandGold else Color.Gray,
+                                fontSize = 13.sp
+                            )
+                        }
+                    )
+                    Tab(
+                        selected = selectedAdminTab == 1,
+                        onClick = { selectedAdminTab = 1 },
+                        text = {
+                            Text(
+                                text = "User Reports (${pendingReports.size})",
+                                fontWeight = if (selectedAdminTab == 1) FontWeight.Bold else FontWeight.Normal,
+                                color = if (selectedAdminTab == 1) Color.Red else Color.Gray,
+                                fontSize = 13.sp
+                            )
+                        }
+                    )
+                }
+
+                if (selectedAdminTab == 0) {
+                    // TAB 0: PAYMENTS (UNTOUCHED LOGIC)
+                    if (pendingRequests.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(24.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("✨", fontSize = 42.sp)
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text("All Caught Up!", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                Text("No pending UPI payment requests at this moment.", color = Color.Gray, fontSize = 12.sp)
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            items(pendingRequests, key = { it.requestId }) { req ->
+                                AdminApprovalCard(
+                                    req = req,
+                                    isProcessing = processingReqId == req.requestId,
+                                    onApprove = {
+                                        processingReqId = req.requestId
+                                        PaymentAndSupportManager.approvePaymentRequest(
+                                            request = req,
+                                            adminUid = adminUser.uid,
+                                            onSuccess = {
+                                                processingReqId = null
+                                                Toast.makeText(context, "✅ Approved! %,d Coins credited to User #${req.userNumericId}".format(req.coinsRequested), Toast.LENGTH_SHORT).show()
+                                            },
+                                            onFailure = { err ->
+                                                processingReqId = null
+                                                Toast.makeText(context, "Approval error: $err", Toast.LENGTH_LONG).show()
+                                            }
+                                        )
+                                    },
+                                    onReject = {
+                                        processingReqId = req.requestId
+                                        PaymentAndSupportManager.rejectPaymentRequest(
+                                            requestId = req.requestId,
+                                            adminUid = adminUser.uid,
+                                            onSuccess = {
+                                                processingReqId = null
+                                                Toast.makeText(context, "❌ Request #${req.requestId.take(6)} Rejected", Toast.LENGTH_SHORT).show()
+                                            },
+                                            onFailure = { err ->
+                                                processingReqId = null
+                                                Toast.makeText(context, "Rejection error: $err", Toast.LENGTH_LONG).show()
+                                            }
+                                        )
+                                    }
+                                )
+                            }
                         }
                     }
                 } else {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        items(pendingRequests, key = { it.requestId }) { req ->
-                            AdminApprovalCard(
-                                req = req,
-                                isProcessing = processingReqId == req.requestId,
-                                onApprove = {
-                                    processingReqId = req.requestId
-                                    PaymentAndSupportManager.approvePaymentRequest(
-                                        request = req,
-                                        adminUid = adminUser.uid,
-                                        onSuccess = {
-                                            processingReqId = null
-                                            Toast.makeText(context, "✅ Approved! %,d Coins credited to User #${req.userNumericId}".format(req.coinsRequested), Toast.LENGTH_SHORT).show()
-                                        },
-                                        onFailure = { err ->
-                                            processingReqId = null
-                                            Toast.makeText(context, "Approval error: $err", Toast.LENGTH_LONG).show()
+                    // TAB 1: USER REPORTS & SUSPENSION
+                    if (pendingReports.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(24.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("🛡️", fontSize = 42.sp)
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text("Zero Pending Reports", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                Text("LiveTogether community is peaceful and safe!", color = Color.Gray, fontSize = 12.sp)
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            items(pendingReports, key = { it.reportId }) { report ->
+                                AdminReportCard(
+                                    ticket = report,
+                                    onSuspend = { hours ->
+                                        val durationMs = when (hours) {
+                                            24 -> 24L * 60 * 60 * 1000L
+                                            48 -> 48L * 60 * 60 * 1000L
+                                            72 -> 72L * 60 * 60 * 1000L
+                                            else -> 3650L * 24 * 60 * 60 * 1000L // 10 years permanent
                                         }
-                                    )
-                                },
-                                onReject = {
-                                    processingReqId = req.requestId
-                                    PaymentAndSupportManager.rejectPaymentRequest(
-                                        requestId = req.requestId,
-                                        adminUid = adminUser.uid,
-                                        onSuccess = {
-                                            processingReqId = null
-                                            Toast.makeText(context, "❌ Request #${req.requestId.take(6)} Rejected", Toast.LENGTH_SHORT).show()
-                                        },
-                                        onFailure = { err ->
-                                            processingReqId = null
-                                            Toast.makeText(context, "Rejection error: $err", Toast.LENGTH_LONG).show()
-                                        }
-                                    )
-                                }
-                            )
+                                        val expiry = System.currentTimeMillis() + durationMs
+                                        val updates = mapOf(
+                                            "isSuspended" to true,
+                                            "suspensionExpiry" to expiry,
+                                            "suspensionReason" to report.reason
+                                        )
+                                        val db = FirebaseFirestore.getInstance()
+                                        db.collection("users").document(report.reportedUid).update(updates)
+                                        db.collection("reports").document(report.reportId).update("status", "RESOLVED_SUSPENDED")
+                                        Toast.makeText(context, "User #${if (report.reportedUserId.isNotBlank()) report.reportedUserId else report.reportedUid.take(8)} suspended (${if (hours > 0) "${hours}h" else "Permanent"}).", Toast.LENGTH_SHORT).show()
+                                    },
+                                    onDismiss = {
+                                        val db = FirebaseFirestore.getInstance()
+                                        db.collection("reports").document(report.reportId).update("status", "DISMISSED")
+                                        Toast.makeText(context, "Report dismissed.", Toast.LENGTH_SHORT).show()
+                                    }
+                                )
+                            }
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdminReportCard(
+    ticket: ReportTicket,
+    onSuspend: (hours: Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val dateStr = remember(ticket.timestamp) {
+        if (ticket.timestamp > 0) {
+            SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()).format(Date(ticket.timestamp))
+        } else "Just now"
+    }
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = BrandCard),
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, Color.Red.copy(alpha = 0.4f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // Header: Reported User & Reporter
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("🚨", fontSize = 16.sp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Reported: ${ticket.reportedName}",
+                            color = Color.Red,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Text(
+                        text = "User ID: ${if (ticket.reportedUserId.isNotBlank()) ticket.reportedUserId else ticket.reportedUid.take(8)}",
+                        color = Color.LightGray,
+                        fontSize = 11.sp
+                    )
+                }
+                Text(dateStr, color = Color.Gray, fontSize = 11.sp)
+            }
+
+            HorizontalDivider(color = BrandBorder, thickness = 0.8.dp)
+
+            // Reason & Reporter
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = "Reason: ${ticket.reason}",
+                    color = BrandGold,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                if (ticket.details.isNotBlank()) {
+                    Text(
+                        text = "Details: \"${ticket.details}\"",
+                        color = Color.White,
+                        fontSize = 12.sp
+                    )
+                }
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Reported by: ${ticket.reporterName} (ID: ${if (ticket.reporterUserId.isNotBlank()) ticket.reporterUserId else ticket.reporterUid.take(8)})",
+                    color = Color.Gray,
+                    fontSize = 11.sp
+                )
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // Action Buttons: 24h, 48h, 72h, Permanent, Dismiss
+            Text("Admin Action:", color = Color.LightGray, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                OutlinedButton(
+                    onClick = { onSuspend(24) },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFFB74D)),
+                    border = BorderStroke(1.dp, Color(0xFFFFB74D)),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                    modifier = Modifier.weight(1f).height(34.dp)
+                ) {
+                    Text("24h Ban", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
+                OutlinedButton(
+                    onClick = { onSuspend(48) },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFF9800)),
+                    border = BorderStroke(1.dp, Color(0xFFFF9800)),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                    modifier = Modifier.weight(1f).height(34.dp)
+                ) {
+                    Text("48h Ban", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
+                OutlinedButton(
+                    onClick = { onSuspend(72) },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFF4511E)),
+                    border = BorderStroke(1.dp, Color(0xFFF4511E)),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                    modifier = Modifier.weight(1f).height(34.dp)
+                ) {
+                    Text("72h Ban", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
+                Button(
+                    onClick = { onSuspend(-1) },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                    modifier = Modifier.weight(1.2f).height(34.dp)
+                ) {
+                    Text("Perm Ban 🛑", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            }
+
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth().height(32.dp)
+            ) {
+                Text("Dismiss Report (No Action)", color = Color.LightGray, fontSize = 11.sp)
             }
         }
     }

@@ -230,7 +230,8 @@ fun CompactFrameThumbnailBox(
     isOwned: Boolean,
     userPhotoUrl: String,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    expiryTimestamp: Long = 0L
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "ThumbnailTransition")
     val rotateAngle by infiniteTransition.animateFloat(
@@ -254,17 +255,39 @@ fun CompactFrameThumbnailBox(
 
     val auraColors = frameItem.auraColors.map { Color(it) }
 
+    val now = System.currentTimeMillis()
+    val isExpired = isOwned && expiryTimestamp > 0L && now > expiryTimestamp
+    val remainingMs = if (isOwned && expiryTimestamp > 0L) expiryTimestamp - now else 0L
+    val validityLabel = if (isOwned && expiryTimestamp > 0L) {
+        if (remainingMs <= 0L) {
+            "Expired"
+        } else {
+            val days = (remainingMs / (1000L * 60 * 60 * 24)).toInt()
+            if (days > 1) {
+                "${days}d left"
+            } else {
+                val hours = (remainingMs / (1000L * 60 * 60)).toInt()
+                if (hours >= 1) {
+                    "${hours}h left"
+                } else {
+                    val mins = (remainingMs / (1000L * 60)).toInt().coerceAtLeast(1)
+                    "${mins}m left"
+                }
+            }
+        }
+    } else ""
+
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
             .background(
                 if (isEquipped) Color(0xFF1E3A24)
-                else if (isOwned) Color(0xFF2A2215)
+                else if (isOwned && !isExpired) Color(0xFF2A2215)
                 else Color.White.copy(alpha = 0.05f)
             )
             .border(
                 width = if (isEquipped) 1.5.dp else 1.dp,
-                color = if (isEquipped) BrandGreen else if (isOwned) BrandGold else Color.White.copy(alpha = 0.12f),
+                color = if (isEquipped) BrandGreen else if (isOwned && !isExpired) BrandGold else Color.White.copy(alpha = 0.12f),
                 shape = RoundedCornerShape(12.dp)
             )
             .clickable { onClick() }
@@ -333,26 +356,46 @@ fun CompactFrameThumbnailBox(
 
             Spacer(modifier = Modifier.height(2.dp))
 
-            // Price / Status Badge
+            // Price / Status Badge with Live Countdown
             if (isEquipped) {
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
                         .background(BrandGreen.copy(alpha = 0.2f))
                         .border(0.8.dp, BrandGreen, RoundedCornerShape(6.dp))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                        .padding(horizontal = 4.dp, vertical = 2.dp)
                 ) {
-                    Text("✓ Applied", color = BrandGreen, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = if (validityLabel.isNotBlank()) "✓ Applied ($validityLabel)" else "✓ Applied",
+                        color = BrandGreen,
+                        fontSize = 8.5.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
-            } else if (isOwned) {
+            } else if (isOwned && !isExpired) {
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
                         .background(BrandGold.copy(alpha = 0.2f))
                         .border(0.8.dp, BrandGold, RoundedCornerShape(6.dp))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                        .padding(horizontal = 4.dp, vertical = 2.dp)
                 ) {
-                    Text("Apply", color = BrandGold, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = if (validityLabel.isNotBlank()) "Apply ($validityLabel)" else "Apply",
+                        color = BrandGold,
+                        fontSize = 8.5.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            } else if (isExpired) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color.Red.copy(alpha = 0.2f))
+                        .border(0.8.dp, Color.Red.copy(alpha = 0.7f), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                ) {
+                    Text("Expired • Rebuy", color = Color(0xFFFF6B6B), fontSize = 8.sp, fontWeight = FontWeight.Bold)
                 }
             } else {
                 val formattedCost = formatDiamondCost(frameItem.cost)
@@ -361,9 +404,9 @@ fun CompactFrameThumbnailBox(
                         .clip(RoundedCornerShape(6.dp))
                         .background(BrandCoral.copy(alpha = 0.2f))
                         .border(0.8.dp, BrandCoral.copy(alpha = 0.7f), RoundedCornerShape(6.dp))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                        .padding(horizontal = 4.dp, vertical = 2.dp)
                 ) {
-                    Text("💎 $formattedCost", color = BrandCoral, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("💎 $formattedCost (1 Mo)", color = BrandCoral, fontSize = 8.5.sp, fontWeight = FontWeight.ExtraBold)
                 }
             }
         }

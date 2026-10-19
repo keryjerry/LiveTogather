@@ -426,44 +426,105 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
         }
         isSearching = true
         if (searchMode == "room") {
-            db.collection("rooms").limit(50).get()
-                .addOnSuccessListener { snapshot ->
-                    val list = mutableListOf<RoomItem>()
-                    for (doc in snapshot.documents) {
-                        val r = parseRoomFromDoc(doc)
-                        if (r.id.contains(q, ignoreCase = true) ||
-                            r.roomId.contains(q, ignoreCase = true) ||
-                            r.title.contains(q, ignoreCase = true) ||
-                            r.roomName.contains(q, ignoreCase = true) ||
-                            r.hostName.contains(q, ignoreCase = true)
-                        ) {
-                            list.add(r)
-                        }
+            db.collection("rooms").whereEqualTo("roomId", q).get()
+                .addOnSuccessListener { exactDocs ->
+                    if (exactDocs != null && !exactDocs.isEmpty) {
+                        val list = exactDocs.documents.mapNotNull { parseRoomFromDoc(it) }
+                        searchRoomResults.clear()
+                        searchRoomResults.addAll(list)
+                        isSearching = false
+                    } else {
+                        db.collection("rooms").limit(60).get()
+                            .addOnSuccessListener { snapshot ->
+                                val list = mutableListOf<RoomItem>()
+                                for (doc in snapshot.documents) {
+                                    val r = parseRoomFromDoc(doc)
+                                    if (r.id.contains(q, ignoreCase = true) ||
+                                        r.roomId.contains(q, ignoreCase = true) ||
+                                        r.title.contains(q, ignoreCase = true) ||
+                                        r.roomName.contains(q, ignoreCase = true) ||
+                                        r.hostName.contains(q, ignoreCase = true)
+                                    ) {
+                                        list.add(r)
+                                    }
+                                }
+                                searchRoomResults.clear()
+                                searchRoomResults.addAll(list)
+                                isSearching = false
+                            }
+                            .addOnFailureListener { isSearching = false }
                     }
-                    searchRoomResults.clear()
-                    searchRoomResults.addAll(list)
-                    isSearching = false
                 }
-                .addOnFailureListener { isSearching = false }
+                .addOnFailureListener {
+                    db.collection("rooms").limit(60).get()
+                        .addOnSuccessListener { snapshot ->
+                            val list = mutableListOf<RoomItem>()
+                            for (doc in snapshot.documents) {
+                                val r = parseRoomFromDoc(doc)
+                                if (r.id.contains(q, ignoreCase = true) ||
+                                    r.roomId.contains(q, ignoreCase = true) ||
+                                    r.title.contains(q, ignoreCase = true) ||
+                                    r.roomName.contains(q, ignoreCase = true) ||
+                                    r.hostName.contains(q, ignoreCase = true)
+                                ) {
+                                    list.add(r)
+                                }
+                            }
+                            searchRoomResults.clear()
+                            searchRoomResults.addAll(list)
+                            isSearching = false
+                        }
+                        .addOnFailureListener { isSearching = false }
+                }
         } else {
-            db.collection("users").limit(50).get()
-                .addOnSuccessListener { snapshot ->
-                    val list = mutableListOf<UserProfile>()
-                    for (doc in snapshot.documents) {
-                        val u = parseUserProfileFromDoc(doc)
-                        if (u.uid.contains(q, ignoreCase = true) ||
-                            u.userId.contains(q, ignoreCase = true) ||
-                            u.name.contains(q, ignoreCase = true) ||
-                            u.city.contains(q, ignoreCase = true)
-                        ) {
-                            list.add(u)
-                        }
+            db.collection("users").whereEqualTo("userId", q).get()
+                .addOnSuccessListener { exactDocs ->
+                    if (exactDocs != null && !exactDocs.isEmpty) {
+                        val list = exactDocs.documents.mapNotNull { parseUserProfileFromDoc(it) }
+                        searchUserResults.clear()
+                        searchUserResults.addAll(list)
+                        isSearching = false
+                    } else {
+                        db.collection("users").limit(60).get()
+                            .addOnSuccessListener { snapshot ->
+                                val list = mutableListOf<UserProfile>()
+                                for (doc in snapshot.documents) {
+                                    val u = parseUserProfileFromDoc(doc)
+                                    if (u.uid.contains(q, ignoreCase = true) ||
+                                        u.userId.contains(q, ignoreCase = true) ||
+                                        u.name.contains(q, ignoreCase = true) ||
+                                        u.city.contains(q, ignoreCase = true)
+                                    ) {
+                                        list.add(u)
+                                    }
+                                }
+                                searchUserResults.clear()
+                                searchUserResults.addAll(list)
+                                isSearching = false
+                            }
+                            .addOnFailureListener { isSearching = false }
                     }
-                    searchUserResults.clear()
-                    searchUserResults.addAll(list)
-                    isSearching = false
                 }
-                .addOnFailureListener { isSearching = false }
+                .addOnFailureListener {
+                    db.collection("users").limit(60).get()
+                        .addOnSuccessListener { snapshot ->
+                            val list = mutableListOf<UserProfile>()
+                            for (doc in snapshot.documents) {
+                                val u = parseUserProfileFromDoc(doc)
+                                if (u.uid.contains(q, ignoreCase = true) ||
+                                    u.userId.contains(q, ignoreCase = true) ||
+                                    u.name.contains(q, ignoreCase = true) ||
+                                    u.city.contains(q, ignoreCase = true)
+                                ) {
+                                    list.add(u)
+                                }
+                            }
+                            searchUserResults.clear()
+                            searchUserResults.addAll(list)
+                            isSearching = false
+                        }
+                        .addOnFailureListener { isSearching = false }
+                }
         }
     }
 
@@ -691,13 +752,29 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
             }
         }
 
-        // 3. Notifications Listener (Real-Time Bell)
+        // 3. Notifications Listener (Real-Time Bell & Status Bar)
         db.collection("notifications")
             .whereEqualTo("targetUserId", currentUserId)
             .addSnapshotListener { snapshot, _ ->
                 if (snapshot != null) {
                     val items = snapshot.documents.mapNotNull { it.toObject(NotificationItem::class.java) }
                         .sortedByDescending { it.timestamp }
+
+                    for (dc in snapshot.documentChanges) {
+                        if (dc.type == com.google.firebase.firestore.DocumentChange.Type.ADDED) {
+                            val notif = dc.document.toObject(NotificationItem::class.java)
+                            if (!notif.isRead && (System.currentTimeMillis() - notif.timestamp) < 60_000L) {
+                                AppNotificationHelper.showSystemNotification(
+                                    context = context,
+                                    title = notif.title.ifBlank { "LiveTogether Alert" },
+                                    message = notif.message,
+                                    roomId = notif.roomId,
+                                    isLiveAlert = notif.type.contains("LIVE", ignoreCase = true) || notif.type.contains("host_live", ignoreCase = true)
+                                )
+                            }
+                        }
+                    }
+
                     notifications.clear()
                     notifications.addAll(items)
                 }
@@ -803,6 +880,94 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
         } else {
             currentScreen = "discover"
         }
+    }
+
+    val isAccountSuspended = currentUser.isSuspended && (currentUser.suspensionExpiry == 0L || System.currentTimeMillis() < currentUser.suspensionExpiry)
+
+    if (isAccountSuspended) {
+        val expiryText = if (currentUser.suspensionExpiry <= 0L || (currentUser.suspensionExpiry - System.currentTimeMillis()) > (365L * 24 * 60 * 60 * 1000L)) {
+            "Permanent Suspension"
+        } else {
+            val remHours = ((currentUser.suspensionExpiry - System.currentTimeMillis()) / (60 * 60 * 1000L)).coerceAtLeast(1)
+            "$remHours hours remaining"
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(BrandDark)
+                .padding(24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = BrandCard),
+                shape = RoundedCornerShape(24.dp),
+                border = BorderStroke(2.dp, Color.Red),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Text("🛑", fontSize = 56.sp)
+                    Text(
+                        text = "ACCOUNT SUSPENDED",
+                        color = Color.Red,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Text(
+                        text = "Your account has been restricted by LiveTogether administration due to violation of community guidelines.",
+                        color = Color.LightGray,
+                        fontSize = 13.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    HorizontalDivider(color = BrandBorder, thickness = 1.dp)
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "Reason: ${currentUser.suspensionReason.ifBlank { "Violation of Community Guidelines" }}",
+                            color = BrandGold,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "Duration: $expiryText",
+                            color = Color(0xFFFF9800),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "User ID: ${if (currentUser.userId.isNotBlank()) currentUser.userId else currentUser.uid.take(8)}",
+                            color = Color.Gray,
+                            fontSize = 11.sp
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Button(
+                        onClick = {
+                            auth.signOut()
+                            prefs.edit().clear().apply()
+                            val intent = Intent(context, LoginActivity::class.java).apply {
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                            }
+                            context.startActivity(intent)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().height(44.dp)
+                    ) {
+                        Icon(Icons.Default.ExitToApp, contentDescription = null, tint = Color.White)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Log Out", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+        return
     }
 
     Box(modifier = Modifier.fillMaxSize().background(BrandDark)) {
@@ -1870,7 +2035,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                 initialCategory = createRoomInitialCategory,
                 onDismiss = { showCreateRoomDialog = false },
                 onCreate = { title, categoryId, themeUrl ->
-                    val generatedRoomCode = (100000..999999).random().toString()
+                    val generatedRoomCode = (10000000..99999999).random().toString()
                     val roomId = generatedRoomCode
                     val catEmoji = CATEGORY_LIST.find { it.id == categoryId }?.label?.take(2)?.trim() ?: "🎙️"
                     val finalBanner = if (themeUrl.isNotBlank()) themeUrl else getCategoryBanner(categoryId)
@@ -1923,6 +2088,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                     // Register host member in rooms/{roomId}/members/{userId}
                     val hostMember = RoomMember(
                         uid = currentUserId,
+                        userId = currentUser.userId,
                         name = currentUser.name,
                         photoUrl = currentUser.photo,
                         joinedAt = System.currentTimeMillis(),
@@ -2152,14 +2318,17 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
             )
         }
 
-        // 5. Direct Message Dialog
+        // 5. Direct Message Dialog (with 5,000 Diamonds Gate for First-Time DM)
         if (showDirectMessageDialog != null) {
             val target = showDirectMessageDialog!!
+            val matchId = listOf(currentUserId, target.uid).sorted().joinToString("_")
+            val isAlreadyMatched = matches.any { it.matchId == matchId }
             DirectMessageDialog(
                 targetUser = target,
+                isUnlocked = isAlreadyMatched,
+                currentUserDiamonds = currentUser.diamonds,
                 onDismiss = { showDirectMessageDialog = null },
                 onSend = { text ->
-                    val matchId = listOf(currentUserId, target.uid).sorted().joinToString("_")
                     val msg = ChatMessage(senderId = currentUserId, text = text)
                     db.collection("matches").document(matchId).collection("messages").add(msg)
                     db.collection("matches").document(matchId).set(
@@ -2180,6 +2349,39 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                     )
                     showDirectMessageDialog = null
                     Toast.makeText(context, "Message sent to ${target.name}!", Toast.LENGTH_SHORT).show()
+                },
+                onUnlockAndSend = { text ->
+                    val unlockCost = 5000L
+                    if (currentUser.diamonds >= unlockCost) {
+                        val newDiamonds = currentUser.diamonds - unlockCost
+                        currentUser = currentUser.copy(diamonds = newDiamonds)
+                        saveProfileToPrefs(prefs, currentUser)
+                        db.collection("users").document(currentUserId).update("diamonds", newDiamonds)
+                        db.collection("users").document(target.uid).update("diamonds", com.google.firebase.firestore.FieldValue.increment(unlockCost))
+
+                        val msg = ChatMessage(senderId = currentUserId, text = "🎁 Direct Chat Unlocked (5,000 💎 Gift sent!)\n\n$text")
+                        db.collection("matches").document(matchId).collection("messages").add(msg)
+                        db.collection("matches").document(matchId).set(
+                            MatchItem(
+                                matchId = matchId,
+                                users = listOf(currentUserId, target.uid),
+                                matchedIntent = currentUser.activeIntent,
+                                lastMessage = text
+                            )
+                        )
+                        sendNotification(
+                            db = db,
+                            targetUserId = target.uid,
+                            sender = currentUser,
+                            type = "message",
+                            title = "🎁 Direct Chat Unlocked!",
+                            message = "${currentUser.name} gifted 5,000 💎 and started a direct chat!"
+                        )
+                        showDirectMessageDialog = null
+                        Toast.makeText(context, "🎁 Unlocked & Message sent to ${target.name}!", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "⚠️ 5,000 💎 Diamonds required to unlock direct chat with ${target.name}. Please recharge.", Toast.LENGTH_LONG).show()
+                    }
                 }
             )
         }
@@ -7156,8 +7358,11 @@ fun EditMomentDialog(
 @Composable
 fun DirectMessageDialog(
     targetUser: UserProfile,
+    isUnlocked: Boolean = true,
+    currentUserDiamonds: Long = 0L,
     onDismiss: () -> Unit,
-    onSend: (String) -> Unit
+    onSend: (String) -> Unit,
+    onUnlockAndSend: ((String) -> Unit)? = null
 ) {
     var messageText by remember { mutableStateOf("") }
     val isKeyboardOpen = WindowInsets.isImeVisible
@@ -7181,7 +7386,8 @@ fun DirectMessageDialog(
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = BrandCard),
-            shape = RoundedCornerShape(20.dp)
+            shape = RoundedCornerShape(20.dp),
+            border = BorderStroke(1.5.dp, if (!isUnlocked) BrandGold else BrandBorder)
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -7194,7 +7400,35 @@ fun DirectMessageDialog(
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text("Message ${targetUser.name}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                        Text("Send a direct note", color = BrandOrange, fontSize = 11.sp)
+                        Text(
+                            text = if (!isUnlocked) "🎁 5,000 💎 Gift Required to Unlock" else "Send a direct note",
+                            color = if (!isUnlocked) BrandGold else BrandOrange,
+                            fontSize = 11.sp,
+                            fontWeight = if (!isUnlocked) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
+                }
+
+                if (!isUnlocked) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = BrandGold.copy(alpha = 0.12f)),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.4f))
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(
+                                text = "🎁 Direct Chat Initiation Gift",
+                                color = BrandGold,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Unlocking a direct chat requires gifting 5,000 💎 Diamonds to ${targetUser.name}.\nYour balance: %,d 💎".format(currentUserDiamonds),
+                                color = Color.LightGray,
+                                fontSize = 11.sp
+                            )
+                        }
                     }
                 }
 
@@ -7213,13 +7447,21 @@ fun DirectMessageDialog(
                     Button(
                         onClick = {
                             if (messageText.isNotBlank()) {
-                                onSend(messageText.trim())
+                                if (!isUnlocked && onUnlockAndSend != null) {
+                                    onUnlockAndSend(messageText.trim())
+                                } else {
+                                    onSend(messageText.trim())
+                                }
                             }
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
-                        modifier = Modifier.weight(1f)
+                        colors = ButtonDefaults.buttonColors(containerColor = if (!isUnlocked) BrandGold else BrandCoral),
+                        modifier = Modifier.weight(if (!isUnlocked) 1.6f else 1f)
                     ) {
-                        Text("Send", fontWeight = FontWeight.Bold)
+                        Text(
+                            text = if (!isUnlocked) "Unlock & Send 💎" else "Send",
+                            fontWeight = FontWeight.Bold,
+                            color = if (!isUnlocked) BrandDark else Color.White
+                        )
                     }
                 }
             }
