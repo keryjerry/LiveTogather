@@ -854,7 +854,7 @@ fun CategoryThemedPlayerConsole(
     totalDurationMs: Int = 0,
     onTogglePlay: () -> Unit,
     onSelectTrack: () -> Unit,
-    onTriggerSoundFx: (SoundFxItem) -> Unit,
+    onTriggerSoundFx: (SoundFxItem) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val theme = getCategoryTheme(room.category)
@@ -868,311 +868,139 @@ fun CategoryThemedPlayerConsole(
         ),
         label = "rotation"
     )
-    val pulseGlow by infiniteTransition.animateFloat(
-        initialValue = 0.6f,
-        targetValue = 1.0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1500, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulse_glow"
-    )
 
     Card(
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(14.dp),
         modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = BrandCard)
+        colors = CardDefaults.cardColors(containerColor = BrandCard),
+        border = BorderStroke(1.dp, BrandBorder.copy(alpha = 0.7f))
     ) {
-        Box(modifier = Modifier.fillMaxWidth()) {
-            // Background Theme Image with dark overlay
-            val bgBanner = getCategoryBanner(room.category)
-            val effectiveConsoleBg = if (currentArtwork.isNotBlank()) currentArtwork
-                else if (room.nowPlayingArtworkUrl.isNotBlank()) room.nowPlayingArtworkUrl
-                else bgBanner
-            AsyncImage(
-                model = effectiveConsoleBg,
-                contentDescription = null,
-                modifier = Modifier.matchParentSize(),
-                contentScale = ContentScale.Crop
-            )
-
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Black.copy(alpha = 0.75f),
-                                Color(0xFF0F0914).copy(alpha = 0.90f)
-                            )
-                        )
-                    )
-            )
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 10.dp)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 6.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // Header Badge
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                // Rotating Theme Disc (Vinyl / Artwork)
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(CircleShape)
+                        .background(Brush.sweepGradient(listOf(BrandCoral, BrandGold, BrandCoral)))
+                        .border(1.dp, BrandGold.copy(alpha = 0.7f), CircleShape)
+                        .graphicsLayer(rotationZ = if (isPlayingNow) rotationAngle else 0f),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text(theme.emoji, fontSize = 14.sp)
+                    val songArt = if (currentArtwork.isNotBlank()) currentArtwork
+                        else if (room.nowPlayingArtworkUrl.isNotBlank()) room.nowPlayingArtworkUrl
+                        else ""
+                    if (songArt.isNotBlank()) {
+                        AsyncImage(
+                            model = songArt,
+                            contentDescription = "Track Artwork",
+                            modifier = Modifier.fillMaxSize().clip(CircleShape),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Text(theme.emoji, fontSize = 18.sp)
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Track Info & Status
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = theme.consoleTitle,
-                            color = BrandGold,
-                            fontSize = 11.sp,
+                            text = if (room.nowPlayingTitle.isNotBlank()) room.nowPlayingTitle else "${theme.displayName} Lounge",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (isBuffering) "⏳" else if (isPlayingNow) "● LIVE" else "PAUSED",
+                            color = if (isPlayingNow) BrandGreen else Color.Gray,
+                            fontSize = 8.5.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = if (isBuffering) "⏳ Buffering..." else if (isPlayingNow) "● LIVE STREAM" else "PAUSED",
-                        color = if (isPlayingNow) BrandGreen else Color.Gray,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold
+                        text = if (room.nowPlayingArtist.isNotBlank()) room.nowPlayingArtist else theme.consoleTitle,
+                        color = BrandGold.copy(alpha = 0.85f),
+                        fontSize = 9.5.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.width(6.dp))
 
-                // STAGE MUSIC SCREEN (HD Thumbnail + Title + Controls)
-                when (theme.consoleType) {
-                    "movie_imax" -> {
-                        // Cinema Curved Screen Projector projecting Artwork
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(85.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .border(1.5.dp, BrandCoral.copy(alpha = if (isPlayingNow) pulseGlow else 0.4f), RoundedCornerShape(12.dp))
-                                .background(Color.Black),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            val movieArt = if (currentArtwork.isNotBlank()) currentArtwork
-                                else if (room.nowPlayingArtworkUrl.isNotBlank()) room.nowPlayingArtworkUrl
-                                else ""
-                            if (movieArt.isNotBlank()) {
-                                AsyncImage(
-                                    model = movieArt,
-                                    contentDescription = "Screen Projector",
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop
-                                )
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(
-                                            Brush.verticalGradient(
-                                                listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f))
-                                            )
-                                        )
-                                )
-                            } else {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("🍿", fontSize = 28.sp)
-                                    Text("IMAX Premier Screen", color = Color.Gray, fontSize = 10.sp)
-                                }
-                            }
-                            // Bottom screen title banner
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.BottomStart)
-                                    .padding(6.dp)
-                            ) {
-                                Text(
-                                    text = if (room.nowPlayingTitle.isNotBlank()) "🎬 ${room.nowPlayingTitle}" else "🎬 Movie Projector Standby",
-                                    color = Color.White,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
-                    else -> {
-                        // Compact Top Section: Rotating Disc / Console Seal + Song Meta + Controls
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Rotating Theme Disc (Vinyl / Compass / Moon / Globe / etc.)
-                            Box(
-                                modifier = Modifier
-                                    .size(52.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        when (theme.consoleType) {
-                                            "vip_gramophone" -> Brush.sweepGradient(listOf(Color(0xFFFFD700), Color(0xFFFFA000), Color(0xFFFFD700)))
-                                            "moon_observatory" -> Brush.radialGradient(listOf(Color(0xFF38BDF8), Color(0xFF0F172A)))
-                                            "sunset_beach" -> Brush.linearGradient(listOf(Color(0xFFF97316), Color(0xFFEC4899)))
-                                            "campfire_expedition" -> Brush.radialGradient(listOf(Color(0xFFD97706), Color(0xFF1C271E)))
-                                            "gameboy_retro" -> Brush.linearGradient(listOf(Color(0xFFA855F7), Color(0xFF14B8A6)))
-                                            "neon_fiesta" -> Brush.sweepGradient(listOf(Color(0xFFF43F5E), Color(0xFFFACC15), Color(0xFFF43F5E)))
-                                            "speakeasy_bar" -> Brush.linearGradient(listOf(Color(0xFF059669), Color(0xFFD97706)))
-                                            "roadtrip_globe" -> Brush.radialGradient(listOf(Color(0xFF0284C7), Color(0xFFF59E0B)))
-                                            "bistro_dining" -> Brush.linearGradient(listOf(Color(0xFFDC2626), Color(0xFFF59E0B)))
-                                            "aviation_radar" -> Brush.radialGradient(listOf(Color(0xFF06B6D4), Color(0xFF082F49)))
-                                            "club_turntable" -> Brush.sweepGradient(listOf(Color(0xFF8B5CF6), Color(0xFF06B6D4), Color(0xFF8B5CF6)))
-                                            else -> Brush.sweepGradient(listOf(BrandCoral, BrandGold, BrandCoral))
-                                        }
-                                    )
-                                    .border(1.dp, BrandGold.copy(alpha = 0.7f), CircleShape)
-                                    .graphicsLayer(rotationZ = if (isPlayingNow) rotationAngle else 0f),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                val songArt = if (currentArtwork.isNotBlank()) currentArtwork
-                                    else if (room.nowPlayingArtworkUrl.isNotBlank()) room.nowPlayingArtworkUrl
-                                    else ""
-                                if (songArt.isNotBlank()) {
-                                    AsyncImage(
-                                        model = songArt,
-                                        contentDescription = "Track Artwork Thumbnail",
-                                        modifier = Modifier.fillMaxSize().clip(CircleShape),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                } else {
-                                    Text(theme.emoji, fontSize = 20.sp)
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.width(10.dp))
-
-                            // Track Info
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = if (room.nowPlayingTitle.isNotBlank()) room.nowPlayingTitle else "Lounge Music Idle",
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = if (room.nowPlayingArtist.isNotBlank()) room.nowPlayingArtist else theme.consoleSubtitle,
-                                    color = BrandGold.copy(alpha = 0.85f),
-                                    fontSize = 10.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.width(6.dp))
-
-                            // Select Track Button
-                            IconButton(
-                                onClick = onSelectTrack,
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                                    .border(1.dp, BrandBorder, CircleShape)
-                            ) {
-                                Icon(Icons.Default.QueueMusic, contentDescription = "Select Song", tint = BrandCyan, modifier = Modifier.size(16.dp))
-                            }
-
-                            Spacer(modifier = Modifier.width(6.dp))
-
-                            // Play/Pause Button
-                            IconButton(
-                                onClick = onTogglePlay,
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        if (isPlayingNow) Brush.horizontalGradient(listOf(BrandCoral, BrandOrange))
-                                        else Brush.horizontalGradient(listOf(BrandDark, Color(0xFF281E22)))
-                                    )
-                                    .border(1.dp, if (isPlayingNow) BrandGold else BrandBorder, CircleShape)
-                            ) {
-                                Icon(
-                                    imageVector = if (isPlayingNow) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                    contentDescription = if (isPlayingNow) "Pause" else "Play",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                // Dense Equalizer Waveform
-                MusicVisualizerWave(
-                    isPlaying = isPlayingNow,
+                // Select Track Button
+                IconButton(
+                    onClick = onSelectTrack,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(28.dp)
-                        .padding(vertical = 1.dp)
+                        .size(30.dp)
+                        .background(Color.Black.copy(alpha = 0.4f), CircleShape)
+                        .border(0.8.dp, BrandBorder, CircleShape)
+                ) {
+                    Icon(Icons.Default.QueueMusic, contentDescription = "Select Song", tint = BrandCyan, modifier = Modifier.size(15.dp))
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                // Play/Pause Button
+                IconButton(
+                    onClick = onTogglePlay,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (isPlayingNow) Brush.horizontalGradient(listOf(BrandCoral, BrandOrange))
+                            else Brush.horizontalGradient(listOf(BrandDark, Color(0xFF281E22)))
+                        )
+                        .border(1.dp, if (isPlayingNow) BrandGold else BrandBorder, CircleShape)
+                ) {
+                    Icon(
+                        imageVector = if (isPlayingNow) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = if (isPlayingNow) "Pause" else "Play",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // Thin Playback Progress Bar + Duration
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val progress = if (totalDurationMs > 0) (currentPosMs.toFloat() / totalDurationMs.toFloat()).coerceIn(0f, 1f) else 0f
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(2.5.dp)
+                        .clip(RoundedCornerShape(2.dp)),
+                    color = BrandCoral,
+                    trackColor = Color.White.copy(alpha = 0.12f)
                 )
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                // Progress Bar & Timer
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val progress = if (totalDurationMs > 0) (currentPosMs.toFloat() / totalDurationMs.toFloat()).coerceIn(0f, 1f) else 0f
-                    LinearProgressIndicator(
-                        progress = { progress },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(3.dp)
-                            .clip(RoundedCornerShape(2.dp)),
-                        color = BrandCoral,
-                        trackColor = Color.White.copy(alpha = 0.15f)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = formattedTime,
-                        color = if (isPlayingNow) BrandGold else Color.Gray,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // 4 Interactive Category Sound FX Pads
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    theme.soundEffects.forEach { fx ->
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color.Black.copy(alpha = 0.5f))
-                                .border(0.8.dp, BrandGold.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
-                                .clickable { onTriggerSoundFx(fx) }
-                                .padding(vertical = 5.dp, horizontal = 2.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(fx.emoji, fontSize = 14.sp)
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = fx.name,
-                                    color = Color.White,
-                                    fontSize = 8.5.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
-                }
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = formattedTime,
+                    color = if (isPlayingNow) BrandGold else Color.Gray,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }
@@ -6465,7 +6293,6 @@ private fun DiamondsRechargeSection(
                         onClick = {
                             val pack = APP_COIN_PACKAGES.find { it.id == "pack_149" } ?: APP_COIN_PACKAGES[0]
                             checkoutPackage = pack
-                            PaymentAndSupportManager.launchUpiPayment(context, "149")
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
                         shape = RoundedCornerShape(12.dp)
@@ -6530,7 +6357,6 @@ private fun DiamondsRechargeSection(
                         val pack = APP_COIN_PACKAGES.find { it.coins == diamonds }
                             ?: CoinPackageItem("pack_$diamonds", diamonds, price, numAmount, label)
                         checkoutPackage = pack
-                        PaymentAndSupportManager.launchUpiPayment(context, numAmount)
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
                     shape = RoundedCornerShape(10.dp),

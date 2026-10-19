@@ -117,18 +117,59 @@ object PaymentAndSupportManager {
                 .appendQueryParameter("cu", "INR")
                 .build()
 
-            val intent = Intent(Intent.ACTION_VIEW, upiUri)
-            if (!packageName.isNullOrBlank()) {
-                intent.setPackage(packageName)
-            }
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-
-            val chooser = Intent.createChooser(intent, "Pay ₹$cleanAmount via UPI").apply {
+            val intent = Intent(Intent.ACTION_VIEW, upiUri).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            context.startActivity(chooser)
-            onOpened()
-            return true
+
+            // Direct App Launch (PhonePe, GPay, Paytm)
+            if (!packageName.isNullOrBlank()) {
+                intent.setPackage(packageName)
+                try {
+                    context.startActivity(intent)
+                    onOpened()
+                    return true
+                } catch (e: Exception) {
+                    android.util.Log.e("UPI", "Direct app launch failed for $packageName: ${e.message}")
+                    onError("APP_NOT_INSTALLED")
+                    return false
+                }
+            }
+
+            // Safe Chooser Launch: Only launch chooser if system finds compatible apps
+            val pm = context.packageManager
+            val resolveInfo = try {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                    pm.queryIntentActivities(
+                        intent,
+                        android.content.pm.PackageManager.ResolveInfoFlags.of(0)
+                    )
+                } else {
+                    @Suppress("DEPRECATION")
+                    pm.queryIntentActivities(intent, 0)
+                }
+            } catch (e: Exception) {
+                emptyList()
+            }
+
+            if (resolveInfo.isNotEmpty()) {
+                val chooser = Intent.createChooser(intent, "Pay ₹$cleanAmount via UPI").apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(chooser)
+                onOpened()
+                return true
+            } else {
+                // If no package detected, try direct startActivity with fallback to avoid system error popup
+                try {
+                    context.startActivity(intent)
+                    onOpened()
+                    return true
+                } catch (e: Exception) {
+                    android.util.Log.w("UPI", "No UPI apps installed: ${e.message}")
+                    onError("NO_UPI_APP")
+                    return false
+                }
+            }
         } catch (e: Exception) {
             android.util.Log.e("UPI", "Launch error: ${e.message}", e)
             onError(e.localizedMessage ?: "NO_UPI_APP")
@@ -589,27 +630,104 @@ fun UpiPaymentCheckoutModal(
                     }
                 }
 
-                // 3. Optional: Open UPI App on This Phone
-                Button(
-                    onClick = {
-                        val opened = PaymentAndSupportManager.launchUpiPayment(
-                            context = context,
-                            amount = cleanAmount,
-                            onOpened = {
-                                Toast.makeText(context, "Opening UPI app... Pay ₹$cleanAmount and enter 12-digit UTR below.", Toast.LENGTH_LONG).show()
-                            },
-                            onError = { _ ->
-                                Toast.makeText(context, "No UPI app (PhonePe/GPay/Paytm) installed on this phone. Please scan the QR code above or copy UPI ID!", Toast.LENGTH_LONG).show()
-                            }
-                        )
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E88E5)),
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(38.dp)
+                // 3. 1-Tap Direct UPI App Triggers
+                Text("Select UPI App to Pay ₹$cleanAmount:", color = Color.LightGray, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Text("🚀 Pay via UPI App (PhonePe / GPay / Paytm)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                    // PhonePe Button
+                    Button(
+                        onClick = {
+                            PaymentAndSupportManager.launchUpiPayment(
+                                context = context,
+                                amount = cleanAmount,
+                                packageName = "com.phonepe.app",
+                                onOpened = {
+                                    Toast.makeText(context, "Opening PhonePe... Complete payment and enter UTR below.", Toast.LENGTH_LONG).show()
+                                },
+                                onError = {
+                                    Toast.makeText(context, "PhonePe is not installed on this phone. Please scan QR or try another app.", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5F259F)),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                        modifier = Modifier.weight(1f).height(38.dp)
+                    ) {
+                        Text("PhonePe", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    // Google Pay Button
+                    Button(
+                        onClick = {
+                            PaymentAndSupportManager.launchUpiPayment(
+                                context = context,
+                                amount = cleanAmount,
+                                packageName = "com.google.android.apps.nbu.paisa.user",
+                                onOpened = {
+                                    Toast.makeText(context, "Opening Google Pay... Complete payment and enter UTR below.", Toast.LENGTH_LONG).show()
+                                },
+                                onError = {
+                                    Toast.makeText(context, "Google Pay is not installed on this phone. Please scan QR or try another app.", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A73E8)),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                        modifier = Modifier.weight(1f).height(38.dp)
+                    ) {
+                        Text("GPay", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    // Paytm Button
+                    Button(
+                        onClick = {
+                            PaymentAndSupportManager.launchUpiPayment(
+                                context = context,
+                                amount = cleanAmount,
+                                packageName = "net.one97.paytm",
+                                onOpened = {
+                                    Toast.makeText(context, "Opening Paytm... Complete payment and enter UTR below.", Toast.LENGTH_LONG).show()
+                                },
+                                onError = {
+                                    Toast.makeText(context, "Paytm is not installed on this phone. Please scan QR or try another app.", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00B9F5)),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                        modifier = Modifier.weight(1f).height(38.dp)
+                    ) {
+                        Text("Paytm", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    // Other UPI Apps Button
+                    Button(
+                        onClick = {
+                            PaymentAndSupportManager.launchUpiPayment(
+                                context = context,
+                                amount = cleanAmount,
+                                onOpened = {
+                                    Toast.makeText(context, "Opening UPI app... Complete payment and enter UTR below.", Toast.LENGTH_LONG).show()
+                                },
+                                onError = {
+                                    Toast.makeText(context, "No UPI app found on this phone. Please scan the QR code above or copy UPI ID!", Toast.LENGTH_LONG).show()
+                                }
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF231B28)),
+                        border = BorderStroke(1.dp, BrandGold),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+                        modifier = Modifier.weight(1f).height(38.dp)
+                    ) {
+                        Text("Other UPI", color = BrandGold, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
 
                 Divider(color = BrandBorder.copy(alpha = 0.4f), thickness = 0.8.dp)
@@ -1719,7 +1837,6 @@ fun CoinStoreTopUpDialog(
                                 .fillMaxWidth()
                                 .clickable {
                                     checkoutPackage = pack
-                                    PaymentAndSupportManager.launchUpiPayment(context, pack.numericPrice)
                                 }
                         ) {
                             Row(
@@ -1763,7 +1880,6 @@ fun CoinStoreTopUpDialog(
                                 Button(
                                     onClick = {
                                         checkoutPackage = pack
-                                        PaymentAndSupportManager.launchUpiPayment(context, pack.numericPrice)
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
                                     shape = RoundedCornerShape(10.dp),
