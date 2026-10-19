@@ -6465,16 +6465,6 @@ private fun DiamondsRechargeSection(
                         onClick = {
                             val pack = APP_COIN_PACKAGES.find { it.id == "pack_149" } ?: APP_COIN_PACKAGES[0]
                             checkoutPackage = pack
-                            PaymentAndSupportManager.launchUpiPayment(
-                                context = context,
-                                amount = "149",
-                                onOpened = {
-                                    Toast.makeText(context, "Opening UPI app... Pay ₹149 and enter 12-digit UTR below.", Toast.LENGTH_LONG).show()
-                                },
-                                onError = { _ ->
-                                    Toast.makeText(context, "Please scan QR code or copy UPI ID below to pay ₹149.", Toast.LENGTH_SHORT).show()
-                                }
-                            )
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
                         shape = RoundedCornerShape(12.dp)
@@ -6539,16 +6529,6 @@ private fun DiamondsRechargeSection(
                         val pack = APP_COIN_PACKAGES.find { it.coins == diamonds }
                             ?: CoinPackageItem("pack_$diamonds", diamonds, price, numAmount, label)
                         checkoutPackage = pack
-                        PaymentAndSupportManager.launchUpiPayment(
-                            context = context,
-                            amount = numAmount,
-                            onOpened = {
-                                Toast.makeText(context, "Opening UPI app... Pay $price and enter 12-digit UTR below.", Toast.LENGTH_LONG).show()
-                            },
-                            onError = { _ ->
-                                Toast.makeText(context, "Please scan QR code or copy UPI ID below to pay $price.", Toast.LENGTH_SHORT).show()
-                            }
-                        )
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
                     shape = RoundedCornerShape(10.dp),
