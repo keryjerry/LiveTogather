@@ -6372,16 +6372,17 @@ private fun DiamondsRechargeSection(
     onRecharge: (Long) -> Unit
 ) {
     val context = LocalContext.current
-    var packageForCheckout by remember { mutableStateOf<CoinPackageItem?>(null) }
+    var showPostPaymentDialog by remember { mutableStateOf(false) }
     var showHelpDesk by remember { mutableStateOf(false) }
+    var selectedPackageToVerify by remember { mutableStateOf<CoinPackageItem?>(null) }
 
-    if (packageForCheckout != null) {
-        UpiPaymentCheckoutModal(
-            currentUser = currentUser,
-            selectedPackage = packageForCheckout!!,
-            onDismiss = { packageForCheckout = null },
-            onSuccess = {
-                packageForCheckout = null
+    if (showPostPaymentDialog) {
+        PostPaymentVerificationDialog(
+            selectedPackage = selectedPackageToVerify,
+            onDismiss = { showPostPaymentDialog = false },
+            onSubmitUtrClick = { pack ->
+                showPostPaymentDialog = false
+                showHelpDesk = true
             }
         )
     }
@@ -6389,7 +6390,7 @@ private fun DiamondsRechargeSection(
     if (showHelpDesk) {
         HelpDeskModal(
             currentUser = currentUser,
-            prefilledPackage = packageForCheckout ?: APP_COIN_PACKAGES[0],
+            prefilledPackage = selectedPackageToVerify ?: APP_COIN_PACKAGES[0],
             onDismiss = { showHelpDesk = false }
         )
     }
@@ -6466,7 +6467,16 @@ private fun DiamondsRechargeSection(
                     Button(
                         onClick = {
                             val pack = APP_COIN_PACKAGES.find { it.id == "pack_149" } ?: APP_COIN_PACKAGES[0]
-                            packageForCheckout = pack
+                            selectedPackageToVerify = pack
+                            PaymentAndSupportManager.launchUpiPayment(
+                                context = context,
+                                amount = "149",
+                                onOpened = { showPostPaymentDialog = true },
+                                onError = { err ->
+                                    Toast.makeText(context, "No UPI app found. You can submit payment via Help Desk.", Toast.LENGTH_LONG).show()
+                                    showHelpDesk = true
+                                }
+                            )
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
                         shape = RoundedCornerShape(12.dp)
@@ -6530,7 +6540,16 @@ private fun DiamondsRechargeSection(
                         val numAmount = price.replace("₹", "").trim()
                         val pack = APP_COIN_PACKAGES.find { it.coins == diamonds }
                             ?: CoinPackageItem("pack_$diamonds", diamonds, price, numAmount, label)
-                        packageForCheckout = pack
+                        selectedPackageToVerify = pack
+                        PaymentAndSupportManager.launchUpiPayment(
+                            context = context,
+                            amount = numAmount,
+                            onOpened = { showPostPaymentDialog = true },
+                            onError = { err ->
+                                Toast.makeText(context, "No UPI app found. You can submit payment via Help Desk.", Toast.LENGTH_LONG).show()
+                                showHelpDesk = true
+                            }
+                        )
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
                     shape = RoundedCornerShape(10.dp),
@@ -6554,7 +6573,7 @@ private fun DiamondsRechargeSection(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable {
-                    packageForCheckout = APP_COIN_PACKAGES[0]
+                    selectedPackageToVerify = APP_COIN_PACKAGES[0]
                     showHelpDesk = true
                 }
         ) {

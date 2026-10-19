@@ -115,30 +115,13 @@ object PaymentAndSupportManager {
                 .build()
 
             val intent = Intent(Intent.ACTION_VIEW, upiUri)
-            val pm = context.packageManager
-            val canHandle = try {
-                val resolveInfo = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                    pm.queryIntentActivities(
-                        intent,
-                        android.content.pm.PackageManager.ResolveInfoFlags.of(android.content.pm.PackageManager.MATCH_DEFAULT_ONLY.toLong())
-                    )
-                } else {
-                    @Suppress("DEPRECATION")
-                    pm.queryIntentActivities(intent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
-                }
-                resolveInfo.isNotEmpty()
-            } catch (e: Exception) {
-                false
-            }
-
-            if (canHandle) {
-                val chooser = Intent.createChooser(intent, "Pay ₹$cleanAmount via UPI")
-                chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                context.startActivity(chooser)
-                onOpened()
-            } else {
-                onError("NO_UPI_APP")
-            }
+            val chooser = Intent.createChooser(intent, "Pay ₹$cleanAmount via UPI")
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(chooser)
+            onOpened()
+        } catch (e: android.content.ActivityNotFoundException) {
+            android.util.Log.e("UPI", "No UPI App found: ${e.message}", e)
+            onError("NO_UPI_APP")
         } catch (e: Exception) {
             android.util.Log.e("UPI", "Launch error: ${e.message}", e)
             onError(e.localizedMessage ?: "No supported UPI payment app found")
@@ -300,6 +283,7 @@ fun PostPaymentVerificationDialog(
     onDismiss: () -> Unit,
     onSubmitUtrClick: (CoinPackageItem?) -> Unit
 ) {
+    val context = LocalContext.current
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(dismissOnBackPress = true, dismissOnClickOutside = true)
@@ -377,6 +361,38 @@ fun PostPaymentVerificationDialog(
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.ExtraBold
                             )
+                        }
+                    }
+                }
+
+                // Official UPI ID Copy Strip
+                Surface(
+                    color = BrandDark,
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.5f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("Official UPI ID", color = Color.Gray, fontSize = 9.sp)
+                            Text("warsi.1@ptaxis", color = BrandGold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                        IconButton(
+                            onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                val clip = ClipData.newPlainText("UPI ID", "warsi.1@ptaxis")
+                                clipboard.setPrimaryClip(clip)
+                                Toast.makeText(context, "UPI ID copied: warsi.1@ptaxis 📋", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy UPI ID", tint = BrandGold, modifier = Modifier.size(15.dp))
                         }
                     }
                 }
@@ -1600,16 +1616,22 @@ fun CoinStoreTopUpDialog(
     onOpenHelpDeskWithPackage: (CoinPackageItem) -> Unit
 ) {
     val context = LocalContext.current
-    var packageForCheckout by remember { mutableStateOf<CoinPackageItem?>(null) }
+    var selectedPackageToVerify by remember { mutableStateOf<CoinPackageItem?>(null) }
+    var showPostPaymentDialog by remember { mutableStateOf(false) }
 
-    if (packageForCheckout != null) {
-        UpiPaymentCheckoutModal(
-            currentUser = currentUser,
-            selectedPackage = packageForCheckout!!,
-            onDismiss = { packageForCheckout = null },
-            onSuccess = {
-                packageForCheckout = null
+    if (showPostPaymentDialog) {
+        PostPaymentVerificationDialog(
+            selectedPackage = selectedPackageToVerify,
+            onDismiss = {
+                showPostPaymentDialog = false
                 onDismiss()
+            },
+            onSubmitUtrClick = { pack ->
+                showPostPaymentDialog = false
+                onDismiss()
+                if (pack != null) {
+                    onOpenHelpDeskWithPackage(pack)
+                }
             }
         )
     }
@@ -1725,7 +1747,19 @@ fun CoinStoreTopUpDialog(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    packageForCheckout = pack
+                                    selectedPackageToVerify = pack
+                                    PaymentAndSupportManager.launchUpiPayment(
+                                        context = context,
+                                        amount = pack.numericPrice,
+                                        onOpened = {
+                                            showPostPaymentDialog = true
+                                        },
+                                        onError = { err ->
+                                            Toast.makeText(context, "No UPI app found. You can submit payment in Help Desk.", Toast.LENGTH_LONG).show()
+                                            onDismiss()
+                                            onOpenHelpDeskWithPackage(pack)
+                                        }
+                                    )
                                 }
                         ) {
                             Row(
@@ -1768,7 +1802,19 @@ fun CoinStoreTopUpDialog(
 
                                 Button(
                                     onClick = {
-                                        packageForCheckout = pack
+                                        selectedPackageToVerify = pack
+                                        PaymentAndSupportManager.launchUpiPayment(
+                                            context = context,
+                                            amount = pack.numericPrice,
+                                            onOpened = {
+                                                showPostPaymentDialog = true
+                                            },
+                                            onError = { err ->
+                                                Toast.makeText(context, "No UPI app found. You can submit payment in Help Desk.", Toast.LENGTH_LONG).show()
+                                                onDismiss()
+                                                onOpenHelpDeskWithPackage(pack)
+                                            }
+                                        )
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
                                     shape = RoundedCornerShape(10.dp),
