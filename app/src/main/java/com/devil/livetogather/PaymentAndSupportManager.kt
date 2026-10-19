@@ -103,7 +103,7 @@ object PaymentAndSupportManager {
         amount: String,
         onOpened: () -> Unit = {},
         onError: (String) -> Unit = {}
-    ) {
+    ): Boolean {
         try {
             val cleanAmount = amount.replace("₹", "").trim()
             val upiUri = Uri.parse("upi://pay").buildUpon()
@@ -114,17 +114,31 @@ object PaymentAndSupportManager {
                 .appendQueryParameter("cu", "INR")
                 .build()
 
-            val intent = Intent(Intent.ACTION_VIEW, upiUri)
-            val chooser = Intent.createChooser(intent, "Pay ₹$cleanAmount via UPI")
-            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(chooser)
-            onOpened()
-        } catch (e: android.content.ActivityNotFoundException) {
-            android.util.Log.e("UPI", "No UPI App found: ${e.message}", e)
-            onError("NO_UPI_APP")
+            val intent = Intent(Intent.ACTION_VIEW, upiUri).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            val pm = context.packageManager
+            val canHandle = try {
+                pm.queryIntentActivities(intent, 0).isNotEmpty()
+            } catch (e: Exception) {
+                false
+            }
+
+            if (canHandle) {
+                val chooser = Intent.createChooser(intent, "Pay ₹$cleanAmount via UPI")
+                chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(chooser)
+                onOpened()
+                return true
+            } else {
+                onError("NO_UPI_APP")
+                return false
+            }
         } catch (e: Exception) {
             android.util.Log.e("UPI", "Launch error: ${e.message}", e)
-            onError(e.localizedMessage ?: "No supported UPI payment app found")
+            onError(e.localizedMessage ?: "NO_UPI_APP")
+            return false
         }
     }
 
@@ -1028,6 +1042,58 @@ fun HelpDeskModal(
                                 }
                             }
 
+                            var showQrCodeInHelpDesk by remember { mutableStateOf(false) }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (showQrCodeInHelpDesk) "📷 Scan to Pay via GPay / PhonePe / Paytm" else "💡 Scan QR with any phone to pay",
+                                    color = Color.LightGray,
+                                    fontSize = 11.sp
+                                )
+                                TextButton(
+                                    onClick = { showQrCodeInHelpDesk = !showQrCodeInHelpDesk },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = if (showQrCodeInHelpDesk) "Hide QR" else "Show QR Code 📲",
+                                        color = BrandGold,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
+                            if (showQrCodeInHelpDesk) {
+                                val cleanPrice = selectedPackage.numericPrice.ifBlank { selectedPackage.priceInr.replace("₹", "").trim() }
+                                val qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=" +
+                                    Uri.encode("upi://pay?pa=warsi.1@ptaxis&pn=LiveTogether&am=$cleanPrice&cu=INR&tn=LiveTogether%20Coins")
+                                Column(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    AsyncImage(
+                                        model = qrUrl,
+                                        contentDescription = "Scan to Pay ${selectedPackage.priceInr}",
+                                        modifier = Modifier
+                                            .size(140.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(Color.White)
+                                            .padding(6.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "Scan with Google Pay, PhonePe, Paytm or BHIM on any phone",
+                                        color = Color.LightGray,
+                                        fontSize = 10.sp,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+
                             // 12-Digit UTR Input Field
                             OutlinedTextField(
                                 value = utrInput,
@@ -1748,18 +1814,22 @@ fun CoinStoreTopUpDialog(
                                 .fillMaxWidth()
                                 .clickable {
                                     selectedPackageToVerify = pack
-                                    PaymentAndSupportManager.launchUpiPayment(
+                                    val opened = PaymentAndSupportManager.launchUpiPayment(
                                         context = context,
                                         amount = pack.numericPrice,
                                         onOpened = {
-                                            showPostPaymentDialog = true
+                                            Toast.makeText(context, "Opening UPI app... After paying, submit 12-digit UTR in Help Desk.", Toast.LENGTH_LONG).show()
                                         },
-                                        onError = { err ->
-                                            Toast.makeText(context, "No UPI app found. You can submit payment in Help Desk.", Toast.LENGTH_LONG).show()
+                                        onError = { _ ->
+                                            Toast.makeText(context, "No UPI payment app on this phone. Please scan QR or copy UPI ID in Help Desk to pay!", Toast.LENGTH_LONG).show()
                                             onDismiss()
                                             onOpenHelpDeskWithPackage(pack)
                                         }
                                     )
+                                    if (!opened) {
+                                        onDismiss()
+                                        onOpenHelpDeskWithPackage(pack)
+                                    }
                                 }
                         ) {
                             Row(
@@ -1803,18 +1873,22 @@ fun CoinStoreTopUpDialog(
                                 Button(
                                     onClick = {
                                         selectedPackageToVerify = pack
-                                        PaymentAndSupportManager.launchUpiPayment(
+                                        val opened = PaymentAndSupportManager.launchUpiPayment(
                                             context = context,
                                             amount = pack.numericPrice,
                                             onOpened = {
-                                                showPostPaymentDialog = true
+                                                Toast.makeText(context, "Opening UPI app... After paying, submit 12-digit UTR in Help Desk.", Toast.LENGTH_LONG).show()
                                             },
-                                            onError = { err ->
-                                                Toast.makeText(context, "No UPI app found. You can submit payment in Help Desk.", Toast.LENGTH_LONG).show()
+                                            onError = { _ ->
+                                                Toast.makeText(context, "No UPI payment app on this phone. Please scan QR or copy UPI ID in Help Desk to pay!", Toast.LENGTH_LONG).show()
                                                 onDismiss()
                                                 onOpenHelpDeskWithPackage(pack)
                                             }
                                         )
+                                        if (!opened) {
+                                            onDismiss()
+                                            onOpenHelpDeskWithPackage(pack)
+                                        }
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
                                     shape = RoundedCornerShape(10.dp),

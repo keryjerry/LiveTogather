@@ -6468,15 +6468,20 @@ private fun DiamondsRechargeSection(
                         onClick = {
                             val pack = APP_COIN_PACKAGES.find { it.id == "pack_149" } ?: APP_COIN_PACKAGES[0]
                             selectedPackageToVerify = pack
-                            PaymentAndSupportManager.launchUpiPayment(
+                            val opened = PaymentAndSupportManager.launchUpiPayment(
                                 context = context,
                                 amount = "149",
-                                onOpened = { showPostPaymentDialog = true },
-                                onError = { err ->
-                                    Toast.makeText(context, "No UPI app found. You can submit payment via Help Desk.", Toast.LENGTH_LONG).show()
+                                onOpened = {
+                                    Toast.makeText(context, "Opening UPI app... After paying, submit 12-digit UTR in Help Desk below.", Toast.LENGTH_LONG).show()
+                                },
+                                onError = { _ ->
+                                    Toast.makeText(context, "No UPI payment app on this phone. Please scan QR or copy UPI ID to pay!", Toast.LENGTH_LONG).show()
                                     showHelpDesk = true
                                 }
                             )
+                            if (!opened) {
+                                showHelpDesk = true
+                            }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
                         shape = RoundedCornerShape(12.dp)
@@ -6541,15 +6546,20 @@ private fun DiamondsRechargeSection(
                         val pack = APP_COIN_PACKAGES.find { it.coins == diamonds }
                             ?: CoinPackageItem("pack_$diamonds", diamonds, price, numAmount, label)
                         selectedPackageToVerify = pack
-                        PaymentAndSupportManager.launchUpiPayment(
+                        val opened = PaymentAndSupportManager.launchUpiPayment(
                             context = context,
                             amount = numAmount,
-                            onOpened = { showPostPaymentDialog = true },
-                            onError = { err ->
-                                Toast.makeText(context, "No UPI app found. You can submit payment via Help Desk.", Toast.LENGTH_LONG).show()
+                            onOpened = {
+                                Toast.makeText(context, "Opening UPI app... After paying, submit 12-digit UTR in Help Desk below.", Toast.LENGTH_LONG).show()
+                            },
+                            onError = { _ ->
+                                Toast.makeText(context, "No UPI payment app on this phone. Please scan QR or copy UPI ID to pay!", Toast.LENGTH_LONG).show()
                                 showHelpDesk = true
                             }
                         )
+                        if (!opened) {
+                            showHelpDesk = true
+                        }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
                     shape = RoundedCornerShape(10.dp),
