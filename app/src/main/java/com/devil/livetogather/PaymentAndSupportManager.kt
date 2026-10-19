@@ -13,9 +13,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -23,6 +25,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import coil.compose.AsyncImage
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -139,6 +142,42 @@ object PaymentAndSupportManager {
         } catch (e: Exception) {
             android.util.Log.e("UPI", "Launch error: ${e.message}", e)
             onError(e.localizedMessage ?: "No supported UPI payment app found")
+        }
+    }
+
+    /**
+     * Launches a specific UPI App (PhonePe, Google Pay, Paytm) directly or generic chooser.
+     */
+    fun launchSpecificUpiApp(
+        context: Context,
+        amount: String,
+        packageName: String?,
+        onOpened: () -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        try {
+            val cleanAmount = amount.replace("₹", "").trim()
+            val upiUri = Uri.parse("upi://pay").buildUpon()
+                .appendQueryParameter("pa", "warsi.1@ptaxis")
+                .appendQueryParameter("pn", "LiveTogether")
+                .appendQueryParameter("tn", "LiveTogether Coins")
+                .appendQueryParameter("am", cleanAmount)
+                .appendQueryParameter("cu", "INR")
+                .build()
+
+            val intent = Intent(Intent.ACTION_VIEW, upiUri).apply {
+                if (!packageName.isNullOrBlank()) {
+                    setPackage(packageName)
+                }
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            onOpened()
+        } catch (e: android.content.ActivityNotFoundException) {
+            onError("APP_NOT_INSTALLED")
+        } catch (e: Exception) {
+            android.util.Log.e("UPI", "Launch error: ${e.message}", e)
+            onError(e.localizedMessage ?: "Failed to open payment app")
         }
     }
 
@@ -368,6 +407,355 @@ fun PostPaymentVerificationDialog(
                         Text("Submit UTR ➔", color = BrandDark, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Complete, self-contained UPI Payment Checkout Modal.
+ * Provides One-Tap UPI App triggers (PhonePe, GPay, Paytm, Any UPI),
+ * Copyable official UPI ID (warsi.1@ptaxis), dynamic QR code, and
+ * direct 12-digit UTR submission into Firestore 'payment_requests'.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun UpiPaymentCheckoutModal(
+    currentUser: UserProfile,
+    selectedPackage: CoinPackageItem,
+    onDismiss: () -> Unit,
+    onSuccess: () -> Unit = {}
+) {
+    val context = LocalContext.current
+    var utrInput by remember { mutableStateOf("") }
+    var isSubmitting by remember { mutableStateOf(false) }
+    var showQrCode by remember { mutableStateOf(false) }
+    val cleanAmount = selectedPackage.numericPrice.ifBlank { selectedPackage.priceInr.replace("₹", "").trim() }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.94f)
+                .fillMaxHeight(0.92f),
+            shape = RoundedCornerShape(24.dp),
+            color = BrandDark,
+            border = BorderStroke(1.5.dp, BrandGold)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "UPI Payment Checkout",
+                            color = Color.White,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "User ID: #${currentUser.userId.ifBlank { currentUser.uid.take(6) }}",
+                            color = BrandGold,
+                            fontSize = 11.sp
+                        )
+                    }
+
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .size(32.dp)
+                            .background(BrandCard, CircleShape)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(16.dp))
+                    }
+                }
+
+                // Package Details Card
+                Surface(
+                    color = BrandCard,
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.5f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("💎", fontSize = 24.sp)
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "%,d Diamonds".format(selectedPackage.coins),
+                                    color = Color.White,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = selectedPackage.title,
+                                    color = Color.Gray,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = selectedPackage.priceInr,
+                            color = BrandGold,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                }
+
+                // 1. One-Tap UPI Apps
+                Text(
+                    text = "1. Pay with Installed UPI App",
+                    color = Color.LightGray,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                val upiApps = listOf(
+                    Triple("PhonePe", "com.phonepe.app", Color(0xFF5F259F)),
+                    Triple("Google Pay", "com.google.android.apps.nbu.paisa.user", Color(0xFF1A73E8)),
+                    Triple("Paytm", "net.one97.paytm", Color(0xFF00B9F5)),
+                    Triple("Other UPI", null, Color(0xFFF57C00))
+                )
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        upiApps.take(2).forEach { (name, pkg, col) ->
+                            Button(
+                                onClick = {
+                                    PaymentAndSupportManager.launchSpecificUpiApp(
+                                        context = context,
+                                        amount = cleanAmount,
+                                        packageName = pkg,
+                                        onOpened = {
+                                            Toast.makeText(context, "Opening $name... Complete payment and enter 12-digit UTR below.", Toast.LENGTH_LONG).show()
+                                        },
+                                        onError = {
+                                            Toast.makeText(context, "$name is not installed. You can copy the UPI ID or scan QR code below!", Toast.LENGTH_LONG).show()
+                                        }
+                                    )
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = col),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f).height(40.dp)
+                            ) {
+                                Text(name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        upiApps.drop(2).forEach { (name, pkg, col) ->
+                            Button(
+                                onClick = {
+                                    PaymentAndSupportManager.launchSpecificUpiApp(
+                                        context = context,
+                                        amount = cleanAmount,
+                                        packageName = pkg,
+                                        onOpened = {
+                                            Toast.makeText(context, "Opening $name... Complete payment and enter 12-digit UTR below.", Toast.LENGTH_LONG).show()
+                                        },
+                                        onError = {
+                                            Toast.makeText(context, "$name is not installed. You can copy the UPI ID or scan QR code below!", Toast.LENGTH_LONG).show()
+                                        }
+                                    )
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = col),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f).height(40.dp)
+                            ) {
+                                Text(name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+
+                // 2. Direct Transfer / QR Code
+                Text(
+                    text = "2. Or Pay via UPI ID / QR Code",
+                    color = Color.LightGray,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                Surface(
+                    color = BrandCard,
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, BrandBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("Official UPI ID", color = Color.Gray, fontSize = 10.sp)
+                                Text("warsi.1@ptaxis", color = BrandGold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Button(
+                                onClick = {
+                                    val cb = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    cb.setPrimaryClip(ClipData.newPlainText("UPI ID", "warsi.1@ptaxis"))
+                                    Toast.makeText(context, "UPI ID copied: warsi.1@ptaxis", Toast.LENGTH_SHORT).show()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.height(30.dp)
+                            ) {
+                                Text("Copy UPI", color = BrandDark, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        // QR Code Toggle
+                        OutlinedButton(
+                            onClick = { showQrCode = !showQrCode },
+                            border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.5f)),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth().height(34.dp)
+                        ) {
+                            Text(
+                                text = if (showQrCode) "▲ Hide QR Code" else "▼ Show QR Code (Scan to Pay ₹$cleanAmount)",
+                                color = BrandGold,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        if (showQrCode) {
+                            val qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=" +
+                                Uri.encode("upi://pay?pa=warsi.1@ptaxis&pn=LiveTogether&am=$cleanAmount&cu=INR&tn=LiveTogether%20Coins")
+                            Column(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                AsyncImage(
+                                    model = qrUrl,
+                                    contentDescription = "Scan to Pay ₹$cleanAmount",
+                                    modifier = Modifier
+                                        .size(150.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color.White)
+                                        .padding(6.dp)
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Scan with any UPI app on any phone to pay ₹$cleanAmount",
+                                    color = Color.LightGray,
+                                    fontSize = 10.sp,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // 3. Step 2: 12-Digit UTR Verification
+                Text(
+                    text = "3. Enter 12-Digit UTR to Add Coins",
+                    color = Color.LightGray,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                OutlinedTextField(
+                    value = utrInput,
+                    onValueChange = { if (it.length <= 12) utrInput = it.filter { c -> c.isDigit() } },
+                    label = { Text("12-Digit UTR / UPI Ref (e.g. 4238xxxxxxxx)", fontSize = 11.sp) },
+                    placeholder = { Text("Enter 12 digits from receipt", fontSize = 11.sp) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = BrandGold,
+                        unfocusedBorderColor = BrandBorder,
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                Button(
+                    onClick = {
+                        val trimmed = utrInput.trim()
+                        if (trimmed.length < 10) {
+                            Toast.makeText(context, "Please enter a valid 12-digit UTR number from your payment receipt!", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        isSubmitting = true
+                        PaymentAndSupportManager.submitPaymentVerificationRequest(
+                            userId = currentUser.uid,
+                            userNumericId = currentUser.userId.ifBlank { currentUser.uid.take(6) },
+                            userName = currentUser.name,
+                            utrNumber = trimmed,
+                            packCoins = selectedPackage.coins,
+                            packAmount = selectedPackage.priceInr,
+                            onSuccess = {
+                                isSubmitting = false
+                                Toast.makeText(context, "✅ UTR #$trimmed submitted successfully! Coins will be credited to your account.", Toast.LENGTH_LONG).show()
+                                onSuccess()
+                                onDismiss()
+                            },
+                            onFailure = { err ->
+                                isSubmitting = false
+                                Toast.makeText(context, "Submission error: $err", Toast.LENGTH_LONG).show()
+                            }
+                        )
+                    },
+                    enabled = !isSubmitting,
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().height(46.dp)
+                ) {
+                    if (isSubmitting) {
+                        CircularProgressIndicator(color = BrandDark, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text(
+                            text = "Verify & Credit %,d Diamonds 💎".format(selectedPackage.coins),
+                            color = BrandDark,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+
+                Text(
+                    text = "🔒 100% Secure • Official Account: warsi.1@ptaxis • Live Firestore Sync",
+                    color = Color.Gray,
+                    fontSize = 9.5.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
     }
@@ -1212,22 +1600,16 @@ fun CoinStoreTopUpDialog(
     onOpenHelpDeskWithPackage: (CoinPackageItem) -> Unit
 ) {
     val context = LocalContext.current
-    var selectedPackageToVerify by remember { mutableStateOf<CoinPackageItem?>(null) }
-    var showPostPaymentDialog by remember { mutableStateOf(false) }
+    var packageForCheckout by remember { mutableStateOf<CoinPackageItem?>(null) }
 
-    if (showPostPaymentDialog) {
-        PostPaymentVerificationDialog(
-            selectedPackage = selectedPackageToVerify,
-            onDismiss = {
-                showPostPaymentDialog = false
+    if (packageForCheckout != null) {
+        UpiPaymentCheckoutModal(
+            currentUser = currentUser,
+            selectedPackage = packageForCheckout!!,
+            onDismiss = { packageForCheckout = null },
+            onSuccess = {
+                packageForCheckout = null
                 onDismiss()
-            },
-            onSubmitUtrClick = { pack ->
-                showPostPaymentDialog = false
-                onDismiss()
-                if (pack != null) {
-                    onOpenHelpDeskWithPackage(pack)
-                }
             }
         )
     }
@@ -1343,23 +1725,7 @@ fun CoinStoreTopUpDialog(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    selectedPackageToVerify = pack
-                                    PaymentAndSupportManager.launchUpiPayment(
-                                        context = context,
-                                        amount = pack.numericPrice,
-                                        onOpened = {
-                                            Toast.makeText(context, "Opening UPI app... Submit 12-digit UTR in Help Desk after payment", Toast.LENGTH_LONG).show()
-                                        },
-                                        onError = { err ->
-                                            if (err == "NO_UPI_APP") {
-                                                Toast.makeText(context, "No UPI app found. Please copy UPI ID & pay via any UPI app!", Toast.LENGTH_LONG).show()
-                                                onDismiss()
-                                                onOpenHelpDeskWithPackage(pack)
-                                            } else {
-                                                Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    )
+                                    packageForCheckout = pack
                                 }
                         ) {
                             Row(
@@ -1402,23 +1768,7 @@ fun CoinStoreTopUpDialog(
 
                                 Button(
                                     onClick = {
-                                        selectedPackageToVerify = pack
-                                        PaymentAndSupportManager.launchUpiPayment(
-                                            context = context,
-                                            amount = pack.numericPrice,
-                                            onOpened = {
-                                                Toast.makeText(context, "Opening UPI app... Submit 12-digit UTR in Help Desk after payment", Toast.LENGTH_LONG).show()
-                                            },
-                                            onError = { err ->
-                                                if (err == "NO_UPI_APP") {
-                                                    Toast.makeText(context, "No UPI app found. Please copy UPI ID & pay via any UPI app!", Toast.LENGTH_LONG).show()
-                                                    onDismiss()
-                                                    onOpenHelpDeskWithPackage(pack)
-                                                } else {
-                                                    Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
-                                                }
-                                            }
-                                        )
+                                        packageForCheckout = pack
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
                                     shape = RoundedCornerShape(10.dp),
