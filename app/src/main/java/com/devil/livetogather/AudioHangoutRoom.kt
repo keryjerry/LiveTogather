@@ -6372,25 +6372,22 @@ private fun DiamondsRechargeSection(
     onRecharge: (Long) -> Unit
 ) {
     val context = LocalContext.current
-    var showPostPaymentDialog by remember { mutableStateOf(false) }
+    var checkoutPackage by remember { mutableStateOf<CoinPackageItem?>(null) }
     var showHelpDesk by remember { mutableStateOf(false) }
-    var selectedPackageToVerify by remember { mutableStateOf<CoinPackageItem?>(null) }
 
-    if (showPostPaymentDialog) {
-        PostPaymentVerificationDialog(
-            selectedPackage = selectedPackageToVerify,
-            onDismiss = { showPostPaymentDialog = false },
-            onSubmitUtrClick = { pack ->
-                showPostPaymentDialog = false
-                showHelpDesk = true
-            }
+    if (checkoutPackage != null) {
+        UpiPaymentCheckoutModal(
+            currentUser = currentUser,
+            selectedPackage = checkoutPackage!!,
+            onDismiss = { checkoutPackage = null },
+            onSuccess = { checkoutPackage = null }
         )
     }
 
     if (showHelpDesk) {
         HelpDeskModal(
             currentUser = currentUser,
-            prefilledPackage = selectedPackageToVerify ?: APP_COIN_PACKAGES[0],
+            prefilledPackage = checkoutPackage ?: APP_COIN_PACKAGES[0],
             onDismiss = { showHelpDesk = false }
         )
     }
@@ -6467,21 +6464,17 @@ private fun DiamondsRechargeSection(
                     Button(
                         onClick = {
                             val pack = APP_COIN_PACKAGES.find { it.id == "pack_149" } ?: APP_COIN_PACKAGES[0]
-                            selectedPackageToVerify = pack
-                            val opened = PaymentAndSupportManager.launchUpiPayment(
+                            checkoutPackage = pack
+                            PaymentAndSupportManager.launchUpiPayment(
                                 context = context,
                                 amount = "149",
                                 onOpened = {
-                                    Toast.makeText(context, "Opening UPI app... After paying, submit 12-digit UTR in Help Desk below.", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(context, "Opening UPI app... Pay ₹149 and enter 12-digit UTR below.", Toast.LENGTH_LONG).show()
                                 },
                                 onError = { _ ->
-                                    Toast.makeText(context, "No UPI payment app on this phone. Please scan QR or copy UPI ID to pay!", Toast.LENGTH_LONG).show()
-                                    showHelpDesk = true
+                                    Toast.makeText(context, "Please scan QR code or copy UPI ID below to pay ₹149.", Toast.LENGTH_SHORT).show()
                                 }
                             )
-                            if (!opened) {
-                                showHelpDesk = true
-                            }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
                         shape = RoundedCornerShape(12.dp)
@@ -6545,21 +6538,17 @@ private fun DiamondsRechargeSection(
                         val numAmount = price.replace("₹", "").trim()
                         val pack = APP_COIN_PACKAGES.find { it.coins == diamonds }
                             ?: CoinPackageItem("pack_$diamonds", diamonds, price, numAmount, label)
-                        selectedPackageToVerify = pack
-                        val opened = PaymentAndSupportManager.launchUpiPayment(
+                        checkoutPackage = pack
+                        PaymentAndSupportManager.launchUpiPayment(
                             context = context,
                             amount = numAmount,
                             onOpened = {
-                                Toast.makeText(context, "Opening UPI app... After paying, submit 12-digit UTR in Help Desk below.", Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, "Opening UPI app... Pay $price and enter 12-digit UTR below.", Toast.LENGTH_LONG).show()
                             },
                             onError = { _ ->
-                                Toast.makeText(context, "No UPI payment app on this phone. Please scan QR or copy UPI ID to pay!", Toast.LENGTH_LONG).show()
-                                showHelpDesk = true
+                                Toast.makeText(context, "Please scan QR code or copy UPI ID below to pay $price.", Toast.LENGTH_SHORT).show()
                             }
                         )
-                        if (!opened) {
-                            showHelpDesk = true
-                        }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
                     shape = RoundedCornerShape(10.dp),
@@ -6583,7 +6572,7 @@ private fun DiamondsRechargeSection(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable {
-                    selectedPackageToVerify = APP_COIN_PACKAGES[0]
+                    checkoutPackage = APP_COIN_PACKAGES[0]
                     showHelpDesk = true
                 }
         ) {

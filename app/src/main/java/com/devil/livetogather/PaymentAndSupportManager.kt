@@ -94,47 +94,62 @@ object PaymentAndSupportManager {
      * Triggers the native Android UPI Intent Chooser with deep-link:
      * pa: "warsi.1@ptaxis"
      * pn: "LiveTogether"
+     * mc: "5411"
+     * tr: unique transaction reference
      * tn: "LiveTogether Coins"
-     * am: package price
+     * am: package price formatted with 2 decimal places
      * cu: "INR"
      */
     fun launchUpiPayment(
         context: Context,
         amount: String,
+        packageName: String? = null,
         onOpened: () -> Unit = {},
         onError: (String) -> Unit = {}
     ): Boolean {
         try {
             val cleanAmount = amount.replace("₹", "").trim()
+            val formattedAmount = try {
+                "%.2f".format(Locale.US, cleanAmount.toDouble())
+            } catch (e: Exception) {
+                cleanAmount
+            }
+            val trRef = "LT" + System.currentTimeMillis()
+
             val upiUri = Uri.parse("upi://pay").buildUpon()
                 .appendQueryParameter("pa", "warsi.1@ptaxis")
                 .appendQueryParameter("pn", "LiveTogether")
+                .appendQueryParameter("mc", "5411")
+                .appendQueryParameter("tr", trRef)
                 .appendQueryParameter("tn", "LiveTogether Coins")
-                .appendQueryParameter("am", cleanAmount)
+                .appendQueryParameter("am", formattedAmount)
                 .appendQueryParameter("cu", "INR")
                 .build()
 
-            val intent = Intent(Intent.ACTION_VIEW, upiUri).apply {
+            // 1. If a specific package was requested (PhonePe, GPay, Paytm)
+            if (!packageName.isNullOrBlank()) {
+                try {
+                    val appIntent = Intent(Intent.ACTION_VIEW, upiUri).apply {
+                        setPackage(packageName)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(appIntent)
+                    onOpened()
+                    return true
+                } catch (e: Exception) {
+                    android.util.Log.w("UPI", "Direct package $packageName launch failed, falling back to universal chooser: ${e.message}")
+                    // Fall through to universal chooser below
+                }
+            }
+
+            // 2. Universal UPI Chooser (shows all installed UPI apps with icons & names)
+            val baseIntent = Intent(Intent.ACTION_VIEW, upiUri)
+            val chooser = Intent.createChooser(baseIntent, "Pay ₹$cleanAmount via UPI").apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-
-            val pm = context.packageManager
-            val canHandle = try {
-                pm.queryIntentActivities(intent, 0).isNotEmpty()
-            } catch (e: Exception) {
-                false
-            }
-
-            if (canHandle) {
-                val chooser = Intent.createChooser(intent, "Pay ₹$cleanAmount via UPI")
-                chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                context.startActivity(chooser)
-                onOpened()
-                return true
-            } else {
-                onError("NO_UPI_APP")
-                return false
-            }
+            context.startActivity(chooser)
+            onOpened()
+            return true
         } catch (e: Exception) {
             android.util.Log.e("UPI", "Launch error: ${e.message}", e)
             onError(e.localizedMessage ?: "NO_UPI_APP")
@@ -143,7 +158,7 @@ object PaymentAndSupportManager {
     }
 
     /**
-     * Launches a specific UPI App (PhonePe, Google Pay, Paytm) directly or generic chooser.
+     * Launches a specific UPI App (PhonePe, Google Pay, Paytm) directly or falls back to generic chooser.
      */
     fun launchSpecificUpiApp(
         context: Context,
@@ -152,30 +167,13 @@ object PaymentAndSupportManager {
         onOpened: () -> Unit = {},
         onError: (String) -> Unit = {}
     ) {
-        try {
-            val cleanAmount = amount.replace("₹", "").trim()
-            val upiUri = Uri.parse("upi://pay").buildUpon()
-                .appendQueryParameter("pa", "warsi.1@ptaxis")
-                .appendQueryParameter("pn", "LiveTogether")
-                .appendQueryParameter("tn", "LiveTogether Coins")
-                .appendQueryParameter("am", cleanAmount)
-                .appendQueryParameter("cu", "INR")
-                .build()
-
-            val intent = Intent(Intent.ACTION_VIEW, upiUri).apply {
-                if (!packageName.isNullOrBlank()) {
-                    setPackage(packageName)
-                }
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(intent)
-            onOpened()
-        } catch (e: android.content.ActivityNotFoundException) {
-            onError("APP_NOT_INSTALLED")
-        } catch (e: Exception) {
-            android.util.Log.e("UPI", "Launch error: ${e.message}", e)
-            onError(e.localizedMessage ?: "Failed to open payment app")
-        }
+        launchUpiPayment(
+            context = context,
+            amount = amount,
+            packageName = packageName,
+            onOpened = onOpened,
+            onError = onError
+        )
     }
 
     /**
@@ -459,7 +457,7 @@ fun UpiPaymentCheckoutModal(
     val context = LocalContext.current
     var utrInput by remember { mutableStateOf("") }
     var isSubmitting by remember { mutableStateOf(false) }
-    var showQrCode by remember { mutableStateOf(false) }
+    var showQrCode by remember { mutableStateOf(true) }
     val cleanAmount = selectedPackage.numericPrice.ifBlank { selectedPackage.priceInr.replace("₹", "").trim() }
 
     Dialog(
@@ -564,7 +562,7 @@ fun UpiPaymentCheckoutModal(
                     Triple("PhonePe", "com.phonepe.app", Color(0xFF5F259F)),
                     Triple("Google Pay", "com.google.android.apps.nbu.paisa.user", Color(0xFF1A73E8)),
                     Triple("Paytm", "net.one97.paytm", Color(0xFF00B9F5)),
-                    Triple("Other UPI", null, Color(0xFFF57C00))
+                    Triple("Any UPI App", null, Color(0xFFF57C00))
                 )
 
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -580,10 +578,10 @@ fun UpiPaymentCheckoutModal(
                                         amount = cleanAmount,
                                         packageName = pkg,
                                         onOpened = {
-                                            Toast.makeText(context, "Opening $name... Complete payment and enter 12-digit UTR below.", Toast.LENGTH_LONG).show()
+                                            Toast.makeText(context, "Opening $name... Pay ₹$cleanAmount and enter 12-digit UTR below.", Toast.LENGTH_LONG).show()
                                         },
                                         onError = {
-                                            Toast.makeText(context, "$name is not installed. You can copy the UPI ID or scan QR code below!", Toast.LENGTH_LONG).show()
+                                            Toast.makeText(context, "Please scan QR code or copy UPI ID below to pay ₹$cleanAmount.", Toast.LENGTH_SHORT).show()
                                         }
                                     )
                                 },
@@ -608,10 +606,10 @@ fun UpiPaymentCheckoutModal(
                                         amount = cleanAmount,
                                         packageName = pkg,
                                         onOpened = {
-                                            Toast.makeText(context, "Opening $name... Complete payment and enter 12-digit UTR below.", Toast.LENGTH_LONG).show()
+                                            Toast.makeText(context, "Opening $name... Pay ₹$cleanAmount and enter 12-digit UTR below.", Toast.LENGTH_LONG).show()
                                         },
                                         onError = {
-                                            Toast.makeText(context, "$name is not installed. You can copy the UPI ID or scan QR code below!", Toast.LENGTH_LONG).show()
+                                            Toast.makeText(context, "Please scan QR code or copy UPI ID below to pay ₹$cleanAmount.", Toast.LENGTH_SHORT).show()
                                         }
                                     )
                                 },
@@ -1682,22 +1680,16 @@ fun CoinStoreTopUpDialog(
     onOpenHelpDeskWithPackage: (CoinPackageItem) -> Unit
 ) {
     val context = LocalContext.current
-    var selectedPackageToVerify by remember { mutableStateOf<CoinPackageItem?>(null) }
-    var showPostPaymentDialog by remember { mutableStateOf(false) }
+    var checkoutPackage by remember { mutableStateOf<CoinPackageItem?>(null) }
 
-    if (showPostPaymentDialog) {
-        PostPaymentVerificationDialog(
-            selectedPackage = selectedPackageToVerify,
-            onDismiss = {
-                showPostPaymentDialog = false
+    if (checkoutPackage != null) {
+        UpiPaymentCheckoutModal(
+            currentUser = currentUser,
+            selectedPackage = checkoutPackage!!,
+            onDismiss = { checkoutPackage = null },
+            onSuccess = {
+                checkoutPackage = null
                 onDismiss()
-            },
-            onSubmitUtrClick = { pack ->
-                showPostPaymentDialog = false
-                onDismiss()
-                if (pack != null) {
-                    onOpenHelpDeskWithPackage(pack)
-                }
             }
         )
     }
@@ -1813,23 +1805,17 @@ fun CoinStoreTopUpDialog(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    selectedPackageToVerify = pack
-                                    val opened = PaymentAndSupportManager.launchUpiPayment(
+                                    checkoutPackage = pack
+                                    PaymentAndSupportManager.launchUpiPayment(
                                         context = context,
                                         amount = pack.numericPrice,
                                         onOpened = {
-                                            Toast.makeText(context, "Opening UPI app... After paying, submit 12-digit UTR in Help Desk.", Toast.LENGTH_LONG).show()
+                                            Toast.makeText(context, "Opening UPI app... Pay ${pack.priceInr} and enter 12-digit UTR below.", Toast.LENGTH_LONG).show()
                                         },
-                                        onError = { _ ->
-                                            Toast.makeText(context, "No UPI payment app on this phone. Please scan QR or copy UPI ID in Help Desk to pay!", Toast.LENGTH_LONG).show()
-                                            onDismiss()
-                                            onOpenHelpDeskWithPackage(pack)
+                                        onError = {
+                                            Toast.makeText(context, "Please scan QR code or copy UPI ID below to pay ${pack.priceInr}.", Toast.LENGTH_SHORT).show()
                                         }
                                     )
-                                    if (!opened) {
-                                        onDismiss()
-                                        onOpenHelpDeskWithPackage(pack)
-                                    }
                                 }
                         ) {
                             Row(
@@ -1872,23 +1858,17 @@ fun CoinStoreTopUpDialog(
 
                                 Button(
                                     onClick = {
-                                        selectedPackageToVerify = pack
-                                        val opened = PaymentAndSupportManager.launchUpiPayment(
+                                        checkoutPackage = pack
+                                        PaymentAndSupportManager.launchUpiPayment(
                                             context = context,
                                             amount = pack.numericPrice,
                                             onOpened = {
-                                                Toast.makeText(context, "Opening UPI app... After paying, submit 12-digit UTR in Help Desk.", Toast.LENGTH_LONG).show()
+                                                Toast.makeText(context, "Opening UPI app... Pay ${pack.priceInr} and enter 12-digit UTR below.", Toast.LENGTH_LONG).show()
                                             },
-                                            onError = { _ ->
-                                                Toast.makeText(context, "No UPI payment app on this phone. Please scan QR or copy UPI ID in Help Desk to pay!", Toast.LENGTH_LONG).show()
-                                                onDismiss()
-                                                onOpenHelpDeskWithPackage(pack)
+                                            onError = {
+                                                Toast.makeText(context, "Please scan QR code or copy UPI ID below to pay ${pack.priceInr}.", Toast.LENGTH_SHORT).show()
                                             }
                                         )
-                                        if (!opened) {
-                                            onDismiss()
-                                            onOpenHelpDeskWithPackage(pack)
-                                        }
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
                                     shape = RoundedCornerShape(10.dp),
