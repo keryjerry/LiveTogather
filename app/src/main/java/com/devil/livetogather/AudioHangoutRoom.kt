@@ -6465,6 +6465,7 @@ private fun DiamondsRechargeSection(
                         onClick = {
                             val pack = APP_COIN_PACKAGES.find { it.id == "pack_149" } ?: APP_COIN_PACKAGES[0]
                             checkoutPackage = pack
+                            PaymentAndSupportManager.launchUpiPayment(context, "149")
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
                         shape = RoundedCornerShape(12.dp)
@@ -6529,6 +6530,7 @@ private fun DiamondsRechargeSection(
                         val pack = APP_COIN_PACKAGES.find { it.coins == diamonds }
                             ?: CoinPackageItem("pack_$diamonds", diamonds, price, numAmount, label)
                         checkoutPackage = pack
+                        PaymentAndSupportManager.launchUpiPayment(context, numAmount)
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
                     shape = RoundedCornerShape(10.dp),

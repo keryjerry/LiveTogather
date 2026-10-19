@@ -109,58 +109,21 @@ object PaymentAndSupportManager {
     ): Boolean {
         try {
             val cleanAmount = amount.replace("₹", "").trim()
-            val upiUri = Uri.parse("upi://pay?pa=warsi.1@ptaxis&pn=LiveTogether&am=$cleanAmount&cu=INR&tn=LiveTogether%20Coins")
+            val upiUri = Uri.parse("upi://pay").buildUpon()
+                .appendQueryParameter("pa", "warsi.1@ptaxis")
+                .appendQueryParameter("pn", "LiveTogether")
+                .appendQueryParameter("tn", "LiveTogether Coins")
+                .appendQueryParameter("am", cleanAmount)
+                .appendQueryParameter("cu", "INR")
+                .build()
 
-            val pm = context.packageManager
-            val knownPackages = listOf(
-                "com.phonepe.app",
-                "com.google.android.apps.nbu.paisa.user",
-                "net.one97.paytm",
-                "in.org.npci.upiapp",
-                "com.whatsapp",
-                "in.amazon.mShop.android.shopping"
-            )
-
-            // 1. If a specific package was requested (PhonePe, GPay, Paytm)
+            val intent = Intent(Intent.ACTION_VIEW, upiUri)
             if (!packageName.isNullOrBlank()) {
-                val isPkgInstalled = try {
-                    pm.getPackageInfo(packageName, 0)
-                    true
-                } catch (e: Exception) {
-                    false
-                }
-                if (isPkgInstalled) {
-                    try {
-                        val appIntent = Intent(Intent.ACTION_VIEW, upiUri).apply {
-                            setPackage(packageName)
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        context.startActivity(appIntent)
-                        onOpened()
-                        return true
-                    } catch (e: Exception) {
-                        android.util.Log.w("UPI", "App launch failed: ${e.message}")
-                    }
-                }
+                intent.setPackage(packageName)
             }
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
-            // 2. Check if ANY UPI app is installed on the device before opening chooser
-            val testIntent = Intent(Intent.ACTION_VIEW, upiUri)
-            val hasInstalledApp = try {
-                pm.queryIntentActivities(testIntent, 0).isNotEmpty() ||
-                knownPackages.any { pkg ->
-                    try { pm.getPackageInfo(pkg, 0); true } catch (e: Exception) { false }
-                }
-            } catch (e: Exception) {
-                false
-            }
-
-            if (!hasInstalledApp) {
-                onError("NO_UPI_APP")
-                return false
-            }
-
-            val chooser = Intent.createChooser(testIntent, "Pay ₹$cleanAmount via UPI").apply {
+            val chooser = Intent.createChooser(intent, "Pay ₹$cleanAmount via UPI").apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(chooser)
@@ -1756,6 +1719,7 @@ fun CoinStoreTopUpDialog(
                                 .fillMaxWidth()
                                 .clickable {
                                     checkoutPackage = pack
+                                    PaymentAndSupportManager.launchUpiPayment(context, pack.numericPrice)
                                 }
                         ) {
                             Row(
@@ -1799,6 +1763,7 @@ fun CoinStoreTopUpDialog(
                                 Button(
                                     onClick = {
                                         checkoutPackage = pack
+                                        PaymentAndSupportManager.launchUpiPayment(context, pack.numericPrice)
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
                                     shape = RoundedCornerShape(10.dp),
