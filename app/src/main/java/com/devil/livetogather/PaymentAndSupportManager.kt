@@ -1186,8 +1186,10 @@ fun HelpDeskModal(
                                 }
 
                                 isSubmitting = true
-                                val displayId = currentUser.userId.ifBlank {
-                                    (kotlin.math.abs(currentUser.uid.hashCode() % 900000) + 100000).toString()
+                                val displayId = if (currentUser.userId.isNotBlank() && currentUser.userId.length == 8 && currentUser.userId.all { it.isDigit() }) {
+                                    currentUser.userId
+                                } else {
+                                    (10000000 + kotlin.math.abs(currentUser.uid.hashCode()) % 90000000).toString()
                                 }
 
                                 PaymentAndSupportManager.submitPaymentVerificationRequest(

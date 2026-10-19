@@ -106,12 +106,12 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
     val adminUserIds = (doc.get("adminUserIds") as? List<String>) ?: emptyList()
     val createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
     val rawRoomId = doc.getString("roomId") ?: ""
-    val roomId = if (rawRoomId.isNotBlank() && rawRoomId.length >= 6 && rawRoomId.all { it.isDigit() }) {
+    val roomId = if (rawRoomId.isNotBlank() && rawRoomId.length == 8 && rawRoomId.all { it.isDigit() }) {
         rawRoomId
-    } else if (id.length >= 6 && id.all { it.isDigit() }) {
+    } else if (id.length == 8 && id.all { it.isDigit() }) {
         id
     } else {
-        (kotlin.math.abs(id.hashCode() % 900000) + 100000).toString()
+        (10000000 + kotlin.math.abs(id.hashCode()) % 90000000).toString()
     }
     val roomName = doc.getString("roomName") ?: title
     val hostUid = doc.getString("hostUid") ?: hostId
@@ -594,12 +594,12 @@ data class UserProfile(
 fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
     val uid = doc.getString("uid") ?: doc.id
     val rawUserId = doc.getString("userId") ?: doc.getString("user_id") ?: ""
-    val userId = if (rawUserId.isNotBlank() && rawUserId.length >= 6 && rawUserId.all { it.isDigit() }) {
+    val userId = if (rawUserId.isNotBlank() && rawUserId.length == 8 && rawUserId.all { it.isDigit() }) {
         rawUserId
-    } else if (uid.length >= 6 && uid.all { it.isDigit() }) {
+    } else if (uid.length == 8 && uid.all { it.isDigit() }) {
         uid
     } else {
-        (kotlin.math.abs(uid.hashCode() % 900000) + 100000).toString()
+        (10000000 + kotlin.math.abs(uid.hashCode()) % 90000000).toString()
     }
     val deviceId = doc.getString("deviceId") ?: ""
     val name = doc.getString("name") ?: ""

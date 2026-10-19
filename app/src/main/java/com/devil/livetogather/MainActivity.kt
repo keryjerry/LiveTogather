@@ -295,10 +295,10 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
     // Hydrate initial UserProfile from SharedPreferences (ensures profile survives reinstall)
     var currentUser by remember {
         val savedUserId = prefs.getString("profile_user_id", "") ?: ""
-        val initialUserId = if (savedUserId.isNotBlank() && savedUserId.length >= 6 && savedUserId.all { it.isDigit() }) {
+        val initialUserId = if (savedUserId.isNotBlank() && savedUserId.length == 8 && savedUserId.all { it.isDigit() }) {
             savedUserId
         } else {
-            (kotlin.math.abs(currentUserId.hashCode() % 900000) + 100000).toString()
+            (10000000 + kotlin.math.abs(currentUserId.hashCode()) % 90000000).toString()
         }
         mutableStateOf(
             UserProfile(
@@ -378,13 +378,13 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
         mutableStateOf(prefs.getBoolean(WelcomeBonusManager.PREF_SHOW_WELCOME_DIALOG, false))
     }
 
-    // Auto-generate unique 6-digit User ID if missing and persist to Firestore + Prefs
+    // Auto-generate unique 8-digit User ID if missing or non-8-digit and persist to Firestore + Prefs
     LaunchedEffect(currentUser.userId, currentUserId) {
         if (currentUserId.isNotBlank()) {
-            val validUserId = if (currentUser.userId.isNotBlank() && currentUser.userId.length >= 6 && currentUser.userId.all { it.isDigit() }) {
+            val validUserId = if (currentUser.userId.isNotBlank() && currentUser.userId.length == 8 && currentUser.userId.all { it.isDigit() }) {
                 currentUser.userId
             } else {
-                (kotlin.math.abs(currentUserId.hashCode() % 900000) + 100000).toString()
+                (10000000 + kotlin.math.abs(currentUserId.hashCode()) % 90000000).toString()
             }
             if (currentUser.userId != validUserId) {
                 currentUser = currentUser.copy(userId = validUserId)
@@ -678,7 +678,16 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                 return@addSnapshotListener
             }
             if (snapshot != null) {
-                val fetchedRooms = snapshot.documents.mapNotNull { parseRoomFromDoc(it) }
+                val fetchedRooms = snapshot.documents.mapNotNull { doc ->
+                    val r = parseRoomFromDoc(doc)
+                    if (r != null) {
+                        val docRoomId = doc.getString("roomId") ?: ""
+                        if (docRoomId.isBlank() || docRoomId.length != 8 || !docRoomId.all { it.isDigit() }) {
+                            doc.reference.update("roomId", r.roomId)
+                        }
+                    }
+                    r
+                }
                 val localUnsynced = roomsList.filter { local -> local.hostId == currentUserId && fetchedRooms.none { it.id == local.id } }
                 roomsList.clear()
                 roomsList.addAll(localUnsynced + fetchedRooms)
@@ -701,7 +710,8 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                 currentUser = fresh.copy(deviceId = deviceId)
                 // Cache to SharedPreferences
                 saveProfileToPrefs(prefs, currentUser)
-                if (snapshot.getString("userId").isNullOrBlank()) {
+                val currentDocUserId = snapshot.getString("userId") ?: ""
+                if (currentDocUserId.isBlank() || currentDocUserId.length != 8 || !currentDocUserId.all { it.isDigit() }) {
                     userDoc.update("userId", fresh.userId)
                 }
             } else {
@@ -1074,14 +1084,37 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                                 }
                             }
 
-                            // Profile Settings Gear Icon (Visible exclusively on real main profile screen)
+                            // Profile Settings Gear Icon & Diamond Wallet (Visible exclusively on real main profile screen)
                             if (currentScreen == "profile") {
-                                IconButton(onClick = { showSettingsDialog = true }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Settings,
-                                        contentDescription = "Profile Settings",
-                                        tint = Color.White
-                                    )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Surface(
+                                        color = BrandCardSubtle,
+                                        shape = RoundedCornerShape(16.dp),
+                                        border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.6f)),
+                                        modifier = Modifier.clickable { showMainSubscriptionModal = true }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text("💎", fontSize = 11.sp)
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = String.format("%,d", currentUser.diamonds),
+                                                color = BrandGold,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    IconButton(onClick = { showSettingsDialog = true }) {
+                                        Icon(
+                                            imageVector = Icons.Default.Settings,
+                                            contentDescription = "Profile Settings",
+                                            tint = Color.White
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -3953,7 +3986,7 @@ fun ProfileScreenContent(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // 1. Top Bar: Handle & Settings
+        // 1. Top Bar: Handle & Diamond Wallet Balance (Directly below top bar gear box)
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -3976,6 +4009,90 @@ fun ProfileScreenContent(
                         }
                     } else if (currentUser.isVipOrPlatinum()) {
                         Text("👑", fontSize = 14.sp)
+                    }
+                }
+
+                // Real-time Diamond Wallet Balance Badge directly below the gear box
+                Surface(
+                    color = Color(0xFF1E142B),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.2.dp, BrandGold.copy(alpha = 0.8f)),
+                    modifier = Modifier.clickable { showCoinStoreModal = true }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("💎", fontSize = 13.sp)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = String.format("%,d", currentUser.diamonds),
+                            color = BrandGold,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                }
+            }
+        }
+
+        // 1b. Real-Time Diamond Wallet Card (Directly under top bar & gear box)
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1C132B)),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.5f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showCoinStoreModal = true }
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(BrandGold.copy(alpha = 0.15f))
+                                .border(1.dp, BrandGold.copy(alpha = 0.4f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("💎", fontSize = 18.sp)
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "Diamond Wallet Balance",
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Real-time sync • Tap to open Diamond Store",
+                                color = Color.LightGray,
+                                fontSize = 10.sp
+                            )
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = String.format("%,d", currentUser.diamonds),
+                            color = BrandGold,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                            contentDescription = "Store",
+                            tint = BrandGold.copy(alpha = 0.7f),
+                            modifier = Modifier.size(12.dp)
+                        )
                     }
                 }
             }
@@ -4104,13 +4221,13 @@ fun ProfileScreenContent(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // 6-digit User ID Chip with Click-to-Copy
+                // 8-digit User ID Chip with Click-to-Copy
                 val displayProfileUserId = remember(currentUser.userId, currentUser.uid) {
                     val uidVal = currentUser.uid.ifBlank { currentUserId }
-                    if (currentUser.userId.isNotBlank() && currentUser.userId.length >= 6 && currentUser.userId.all { it.isDigit() }) {
+                    if (currentUser.userId.isNotBlank() && currentUser.userId.length == 8 && currentUser.userId.all { it.isDigit() }) {
                         currentUser.userId
                     } else {
-                        (kotlin.math.abs(uidVal.hashCode() % 900000) + 100000).toString()
+                        (10000000 + kotlin.math.abs(uidVal.hashCode()) % 90000000).toString()
                     }
                 }
                 Surface(
