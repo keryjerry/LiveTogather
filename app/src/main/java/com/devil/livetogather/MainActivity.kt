@@ -53,10 +53,13 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.focus.FocusDirection
+import android.view.WindowManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -343,7 +346,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
         )
     }
 
-    // Real-time synchronization of Admin Role and Wallet Coins/Diamonds
+    // Real-time synchronization of Admin Role, 8-digit User ID, and Wallet Coins/Diamonds
     LaunchedEffect(currentUserId) {
         if (currentUserId.isNotBlank()) {
             db.collection("users").document(currentUserId)
@@ -352,12 +355,18 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                         val adminFlag = snapshot.getBoolean("isAdmin") ?: false
                         val updatedCoins = snapshot.getLong("coins") ?: snapshot.getLong("diamonds") ?: currentUser.coins
                         val updatedDiamonds = snapshot.getLong("diamonds") ?: currentUser.diamonds
-                        if (currentUser.isAdmin != adminFlag || currentUser.coins != updatedCoins || currentUser.diamonds != updatedDiamonds) {
-                            currentUser = currentUser.copy(isAdmin = adminFlag, coins = updatedCoins, diamonds = updatedDiamonds)
+                        val firestoreUserId = snapshot.getString("userId") ?: ""
+                        val finalUserId = if (firestoreUserId.isNotBlank() && firestoreUserId.length == 8 && firestoreUserId.all { it.isDigit() }) {
+                            firestoreUserId
+                        } else currentUser.userId
+
+                        if (currentUser.isAdmin != adminFlag || currentUser.coins != updatedCoins || currentUser.diamonds != updatedDiamonds || currentUser.userId != finalUserId) {
+                            currentUser = currentUser.copy(isAdmin = adminFlag, coins = updatedCoins, diamonds = updatedDiamonds, userId = finalUserId)
                             prefs.edit()
                                 .putBoolean("profile_is_admin", adminFlag)
                                 .putLong("profile_coins", updatedCoins)
                                 .putLong("profile_diamonds", updatedDiamonds)
+                                .putString("profile_user_id", finalUserId)
                                 .apply()
                         }
                     }
@@ -567,6 +576,8 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
         }
     }
     var showNotificationsDialog by remember { mutableStateOf(false) }
+    var showAdminDashboardModal by remember { mutableStateOf(false) }
+    var adminDashboardInitialTab by remember { mutableIntStateOf(0) }
     var showPostMomentDialog by remember { mutableStateOf(false) }
     var momentToEdit by remember { mutableStateOf<MomentItem?>(null) }
     var momentToDelete by remember { mutableStateOf<MomentItem?>(null) }
@@ -661,13 +672,6 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
             saveMomentsToPrefs(prefs, DEFAULT_MOMENTS_SEED)
         }
 
-        // Initialize Default Dummy Profiles into Firestore so all 15 realistic profiles are synced
-        DEFAULT_DUMMY_PROFILES.forEach { dummyProfile ->
-            db.collection("users").document(dummyProfile.uid).set(dummyProfile, SetOptions.merge())
-        }
-        if (discoverProfiles.isEmpty()) {
-            discoverProfiles.addAll(DEFAULT_DUMMY_PROFILES.filter { it.uid != currentUserId })
-        }
 
         // Initialize Rooms & Real-Time Firestore Snapshot Listener
         roomsList.clear()
@@ -752,19 +756,16 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
             }
             if (snapshot != null) {
                 val list = snapshot.documents.mapNotNull { parseUserProfileFromDoc(it) }
-                    .filter { it.uid != currentUserId && !it.uid.startsWith("USER_") && !currentUser.blockedUserIds.contains(it.uid) }
+                    .filter { it.uid != currentUserId && !it.uid.startsWith("USER_") && !it.uid.startsWith("dummy_") && !currentUser.blockedUserIds.contains(it.uid) }
                 discoverProfiles.clear()
-                if (list.isNotEmpty()) {
-                    discoverProfiles.addAll(list)
-                } else {
-                    discoverProfiles.addAll(DEFAULT_DUMMY_PROFILES.filter { it.uid != currentUserId })
-                }
+                discoverProfiles.addAll(list)
             }
         }
 
         // 3. Notifications Listener (Real-Time Bell & Status Bar)
+        val notifTargets = if (currentUser.isAdmin) listOf(currentUserId, "admin") else listOf(currentUserId)
         db.collection("notifications")
-            .whereEqualTo("targetUserId", currentUserId)
+            .whereIn("targetUserId", notifTargets)
             .addSnapshotListener { snapshot, _ ->
                 if (snapshot != null) {
                     val items = snapshot.documents.mapNotNull { it.toObject(NotificationItem::class.java) }
@@ -1084,37 +1085,14 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                                 }
                             }
 
-                            // Profile Settings Gear Icon & Diamond Wallet (Visible exclusively on real main profile screen)
+                            // Profile Settings Gear Icon (Visible exclusively on real main profile screen)
                             if (currentScreen == "profile") {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Surface(
-                                        color = BrandCardSubtle,
-                                        shape = RoundedCornerShape(16.dp),
-                                        border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.6f)),
-                                        modifier = Modifier.clickable { showMainSubscriptionModal = true }
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text("💎", fontSize = 11.sp)
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text(
-                                                text = String.format("%,d", currentUser.diamonds),
-                                                color = BrandGold,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
-                                    }
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    IconButton(onClick = { showSettingsDialog = true }) {
-                                        Icon(
-                                            imageVector = Icons.Default.Settings,
-                                            contentDescription = "Profile Settings",
-                                            tint = Color.White
-                                        )
-                                    }
+                                IconButton(onClick = { showSettingsDialog = true }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Settings,
+                                        contentDescription = "Profile Settings",
+                                        tint = Color.White
+                                    )
                                 }
                             }
                         }
@@ -1184,7 +1162,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
                                 placeholder = {
                                     Text(
-                                        text = if (searchMode == "room") "Search 6-digit Room ID or Name..." else "Search 6-digit User ID or Username...",
+                                        text = if (searchMode == "room") "Search 8-digit Room ID or Name..." else "Search 8-digit User ID or Username...",
                                         fontSize = 12.sp,
                                         color = Color.Gray
                                     )
@@ -1841,40 +1819,46 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                 allProfiles = discoverProfiles,
                 db = db,
                 onDismiss = {
-                    // If leaving user is the room host, mark room offline (NEVER delete room document)
-                    if (room.hostId == currentUserId || (room.isCustom && room.hostId.isBlank())) {
-                        db.collection("rooms").document(room.id).update(
-                            mapOf(
-                                "isHostLive" to false,
-                                "statusMessage" to "Host Away • Open Hangout",
-                                "isPlaying" to false
-                            )
-                        )
-                        if (room.category.isNotBlank()) {
-                            db.collection("intent_categories").document(room.category)
-                                .collection("rooms").document(room.id).update(
-                                    mapOf(
-                                        "isHostLive" to false,
-                                        "statusMessage" to "Host Away • Open Hangout",
-                                        "isPlaying" to false
-                                    )
+                    if (room.id.isNotBlank()) {
+                        // If leaving user is the room host, mark room offline (NEVER delete room document)
+                        if (room.hostId == currentUserId || (room.isCustom && room.hostId.isBlank())) {
+                            db.collection("rooms").document(room.id).update(
+                                mapOf(
+                                    "isHostLive" to false,
+                                    "statusMessage" to "Host Away • Open Hangout",
+                                    "isPlaying" to false
                                 )
+                            )
+                            if (room.category.isNotBlank()) {
+                                db.collection("intent_categories").document(room.category)
+                                    .collection("rooms").document(room.id).update(
+                                        mapOf(
+                                            "isHostLive" to false,
+                                            "statusMessage" to "Host Away • Open Hangout",
+                                            "isPlaying" to false
+                                        )
+                                    )
+                            }
                         }
-                    }
 
-                    // Remove presence from rooms/{roomId}/members/{currentUserId}
-                    db.collection("rooms").document(room.id)
-                        .collection("members").document(currentUserId)
-                        .delete()
-                    if (room.category.isNotBlank()) {
-                        db.collection("intent_categories").document(room.category)
-                            .collection("rooms").document(room.id)
-                            .collection("members").document(currentUserId)
-                            .delete()
+                        // Remove presence from rooms/{roomId}/members/{currentUserId}
+                        if (currentUserId.isNotBlank()) {
+                            db.collection("rooms").document(room.id)
+                                .collection("members").document(currentUserId)
+                                .delete()
+                            if (room.category.isNotBlank()) {
+                                db.collection("intent_categories").document(room.category)
+                                    .collection("rooms").document(room.id)
+                                    .collection("members").document(currentUserId)
+                                    .delete()
+                            }
+                        }
                     }
                     currentUser = currentUser.copy(current_room = "")
                     saveProfileToPrefs(prefs, currentUser)
-                    db.collection("users").document(currentUserId).update("current_room", "")
+                    if (currentUserId.isNotBlank()) {
+                        db.collection("users").document(currentUserId).update("current_room", "")
+                    }
                     AudioPlayerManager.stop()
                     activeAudioRoom = null
                 },
@@ -2240,13 +2224,28 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                             }
                         }
                 },
+                onOpenAdmin = { tab ->
+                    adminDashboardInitialTab = tab
+                    showAdminDashboardModal = true
+                },
                 onMarkAllRead = {
-                    notifications.forEach { notif ->
-                        if (!notif.isRead) {
-                            db.collection("notifications").document(notif.id).update("isRead", true)
+                    val updated = notifications.map { it.copy(isRead = true) }
+                    notifications.clear()
+                    notifications.addAll(updated)
+                    updated.forEach { notif ->
+                        if (notif.id.isNotBlank()) {
+                            db.collection("notifications").document(notif.id).set(mapOf("isRead" to true), SetOptions.merge())
                         }
                     }
                 }
+            )
+        }
+
+        if (showAdminDashboardModal && currentUser.isAdmin) {
+            AdminApprovalDashboardModal(
+                adminUser = currentUser,
+                initialTab = adminDashboardInitialTab,
+                onDismiss = { showAdminDashboardModal = false }
             )
         }
 
@@ -4036,67 +4035,6 @@ fun ProfileScreenContent(
             }
         }
 
-        // 1b. Real-Time Diamond Wallet Card (Directly under top bar & gear box)
-        item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1C132B)),
-                shape = RoundedCornerShape(14.dp),
-                border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.5f)),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { showCoinStoreModal = true }
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(BrandGold.copy(alpha = 0.15f))
-                                .border(1.dp, BrandGold.copy(alpha = 0.4f), CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("💎", fontSize = 18.sp)
-                        }
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column {
-                            Text(
-                                text = "Diamond Wallet Balance",
-                                color = Color.White,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "Real-time sync • Tap to open Diamond Store",
-                                color = Color.LightGray,
-                                fontSize = 10.sp
-                            )
-                        }
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = String.format("%,d", currentUser.diamonds),
-                            color = BrandGold,
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-                            contentDescription = "Store",
-                            tint = BrandGold.copy(alpha = 0.7f),
-                            modifier = Modifier.size(12.dp)
-                        )
-                    }
-                }
-            }
-        }
 
         // 2. Avatar & Instagram Stats Row
         item {
@@ -5000,30 +4938,31 @@ fun ProfileScreenContent(
     // Modal Edit Profile Popup Dialog
     if (isEditing) {
         Dialog(
-            onDismissRequest = {
-                if (isKeyboardOpen) {
-                    keyboardController?.hide()
-                    focusManager.clearFocus()
-                } else {
-                    isEditing = false
-                }
-            },
+            onDismissRequest = { isEditing = false },
             properties = DialogProperties(
                 usePlatformDefaultWidth = false,
                 dismissOnBackPress = true,
-                dismissOnClickOutside = true,
-                decorFitsSystemWindows = false
+                dismissOnClickOutside = true
             )
         ) {
+            val view = LocalView.current
+            SideEffect {
+                var parent = view.parent
+                while (parent != null && parent !is android.app.Dialog && parent !is DialogWindowProvider) {
+                    parent = parent.parent
+                }
+                (parent as? DialogWindowProvider)?.window?.setSoftInputMode(
+                    WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+                )
+            }
+
             Card(
                 colors = CardDefaults.cardColors(containerColor = BrandDark),
                 shape = RoundedCornerShape(20.dp),
                 border = BorderStroke(1.dp, BrandBorder),
                 modifier = Modifier
                     .fillMaxWidth(0.95f)
-                    .fillMaxHeight(if (isKeyboardOpen) 0.95f else 0.88f)
-                    .imePadding()
-                    .navigationBarsPadding()
+                    .fillMaxHeight(0.88f)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null
@@ -6906,6 +6845,7 @@ fun NotificationsDialog(
     notifications: List<NotificationItem>,
     onDismiss: () -> Unit,
     onOpenRoom: ((String) -> Unit)? = null,
+    onOpenAdmin: ((Int) -> Unit)? = null,
     onMarkAllRead: () -> Unit
 ) {
     Dialog(onDismissRequest = onDismiss) {
@@ -6948,7 +6888,13 @@ fun NotificationsDialog(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        if (notif.roomId.isNotBlank()) {
+                                        if (notif.type == "user_report") {
+                                            onOpenAdmin?.invoke(1)
+                                            onDismiss()
+                                        } else if (notif.type == "payment_utr_submitted") {
+                                            onOpenAdmin?.invoke(0)
+                                            onDismiss()
+                                        } else if (notif.roomId.isNotBlank()) {
                                             onOpenRoom?.invoke(notif.roomId)
                                             onDismiss()
                                         }

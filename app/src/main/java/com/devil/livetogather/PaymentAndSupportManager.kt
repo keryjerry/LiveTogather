@@ -1,3 +1,4 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 package com.devil.livetogather
 
 import android.content.ClipData
@@ -12,10 +13,13 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import android.view.WindowManager
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -29,10 +33,15 @@ import coil.compose.AsyncImage
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -224,11 +233,41 @@ object PaymentAndSupportManager {
             "status" to "PENDING",
             "category" to category,
             "message" to message,
-            "timestamp" to FieldValue.serverTimestamp()
+            "timestamp" to System.currentTimeMillis()
         )
         db.collection("payment_requests").document(autoId)
             .set(requestData)
-            .addOnSuccessListener { onSuccess() }
+            .addOnSuccessListener {
+                // Dispatch real-time notification to Admins
+                val notifId = "pay_req_$autoId"
+                val adminNotif = NotificationItem(
+                    id = notifId,
+                    targetUserId = "admin",
+                    senderId = userId,
+                    senderName = userName,
+                    senderPhoto = "",
+                    type = "payment_utr_submitted",
+                    title = "💳 New Payment UTR: $packAmount",
+                    message = "$userName (#$userNumericId) submitted UTR ${utrNumber.trim()} for %,d Diamonds ($packAmount)".format(packCoins),
+                    timestamp = System.currentTimeMillis(),
+                    isRead = false,
+                    roomId = ""
+                )
+                db.collection("notifications").document(notifId).set(adminNotif)
+
+                db.collection("users").whereEqualTo("isAdmin", true).get().addOnSuccessListener { adminsSnap ->
+                    for (adminDoc in adminsSnap.documents) {
+                        val adminUid = adminDoc.id
+                        if (adminUid.isNotBlank()) {
+                            val userNotif = adminNotif.copy(id = "${notifId}_$adminUid", targetUserId = adminUid)
+                            db.collection("notifications").document(userNotif.id).set(userNotif)
+                            db.collection("users").document(adminUid).collection("notifications").document(notifId).set(userNotif)
+                        }
+                    }
+                }
+
+                onSuccess()
+            }
             .addOnFailureListener { onFailure(it.localizedMessage ?: "Submission failed") }
     }
 
@@ -481,14 +520,38 @@ fun UpiPaymentCheckoutModal(
     val qrData = "upi://pay?pa=warsi.1@ptaxis&pn=LiveTogether&am=$cleanAmount&cu=INR&tn=LiveTogether%20Coins"
     val qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" + Uri.encode(qrData)
 
+    val isKeyboardOpen = WindowInsets.isImeVisible
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false
+        )
     ) {
+        val view = LocalView.current
+        SideEffect {
+            var parent = view.parent
+            while (parent != null && parent !is android.app.Dialog && parent !is DialogWindowProvider) {
+                parent = parent.parent
+            }
+            (parent as? DialogWindowProvider)?.window?.setSoftInputMode(
+                WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+            )
+        }
+
         Surface(
             modifier = Modifier
-                .fillMaxWidth(0.92f)
-                .fillMaxHeight(0.92f),
+                .fillMaxWidth(0.94f)
+                .fillMaxHeight(0.90f)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) {
+                    keyboardController?.hide()
+                    focusManager.clearFocus()
+                },
             shape = RoundedCornerShape(22.dp),
             color = BrandDark,
             border = BorderStroke(1.5.dp, BrandGold)
@@ -514,8 +577,9 @@ fun UpiPaymentCheckoutModal(
                             fontSize = 17.sp,
                             fontWeight = FontWeight.Bold
                         )
+                        val displayUserId = if (currentUser.userId.isNotBlank()) currentUser.userId else (10000000 + kotlin.math.abs(currentUser.uid.hashCode()) % 90000000).toString()
                         Text(
-                            text = "User ID: #${currentUser.userId.ifBlank { currentUser.uid.take(6) }}",
+                            text = "User ID: #$displayUserId",
                             color = BrandGold,
                             fontSize = 11.sp
                         )
@@ -737,19 +801,61 @@ fun UpiPaymentCheckoutModal(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Text(
-                        text = "Enter 12-Digit UTR after payment:",
-                        color = Color.LightGray,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Enter 12-Digit UTR after payment:",
+                            color = Color.LightGray,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        if (isKeyboardOpen) {
+                            TextButton(
+                                onClick = {
+                                    keyboardController?.hide()
+                                    focusManager.clearFocus()
+                                },
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                            ) {
+                                Text("Hide Keyboard ⬇️", color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
 
                     OutlinedTextField(
                         value = utrInput,
-                        onValueChange = { if (it.length <= 12) utrInput = it.filter { c -> c.isDigit() } },
+                        onValueChange = { input ->
+                            val digits = input.filter { c -> c.isDigit() }.take(12)
+                            utrInput = digits
+                            if (digits.length == 12) {
+                                keyboardController?.hide()
+                                focusManager.clearFocus()
+                            }
+                        },
                         label = { Text("12-Digit UTR / UPI Ref (from receipt)", fontSize = 11.sp) },
                         placeholder = { Text("e.g. 4238xxxxxxxx", fontSize = 11.sp) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = {
+                            keyboardController?.hide()
+                            focusManager.clearFocus()
+                        }),
+                        trailingIcon = {
+                            if (utrInput.isNotEmpty() || isKeyboardOpen) {
+                                IconButton(onClick = {
+                                    keyboardController?.hide()
+                                    focusManager.clearFocus()
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.Default.KeyboardArrowDown,
+                                        contentDescription = "Hide Keyboard",
+                                        tint = BrandGold
+                                    )
+                                }
+                            }
+                        },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = BrandGold,
                             unfocusedBorderColor = BrandBorder,
@@ -763,15 +869,18 @@ fun UpiPaymentCheckoutModal(
 
                     Button(
                         onClick = {
+                            keyboardController?.hide()
+                            focusManager.clearFocus()
                             val trimmed = utrInput.trim()
                             if (trimmed.length < 10) {
                                 Toast.makeText(context, "Please enter a valid 12-digit UTR number from your payment receipt!", Toast.LENGTH_SHORT).show()
                                 return@Button
                             }
                             isSubmitting = true
+                            val finalNumericId = if (currentUser.userId.isNotBlank()) currentUser.userId else (10000000 + kotlin.math.abs(currentUser.uid.hashCode()) % 90000000).toString()
                             PaymentAndSupportManager.submitPaymentVerificationRequest(
                                 userId = currentUser.uid,
-                                userNumericId = currentUser.userId.ifBlank { currentUser.uid.take(6) },
+                                userNumericId = finalNumericId,
                                 userName = currentUser.name,
                                 utrNumber = trimmed,
                                 packCoins = selectedPackage.coins,
@@ -877,14 +986,38 @@ fun HelpDeskModal(
         }
     }
 
+    val isKeyboardOpen = WindowInsets.isImeVisible
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false
+        )
     ) {
+        val view = LocalView.current
+        SideEffect {
+            var parent = view.parent
+            while (parent != null && parent !is android.app.Dialog && parent !is DialogWindowProvider) {
+                parent = parent.parent
+            }
+            (parent as? DialogWindowProvider)?.window?.setSoftInputMode(
+                WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+            )
+        }
+
         Surface(
             modifier = Modifier
                 .fillMaxWidth(0.95f)
-                .fillMaxHeight(0.92f),
+                .fillMaxHeight(0.92f)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) {
+                    keyboardController?.hide()
+                    focusManager.clearFocus()
+                },
             shape = RoundedCornerShape(24.dp),
             color = BrandDark,
             border = BorderStroke(1.5.dp, BrandBorder)
@@ -917,8 +1050,13 @@ fun HelpDeskModal(
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold
                             )
+                            val displayId = if (currentUser.userId.isNotBlank() && currentUser.userId.length == 8 && currentUser.userId.all { it.isDigit() }) {
+                                currentUser.userId
+                            } else {
+                                (10000000 + kotlin.math.abs(currentUser.uid.hashCode()) % 90000000).toString()
+                            }
                             Text(
-                                text = "Account ID: #${currentUser.userId.ifBlank { currentUser.uid.take(6) }}",
+                                text = "Account ID: #$displayId",
                                 color = BrandGold,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold
@@ -970,6 +1108,8 @@ fun HelpDeskModal(
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .imePadding()
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
@@ -1141,7 +1281,25 @@ fun HelpDeskModal(
                                     )
                                 },
                                 singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(onDone = {
+                                    keyboardController?.hide()
+                                    focusManager.clearFocus()
+                                }),
+                                trailingIcon = {
+                                    if (utrInput.isNotEmpty() || isKeyboardOpen) {
+                                        IconButton(onClick = {
+                                            keyboardController?.hide()
+                                            focusManager.clearFocus()
+                                        }) {
+                                            Icon(
+                                                imageVector = Icons.Default.KeyboardArrowDown,
+                                                contentDescription = "Hide Keyboard",
+                                                tint = BrandGold
+                                            )
+                                        }
+                                    }
+                                },
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedBorderColor = BrandGold,
                                     unfocusedBorderColor = BrandBorder,
@@ -1158,6 +1316,11 @@ fun HelpDeskModal(
                                 label = { Text("Describe Your Issue / Query *") },
                                 placeholder = { Text("Provide details about what you need assistance with...") },
                                 maxLines = 4,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(onDone = {
+                                    keyboardController?.hide()
+                                    focusManager.clearFocus()
+                                }),
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedBorderColor = BrandCoral,
                                     unfocusedBorderColor = BrandBorder,
@@ -1168,11 +1331,29 @@ fun HelpDeskModal(
                             )
                         }
 
-                        Spacer(modifier = Modifier.weight(1f))
+                        if (isKeyboardOpen) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                TextButton(
+                                    onClick = {
+                                        keyboardController?.hide()
+                                        focusManager.clearFocus()
+                                    }
+                                ) {
+                                    Text("Hide Keyboard ⬇️", color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
 
                         // Submit Button
                         Button(
                             onClick = {
+                                keyboardController?.hide()
+                                focusManager.clearFocus()
                                 if (isPaymentCat) {
                                     if (utrInput.length != 12) {
                                         Toast.makeText(context, "Please enter a valid 12-digit UTR number", Toast.LENGTH_SHORT).show()
@@ -1362,12 +1543,13 @@ private fun TicketCard(ticket: PaymentRequestTicket) {
 @Composable
 fun AdminApprovalDashboardModal(
     adminUser: UserProfile,
+    initialTab: Int = 0,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
     val pendingRequests = remember { mutableStateListOf<PaymentRequestTicket>() }
     val pendingReports = remember { mutableStateListOf<ReportTicket>() }
-    var selectedAdminTab by remember { mutableStateOf(0) } // 0: Payments, 1: User Reports
+    var selectedAdminTab by remember { mutableStateOf(initialTab) } // 0: Payments, 1: User Reports
     var processingReqId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {

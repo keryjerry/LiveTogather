@@ -25,6 +25,7 @@ import androidx.compose.foundation.border
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -2162,6 +2163,7 @@ fun RoomMemberProfileSheet(
                 reportedUserId = if (member.userId.isNotBlank()) member.userId else (userProfile?.userId ?: member.uid.take(8)),
                 currentUser = currentUser,
                 db = db,
+                roomId = roomId,
                 onDismiss = { showReportDialog = false }
             )
         }
@@ -2936,6 +2938,12 @@ fun AudioHangoutRoomDialog(
 
     // Live Room State from Firestore
     var room by remember { mutableStateOf(initialRoom) }
+
+    if (room.id.isBlank()) {
+        LaunchedEffect(Unit) { onDismiss() }
+        return
+    }
+
     val activeMembers = remember { mutableStateListOf<RoomMember>() }
 
     // Modals
@@ -2966,6 +2974,7 @@ fun AudioHangoutRoomDialog(
 
     // Auto-sync 8-digit numeric Room ID to Firestore if missing or non-8-digit
     LaunchedEffect(displayRoomId, room.id) {
+        if (room.id.isBlank()) return@LaunchedEffect
         if (room.roomId != displayRoomId) {
             room = room.copy(roomId = displayRoomId)
             try {
@@ -3004,6 +3013,7 @@ fun AudioHangoutRoomDialog(
 
     // Real-time listener for room video gift events
     LaunchedEffect(room.id) {
+        if (room.id.isBlank()) return@LaunchedEffect
         db.collection("rooms").document(room.id)
             .collection("gift_events")
             .orderBy("timestamp", Query.Direction.DESCENDING)
@@ -3103,9 +3113,10 @@ fun AudioHangoutRoomDialog(
         }
     }
 
-    val currentMember = remember(currentUser.uid, room.id, isUserHost) {
+    val currentMember = remember(currentUser.uid, currentUser.userId, room.id, isUserHost) {
         RoomMember(
             uid = currentUser.uid,
+            userId = currentUser.userId,
             name = currentUser.name,
             photoUrl = currentUser.photo,
             joinedAt = System.currentTimeMillis(),
@@ -3125,6 +3136,7 @@ fun AudioHangoutRoomDialog(
 
     // Ensure current user is registered in rooms/{roomId}/members in Firestore, Agora Voice joined and cleaned up on exit
     DisposableEffect(displayRoomId, currentUser.uid) {
+        if (room.id.isBlank()) return@DisposableEffect onDispose {}
         db.collection("rooms").document(room.id)
             .collection("members").document(currentUser.uid).set(currentMember)
 
@@ -3138,8 +3150,10 @@ fun AudioHangoutRoomDialog(
         )
 
         onDispose {
-            db.collection("rooms").document(room.id)
-                .collection("members").document(currentUser.uid).delete()
+            if (room.id.isNotBlank()) {
+                db.collection("rooms").document(room.id)
+                    .collection("members").document(currentUser.uid).delete()
+            }
             com.devil.livetogather.agora.AgoraVoiceManager.leaveRoom()
         }
     }
@@ -3171,6 +3185,7 @@ fun AudioHangoutRoomDialog(
 
     // Synchronize host photo and name to room document if not yet saved in Firestore
     LaunchedEffect(room.id, hostPhoto, isUserHost) {
+        if (room.id.isBlank()) return@LaunchedEffect
         if (room.hostPhotoUrl.isBlank() && hostPhoto.isNotBlank() && isUserHost) {
             db.collection("rooms").document(room.id).update(
                 mapOf(
@@ -3206,6 +3221,7 @@ fun AudioHangoutRoomDialog(
 
     // 1. Real-Time Room Metadata Listener (Rooms/{roomId})
     DisposableEffect(room.id) {
+        if (room.id.isBlank()) return@DisposableEffect onDispose {}
         val roomListener = db.collection("rooms").document(room.id)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) return@addSnapshotListener
@@ -3252,6 +3268,7 @@ fun AudioHangoutRoomDialog(
 
     // 2. Real-Time Members Presence Listener (Rooms/{roomId}/members)
     DisposableEffect(room.id) {
+        if (room.id.isBlank()) return@DisposableEffect onDispose {}
         val membersListener = db.collection("rooms").document(room.id)
             .collection("members")
             .addSnapshotListener { snapshot, error ->
@@ -3276,6 +3293,7 @@ fun AudioHangoutRoomDialog(
 
     // 3. Real-Time Live Comments Listener (Rooms/{roomId}/live_comments)
     DisposableEffect(room.id) {
+        if (room.id.isBlank()) return@DisposableEffect onDispose {}
         val commentsListener = db.collection("rooms").document(room.id)
             .collection("live_comments")
             .orderBy("timestamp", Query.Direction.ASCENDING)
@@ -3295,6 +3313,7 @@ fun AudioHangoutRoomDialog(
 
     // 4. Real-Time 10-Mic Seats Listener (rooms/{roomId}/mic_seats)
     DisposableEffect(room.id, isUserHost, targetHostId, hostName, hostPhoto) {
+        if (room.id.isBlank()) return@DisposableEffect onDispose {}
         val micSeatsRef = db.collection("rooms").document(room.id).collection("mic_seats")
         val micListener = micSeatsRef.orderBy("seatIndex", Query.Direction.ASCENDING)
             .addSnapshotListener { snapshot, error ->
@@ -3333,16 +3352,17 @@ fun AudioHangoutRoomDialog(
                             }
                         }
 
+                        val isHostSeatedSomewhere = seats.any { it.uid.isNotBlank() && it.uid == targetHostId }
                         val fullList = (0..9).map { idx ->
                             val existing = seats.find { it.seatIndex == idx }
                             if (existing != null) {
-                                if (idx == 0 && existing.uid.isEmpty() && targetHostId.isNotEmpty()) {
+                                if (idx == 0 && existing.uid.isEmpty() && targetHostId.isNotEmpty() && !isHostSeatedSomewhere && isUserHost) {
                                     existing.copy(uid = targetHostId, name = hostName, photo = hostPhoto, role = "host", label = "Host 👑")
                                 } else {
                                     existing
                                 }
                             } else {
-                                if (idx == 0) {
+                                if (idx == 0 && !isHostSeatedSomewhere) {
                                     MicSeat(seatIndex = 0, label = "Host 👑", uid = targetHostId, name = hostName, photo = hostPhoto, role = "host")
                                 } else {
                                     MicSeat(seatIndex = idx, label = "Mic ${idx + 1}", uid = "", name = "", photo = "", role = "speaker")
@@ -4346,46 +4366,44 @@ fun AudioHangoutRoomDialog(
                         categorySeatEmoji = "🎙️",
                         categorySeatLabel = "Mic",
                         onSeatClick = { seat ->
+                            val currentSeat = micSeats.find { it.uid == currentUser.uid }
                             if (seat.uid == currentUser.uid) {
                                 selectedOwnSeatForControl = seat
-                            } else if (isUserAdmin) {
-                                selectedSeatForAdmin = seat
-                            } else {
-                                if (seat.uid.isNotEmpty()) {
-                                    val memberProfile = allProfiles.find { it.uid == seat.uid }
-                                    selectedMemberForSheet = RoomMember(
-                                        uid = seat.uid,
-                                        userId = memberProfile?.userId ?: "",
-                                        name = seat.name,
-                                        photoUrl = seat.photo,
-                                        role = seat.role
-                                    )
-                                } else if (seat.isLocked) {
+                            } else if (seat.uid.isEmpty()) {
+                                // Vacant mic seat!
+                                if (seat.isLocked && !isUserAdmin) {
                                     Toast.makeText(context, "This microphone is locked by the host 🔒", Toast.LENGTH_SHORT).show()
+                                } else if (currentSeat != null) {
+                                    // User (Host or Speaker) is ALREADY seated -> 1-TAP INSTANT MOVE TO THIS MIC!
+                                    joinMicSeat(db, room.id, seat.seatIndex, currentUser, micSeats)
+                                    Toast.makeText(context, "Moved to Mic ${seat.seatIndex + 1}! 🎙️", Toast.LENGTH_SHORT).show()
+                                } else if (isUserAdmin) {
+                                    // Host/Admin not yet seated -> open admin options (Take mic, lock, invite)
+                                    selectedSeatForAdmin = seat
                                 } else {
-                                    val currentSeat = micSeats.find { it.uid == currentUser.uid }
-                                    if (currentSeat != null) {
-                                        if (currentSeat.seatIndex != seat.seatIndex) {
-                                            val hasPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-                                            if (hasPerm) {
-                                                joinMicSeat(db, room.id, seat.seatIndex, currentUser, micSeats)
-                                                Toast.makeText(context, "Moved to Mic ${seat.seatIndex + 1}! 🎙️", Toast.LENGTH_SHORT).show()
-                                            } else {
-                                                pendingSeatToJoin = seat
-                                                recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                            }
-                                        }
+                                    // Audience member tapping empty mic -> take mic
+                                    val hasPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                                    if (hasPerm) {
+                                        joinMicSeat(db, room.id, seat.seatIndex, currentUser, micSeats)
+                                        Toast.makeText(context, "You are now live on Mic ${seat.seatIndex + 1}! 🎙️", Toast.LENGTH_SHORT).show()
                                     } else {
-                                        val hasPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-                                        if (hasPerm) {
-                                            joinMicSeat(db, room.id, seat.seatIndex, currentUser, micSeats)
-                                            Toast.makeText(context, "You are now live on Mic ${seat.seatIndex + 1}! 🎙️", Toast.LENGTH_SHORT).show()
-                                        } else {
-                                            pendingSeatToJoin = seat
-                                            recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                        }
+                                        pendingSeatToJoin = seat
+                                        recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                                     }
                                 }
+                            } else if (isUserAdmin) {
+                                // Occupied mic seat and user is host/admin -> open moderation & speaker relocation options
+                                selectedSeatForAdmin = seat
+                            } else {
+                                // Occupied mic seat and user is audience -> view speaker profile
+                                val memberProfile = allProfiles.find { it.uid == seat.uid }
+                                selectedMemberForSheet = RoomMember(
+                                    uid = seat.uid,
+                                    userId = memberProfile?.userId ?: "",
+                                    name = seat.name,
+                                    photoUrl = seat.photo,
+                                    role = seat.role
+                                )
                             }
                         },
                         onQuickToggleMute = {
@@ -4839,45 +4857,13 @@ fun AudioHangoutRoomDialog(
                     selectedSeatForAdmin = null
                 },
                 onMoveSpeakerToSeat = { targetSeatIndex ->
-                    val occupantUid = seat.uid
-                    val occupantName = seat.name
-                    val occupantPhoto = seat.photo
-                    val occupantMuted = seat.isMuted
-                    val isOccupantHost = seat.role == "host" || occupantUid == room.hostId
-
-                    // 1. Vacate current seat
-                    vacateMicSeat(db, room.id, seat.seatIndex, seat.isLocked)
-
-                    // 2. Put speaker on target seat
-                    db.collection("rooms").document(room.id).collection("mic_seats").document(targetSeatIndex.toString())
-                        .set(
-                            MicSeat(
-                                seatIndex = targetSeatIndex,
-                                label = if (targetSeatIndex == 0) "Host 👑" else "Mic ${targetSeatIndex + 1}",
-                                uid = occupantUid,
-                                name = occupantName,
-                                photo = occupantPhoto,
-                                role = if (targetSeatIndex == 0 || isOccupantHost) "host" else "speaker",
-                                isMuted = occupantMuted,
-                                isLocked = false,
-                                isTalking = false
-                            )
-                        )
-                    Toast.makeText(context, "Moved $occupantName to Mic ${targetSeatIndex + 1}! 🎙️", Toast.LENGTH_SHORT).show()
+                    relocateSpeakerSeat(db, room.id, seat, targetSeatIndex)
+                    Toast.makeText(context, "Moved ${seat.name.ifBlank { "Speaker" }} to Mic ${targetSeatIndex + 1}! 🎙️", Toast.LENGTH_SHORT).show()
                     selectedSeatForAdmin = null
                 },
                 onTakeMic = {
-                    val currentSeat = micSeats.find { it.uid == currentUser.uid }
-                    if (currentSeat != null) {
-                        if (currentSeat.seatIndex != seat.seatIndex) {
-                            vacateMicSeat(db, room.id, currentSeat.seatIndex, currentSeat.isLocked)
-                            joinMicSeat(db, room.id, seat.seatIndex, currentUser, micSeats)
-                            Toast.makeText(context, "Moved to Mic ${seat.seatIndex + 1}! 🎙️", Toast.LENGTH_SHORT).show()
-                        }
-                    } else {
-                        joinMicSeat(db, room.id, seat.seatIndex, currentUser, micSeats)
-                        Toast.makeText(context, "You are now on Mic ${seat.seatIndex + 1}! 🎙️", Toast.LENGTH_SHORT).show()
-                    }
+                    joinMicSeat(db, room.id, seat.seatIndex, currentUser, micSeats)
+                    Toast.makeText(context, "You are now on Mic ${seat.seatIndex + 1}! 🎙️", Toast.LENGTH_SHORT).show()
                     selectedSeatForAdmin = null
                 },
                 onKickToAudience = {
@@ -5511,38 +5497,88 @@ fun joinMicSeat(
     user: UserProfile,
     allSeats: List<MicSeat>
 ) {
-    // Vacate ALL previous seats occupied by this user to guarantee single seat occupancy
-    allSeats.filter { it.uid == user.uid && it.seatIndex != seatIndex }.forEach { prevSeat ->
-        db.collection("rooms").document(roomId).collection("mic_seats").document(prevSeat.seatIndex.toString())
-            .set(
-                MicSeat(
-                    seatIndex = prevSeat.seatIndex,
-                    label = if (prevSeat.seatIndex == 0) "Host 👑" else "Mic ${prevSeat.seatIndex + 1}",
-                    uid = "",
-                    name = "",
-                    photo = "",
-                    isMuted = false,
-                    isLocked = prevSeat.isLocked,
-                    isTalking = false,
-                    role = if (prevSeat.seatIndex == 0) "host" else "speaker"
-                )
-            )
-    }
+    if (roomId.isBlank()) return
+    val batch = db.batch()
+    val micSeatsRef = db.collection("rooms").document(roomId).collection("mic_seats")
 
-    db.collection("rooms").document(roomId).collection("mic_seats").document(seatIndex.toString())
-        .set(
+    // Atomically vacate ALL previous seats occupied by this user in the same commit
+    allSeats.filter { it.uid == user.uid && it.seatIndex != seatIndex }.forEach { prevSeat ->
+        batch.set(
+            micSeatsRef.document(prevSeat.seatIndex.toString()),
             MicSeat(
-                seatIndex = seatIndex,
-                label = if (seatIndex == 0) "Host 👑" else "Mic ${seatIndex + 1}",
-                uid = user.uid,
-                name = user.name,
-                photo = user.photo,
+                seatIndex = prevSeat.seatIndex,
+                label = if (prevSeat.seatIndex == 0) "Host 👑" else "Mic ${prevSeat.seatIndex + 1}",
+                uid = "",
+                name = "",
+                photo = "",
                 isMuted = false,
-                isLocked = false,
+                isLocked = prevSeat.isLocked,
                 isTalking = false,
-                role = if (seatIndex == 0) "host" else "speaker"
+                role = if (prevSeat.seatIndex == 0) "host" else "speaker"
             )
         )
+    }
+
+    val isUserHost = seatIndex == 0 || allSeats.find { it.seatIndex == 0 }?.uid == user.uid || (user.uid.isNotBlank() && allSeats.any { it.uid == user.uid && it.role == "host" })
+    batch.set(
+        micSeatsRef.document(seatIndex.toString()),
+        MicSeat(
+            seatIndex = seatIndex,
+            label = if (seatIndex == 0) "Host 👑" else "Mic ${seatIndex + 1}",
+            uid = user.uid,
+            name = user.name,
+            photo = user.photo,
+            isMuted = false,
+            isLocked = false,
+            isTalking = false,
+            role = if (seatIndex == 0 || isUserHost) "host" else "speaker"
+        )
+    )
+    batch.commit()
+}
+
+fun relocateSpeakerSeat(
+    db: FirebaseFirestore,
+    roomId: String,
+    fromSeat: MicSeat,
+    targetSeatIndex: Int
+) {
+    if (roomId.isBlank()) return
+    val batch = db.batch()
+    val micSeatsRef = db.collection("rooms").document(roomId).collection("mic_seats")
+
+    // Atomically vacate source seat
+    batch.set(
+        micSeatsRef.document(fromSeat.seatIndex.toString()),
+        MicSeat(
+            seatIndex = fromSeat.seatIndex,
+            label = if (fromSeat.seatIndex == 0) "Host 👑" else "Mic ${fromSeat.seatIndex + 1}",
+            uid = "",
+            name = "",
+            photo = "",
+            isMuted = false,
+            isLocked = fromSeat.isLocked,
+            isTalking = false,
+            role = if (fromSeat.seatIndex == 0) "host" else "speaker"
+        )
+    )
+
+    // Atomically occupy target destination seat
+    batch.set(
+        micSeatsRef.document(targetSeatIndex.toString()),
+        MicSeat(
+            seatIndex = targetSeatIndex,
+            label = if (targetSeatIndex == 0) "Host 👑" else "Mic ${targetSeatIndex + 1}",
+            uid = fromSeat.uid,
+            name = fromSeat.name,
+            photo = fromSeat.photo,
+            role = if (targetSeatIndex == 0 || fromSeat.role == "host") "host" else "speaker",
+            isMuted = fromSeat.isMuted,
+            isLocked = false,
+            isTalking = false
+        )
+    )
+    batch.commit()
 }
 
 fun vacateMicSeat(
@@ -7619,6 +7655,7 @@ fun ReportUserDialog(
     reportedUserId: String,
     currentUser: UserProfile,
     db: com.google.firebase.firestore.FirebaseFirestore,
+    roomId: String = "",
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -7633,22 +7670,46 @@ fun ReportUserDialog(
     var selectedReason by remember { mutableStateOf(reasons[0]) }
     var detailsText by remember { mutableStateOf("") }
     var isSubmitting by remember { mutableStateOf(false) }
+    val isKeyboardOpen = WindowInsets.isImeVisible
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
 
     androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismiss,
-        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        properties = androidx.compose.ui.window.DialogProperties(
+            usePlatformDefaultWidth = false
+        )
     ) {
+        val view = LocalView.current
+        SideEffect {
+            var parent = view.parent
+            while (parent != null && parent !is android.app.Dialog && parent !is DialogWindowProvider) {
+                parent = parent.parent
+            }
+            (parent as? DialogWindowProvider)?.window?.setSoftInputMode(
+                WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+            )
+        }
+
         Surface(
             modifier = Modifier
                 .fillMaxWidth(0.92f)
-                .wrapContentHeight(),
+                .fillMaxHeight(0.85f)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) {
+                    keyboardController?.hide()
+                    focusManager.clearFocus()
+                },
             shape = RoundedCornerShape(24.dp),
             color = BrandDark,
             border = BorderStroke(1.5.dp, Color.Red.copy(alpha = 0.8f))
         ) {
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
                     .padding(20.dp)
             ) {
                 Row(
@@ -7705,7 +7766,24 @@ fun ReportUserDialog(
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
-                Text("Additional Details (Optional):", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Additional Details (Optional):", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    if (isKeyboardOpen) {
+                        TextButton(
+                            onClick = {
+                                keyboardController?.hide()
+                                focusManager.clearFocus()
+                            },
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                        ) {
+                            Text("Hide Keyboard ⬇️", color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
                 Spacer(modifier = Modifier.height(4.dp))
                 OutlinedTextField(
                     value = detailsText,
@@ -7713,7 +7791,12 @@ fun ReportUserDialog(
                     placeholder = { Text("Describe what happened...", color = Color.Gray, fontSize = 11.sp) },
                     modifier = Modifier.fillMaxWidth().height(80.dp),
                     colors = outlinedFieldColors(),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = {
+                        keyboardController?.hide()
+                        focusManager.clearFocus()
+                    })
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -7729,6 +7812,8 @@ fun ReportUserDialog(
                     Button(
                         onClick = {
                             isSubmitting = true
+                            keyboardController?.hide()
+                            focusManager.clearFocus()
                             val reportId = UUID.randomUUID().toString()
                             val ticket = ReportTicket(
                                 reportId = reportId,
@@ -7745,6 +7830,34 @@ fun ReportUserDialog(
                             )
                             db.collection("reports").document(reportId).set(ticket)
                                 .addOnSuccessListener {
+                                    // Send real-time notification to Admins
+                                    val notifId = "report_$reportId"
+                                    val adminNotif = NotificationItem(
+                                        id = notifId,
+                                        targetUserId = "admin",
+                                        senderId = currentUser.uid,
+                                        senderName = currentUser.name,
+                                        senderPhoto = currentUser.photo,
+                                        type = "user_reported",
+                                        title = "🚨 User Report: ${reportedMember.name}",
+                                        message = "${currentUser.name} reported ${reportedMember.name} (#${if (reportedUserId.isNotBlank()) reportedUserId else reportedMember.uid.take(8)}) for $selectedReason: ${detailsText.trim()}",
+                                        timestamp = System.currentTimeMillis(),
+                                        isRead = false,
+                                        roomId = roomId
+                                    )
+                                    db.collection("notifications").document(notifId).set(adminNotif)
+
+                                    db.collection("users").whereEqualTo("isAdmin", true).get().addOnSuccessListener { adminsSnap ->
+                                        for (adminDoc in adminsSnap.documents) {
+                                            val adminUid = adminDoc.id
+                                            if (adminUid.isNotBlank()) {
+                                                val userNotif = adminNotif.copy(id = "${notifId}_$adminUid", targetUserId = adminUid)
+                                                db.collection("notifications").document(userNotif.id).set(userNotif)
+                                                db.collection("users").document(adminUid).collection("notifications").document(notifId).set(userNotif)
+                                            }
+                                        }
+                                    }
+
                                     isSubmitting = false
                                     Toast.makeText(context, "🛡️ Report submitted to Admins. Thank you for keeping LiveTogether safe!", Toast.LENGTH_LONG).show()
                                     onDismiss()
