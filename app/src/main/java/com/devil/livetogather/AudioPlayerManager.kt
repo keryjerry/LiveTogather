@@ -25,7 +25,7 @@ object AudioPlayerManager {
     val durationMsState = mutableStateOf(0)
     val formattedTimeState = mutableStateOf("00:00 / 00:00")
 
-    fun play(context: Context, urlOrUri: String, title: String, artworkUrl: String = "", onCompletion: () -> Unit = {}) {
+    fun play(context: Context, urlOrUri: String, title: String, artworkUrl: String = "", initialSeekMs: Int = 0, onCompletion: () -> Unit = {}) {
         if (urlOrUri.isBlank()) return
 
         // If already playing this track, don't restart
@@ -61,11 +61,16 @@ object AudioPlayerManager {
                     try {
                         val vol = if (isMutedState.value) 0f else 1f
                         mp.setVolume(vol, vol)
+                        if (initialSeekMs > 0 && mp.duration > 0) {
+                            val seekPos = if (mp.isLooping && mp.duration > 0) (initialSeekMs % mp.duration) else initialSeekMs.coerceAtMost(mp.duration)
+                            mp.seekTo(seekPos)
+                            currentPositionMsState.value = seekPos
+                        }
                         mp.start()
                         isPlayingState.value = true
                         durationMsState.value = mp.duration
                         startTicker()
-                        Log.d(TAG, "Playback started successfully: $title, duration=${mp.duration}ms")
+                        Log.d(TAG, "Playback started successfully: $title, duration=${mp.duration}ms, seek=$initialSeekMs")
                     } catch (e: Exception) {
                         Log.e(TAG, "Error starting playback: ${e.message}")
                         isPlayingState.value = false

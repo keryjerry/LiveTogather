@@ -1638,7 +1638,8 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                                             return@IntentRoomsGrid
                                         }
                                         // 1. Register presence in rooms/{roomId}/members/{userId}
-                                        val isHostCandidate = room.hostId == currentUserId || (room.hostId.isEmpty() && room.isCustom)
+                                        val targetHost = room.hostUid.ifBlank { room.hostId }
+                                        val isHostCandidate = currentUserId.isNotBlank() && currentUserId == targetHost
                                         val canActuallyHost = !isHostCandidate || currentUser.canHostRoom()
 
                                         if (isHostCandidate && !canActuallyHost) {
@@ -1665,6 +1666,8 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                                             val hostUpdates = mutableMapOf<String, Any>(
                                                 "isLive" to true,
                                                 "isHostLive" to true,
+                                                "isEnded" to false,
+                                                "endedAt" to 0L,
                                                 "statusMessage" to "LIVE NOW"
                                             )
                                             if (room.hostId.isBlank()) {
@@ -1871,7 +1874,8 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                 onDismiss = {
                     if (room.id.isNotBlank()) {
                         // If leaving user is the room host, mark room offline (NEVER delete room document)
-                        if (room.hostId == currentUserId || (room.isCustom && room.hostId.isBlank())) {
+                        val targetHost = room.hostUid.ifBlank { room.hostId }
+                        if (currentUserId.isNotBlank() && targetHost == currentUserId) {
                             db.collection("rooms").document(room.id).update(
                                 mapOf(
                                     "isHostLive" to false,
@@ -1963,7 +1967,8 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                         Toast.makeText(context, "👑 VIP Access Only: This room is reserved for VIP Level 1+ members!", Toast.LENGTH_LONG).show()
                         return@CategoryHubLobbyDialog
                     }
-                    val isHostCandidate = room.hostId == currentUserId || (room.hostId.isEmpty() && room.isCustom)
+                    val targetHost = room.hostUid.ifBlank { room.hostId }
+                    val isHostCandidate = currentUserId.isNotBlank() && currentUserId == targetHost
                     val canActuallyHost = !isHostCandidate || currentUser.canHostRoom()
 
                     if (isHostCandidate && !canActuallyHost) {
@@ -1990,6 +1995,8 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                         val hostUpdates = mutableMapOf<String, Any>(
                             "isLive" to true,
                             "isHostLive" to true,
+                            "isEnded" to false,
+                            "endedAt" to 0L,
                             "statusMessage" to "LIVE NOW"
                         )
                         if (room.hostId.isBlank()) {
@@ -2140,7 +2147,8 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                         isLive = true,
                         statusMessage = "LIVE NOW",
                         privacy = if (categoryId == "vip_room") "vip_only" else "public",
-                        createdAt = System.currentTimeMillis()
+                        createdAt = System.currentTimeMillis(),
+                        trackStartedAt = System.currentTimeMillis()
                     )
                     // Save to Firestore rooms/{roomId}
                     db.collection("rooms").document(roomId).set(newRoom)

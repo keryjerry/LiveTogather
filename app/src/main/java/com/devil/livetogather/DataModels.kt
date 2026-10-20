@@ -59,10 +59,20 @@ data class RoomItem(
     @get:PropertyName("hostUid") @set:PropertyName("hostUid") var hostUid: String = "",
     @get:PropertyName("isLive") @set:PropertyName("isLive") var isLive: Boolean = true,
     @get:PropertyName("announcement") @set:PropertyName("announcement") var announcement: String = "",
-    @get:PropertyName("isLocked") @set:PropertyName("isLocked") var isLocked: Boolean = false
+    @get:PropertyName("isLocked") @set:PropertyName("isLocked") var isLocked: Boolean = false,
+    @get:PropertyName("trackStartedAt") @set:PropertyName("trackStartedAt") var trackStartedAt: Long = 0L
 ) {
     val isVipRoom: Boolean get() = privacy.equals("vip_only", ignoreCase = true)
 }
+
+data class LiveEmojiReaction(
+    @get:PropertyName("id") @set:PropertyName("id") var id: String = "",
+    @get:PropertyName("userId") @set:PropertyName("userId") var userId: String = "",
+    @get:PropertyName("userName") @set:PropertyName("userName") var userName: String = "",
+    @get:PropertyName("userPhoto") @set:PropertyName("userPhoto") var userPhoto: String = "",
+    @get:PropertyName("emoji") @set:PropertyName("emoji") var emoji: String = "",
+    @get:PropertyName("timestamp") @set:PropertyName("timestamp") var timestamp: Long = 0L
+)
 
 data class MicSeat(
     @get:PropertyName("seatIndex") @set:PropertyName("seatIndex") var seatIndex: Int = 0,         // 0 to 4 (Mic 1, Mic 2, Mic 3, Mic 4, Mic 5)
@@ -119,6 +129,7 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
 
     val announcement = doc.getString("announcement") ?: ""
     val isLocked = doc.getBoolean("isLocked") ?: doc.getBoolean("locked") ?: false
+    val trackStartedAt = doc.getLong("trackStartedAt") ?: 0L
 
     return RoomItem(
         id = id,
@@ -151,7 +162,8 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
         hostUid = hostUid,
         isLive = isLive,
         announcement = announcement,
-        isLocked = isLocked
+        isLocked = isLocked,
+        trackStartedAt = trackStartedAt
     )
 }
 

@@ -2989,6 +2989,44 @@ fun AudioHangoutRoomDialog(
     var selectedOwnSeatForControl by remember { mutableStateOf<MicSeat?>(null) }
     var isLocalTalking by remember { mutableStateOf(false) }
     var pendingSeatToJoin by remember { mutableStateOf<MicSeat?>(null) }
+    var showEmojiTray by remember { mutableStateOf(false) }
+    val activeEmojiReactions = remember { mutableStateMapOf<String, String>() }
+
+    // Real-time listener for live floating emoji reactions
+    LaunchedEffect(room.id) {
+        if (room.id.isBlank()) return@LaunchedEffect
+        db.collection("rooms").document(room.id)
+            .collection("emoji_reactions")
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .limit(10)
+            .addSnapshotListener { snapshot, _ ->
+                if (snapshot != null && !snapshot.isEmpty) {
+                    val now = System.currentTimeMillis()
+                    for (doc in snapshot.documents) {
+                        val reaction = doc.toObject(LiveEmojiReaction::class.java)
+                        if (reaction != null && (now - reaction.timestamp) < 5000L && reaction.userId.isNotBlank()) {
+                            activeEmojiReactions[reaction.userId] = reaction.emoji
+                        }
+                    }
+                }
+            }
+    }
+
+    fun triggerEmojiReaction(emoji: String) {
+        if (room.id.isBlank() || currentUser.uid.isBlank()) return
+        val reaction = LiveEmojiReaction(
+            id = UUID.randomUUID().toString(),
+            userId = currentUser.uid,
+            userName = currentUser.name,
+            userPhoto = currentUser.photo,
+            emoji = emoji,
+            timestamp = System.currentTimeMillis()
+        )
+        activeEmojiReactions[currentUser.uid] = emoji
+        db.collection("rooms").document(room.id)
+            .collection("emoji_reactions").document(reaction.id)
+            .set(reaction)
+    }
 
     val recordAudioPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -3029,8 +3067,9 @@ fun AudioHangoutRoomDialog(
         }
     }
 
-    val isUserHost = currentUser.uid == room.hostId || currentUser.uid == room.hostUid || (room.hostId.isEmpty() && room.hostUid.isEmpty() && (activeMembers.firstOrNull()?.uid == currentUser.uid || room.isCustom))
-    val isUserAdmin = isUserHost || (currentUser.uid in room.adminUserIds)
+    val hostCandidateId = room.hostUid.ifBlank { room.hostId }
+    val isUserHost = currentUser.uid.isNotBlank() && (currentUser.uid == hostCandidateId)
+    val isUserAdmin = isUserHost || (currentUser.uid.isNotBlank() && currentUser.uid in room.adminUserIds)
     val isMuted by AudioPlayerManager.isMutedState
     val localPlaying by AudioPlayerManager.isPlayingState
 
@@ -3040,6 +3079,8 @@ fun AudioHangoutRoomDialog(
             val hostUpdates = mutableMapOf<String, Any>(
                 "isLive" to true,
                 "isHostLive" to true,
+                "isEnded" to false,
+                "endedAt" to 0L,
                 "statusMessage" to "LIVE NOW"
             )
             if (room.hostId.isBlank() || room.hostId == currentUser.uid) {
@@ -3141,7 +3182,7 @@ fun AudioHangoutRoomDialog(
         com.devil.livetogather.agora.AgoraVoiceManager.muteLocalAudio(shouldMute)
     }
 
-    val targetHostId = room.hostId.ifEmpty { activeMembers.firstOrNull { it.role == "host" }?.uid ?: if (isUserHost) currentUser.uid else "" }
+    val targetHostId = hostCandidateId.ifBlank { activeMembers.firstOrNull { it.role == "host" }?.uid ?: if (isUserHost) currentUser.uid else "" }
     val hostMember = activeMembers.find { it.uid == targetHostId || it.role == "host" }
     val hostFromProfiles = allProfiles.find { it.uid == targetHostId }
     val hostName = room.hostName.ifBlank { hostMember?.name ?: hostFromProfiles?.name ?: if (isUserHost) currentUser.name else "Host" }
@@ -3200,34 +3241,50 @@ fun AudioHangoutRoomDialog(
             .addSnapshotListener { snapshot, error ->
                 if (error != null) return@addSnapshotListener
                 if (snapshot != null && snapshot.exists()) {
-                    snapshot.toObject(RoomItem::class.java)?.let { updated ->
-                        val isRoomOfficiallyEnded = (snapshot.getBoolean("isEnded") == true) || (snapshot.getLong("endedAt") ?: 0L) > 0L
-                        if (isRoomOfficiallyEnded && !isUserHost) {
-                            Toast.makeText(context, "This room session has ended", Toast.LENGTH_SHORT).show()
-                            AudioPlayerManager.pause()
-                            onDismiss()
-                            return@addSnapshotListener
-                        }
-                        @Suppress("UNCHECKED_CAST")
-                        val bannedList = (snapshot.get("bannedUserIds") as? List<String>) ?: emptyList()
-                        @Suppress("UNCHECKED_CAST")
-                        val kickedList = (snapshot.get("kickedUserIds") as? List<String>) ?: emptyList()
-                        if ((currentUser.uid in bannedList || currentUser.uid in kickedList) && !isUserHost) {
-                            Toast.makeText(context, "You have been removed from this room by host/admin", Toast.LENGTH_SHORT).show()
-                            AudioPlayerManager.pause()
-                            onDismiss()
-                            return@addSnapshotListener
-                        }
-                        room = updated
+                    val updated = parseRoomFromDoc(snapshot)
+                    val isLive = snapshot.getBoolean("isLive") ?: (snapshot.getBoolean("isHostLive") ?: updated.isLive)
+                    val isEnded = snapshot.getBoolean("isEnded") ?: false
+                    val endedAt = snapshot.getLong("endedAt") ?: 0L
+                    val isRoomOfficiallyEnded = !isLive && (isEnded || endedAt > 0L)
+                    if (isRoomOfficiallyEnded && !isUserHost) {
+                        Toast.makeText(context, "This room session has ended", Toast.LENGTH_SHORT).show()
+                        AudioPlayerManager.pause()
+                        onDismiss()
+                        return@addSnapshotListener
+                    }
+                    @Suppress("UNCHECKED_CAST")
+                    val bannedList = (snapshot.get("bannedUserIds") as? List<String>) ?: emptyList()
+                    @Suppress("UNCHECKED_CAST")
+                    val kickedList = (snapshot.get("kickedUserIds") as? List<String>) ?: emptyList()
+                    if ((currentUser.uid in bannedList || currentUser.uid in kickedList) && !isUserHost) {
+                        Toast.makeText(context, "You have been removed from this room by host/admin", Toast.LENGTH_SHORT).show()
+                        AudioPlayerManager.pause()
+                        onDismiss()
+                        return@addSnapshotListener
+                    }
+                    room = updated
 
-                        // Audio Sync: If room has track and is playing
-                        if (updated.isPlaying && updated.nowPlayingUrl.isNotBlank()) {
-                            if (AudioPlayerManager.currentTrackUrlState.value != updated.nowPlayingUrl || !AudioPlayerManager.isPlayingState.value) {
-                                AudioPlayerManager.play(context, updated.nowPlayingUrl, updated.nowPlayingTitle, updated.nowPlayingArtworkUrl)
-                            }
-                        } else if (!updated.isPlaying && AudioPlayerManager.isPlayingState.value) {
-                            AudioPlayerManager.pause()
+                    // Audio Sync: If room has track and is playing
+                    if (updated.isPlaying && updated.nowPlayingUrl.isNotBlank()) {
+                        val trackStartedAt = snapshot.getLong("trackStartedAt") ?: updated.trackStartedAt
+                        val elapsedMs = if (trackStartedAt > 0L) {
+                            (System.currentTimeMillis() - trackStartedAt).toInt().coerceAtLeast(0)
+                        } else {
+                            updated.playbackPosition.toInt().coerceAtLeast(0)
                         }
+
+                        if (AudioPlayerManager.currentTrackUrlState.value != updated.nowPlayingUrl || !AudioPlayerManager.isPlayingState.value) {
+                            AudioPlayerManager.play(context, updated.nowPlayingUrl, updated.nowPlayingTitle, updated.nowPlayingArtworkUrl, initialSeekMs = elapsedMs)
+                        } else {
+                            val currentLocalPos = AudioPlayerManager.currentPositionMsState.value
+                            val dur = AudioPlayerManager.durationMsState.value
+                            val targetPos = if (dur > 0) (elapsedMs % dur) else elapsedMs
+                            if (kotlin.math.abs(currentLocalPos - targetPos) > 4000) {
+                                AudioPlayerManager.seekTo(targetPos)
+                            }
+                        }
+                    } else if (!updated.isPlaying && AudioPlayerManager.isPlayingState.value) {
+                        AudioPlayerManager.pause()
                     }
                 } else if (snapshot != null && !snapshot.exists() && !isUserHost && (System.currentTimeMillis() - room.createdAt > 15_000L)) {
                     Toast.makeText(context, "This room is no longer active", Toast.LENGTH_SHORT).show()
@@ -3694,27 +3751,48 @@ fun AudioHangoutRoomDialog(
                         }
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            // 1. Eye-icon Live Viewers Badge (Clickable: Opens Real-Time Viewers List)
+                            // 1. Real-Time Viewers Avatar Stack & Count Badge (Clickable: Opens Viewers List)
                             Row(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(50))
-                                    .background(Color.Black.copy(alpha = 0.5f))
-                                    .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(50))
+                                    .background(Color.Black.copy(alpha = 0.55f))
+                                    .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(50))
                                     .clickable { showAllViewersDialog = true }
                                     .padding(horizontal = 7.dp, vertical = 3.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Visibility,
-                                    contentDescription = "Live Viewers",
-                                    tint = Color.LightGray,
-                                    modifier = Modifier.size(12.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
+                                val previewMembers = activeMembers.take(3)
+                                if (previewMembers.isNotEmpty()) {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy((-8).dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        previewMembers.forEach { m ->
+                                            AsyncImage(
+                                                model = m.photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                                                contentDescription = m.name,
+                                                modifier = Modifier
+                                                    .size(20.dp)
+                                                    .clip(CircleShape)
+                                                    .border(1.dp, BrandGold.copy(alpha = 0.8f), CircleShape),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.width(5.dp))
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.Visibility,
+                                        contentDescription = "Live Viewers",
+                                        tint = Color.LightGray,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                }
                                 Text(
                                     text = "${activeMembers.size}",
                                     color = Color.White,
-                                    fontSize = 10.sp,
+                                    fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -3955,6 +4033,19 @@ fun AudioHangoutRoomDialog(
                                     modifier = Modifier.size(13.dp)
                                 )
                             }
+                        }
+
+                        // 3B. LIVE EMOJI REACTION BUTTON
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(if (showEmojiTray) BrandGold.copy(alpha = 0.35f) else Color.Black.copy(alpha = 0.65f))
+                                .border(1.5.dp, if (showEmojiTray) BrandGold else BrandBorder, CircleShape)
+                                .clickable { showEmojiTray = !showEmojiTray },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("😊", fontSize = 18.sp)
                         }
 
                         // 4. GIFT STORE BUTTON (Inline in bottom bar - NEVER covers comment box)
@@ -4269,7 +4360,14 @@ fun AudioHangoutRoomDialog(
                         currentPosMs = currentPosMs,
                         totalDurationMs = totalDurationMs,
                         onTogglePlay = {
+                            if (!isUserAdmin) {
+                                Toast.makeText(context, "Only room host or admin can control music 🎵", Toast.LENGTH_SHORT).show()
+                                return@CategoryThemedPlayerConsole
+                            }
                             val willPlay = !isPlayingNow
+                            val now = System.currentTimeMillis()
+                            val curPos = AudioPlayerManager.currentPositionMsState.value
+                            val trackStarted = if (willPlay) (now - curPos) else 0L
                             if (willPlay) {
                                 if (AudioPlayerManager.currentTrackUrlState.value.isNotBlank()) {
                                     AudioPlayerManager.resume(context)
@@ -4277,15 +4375,17 @@ fun AudioHangoutRoomDialog(
                                     val defaultUrl = room.nowPlayingUrl.ifEmpty { CURATED_HANGOUT_TRACKS[0].url }
                                     val defaultTitle = room.nowPlayingTitle.ifEmpty { CURATED_HANGOUT_TRACKS[0].title }
                                     val defaultArt = room.nowPlayingArtworkUrl.ifEmpty { CURATED_HANGOUT_TRACKS[0].artworkUrl }
-                                    AudioPlayerManager.play(context, defaultUrl, defaultTitle, defaultArt)
+                                    AudioPlayerManager.play(context, defaultUrl, defaultTitle, defaultArt, initialSeekMs = curPos)
                                 }
                             } else {
                                 AudioPlayerManager.pause()
                             }
-                            room = room.copy(isPlaying = willPlay)
+                            room = room.copy(isPlaying = willPlay, trackStartedAt = trackStarted, playbackPosition = curPos.toLong())
                             db.collection("rooms").document(room.id).set(
                                 mapOf(
                                     "isPlaying" to willPlay,
+                                    "trackStartedAt" to trackStarted,
+                                    "playbackPosition" to curPos.toLong(),
                                     "nowPlayingTitle" to AudioPlayerManager.currentTrackTitleState.value.ifEmpty { room.nowPlayingTitle },
                                     "nowPlayingArtist" to room.nowPlayingArtist,
                                     "nowPlayingUrl" to AudioPlayerManager.currentTrackUrlState.value.ifEmpty { room.nowPlayingUrl },
@@ -4294,7 +4394,13 @@ fun AudioHangoutRoomDialog(
                                 SetOptions.merge()
                             )
                         },
-                        onSelectTrack = { showTrackSelector = true },
+                        onSelectTrack = {
+                            if (!isUserAdmin) {
+                                Toast.makeText(context, "Only room host or admin can change music 🎵", Toast.LENGTH_SHORT).show()
+                            } else {
+                                showTrackSelector = true
+                            }
+                        },
                         onTriggerSoundFx = { fx ->
                             try {
                                 val toneGen = ToneGenerator(AudioManager.STREAM_MUSIC, 75)
@@ -4339,6 +4445,7 @@ fun AudioHangoutRoomDialog(
                         isLocalTalking = isLocalTalking,
                         allProfiles = allProfiles,
                         userActiveFrame = activeUserFrame,
+                        activeEmojiReactions = activeEmojiReactions,
                         categorySeatEmoji = "🎙️",
                         categorySeatLabel = "Mic",
                         onSeatClick = { seat ->
@@ -4351,8 +4458,12 @@ fun AudioHangoutRoomDialog(
                                     Toast.makeText(context, "This microphone is locked by the host 🔒", Toast.LENGTH_SHORT).show()
                                 } else if (currentSeat != null) {
                                     // User (Host or Speaker) is ALREADY seated -> 1-TAP INSTANT MOVE TO THIS MIC!
-                                    joinMicSeat(db, room.id, seat.seatIndex, currentUser, micSeats)
-                                    Toast.makeText(context, "Moved to Mic ${seat.seatIndex + 1}! 🎙️", Toast.LENGTH_SHORT).show()
+                                    if (seat.isLocked && !isUserAdmin) {
+                                        Toast.makeText(context, "This microphone is locked by the host 🔒", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        joinMicSeat(db, room.id, seat.seatIndex, currentUser, micSeats)
+                                        Toast.makeText(context, "Moved to Mic ${seat.seatIndex + 1}! 🎙️", Toast.LENGTH_SHORT).show()
+                                    }
                                 } else if (isUserAdmin) {
                                     // Host/Admin not yet seated -> open admin options (Take mic, lock, invite)
                                     selectedSeatForAdmin = seat
@@ -4491,6 +4602,48 @@ fun AudioHangoutRoomDialog(
                         onDismiss = { activeGiftEvent = null }
                     )
                 }
+
+                // -------------------------------------------------------------
+                // LIVE FLOATING EMOJI REACTION TRAY
+                // -------------------------------------------------------------
+                AnimatedVisibility(
+                    visible = showEmojiTray,
+                    enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                    exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 6.dp, start = 8.dp, end = 8.dp)
+                ) {
+                    Surface(
+                        color = Color(0xFF1E171C).copy(alpha = 0.95f),
+                        shape = RoundedCornerShape(24.dp),
+                        border = BorderStroke(1.5.dp, BrandGold.copy(alpha = 0.75f)),
+                        shadowElevation = 10.dp
+                    ) {
+                        val reactionsList = listOf("✌️", "😱", "😵‍💫", "🤔", "😴", "👉", "🤮", "🤘", "😍", "😂", "🔥", "❤️", "👍", "👏", "🎉", "🚀", "💯", "🥳", "😎", "🤣")
+                        LazyRow(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            items(reactionsList) { emo ->
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.White.copy(alpha = 0.08f))
+                                        .clickable {
+                                            triggerEmojiReaction(emo)
+                                            showEmojiTray = false
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(text = emo, fontSize = 22.sp)
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -4501,6 +4654,7 @@ fun AudioHangoutRoomDialog(
             TrackSelectorDialog(
                 onDismiss = { showTrackSelector = false },
                 onSelectTrack = { title, artist, category, url, artworkUrl ->
+                    val now = System.currentTimeMillis()
                     db.collection("rooms").document(room.id).set(
                         mapOf(
                             "currentPlayingTrack" to title,
@@ -4509,6 +4663,7 @@ fun AudioHangoutRoomDialog(
                             "nowPlayingUrl" to url,
                             "nowPlayingArtworkUrl" to artworkUrl,
                             "isPlaying" to true,
+                            "trackStartedAt" to now,
                             "playbackPosition" to 0L
                         ),
                         com.google.firebase.firestore.SetOptions.merge()
@@ -4518,9 +4673,11 @@ fun AudioHangoutRoomDialog(
                         nowPlayingArtist = artist,
                         nowPlayingUrl = url,
                         nowPlayingArtworkUrl = artworkUrl,
-                        isPlaying = true
+                        isPlaying = true,
+                        trackStartedAt = now,
+                        playbackPosition = 0L
                     )
-                    AudioPlayerManager.play(context, url, title, artworkUrl)
+                    AudioPlayerManager.play(context, url, title, artworkUrl, initialSeekMs = 0)
                     Toast.makeText(context, "Streaming: $title by $artist", Toast.LENGTH_SHORT).show()
                 }
             )
@@ -5624,6 +5781,7 @@ fun TenMicStageSection(
     isLocalTalking: Boolean,
     allProfiles: List<UserProfile> = emptyList(),
     userActiveFrame: String = "",
+    activeEmojiReactions: Map<String, String> = emptyMap(),
     categorySeatEmoji: String = "🎙️",
     categorySeatLabel: String = "Seat",
     onSeatClick: (MicSeat) -> Unit,
@@ -5659,6 +5817,7 @@ fun TenMicStageSection(
                     isHost = isHost,
                     allProfiles = allProfiles,
                     userActiveFrame = userActiveFrame,
+                    reactionEmoji = activeEmojiReactions[seat.uid],
                     categorySeatEmoji = "🎙️",
                     categorySeatLabel = "Mic",
                     onClick = { onSeatClick(seat) }
@@ -5690,6 +5849,7 @@ fun TenMicStageSection(
                     isHost = isHost,
                     allProfiles = allProfiles,
                     userActiveFrame = userActiveFrame,
+                    reactionEmoji = activeEmojiReactions[seat.uid],
                     categorySeatEmoji = "🎙️",
                     categorySeatLabel = "Mic",
                     onClick = { onSeatClick(seat) }
@@ -5707,6 +5867,7 @@ fun MicSeatView(
     isHost: Boolean,
     allProfiles: List<UserProfile> = emptyList(),
     userActiveFrame: String = "",
+    reactionEmoji: String? = null,
     categorySeatEmoji: String = "🎙️",
     categorySeatLabel: String = "Mic",
     onClick: () -> Unit
@@ -5817,6 +5978,50 @@ fun MicSeatView(
                         contentDescription = "Take Mic",
                         tint = if (seat.seatIndex == 0) BrandGold else BrandCoral,
                         modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
+            // 3. Floating Live Bouncy Emoji Reaction Overlay
+            if (!reactionEmoji.isNullOrBlank()) {
+                var animOffset by remember(reactionEmoji) { mutableStateOf(0f) }
+                var animAlpha by remember(reactionEmoji) { mutableStateOf(1f) }
+                var animScale by remember(reactionEmoji) { mutableStateOf(0.3f) }
+
+                LaunchedEffect(reactionEmoji) {
+                    animOffset = 0f
+                    animAlpha = 1f
+                    animScale = 0.3f
+                    animate(0.3f, 1.35f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)) { v, _ ->
+                        animScale = v
+                    }
+                    launch {
+                        animate(0f, -44f, animationSpec = tween(2200, easing = LinearOutSlowInEasing)) { v, _ ->
+                            animOffset = v
+                        }
+                    }
+                    launch {
+                        delay(1400)
+                        animate(1f, 0f, animationSpec = tween(800)) { v, _ ->
+                            animAlpha = v
+                        }
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .offset(y = animOffset.dp)
+                        .graphicsLayer(
+                            scaleX = animScale,
+                            scaleY = animScale,
+                            alpha = animAlpha
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = reactionEmoji,
+                        fontSize = 28.sp
                     )
                 }
             }
