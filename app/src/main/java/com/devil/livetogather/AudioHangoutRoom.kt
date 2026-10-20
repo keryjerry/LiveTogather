@@ -251,7 +251,7 @@ fun CreateRoomDialog(
                                     )
                             ) {
                                 AsyncImage(
-                                    model = theme.imageUrl,
+                                    model = if (theme.imageUrl == "vip_royal_stage") R.drawable.vip_royal_stage else theme.imageUrl,
                                     contentDescription = theme.name,
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop
@@ -470,7 +470,7 @@ fun EditRoomDialog(
                                     )
                             ) {
                                 AsyncImage(
-                                    model = theme.imageUrl,
+                                    model = if (theme.imageUrl == "vip_royal_stage") R.drawable.vip_royal_stage else theme.imageUrl,
                                     contentDescription = theme.name,
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop
@@ -2773,7 +2773,7 @@ fun RoomSettingsDialog(
                                             }
                                         ) {
                                             AsyncImage(
-                                                model = preset.imageUrl,
+                                                model = if (preset.imageUrl == "vip_royal_stage") R.drawable.vip_royal_stage else preset.imageUrl,
                                                 contentDescription = preset.name,
                                                 modifier = Modifier
                                                     .size(64.dp)
@@ -4439,6 +4439,37 @@ fun AudioHangoutRoomDialog(
                             )
                         }
 
+                        // 2B. GLOBAL MUSIC ENGINE BUTTON (Opens Full Music & Artist Search)
+                        val isMusicActive = AudioPlayerManager.isPlayingState.value || room.nowPlayingUrl.isNotBlank()
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (isMusicActive) BrandCoral else BrandCard
+                                )
+                                .border(
+                                    1.5.dp,
+                                    if (isMusicActive) BrandGold else BrandBorder,
+                                    CircleShape
+                                )
+                                .clickable {
+                                    if (!isUserAdmin) {
+                                        Toast.makeText(context, "Only room host or admin can select music 🎵", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        showTrackSelector = true
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MusicNote,
+                                contentDescription = "Music Engine",
+                                tint = if (isMusicActive) Color.White else BrandGold,
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
+
                         // 3. COMMENT BOX (Adjusted width with weight(1f), no logic changes)
                         Row(
                             modifier = Modifier
@@ -4575,13 +4606,23 @@ fun AudioHangoutRoomDialog(
                     .padding(paddingValues)
             ) {
                 // Ambient Luxury Wallpaper in Background (Full Room Ambiance)
-                AsyncImage(
-                    model = room.banner_image_url.ifEmpty { "https://images.unsplash.com/photo-1578683010236-d716f9a3f461" },
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                    alpha = 0.40f
-                )
+                val isVipRoom = room.isVipRoom || room.category.equals("vip_room", ignoreCase = true) || room.title.contains("VIP", ignoreCase = true) || room.privacy.equals("vip_only", ignoreCase = true) || room.banner_image_url == "vip_royal_stage"
+                if (isVipRoom) {
+                    Image(
+                        painter = painterResource(id = R.drawable.vip_royal_stage),
+                        contentDescription = "VIP Royal Stage Background",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    AsyncImage(
+                        model = if (room.banner_image_url == "vip_royal_stage") R.drawable.vip_royal_stage else room.banner_image_url.ifEmpty { "https://images.unsplash.com/photo-1578683010236-d716f9a3f461" },
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                        alpha = 0.40f
+                    )
+                }
 
                 Column(
                     modifier = Modifier
@@ -4837,7 +4878,7 @@ fun AudioHangoutRoomDialog(
                     Spacer(modifier = Modifier.height(4.dp))
 
                     // ---------------------------------------------------------
-                    // 2. CATEGORY THEMED PLAYER CONSOLE (14 ROOM DESIGNS + 4 SOUND FX PADS)
+                    // 2. CATEGORY THEMED PLAYER CONSOLE (SHOWN IN NON-VIP ROOMS; VIP USES FLOATING EQUALIZER)
                     // ---------------------------------------------------------
                     val currentTheme = getCategoryTheme(room.category)
                     val currentArtwork = room.nowPlayingArtworkUrl.ifEmpty { AudioPlayerManager.currentTrackArtworkUrlState.value }
@@ -4847,160 +4888,178 @@ fun AudioHangoutRoomDialog(
                     val currentPosMs by AudioPlayerManager.currentPositionMsState
                     val totalDurationMs by AudioPlayerManager.durationMsState
 
-                    CategoryThemedPlayerConsole(
-                        room = room,
-                        isPlayingNow = isPlayingNow,
-                        isBuffering = isBuffering,
-                        currentArtwork = currentArtwork,
-                        formattedTime = formattedTime,
-                        currentPosMs = currentPosMs,
-                        totalDurationMs = totalDurationMs,
-                        onTogglePlay = {
-                            if (!isUserAdmin) {
-                                Toast.makeText(context, "Only room host or admin can control music 🎵", Toast.LENGTH_SHORT).show()
-                                return@CategoryThemedPlayerConsole
-                            }
-                            val willPlay = !isPlayingNow
-                            val now = System.currentTimeMillis()
-                            val curPos = AudioPlayerManager.currentPositionMsState.value
-                            val trackStarted = if (willPlay) (now - curPos) else 0L
-                            if (willPlay) {
-                                if (AudioPlayerManager.currentTrackUrlState.value.isNotBlank()) {
-                                    AudioPlayerManager.resume(context)
+                    if (!isVipRoom) {
+                        CategoryThemedPlayerConsole(
+                            room = room,
+                            isPlayingNow = isPlayingNow,
+                            isBuffering = isBuffering,
+                            currentArtwork = currentArtwork,
+                            formattedTime = formattedTime,
+                            currentPosMs = currentPosMs,
+                            totalDurationMs = totalDurationMs,
+                            onTogglePlay = {
+                                if (!isUserAdmin) {
+                                    Toast.makeText(context, "Only room host or admin can control music 🎵", Toast.LENGTH_SHORT).show()
+                                    return@CategoryThemedPlayerConsole
+                                }
+                                val willPlay = !isPlayingNow
+                                val now = System.currentTimeMillis()
+                                val curPos = AudioPlayerManager.currentPositionMsState.value
+                                val trackStarted = if (willPlay) (now - curPos) else 0L
+                                if (willPlay) {
+                                    if (AudioPlayerManager.currentTrackUrlState.value.isNotBlank()) {
+                                        AudioPlayerManager.resume(context)
+                                    } else {
+                                        val defaultUrl = room.nowPlayingUrl.ifEmpty { CURATED_HANGOUT_TRACKS[0].url }
+                                        val defaultTitle = room.nowPlayingTitle.ifEmpty { CURATED_HANGOUT_TRACKS[0].title }
+                                        val defaultArt = room.nowPlayingArtworkUrl.ifEmpty { CURATED_HANGOUT_TRACKS[0].artworkUrl }
+                                        AudioPlayerManager.play(context, defaultUrl, defaultTitle, defaultArt, initialSeekMs = curPos)
+                                    }
                                 } else {
-                                    val defaultUrl = room.nowPlayingUrl.ifEmpty { CURATED_HANGOUT_TRACKS[0].url }
-                                    val defaultTitle = room.nowPlayingTitle.ifEmpty { CURATED_HANGOUT_TRACKS[0].title }
-                                    val defaultArt = room.nowPlayingArtworkUrl.ifEmpty { CURATED_HANGOUT_TRACKS[0].artworkUrl }
-                                    AudioPlayerManager.play(context, defaultUrl, defaultTitle, defaultArt, initialSeekMs = curPos)
+                                    AudioPlayerManager.pause()
                                 }
-                            } else {
-                                AudioPlayerManager.pause()
-                            }
-                            room = room.copy(isPlaying = willPlay, trackStartedAt = trackStarted, playbackPosition = curPos.toLong())
-                            db.collection("rooms").document(room.id).set(
-                                mapOf(
-                                    "isPlaying" to willPlay,
-                                    "trackStartedAt" to trackStarted,
-                                    "playbackPosition" to curPos.toLong(),
-                                    "nowPlayingTitle" to AudioPlayerManager.currentTrackTitleState.value.ifEmpty { room.nowPlayingTitle },
-                                    "nowPlayingArtist" to room.nowPlayingArtist,
-                                    "nowPlayingUrl" to AudioPlayerManager.currentTrackUrlState.value.ifEmpty { room.nowPlayingUrl },
-                                    "nowPlayingArtworkUrl" to AudioPlayerManager.currentTrackArtworkUrlState.value.ifEmpty { room.nowPlayingArtworkUrl }
-                                ),
-                                SetOptions.merge()
-                            )
-                        },
-                        onSelectTrack = {
-                            if (!isUserAdmin) {
-                                Toast.makeText(context, "Only room host or admin can change music 🎵", Toast.LENGTH_SHORT).show()
-                            } else {
-                                showTrackSelector = true
-                            }
-                        },
-                        onTriggerSoundFx = { fx ->
-                            try {
-                                val toneGen = ToneGenerator(AudioManager.STREAM_MUSIC, 75)
-                                when (fx.id) {
-                                    "applause", "toast", "cheers" -> toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, 250)
-                                    "cheer", "horn", "horn_party" -> toneGen.startTone(ToneGenerator.TONE_PROP_BEEP2, 300)
-                                    "bell", "champagne", "ice_clink" -> toneGen.startTone(ToneGenerator.TONE_PROP_ACK, 200)
-                                    else -> toneGen.startTone(ToneGenerator.TONE_PROP_PROMPT, 200)
+                                room = room.copy(isPlaying = willPlay, trackStartedAt = trackStarted, playbackPosition = curPos.toLong())
+                                db.collection("rooms").document(room.id).set(
+                                    mapOf(
+                                        "isPlaying" to willPlay,
+                                        "trackStartedAt" to trackStarted,
+                                        "playbackPosition" to curPos.toLong(),
+                                        "nowPlayingTitle" to AudioPlayerManager.currentTrackTitleState.value.ifEmpty { room.nowPlayingTitle },
+                                        "nowPlayingArtist" to room.nowPlayingArtist,
+                                        "nowPlayingUrl" to AudioPlayerManager.currentTrackUrlState.value.ifEmpty { room.nowPlayingUrl },
+                                        "nowPlayingArtworkUrl" to AudioPlayerManager.currentTrackArtworkUrlState.value.ifEmpty { room.nowPlayingArtworkUrl }
+                                    ),
+                                    SetOptions.merge()
+                                )
+                            },
+                            onSelectTrack = {
+                                if (!isUserAdmin) {
+                                    Toast.makeText(context, "Only room host or admin can change music 🎵", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    showTrackSelector = true
                                 }
-                            } catch (e: Exception) {
-                                Log.w("AudioHangoutRoom", "Error playing sound fx tone: ${e.message}")
+                            },
+                            onTriggerSoundFx = { fx ->
+                                try {
+                                    val toneGen = ToneGenerator(AudioManager.STREAM_MUSIC, 75)
+                                    when (fx.id) {
+                                        "applause", "toast", "cheers" -> toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, 250)
+                                        "cheer", "horn", "horn_party" -> toneGen.startTone(ToneGenerator.TONE_PROP_BEEP2, 300)
+                                        "bell", "champagne", "ice_clink" -> toneGen.startTone(ToneGenerator.TONE_PROP_ACK, 200)
+                                        else -> toneGen.startTone(ToneGenerator.TONE_PROP_PROMPT, 200)
+                                    }
+                                } catch (e: Exception) {
+                                    Log.w("AudioHangoutRoom", "Error playing sound fx tone: ${e.message}")
+                                }
+                                val fxComment = LiveRoomComment(
+                                    id = UUID.randomUUID().toString(),
+                                    roomId = room.id,
+                                    userId = currentUser.uid,
+                                    userName = currentUser.name,
+                                    userPhoto = currentUser.photo,
+                                    tier = if (currentUser.isVipOrPlatinum()) "VIP" else "Standard",
+                                    message = "${fx.emoji} triggered sound fx: [${fx.name}]!",
+                                    timestamp = System.currentTimeMillis()
+                                )
+                                db.collection("rooms").document(room.id)
+                                    .collection("live_comments").document(fxComment.id)
+                                    .set(fxComment)
+                                Toast.makeText(context, "${fx.emoji} ${fx.name}!", Toast.LENGTH_SHORT).show()
                             }
-                            val fxComment = LiveRoomComment(
-                                id = UUID.randomUUID().toString(),
-                                roomId = room.id,
-                                userId = currentUser.uid,
-                                userName = currentUser.name,
-                                userPhoto = currentUser.photo,
-                                tier = if (currentUser.isVipOrPlatinum()) "VIP" else "Standard",
-                                message = "${fx.emoji} triggered sound fx: [${fx.name}]!",
-                                timestamp = System.currentTimeMillis()
-                            )
-                            db.collection("rooms").document(room.id)
-                                .collection("live_comments").document(fxComment.id)
-                                .set(fxComment)
-                            Toast.makeText(context, "${fx.emoji} ${fx.name}!", Toast.LENGTH_SHORT).show()
-                        }
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
 
                     // ---------------------------------------------------------
-                    // 2.5 REAL 10-MIC LIVE AUDIO STAGE (DIRECTLY BENEATH EQUALIZER)
+                    // 2.5 STAGE SECTION (VIP ROYAL CANVAS OR 10-MIC STAGE)
                     // ---------------------------------------------------------
-                    TenMicStageSection(
-                        seats = if (micSeats.isNotEmpty()) micSeats else (0..9).map { idx ->
-                            if (idx == 0) MicSeat(seatIndex = 0, label = "Host 👑", uid = targetHostId, name = hostName, photo = hostPhoto, role = "host")
-                            else MicSeat(seatIndex = idx, label = "Mic ${idx + 1}", uid = "", name = "", photo = "", role = "speaker")
-                        },
-                        currentUserId = currentUser.uid,
-                        isHost = isUserAdmin,
-                        isLocalTalking = isLocalTalking,
-                        allProfiles = allProfiles,
-                        userActiveFrame = activeUserFrame,
-                        activeEmojiReactions = activeEmojiReactions,
-                        categorySeatEmoji = "🎙️",
-                        categorySeatLabel = "Mic",
-                        onSeatClick = { seat ->
-                            val currentSeat = micSeats.find { it.uid == currentUser.uid }
-                            if (seat.uid == currentUser.uid) {
-                                selectedOwnSeatForControl = seat
-                            } else if (seat.uid.isEmpty()) {
-                                // Vacant mic seat!
+                    val stageSeats = if (micSeats.isNotEmpty()) micSeats else (0..9).map { idx ->
+                        if (idx == 0) MicSeat(seatIndex = 0, label = "Host 👑", uid = targetHostId, name = hostName, photo = hostPhoto, role = "host")
+                        else MicSeat(seatIndex = idx, label = "Mic ${idx + 1}", uid = "", name = "", photo = "", role = "speaker")
+                    }
+
+                    val handleSeatClick: (MicSeat) -> Unit = { seat ->
+                        val currentSeat = micSeats.find { it.uid == currentUser.uid }
+                        if (seat.uid == currentUser.uid) {
+                            selectedOwnSeatForControl = seat
+                        } else if (seat.uid.isEmpty()) {
+                            // Vacant mic seat!
+                            if (seat.isLocked && !isUserAdmin) {
+                                Toast.makeText(context, "This microphone is locked by the host 🔒", Toast.LENGTH_SHORT).show()
+                            } else if (currentSeat != null) {
+                                // User (Host or Speaker) is ALREADY seated -> 1-TAP INSTANT MOVE TO THIS MIC!
                                 if (seat.isLocked && !isUserAdmin) {
                                     Toast.makeText(context, "This microphone is locked by the host 🔒", Toast.LENGTH_SHORT).show()
-                                } else if (currentSeat != null) {
-                                    // User (Host or Speaker) is ALREADY seated -> 1-TAP INSTANT MOVE TO THIS MIC!
-                                    if (seat.isLocked && !isUserAdmin) {
-                                        Toast.makeText(context, "This microphone is locked by the host 🔒", Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        joinMicSeat(db, room.id, seat.seatIndex, currentUser, micSeats)
-                                        Toast.makeText(context, "Moved to Mic ${seat.seatIndex + 1}! 🎙️", Toast.LENGTH_SHORT).show()
-                                    }
-                                } else if (isUserAdmin) {
-                                    // Host/Admin not yet seated -> open admin options (Take mic, lock, invite)
-                                    selectedSeatForAdmin = seat
                                 } else {
-                                    // Audience member tapping empty mic -> take mic
-                                    val hasPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-                                    if (hasPerm) {
-                                        joinMicSeat(db, room.id, seat.seatIndex, currentUser, micSeats)
-                                        Toast.makeText(context, "You are now live on Mic ${seat.seatIndex + 1}! 🎙️", Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        pendingSeatToJoin = seat
-                                        recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                    }
+                                    joinMicSeat(db, room.id, seat.seatIndex, currentUser, micSeats)
+                                    Toast.makeText(context, "Moved to Mic ${seat.seatIndex + 1}! 🎙️", Toast.LENGTH_SHORT).show()
                                 }
                             } else if (isUserAdmin) {
-                                // Occupied mic seat and user is host/admin -> open moderation & speaker relocation options
+                                // Host/Admin not yet seated -> open admin options (Take mic, lock, invite)
                                 selectedSeatForAdmin = seat
                             } else {
-                                // Occupied mic seat and user is audience -> view speaker profile
-                                val memberProfile = allProfiles.find { it.uid == seat.uid }
-                                selectedMemberForSheet = RoomMember(
-                                    uid = seat.uid,
-                                    userId = memberProfile?.userId ?: "",
-                                    name = seat.name,
-                                    photoUrl = seat.photo,
-                                    role = seat.role
-                                )
+                                // Audience member tapping empty mic -> take mic
+                                val hasPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                                if (hasPerm) {
+                                    joinMicSeat(db, room.id, seat.seatIndex, currentUser, micSeats)
+                                    Toast.makeText(context, "You are now live on Mic ${seat.seatIndex + 1}! 🎙️", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    pendingSeatToJoin = seat
+                                    recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                }
                             }
-                        },
-                        onQuickToggleMute = {
-                            myCurrentMicSeat?.let { seat ->
-                                toggleMuteMicSeat(db, room.id, seat.seatIndex, seat.isMuted)
-                            }
-                        },
-                        onQuickLeaveStage = {
-                            myCurrentMicSeat?.let { seat ->
-                                vacateMicSeat(db, room.id, seat.seatIndex, seat.isLocked)
-                                Toast.makeText(context, "You stepped down from the stage", Toast.LENGTH_SHORT).show()
-                            }
+                        } else if (isUserAdmin) {
+                            // Occupied mic seat and user is host/admin -> open moderation & speaker relocation options
+                            selectedSeatForAdmin = seat
+                        } else {
+                            // Occupied mic seat and user is audience -> view speaker profile
+                            val memberProfile = allProfiles.find { it.uid == seat.uid }
+                            selectedMemberForSheet = RoomMember(
+                                uid = seat.uid,
+                                userId = memberProfile?.userId ?: "",
+                                name = seat.name,
+                                photoUrl = seat.photo,
+                                role = seat.role
+                            )
                         }
-                    )
+                    }
+
+                    if (isVipRoom) {
+                        VipRoyalStageCanvas(
+                            seats = stageSeats,
+                            currentUserId = currentUser.uid,
+                            isHost = isUserAdmin,
+                            isLocalTalking = isLocalTalking,
+                            allProfiles = allProfiles,
+                            userActiveFrame = activeUserFrame,
+                            activeEmojiReactions = activeEmojiReactions,
+                            onSeatClick = handleSeatClick
+                        )
+                    } else {
+                        TenMicStageSection(
+                            seats = stageSeats,
+                            currentUserId = currentUser.uid,
+                            isHost = isUserAdmin,
+                            isLocalTalking = isLocalTalking,
+                            allProfiles = allProfiles,
+                            userActiveFrame = activeUserFrame,
+                            activeEmojiReactions = activeEmojiReactions,
+                            categorySeatEmoji = "🎙️",
+                            categorySeatLabel = "Mic",
+                            onSeatClick = handleSeatClick,
+                            onQuickToggleMute = {
+                                myCurrentMicSeat?.let { seat ->
+                                    toggleMuteMicSeat(db, room.id, seat.seatIndex, seat.isMuted)
+                                }
+                            },
+                            onQuickLeaveStage = {
+                                myCurrentMicSeat?.let { seat ->
+                                    vacateMicSeat(db, room.id, seat.seatIndex, seat.isLocked)
+                                    Toast.makeText(context, "You stepped down from the stage", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(4.dp))
 
@@ -5087,6 +5146,97 @@ fun AudioHangoutRoomDialog(
                             }
                         }
                     }
+                }
+
+                // -------------------------------------------------------------
+                // IN-ROOM DRAGGABLE FLOATING PIP MUSIC EQUALIZER PLAYER
+                // -------------------------------------------------------------
+                val isMusicPlayingFloating = AudioPlayerManager.isPlayingState.value || room.isPlaying
+                val floatingTrackUrl = AudioPlayerManager.currentTrackUrlState.value.ifEmpty { room.nowPlayingUrl }
+                val floatingTrackTitle = AudioPlayerManager.currentTrackTitleState.value.ifEmpty { room.nowPlayingTitle }
+                val floatingTrackArtist = room.nowPlayingArtist
+                val floatingArtwork = AudioPlayerManager.currentTrackArtworkUrlState.value.ifEmpty { room.nowPlayingArtworkUrl }
+
+                if (isVipRoom && (isMusicPlayingFloating || floatingTrackUrl.isNotBlank())) {
+                    FloatingMusicEqualizerPlayer(
+                        room = room,
+                        isPlaying = isMusicPlayingFloating,
+                        trackTitle = floatingTrackTitle,
+                        trackArtist = floatingTrackArtist,
+                        artworkUrl = floatingArtwork,
+                        isHostOrAdmin = isUserAdmin,
+                        onTogglePlay = {
+                            if (!isUserAdmin) {
+                                Toast.makeText(context, "Only room host or admin can control music 🎵", Toast.LENGTH_SHORT).show()
+                            } else {
+                                val willPlay = !isMusicPlayingFloating
+                                val now = System.currentTimeMillis()
+                                val curPos = AudioPlayerManager.currentPositionMsState.value
+                                val trackStarted = if (willPlay) (now - curPos) else 0L
+                                if (willPlay) {
+                                    if (AudioPlayerManager.currentTrackUrlState.value.isNotBlank()) {
+                                        AudioPlayerManager.resume(context)
+                                    } else {
+                                        val defaultUrl = room.nowPlayingUrl.ifEmpty { CURATED_HANGOUT_TRACKS[0].url }
+                                        val defaultTitle = room.nowPlayingTitle.ifEmpty { CURATED_HANGOUT_TRACKS[0].title }
+                                        val defaultArt = room.nowPlayingArtworkUrl.ifEmpty { CURATED_HANGOUT_TRACKS[0].artworkUrl }
+                                        AudioPlayerManager.play(context, defaultUrl, defaultTitle, defaultArt, initialSeekMs = curPos)
+                                    }
+                                } else {
+                                    AudioPlayerManager.pause()
+                                }
+                                room = room.copy(isPlaying = willPlay, trackStartedAt = trackStarted, playbackPosition = curPos.toLong())
+                                db.collection("rooms").document(room.id).set(
+                                    mapOf(
+                                        "isPlaying" to willPlay,
+                                        "trackStartedAt" to trackStarted,
+                                        "playbackPosition" to curPos.toLong(),
+                                        "nowPlayingTitle" to AudioPlayerManager.currentTrackTitleState.value.ifEmpty { room.nowPlayingTitle },
+                                        "nowPlayingArtist" to room.nowPlayingArtist,
+                                        "nowPlayingUrl" to AudioPlayerManager.currentTrackUrlState.value.ifEmpty { room.nowPlayingUrl },
+                                        "nowPlayingArtworkUrl" to AudioPlayerManager.currentTrackArtworkUrlState.value.ifEmpty { room.nowPlayingArtworkUrl }
+                                    ),
+                                    SetOptions.merge()
+                                )
+                            }
+                        },
+                        onOpenSearch = {
+                            if (!isUserAdmin) {
+                                Toast.makeText(context, "Only room host or admin can select music 🎵", Toast.LENGTH_SHORT).show()
+                            } else {
+                                showTrackSelector = true
+                            }
+                        },
+                        onStopMusic = {
+                            if (!isUserAdmin) {
+                                Toast.makeText(context, "Only room host or admin can stop music 🛑", Toast.LENGTH_SHORT).show()
+                            } else {
+                                AudioPlayerManager.stop()
+                                room = room.copy(
+                                    isPlaying = false,
+                                    nowPlayingUrl = "",
+                                    nowPlayingTitle = "",
+                                    nowPlayingArtist = "",
+                                    nowPlayingArtworkUrl = "",
+                                    trackStartedAt = 0L,
+                                    playbackPosition = 0L
+                                )
+                                db.collection("rooms").document(room.id).set(
+                                    mapOf(
+                                        "isPlaying" to false,
+                                        "nowPlayingTitle" to "",
+                                        "nowPlayingArtist" to "",
+                                        "nowPlayingUrl" to "",
+                                        "nowPlayingArtworkUrl" to "",
+                                        "trackStartedAt" to 0L,
+                                        "playbackPosition" to 0L
+                                    ),
+                                    SetOptions.merge()
+                                )
+                                Toast.makeText(context, "Music playback stopped ⏹️", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    )
                 }
 
                 // -------------------------------------------------------------
@@ -6370,6 +6520,234 @@ fun TenMicStageSection(
                     categorySeatEmoji = "🎙️",
                     categorySeatLabel = "Mic",
                     onClick = { onSeatClick(seat) }
+                )
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// 2.6 VIP ROYAL STAGE CANVAS (EXACT SOFA & CHAIR COORDINATE MAPPING)
+// -------------------------------------------------------------
+@Composable
+fun VipRoyalStageCanvas(
+    seats: List<MicSeat>,
+    currentUserId: String,
+    isHost: Boolean,
+    isLocalTalking: Boolean,
+    allProfiles: List<UserProfile> = emptyList(),
+    userActiveFrame: String = "",
+    activeEmojiReactions: Map<String, String> = emptyMap(),
+    onSeatClick: (MicSeat) -> Unit
+) {
+    // 10 Seats mapped to the shifted-up curved velvet sofa, armchairs, and round table:
+    // Seat 0: Host 👑 (Front Center Throne Chair)
+    // Seat 1: Center Round Velvet Table
+    // Seat 2: Left Single Armchair
+    // Seat 3: Right Single Armchair
+    // Seat 4: Left Side Table
+    // Seat 5: Right Side Table
+    // Seats 6..9: Curved Velvet Sofa Upper Arc (from left to right)
+    val seatPositions = remember {
+        listOf(
+            0 to (0.50f to 0.80f), // 0: Host Prime Throne Chair
+            1 to (0.50f to 0.50f), // 1: Center Round Table
+            2 to (0.16f to 0.68f), // 2: Left Armchair
+            3 to (0.84f to 0.68f), // 3: Right Armchair
+            4 to (0.16f to 0.42f), // 4: Left Side Table
+            5 to (0.84f to 0.42f), // 5: Right Side Table
+            6 to (0.28f to 0.22f), // 6: Sofa Far Left
+            7 to (0.41f to 0.14f), // 7: Sofa Mid Left
+            8 to (0.59f to 0.14f), // 8: Sofa Mid Right
+            9 to (0.72f to 0.22f)  // 9: Sofa Far Right
+        )
+    }
+
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(265.dp)
+            .padding(horizontal = 4.dp)
+    ) {
+        val stageWidth = maxWidth
+        val stageHeight = maxHeight
+        val seatBoxSize = 64.dp
+
+        for ((idx, pos) in seatPositions) {
+            val (xRatio, yRatio) = pos
+            val seat = seats.find { it.seatIndex == idx } ?: MicSeat(
+                seatIndex = idx,
+                label = if (idx == 0) "Host 👑" else "Mic ${idx + 1}",
+                uid = "",
+                name = "",
+                photo = "",
+                role = if (idx == 0) "host" else "speaker"
+            )
+
+            val xOffset = (stageWidth * xRatio) - (seatBoxSize / 2)
+            val yOffset = (stageHeight * yRatio) - (seatBoxSize / 2)
+
+            Box(
+                modifier = Modifier
+                    .offset(x = xOffset, y = yOffset)
+                    .size(seatBoxSize),
+                contentAlignment = Alignment.Center
+            ) {
+                MicSeatView(
+                    seat = seat,
+                    isCurrentSelf = seat.uid.isNotEmpty() && seat.uid == currentUserId,
+                    isLocalTalking = isLocalTalking,
+                    isHost = isHost,
+                    allProfiles = allProfiles,
+                    userActiveFrame = userActiveFrame,
+                    reactionEmoji = activeEmojiReactions[seat.uid],
+                    categorySeatEmoji = if (idx == 0) "👑" else "🎙️",
+                    categorySeatLabel = if (idx == 0) "Host" else "Seat",
+                    onClick = { onSeatClick(seat) }
+                )
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// 2.7 IN-ROOM DRAGGABLE FLOATING PIP MUSIC EQUALIZER PLAYER
+// -------------------------------------------------------------
+@Composable
+fun FloatingMusicEqualizerPlayer(
+    room: RoomItem,
+    isPlaying: Boolean,
+    trackTitle: String,
+    trackArtist: String,
+    artworkUrl: String,
+    isHostOrAdmin: Boolean,
+    onTogglePlay: () -> Unit,
+    onOpenSearch: () -> Unit,
+    onStopMusic: () -> Unit
+) {
+    var offsetX by remember { mutableFloatStateOf(16f) }
+    var offsetY by remember { mutableFloatStateOf(65f) }
+
+    // Live Animated Equalizer Rhythm Bars
+    val infiniteTransition = rememberInfiniteTransition(label = "eq_bars_transition")
+    val bar1Height by infiniteTransition.animateFloat(
+        initialValue = 4f, targetValue = 18f,
+        animationSpec = infiniteRepeatable(tween(320, easing = LinearEasing), RepeatMode.Reverse), label = "b1"
+    )
+    val bar2Height by infiniteTransition.animateFloat(
+        initialValue = 16f, targetValue = 5f,
+        animationSpec = infiniteRepeatable(tween(440, easing = LinearEasing), RepeatMode.Reverse), label = "b2"
+    )
+    val bar3Height by infiniteTransition.animateFloat(
+        initialValue = 7f, targetValue = 22f,
+        animationSpec = infiniteRepeatable(tween(280, easing = LinearEasing), RepeatMode.Reverse), label = "b3"
+    )
+    val bar4Height by infiniteTransition.animateFloat(
+        initialValue = 14f, targetValue = 6f,
+        animationSpec = infiniteRepeatable(tween(400, easing = LinearEasing), RepeatMode.Reverse), label = "b4"
+    )
+
+    Surface(
+        color = Color(0xFF140B22).copy(alpha = 0.94f),
+        shape = RoundedCornerShape(24.dp),
+        border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(BrandGold, BrandCoral))),
+        shadowElevation = 10.dp,
+        modifier = Modifier
+            .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
+            .pointerInput(Unit) {
+                detectDragGestures { change, dragAmount ->
+                    change.consume()
+                    offsetX += dragAmount.x
+                    offsetY += dragAmount.y
+                }
+            }
+            .clickable { onOpenSearch() }
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Live Dancing Equalizer
+            Row(
+                modifier = Modifier
+                    .height(22.dp)
+                    .width(18.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.Bottom
+            ) {
+                val b1 = if (isPlaying) bar1Height else 4f
+                val b2 = if (isPlaying) bar2Height else 8f
+                val b3 = if (isPlaying) bar3Height else 14f
+                val b4 = if (isPlaying) bar4Height else 6f
+
+                Box(modifier = Modifier.width(3.dp).height(b1.dp).clip(RoundedCornerShape(2.dp)).background(BrandGold))
+                Box(modifier = Modifier.width(3.dp).height(b2.dp).clip(RoundedCornerShape(2.dp)).background(BrandCoral))
+                Box(modifier = Modifier.width(3.dp).height(b3.dp).clip(RoundedCornerShape(2.dp)).background(BrandGold))
+                Box(modifier = Modifier.width(3.dp).height(b4.dp).clip(RoundedCornerShape(2.dp)).background(BrandCoral))
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            // Artwork thumbnail (if present)
+            if (artworkUrl.isNotBlank()) {
+                AsyncImage(
+                    model = artworkUrl,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(26.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .border(0.5.dp, BrandGold.copy(alpha = 0.5f), RoundedCornerShape(6.dp)),
+                    contentScale = ContentScale.Crop
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+            }
+
+            // Track title & artist
+            Column(modifier = Modifier.widthIn(max = 135.dp)) {
+                Text(
+                    text = trackTitle.ifEmpty { "VIP Music Engine 🎵" },
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = if (trackArtist.isNotBlank()) trackArtist else "Tap to change song 🔍",
+                    color = BrandGold,
+                    fontSize = 9.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Spacer(modifier = Modifier.width(6.dp))
+
+            // Play / Pause Toggle Button
+            IconButton(
+                onClick = onTogglePlay,
+                modifier = Modifier
+                    .size(26.dp)
+                    .background(BrandGold.copy(alpha = 0.2f), CircleShape)
+            ) {
+                Icon(
+                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (isPlaying) "Pause" else "Play",
+                    tint = BrandGold,
+                    modifier = Modifier.size(15.dp)
+                )
+            }
+
+            // Close / Stop Button
+            IconButton(
+                onClick = onStopMusic,
+                modifier = Modifier.size(24.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Stop",
+                    tint = Color.LightGray,
+                    modifier = Modifier.size(13.dp)
                 )
             }
         }
