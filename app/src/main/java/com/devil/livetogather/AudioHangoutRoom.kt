@@ -10,6 +10,10 @@ import android.util.Log
 import android.net.Uri
 import android.widget.Toast
 import android.widget.VideoView
+import android.view.TextureView
+import android.view.Surface
+import android.media.MediaPlayer
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.activity.compose.BackHandler
@@ -4504,6 +4508,13 @@ fun AudioHangoutRoomDialog(
                     db.collection("intent_categories").document(room.category)
                         .collection("rooms").document(room.id).update(closeUpdates)
                 }
+                // Clear members from room so no ghost viewers persist across sessions
+                db.collection("rooms").document(room.id).collection("members").get()
+                    .addOnSuccessListener { snaps ->
+                        for (doc in snaps.documents) {
+                            doc.reference.delete()
+                        }
+                    }
                 Toast.makeText(context, "Room session closed. 👋", Toast.LENGTH_SHORT).show()
             }
         } else {
@@ -4540,6 +4551,17 @@ fun AudioHangoutRoomDialog(
                 db.collection("intent_categories").document(room.category)
                     .collection("rooms").document(room.id).update(hostUpdates)
             }
+            // Purge stale/ghost members left behind from previous closed sessions
+            val now = System.currentTimeMillis()
+            db.collection("rooms").document(room.id).collection("members").get()
+                .addOnSuccessListener { snaps ->
+                    for (doc in snaps.documents) {
+                        val joinedAt = doc.getLong("joinedAt") ?: 0L
+                        if (doc.id != currentUser.uid && (joinedAt == 0L || (now - joinedAt > 7_200_000L))) {
+                            doc.reference.delete()
+                        }
+                    }
+                }
         }
     }
 
@@ -4752,7 +4774,20 @@ fun AudioHangoutRoomDialog(
             .addSnapshotListener { snapshot, error ->
                 if (error != null) return@addSnapshotListener
                 if (snapshot != null) {
-                    val list = snapshot.documents.mapNotNull { it.toObject(RoomMember::class.java) }
+                    val now = System.currentTimeMillis()
+                    val list = snapshot.documents.mapNotNull { doc ->
+                        val m = doc.toObject(RoomMember::class.java)
+                        if (m != null) {
+                            if (m.joinedAt > 0L && (now - m.joinedAt > 7_200_000L)) {
+                                if (isUserHost) {
+                                    doc.reference.delete()
+                                }
+                                null
+                            } else {
+                                m
+                            }
+                        } else null
+                    }
                     activeMembers.clear()
                     activeMembers.addAll(list)
                     if (activeMembers.none { it.uid == currentUser.uid }) {
@@ -5189,7 +5224,7 @@ fun AudioHangoutRoomDialog(
                                     .padding(horizontal = 7.dp, vertical = 3.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                val previewMembers = activeMembers.take(3)
+                                val previewMembers = activeMembers.filter { it.uid != targetHostId && (System.currentTimeMillis() - it.joinedAt < 7_200_000L) }.take(3)
                                 if (previewMembers.isNotEmpty()) {
                                     Row(
                                         horizontalArrangement = Arrangement.spacedBy((-8).dp),
@@ -6841,18 +6876,44 @@ fun AudioHangoutRoomDialog(
                         db.collection("users").document(currentUser.uid).update(userUpdates)
                         userDiamonds = newDiamonds
 
-                        // Also award Charm XP to the room host in real-time
-                        if (targetHostId.isNotBlank() && targetHostId != currentUser.uid) {
-                            db.collection("users").document(targetHostId).get().addOnSuccessListener { hostSnap ->
+                        // Also award Charm XP and Host Commission Earnings to the room host in real-time
+                        val recipientHostId = targetHostId.ifBlank { room.hostUid.ifBlank { room.hostId } }
+                        if (recipientHostId.isNotBlank()) {
+                            db.collection("users").document(recipientHostId).get().addOnSuccessListener { hostSnap ->
                                 val curCharmXp = hostSnap.getLong("charmXp") ?: 0L
                                 val updatedCharmXp = curCharmXp + xpEarned
                                 val updatedCharmLvl = LevelBadgeSystem.calculateLevelFromXp(updatedCharmXp)
-                                db.collection("users").document(targetHostId).update(
+
+                                val hostWealthLvl = (hostSnap.getLong("wealthLevel") ?: 1L).toInt()
+                                val commissionPercent = LevelBadgeSystem.getHostCommissionPercent(hostWealthLvl)
+                                // 10,000 diamonds = ₹100 => 1 diamond = ₹0.01
+                                val giftValueInr = giftItem.cost * 0.01
+                                val hostEarningsInr = giftValueInr * (commissionPercent / 100.0)
+
+                                db.collection("users").document(recipientHostId).update(
                                     mapOf(
                                         "charmXp" to updatedCharmXp,
-                                        "charmLevel" to updatedCharmLvl
+                                        "charmLevel" to updatedCharmLvl,
+                                        "earningsInr" to FieldValue.increment(hostEarningsInr),
+                                        "totalEarningsInr" to FieldValue.increment(hostEarningsInr)
                                     )
                                 )
+
+                                // Real-Time Earning Transaction Record
+                                val txId = UUID.randomUUID().toString()
+                                val tx = EarningTransaction(
+                                    id = txId,
+                                    type = "GIFT_COMMISSION",
+                                    title = "Gift received: ${giftItem.name} 🎁",
+                                    amountInr = hostEarningsInr,
+                                    diamonds = giftItem.cost,
+                                    senderName = currentUser.name,
+                                    upiId = "",
+                                    status = "CREDITED",
+                                    timestamp = System.currentTimeMillis()
+                                )
+                                db.collection("users").document(recipientHostId)
+                                    .collection("earning_transactions").document(txId).set(tx)
                             }
                         }
 
@@ -7916,19 +7977,6 @@ fun MicSeatView(
                         tint = Color.White,
                         modifier = Modifier.size(if (isPulsing) 9.dp else 8.dp)
                     )
-                }
-
-                // Mini Level Badge Pill at top-start of avatar
-                val seatUserLevel = seatOccupantProfile?.getEffectiveWealthLevel()
-                    ?: if (seat.name.contains("Yasmin", true) || seat.name.contains("Warsi", true)) 35
-                    else if (seat.name.contains("Devil", true)) 70
-                    else 1
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .offset(x = (-2).dp, y = (-2).dp)
-                ) {
-                    LevelBadgePill(level = seatUserLevel)
                 }
             } else if (seat.isLocked) {
                 // Locked Seat (Matching red-tinted circle with red lock icon)
@@ -9245,25 +9293,49 @@ fun FullScreenGiftAnimationOverlay(
                 "video_mp4" -> {
                     val rawResId = when (giftEvent.giftId) {
                         "lamborghini_mp4" -> R.raw.lamborgini_car
+                        "eagle_entry_mp4" -> R.raw.eagle_entry
+                        "king_lion_mp4" -> R.raw.king_lion_entry
+                        "terminator_dragon_mp4" -> R.raw.terminator_entry
                         "king_entry_mp4" -> R.raw.king_entry
                         else -> R.raw.lamborgini_car
                     }
                     AndroidView(
                         factory = { ctx ->
-                            VideoView(ctx).apply {
-                                val videoUri = Uri.parse("android.resource://${ctx.packageName}/$rawResId")
-                                setVideoURI(videoUri)
-                                setOnPreparedListener { mp ->
-                                    mp.isLooping = false
-                                    mp.setVolume(1.0f, 1.0f)
-                                    start()
-                                }
-                                setOnCompletionListener {
-                                    onDismiss()
+                            TextureView(ctx).apply {
+                                isOpaque = false
+                                surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                                    override fun onSurfaceTextureAvailable(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {
+                                        val s = Surface(surface)
+                                        val mp = MediaPlayer().apply {
+                                            setSurface(s)
+                                            val videoUri = Uri.parse("android.resource://${ctx.packageName}/$rawResId")
+                                            setDataSource(ctx, videoUri)
+                                            setOnPreparedListener { player ->
+                                                player.isLooping = false
+                                                player.setVolume(1.0f, 1.0f)
+                                                player.start()
+                                            }
+                                            setOnCompletionListener {
+                                                s.release()
+                                                onDismiss()
+                                            }
+                                            setOnErrorListener { _, _, _ ->
+                                                s.release()
+                                                onDismiss()
+                                                true
+                                            }
+                                            prepareAsync()
+                                        }
+                                    }
+                                    override fun onSurfaceTextureSizeChanged(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {}
+                                    override fun onSurfaceTextureDestroyed(surface: android.graphics.SurfaceTexture): Boolean = true
+                                    override fun onSurfaceTextureUpdated(surface: android.graphics.SurfaceTexture) {}
                                 }
                             }
                         },
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer(blendMode = BlendMode.Screen)
                     )
                 }
 

@@ -4102,16 +4102,6 @@ fun ProfileScreenContent(
                         fontSize = 17.sp,
                         fontWeight = FontWeight.ExtraBold
                     )
-                    Spacer(modifier = Modifier.width(5.dp))
-                    if (currentUser.getVipLevel() > 0) {
-                        Text("👑 VIP ${currentUser.getVipLevel()}", color = BrandGold, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
-                        if (currentUser.isVipTrialActive()) {
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("(${currentUser.getVipTrialDaysLeft()}d trial)", color = BrandCoral, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                        }
-                    } else if (currentUser.isVipOrPlatinum()) {
-                        Text("👑", fontSize = 14.sp)
-                    }
                 }
 
                 // Real-time Diamond Wallet Balance Badge directly below the gear box
@@ -4214,8 +4204,8 @@ fun ProfileScreenContent(
                     ProfileStatItem(count = "${currentUser.followerCount}", label = "Followers")
                     ProfileStatItem(count = "${currentUser.followingCount}", label = "Following")
                     ProfileStatItem(
-                        count = if (currentUser.isVipOrPlatinum()) "VIP" else "PRO",
-                        label = "Tier",
+                        count = "Lv.${currentUser.getEffectiveWealthLevel()}",
+                        label = "Level",
                         highlightColor = BrandGold
                     )
                 }

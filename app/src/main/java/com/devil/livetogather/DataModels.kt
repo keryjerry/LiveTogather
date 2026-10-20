@@ -668,6 +668,14 @@ object LevelBadgeSystem {
             else -> user.charmXp
         }
     }
+
+    fun getHostCommissionPercent(level: Int): Double {
+        return when {
+            level > 70 -> 8.0   // 8% for Level > 70
+            level >= 50 -> 7.0  // 7% for Level 50..70
+            else -> 5.0         // 5% for Level < 50
+        }
+    }
 }
 
 data class UserProfile(
@@ -757,7 +765,13 @@ data class UserProfile(
     val wealthLevel: Int = 1,
     val wealthXp: Long = 0L,
     val charmLevel: Int = 1,
-    val charmXp: Long = 0L
+    val charmXp: Long = 0L,
+
+    // Host Earning Wallet & Commission System (7% for Lv.50-70, 8% for Lv.70+)
+    val earningsInr: Double = 0.0,
+    val totalEarningsInr: Double = 0.0,
+    val withdrawnInr: Double = 0.0,
+    val upiId: String = ""
 ) {
     fun getEffectiveWealthLevel(): Int = LevelBadgeSystem.getEffectiveWealthLevel(this)
     fun getEffectiveWealthXp(): Long = LevelBadgeSystem.getEffectiveWealthXp(this)
@@ -925,6 +939,16 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
     val suspensionExpiry = doc.getLong("suspensionExpiry") ?: 0L
     val suspensionReason = doc.getString("suspensionReason") ?: ""
 
+    val wealthLevel = (doc.getLong("wealthLevel") ?: 1L).toInt()
+    val wealthXp = doc.getLong("wealthXp") ?: 0L
+    val charmLevel = (doc.getLong("charmLevel") ?: 1L).toInt()
+    val charmXp = doc.getLong("charmXp") ?: 0L
+
+    val earningsInr = doc.getDouble("earningsInr") ?: (doc.getLong("earningsInr")?.toDouble() ?: 0.0)
+    val totalEarningsInr = doc.getDouble("totalEarningsInr") ?: (doc.getLong("totalEarningsInr")?.toDouble() ?: earningsInr)
+    val withdrawnInr = doc.getDouble("withdrawnInr") ?: (doc.getLong("withdrawnInr")?.toDouble() ?: 0.0)
+    val upiId = doc.getString("upiId") ?: ""
+
     return UserProfile(
         uid = uid,
         userId = userId,
@@ -988,7 +1012,15 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
         isAdmin = isAdmin,
         isSuspended = isSuspended,
         suspensionExpiry = suspensionExpiry,
-        suspensionReason = suspensionReason
+        suspensionReason = suspensionReason,
+        wealthLevel = wealthLevel,
+        wealthXp = wealthXp,
+        charmLevel = charmLevel,
+        charmXp = charmXp,
+        earningsInr = earningsInr,
+        totalEarningsInr = totalEarningsInr,
+        withdrawnInr = withdrawnInr,
+        upiId = upiId
     )
 }
 
@@ -1038,8 +1070,24 @@ fun saveProfileToPrefs(prefs: SharedPreferences, user: UserProfile) {
         .putLong("profile_wealth_xp", user.wealthXp)
         .putInt("profile_charm_level", user.charmLevel)
         .putLong("profile_charm_xp", user.charmXp)
+        .putString("profile_earnings_inr", user.earningsInr.toString())
+        .putString("profile_total_earnings_inr", user.totalEarningsInr.toString())
+        .putString("profile_withdrawn_inr", user.withdrawnInr.toString())
+        .putString("profile_upi_id", user.upiId)
         .apply()
 }
+
+data class EarningTransaction(
+    val id: String = "",
+    val type: String = "GIFT_COMMISSION", // "GIFT_COMMISSION", "WITHDRAWAL"
+    val title: String = "",
+    val amountInr: Double = 0.0,
+    val diamonds: Long = 0L,
+    val senderName: String = "",
+    val upiId: String = "",
+    val status: String = "CREDITED", // "CREDITED", "PENDING", "APPROVED", "REJECTED"
+    val timestamp: Long = System.currentTimeMillis()
+)
 
 data class FollowerRecord(
     val uid: String = "",
@@ -1074,8 +1122,11 @@ data class VideoGiftItem(
 )
 
 val VIDEO_GIFT_CATALOG = listOf(
-    VideoGiftItem("lamborghini_mp4", "Cyber Lamborghini HD", "🏎️", 20000L, "video_mp4", "Real HD Lamborghini drift video overlay", R.raw.lamborgini_car, R.drawable.thumb_lamborgini_car),
-    VideoGiftItem("king_entry_mp4", "King Entry Coronation", "👑", 50000L, "video_mp4", "Royal King Coronation HD video overlay", R.raw.king_entry, R.drawable.thumb_king_entry),
+    VideoGiftItem("lamborghini_mp4", "Cyber Lamborghini", "🏎️", 20000L, "video_mp4", "Crystal ice luxury hypercar roaring drift", R.raw.lamborgini_car, R.drawable.thumb_lamborgini_car),
+    VideoGiftItem("eagle_entry_mp4", "Fire Phoenix Eagle", "🦅", 25000L, "video_mp4", "Blazing golden fire phoenix flight", R.raw.eagle_entry, R.drawable.thumb_eagle_entry),
+    VideoGiftItem("king_lion_mp4", "Blazing Fire Lion", "🦁", 30000L, "video_mp4", "Majestic roaring solar flame lion", R.raw.king_lion_entry, R.drawable.thumb_king_lion_entry),
+    VideoGiftItem("terminator_dragon_mp4", "Cyber Mecha Dragon", "🐉", 40000L, "video_mp4", "Futuristic mecha dragon lightning burst", R.raw.terminator_entry, R.drawable.thumb_terminator_entry),
+    VideoGiftItem("king_entry_mp4", "Imperial King Palace", "👑", 50000L, "video_mp4", "Royal King Coronation palace walk", R.raw.king_entry, R.drawable.thumb_king_entry),
     VideoGiftItem("rose_storm", "Rose Storm", "🌹", 5000L, "roses", "Romantic cascading rose petals shower"),
     VideoGiftItem("supercar", "Cyber Supercar", "🏎️", 10000L, "car", "Ultra luxury roaring sports car drift"),
     VideoGiftItem("roaring_lion", "Roaring Lion King", "🦁", 15000L, "lion", "Fierce majestic lion with solar shockwave"),

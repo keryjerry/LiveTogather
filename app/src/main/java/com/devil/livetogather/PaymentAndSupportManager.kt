@@ -2184,7 +2184,61 @@ fun CoinStoreTopUpDialog(
     onOpenHelpDeskWithPackage: (CoinPackageItem) -> Unit
 ) {
     val context = LocalContext.current
+    val db = remember { FirebaseFirestore.getInstance() }
     var checkoutPackage by remember { mutableStateOf<CoinPackageItem?>(null) }
+    var selectedTab by remember { mutableIntStateOf(0) } // 0: Diamond Wallet, 1: Earning Wallet
+
+    // Live User Profile Financials
+    var liveDiamonds by remember { mutableLongStateOf(currentUser.diamonds) }
+    var liveEarningsInr by remember { mutableDoubleStateOf(currentUser.earningsInr) }
+    var liveTotalEarningsInr by remember { mutableDoubleStateOf(currentUser.totalEarningsInr) }
+    var liveWithdrawnInr by remember { mutableDoubleStateOf(currentUser.withdrawnInr) }
+    var liveUpiId by remember { mutableStateOf(currentUser.upiId) }
+
+    LaunchedEffect(currentUser.uid) {
+        if (currentUser.uid.isNotBlank()) {
+            db.collection("users").document(currentUser.uid)
+                .addSnapshotListener { snap, _ ->
+                    if (snap != null && snap.exists()) {
+                        liveDiamonds = snap.getLong("diamonds") ?: liveDiamonds
+                        liveEarningsInr = snap.getDouble("earningsInr") ?: (snap.getLong("earningsInr")?.toDouble() ?: liveEarningsInr)
+                        liveTotalEarningsInr = snap.getDouble("totalEarningsInr") ?: (snap.getLong("totalEarningsInr")?.toDouble() ?: liveTotalEarningsInr)
+                        liveWithdrawnInr = snap.getDouble("withdrawnInr") ?: (snap.getLong("withdrawnInr")?.toDouble() ?: liveWithdrawnInr)
+                        val savedUpi = snap.getString("upiId")
+                        if (!savedUpi.isNullOrBlank()) {
+                            liveUpiId = savedUpi
+                        }
+                    }
+                }
+        }
+    }
+
+    // Real-Time Earning Transactions Listener (ZERO dummy data)
+    val earningTransactions = remember { mutableStateListOf<EarningTransaction>() }
+    DisposableEffect(currentUser.uid) {
+        if (currentUser.uid.isBlank()) return@DisposableEffect onDispose {}
+        val listener = db.collection("users").document(currentUser.uid)
+            .collection("earning_transactions")
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .limit(50)
+            .addSnapshotListener { snaps, _ ->
+                if (snaps != null) {
+                    val list = snaps.documents.mapNotNull { it.toObject(EarningTransaction::class.java) }
+                    earningTransactions.clear()
+                    earningTransactions.addAll(list)
+                }
+            }
+        onDispose { listener.remove() }
+    }
+
+    // Host Commission Level & Tier
+    val hostWealthLvl = currentUser.getEffectiveWealthLevel()
+    val commissionPercent = LevelBadgeSystem.getHostCommissionPercent(hostWealthLvl)
+
+    // UPI Withdrawal Form States
+    var withdrawAmountText by remember { mutableStateOf("") }
+    var withdrawUpiId by remember(liveUpiId) { mutableStateOf(liveUpiId) }
+    var isSubmittingWithdrawal by remember { mutableStateOf(false) }
 
     if (checkoutPackage != null) {
         UpiPaymentCheckoutModal(
@@ -2204,8 +2258,8 @@ fun CoinStoreTopUpDialog(
     ) {
         Surface(
             modifier = Modifier
-                .fillMaxWidth(0.92f)
-                .fillMaxHeight(0.85f),
+                .fillMaxWidth(0.94f)
+                .fillMaxHeight(0.90f),
             shape = RoundedCornerShape(24.dp),
             color = BrandDark,
             border = BorderStroke(1.5.dp, BrandGold)
@@ -2213,10 +2267,10 @@ fun CoinStoreTopUpDialog(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Header
+                // 1. Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -2230,12 +2284,21 @@ fun CoinStoreTopUpDialog(
                                 .background(BrandGold.copy(alpha = 0.2f)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("🪙", fontSize = 20.sp)
+                            Text(if (selectedTab == 0) "💎" else "💵", fontSize = 20.sp)
                         }
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
-                            Text("Coin Store & Top-Up", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                            Text("Direct UPI payments with instant UTR verification", color = Color.LightGray, fontSize = 11.sp)
+                            Text(
+                                text = if (selectedTab == 0) "Diamond & Coin Wallet" else "Host Earning Wallet",
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = if (selectedTab == 0) "Recharge diamonds for room gifts & VIP" else "Real cash host earnings & UPI withdrawal",
+                                color = Color.LightGray,
+                                fontSize = 11.sp
+                            )
                         }
                     }
 
@@ -2249,129 +2312,571 @@ fun CoinStoreTopUpDialog(
                     }
                 }
 
-                // Balance Strip
-                Surface(
-                    color = BrandCard,
-                    shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, BrandBorder),
-                    modifier = Modifier.fillMaxWidth()
+                // 2. Dual-Wallet Tab Selector
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFF1E172E))
+                        .padding(4.dp)
                 ) {
-                    Row(
+                    Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (selectedTab == 0) BrandGold else Color.Transparent)
+                            .clickable { selectedTab = 0 }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Column {
-                            Text("Current Wallet Balance", color = Color.Gray, fontSize = 10.sp)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("💎", fontSize = 13.sp)
+                            Spacer(modifier = Modifier.width(5.dp))
                             Text(
-                                text = "%,d Diamonds / Coins".format(currentUser.diamonds),
-                                color = BrandCyan,
-                                fontSize = 15.sp,
+                                text = "Diamond Wallet",
+                                color = if (selectedTab == 0) BrandDark else Color.LightGray,
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.ExtraBold
                             )
                         }
+                    }
 
-                        Button(
-                            onClick = {
-                                onDismiss()
-                                onOpenHelpDeskWithPackage(APP_COIN_PACKAGES[0])
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = BrandCardSubtle),
-                            border = BorderStroke(1.dp, BrandGold),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            modifier = Modifier.height(32.dp)
-                        ) {
-                            Text("Submit UTR", color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (selectedTab == 1) BrandGold else Color.Transparent)
+                            .clickable { selectedTab = 1 }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("💵", fontSize = 13.sp)
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Text(
+                                text = "Earning Wallet",
+                                color = if (selectedTab == 1) BrandDark else Color.LightGray,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
                         }
                     }
                 }
 
-                Text("Select Coin Package to Pay with UPI", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                // 3. Tab Contents
+                if (selectedTab == 0) {
+                    // ==========================================
+                    // TAB 0: 💎 DIAMOND WALLET
+                    // ==========================================
 
-                // Package List
-                LazyColumn(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(APP_COIN_PACKAGES) { pack ->
-                        Surface(
-                            color = BrandCard,
-                            shape = RoundedCornerShape(14.dp),
-                            border = BorderStroke(
-                                1.dp,
-                                if (pack.badge.isNotBlank()) BrandGold else BrandBorder
-                            ),
+                    // Balance Strip
+                    Surface(
+                        color = BrandCard,
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, BrandBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable {
-                                    checkoutPackage = pack
-                                }
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
+                            Column {
+                                Text("Current Diamond Balance", color = Color.Gray, fontSize = 10.sp)
+                                Text(
+                                    text = "%,d Diamonds".format(liveDiamonds),
+                                    color = BrandCyan,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+
+                            Button(
+                                onClick = {
+                                    onDismiss()
+                                    onOpenHelpDeskWithPackage(APP_COIN_PACKAGES[0])
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = BrandCardSubtle),
+                                border = BorderStroke(1.dp, BrandGold),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.height(32.dp)
+                            ) {
+                                Text("Submit UTR", color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    Text("Select Recharge Package to Pay with UPI", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+
+                    // Package List
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(APP_COIN_PACKAGES) { pack ->
+                            Surface(
+                                color = BrandCard,
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (pack.badge.isNotBlank()) BrandGold else BrandBorder
+                                ),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                    .clickable {
+                                        checkoutPackage = pack
+                                    }
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("💎", fontSize = 22.sp)
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Column {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                text = "%,d Coins".format(pack.coins),
-                                                color = Color.White,
-                                                fontSize = 14.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            if (pack.badge.isNotBlank()) {
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Surface(
-                                                    color = BrandGold,
-                                                    shape = RoundedCornerShape(4.dp)
-                                                ) {
-                                                    Text(
-                                                        pack.badge,
-                                                        color = BrandDark,
-                                                        fontSize = 9.sp,
-                                                        fontWeight = FontWeight.Black,
-                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                                    )
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("💎", fontSize = 22.sp)
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Column {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = "%,d Diamonds".format(pack.coins),
+                                                    color = Color.White,
+                                                    fontSize = 14.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                if (pack.badge.isNotBlank()) {
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Surface(
+                                                        color = BrandGold,
+                                                        shape = RoundedCornerShape(4.dp)
+                                                    ) {
+                                                        Text(
+                                                            pack.badge,
+                                                            color = BrandDark,
+                                                            fontSize = 9.sp,
+                                                            fontWeight = FontWeight.Black,
+                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                        )
+                                                    }
                                                 }
                                             }
+                                            Text(pack.title, color = Color.Gray, fontSize = 11.sp)
                                         }
-                                        Text(pack.title, color = Color.Gray, fontSize = 11.sp)
+                                    }
+
+                                    Button(
+                                        onClick = {
+                                            checkoutPackage = pack
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
+                                        shape = RoundedCornerShape(10.dp),
+                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                                    ) {
+                                        Text(pack.priceInr, color = BrandDark, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
+                            }
+                        }
+                    }
 
-                                Button(
-                                    onClick = {
-                                        checkoutPackage = pack
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
-                                    shape = RoundedCornerShape(10.dp),
-                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                    Text(
+                        text = "🔒 Supported UPI Apps: Google Pay, PhonePe, Paytm, BHIM, etc.",
+                        color = Color.Gray,
+                        fontSize = 10.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    // ==========================================
+                    // TAB 1: 💵 EARNING WALLET (HOST COMMISSIONS & UPI WITHDRAWAL)
+                    // ==========================================
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        // 1. Available Earnings Balance Card
+                        item {
+                            Surface(
+                                color = Color(0xFF1B142B),
+                                shape = RoundedCornerShape(16.dp),
+                                border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(BrandGold, Color(0xFFFFB74D)))),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column {
+                                            Text("Available Cash Balance", color = Color.LightGray, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                                            Text(
+                                                text = "₹ ${"%.2f".format(liveEarningsInr)}",
+                                                color = Color(0xFF00E676),
+                                                fontSize = 24.sp,
+                                                fontWeight = FontWeight.ExtraBold
+                                            )
+                                        }
+
+                                        Surface(
+                                            color = BrandGold.copy(alpha = 0.15f),
+                                            shape = RoundedCornerShape(20.dp),
+                                            border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.6f))
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text("👑", fontSize = 11.sp)
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(
+                                                    text = "Commission: ${commissionPercent.toInt()}%",
+                                                    color = BrandGold,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    HorizontalDivider(color = Color.White.copy(alpha = 0.08f), thickness = 1.dp)
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column {
+                                            Text("Total Lifetime Earned", color = Color.Gray, fontSize = 10.sp)
+                                            Text("₹ ${"%.2f".format(liveTotalEarningsInr)}", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                        }
+                                        Column(horizontalAlignment = Alignment.End) {
+                                            Text("Total Withdrawn", color = Color.Gray, fontSize = 10.sp)
+                                            Text("₹ ${"%.2f".format(liveWithdrawnInr)}", color = Color(0xFFFF9100), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 2. Commission Rate Tier Information
+                        item {
+                            Surface(
+                                color = Color(0xFF141221),
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(pack.priceInr, color = BrandDark, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    Text("💡", fontSize = 14.sp)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = if (hostWealthLvl >= 70) {
+                                            "Imperial Host (Lv.$hostWealthLvl): Highest 8% commission active on every gift sent in your room!"
+                                        } else if (hostWealthLvl >= 50) {
+                                            "Super Host (Lv.$hostWealthLvl): 7% commission active! Reach Level 70 for 8% commission!"
+                                        } else {
+                                            "Host (Lv.$hostWealthLvl): 5% commission. Reach Level 50 for 7% and Level 70 for 8% commission!"
+                                        },
+                                        color = Color.LightGray,
+                                        fontSize = 10.sp,
+                                        lineHeight = 14.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        // 3. Instant UPI Withdrawal Form
+                        item {
+                            Surface(
+                                color = BrandCard,
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, BrandBorder),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text("💸 Request Instant UPI Withdrawal", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    // Amount Input
+                                    OutlinedTextField(
+                                        value = withdrawAmountText,
+                                        onValueChange = { input ->
+                                            if (input.all { it.isDigit() || it == '.' }) {
+                                                withdrawAmountText = input
+                                            }
+                                        },
+                                        label = { Text("Withdrawal Amount (₹)", fontSize = 11.sp) },
+                                        placeholder = { Text("Min. ₹50", fontSize = 12.sp) },
+                                        singleLine = true,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedBorderColor = BrandGold,
+                                            unfocusedBorderColor = BrandBorder,
+                                            focusedTextColor = Color.White,
+                                            unfocusedTextColor = Color.White
+                                        ),
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+
+                                    Spacer(modifier = Modifier.height(6.dp))
+
+                                    // Quick Amount Chips
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        listOf(100, 500, 1000).forEach { amt ->
+                                            Surface(
+                                                color = BrandCardSubtle,
+                                                shape = RoundedCornerShape(8.dp),
+                                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+                                                modifier = Modifier.clickable { withdrawAmountText = amt.toString() }
+                                            ) {
+                                                Text("₹$amt", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                                            }
+                                        }
+                                        Surface(
+                                            color = BrandGold.copy(alpha = 0.2f),
+                                            shape = RoundedCornerShape(8.dp),
+                                            border = BorderStroke(1.dp, BrandGold),
+                                            modifier = Modifier.clickable {
+                                                if (liveEarningsInr > 0) {
+                                                    withdrawAmountText = "%.2f".format(liveEarningsInr)
+                                                }
+                                            }
+                                        ) {
+                                            Text("All", color = BrandGold, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    // UPI ID Input
+                                    OutlinedTextField(
+                                        value = withdrawUpiId,
+                                        onValueChange = { withdrawUpiId = it },
+                                        label = { Text("UPI ID (VPA)", fontSize = 11.sp) },
+                                        placeholder = { Text("e.g. mobile@paytm or name@oksbi", fontSize = 12.sp) },
+                                        singleLine = true,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Done),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedBorderColor = BrandGold,
+                                            unfocusedBorderColor = BrandBorder,
+                                            focusedTextColor = Color.White,
+                                            unfocusedTextColor = Color.White
+                                        ),
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    val withdrawAmountVal = withdrawAmountText.toDoubleOrNull() ?: 0.0
+                                    val canWithdraw = withdrawAmountVal >= 50.0 &&
+                                            withdrawAmountVal <= liveEarningsInr &&
+                                            withdrawUpiId.contains("@") &&
+                                            !isSubmittingWithdrawal
+
+                                    Button(
+                                        onClick = {
+                                            if (!canWithdraw) return@Button
+                                            isSubmittingWithdrawal = true
+                                            val reqId = UUID.randomUUID().toString()
+                                            val cleanUpi = withdrawUpiId.trim()
+
+                                            // 1. Deduct from earnings & record to withdrawn in Firestore
+                                            db.collection("users").document(currentUser.uid).update(
+                                                mapOf(
+                                                    "earningsInr" to FieldValue.increment(-withdrawAmountVal),
+                                                    "withdrawnInr" to FieldValue.increment(withdrawAmountVal),
+                                                    "upiId" to cleanUpi
+                                                )
+                                            )
+
+                                            // 2. Write to withdrawal_requests collection
+                                            val reqDoc = mapOf(
+                                                "id" to reqId,
+                                                "userId" to currentUser.uid,
+                                                "userNumericId" to currentUser.userId,
+                                                "userName" to currentUser.name,
+                                                "userPhoto" to currentUser.photo,
+                                                "amountInr" to withdrawAmountVal,
+                                                "upiId" to cleanUpi,
+                                                "status" to "PENDING",
+                                                "timestamp" to System.currentTimeMillis()
+                                            )
+                                            db.collection("withdrawal_requests").document(reqId).set(reqDoc)
+
+                                            // 3. Write to earning_transactions
+                                            val tx = EarningTransaction(
+                                                id = reqId,
+                                                type = "WITHDRAWAL",
+                                                title = "UPI Withdrawal Request",
+                                                amountInr = withdrawAmountVal,
+                                                diamonds = 0L,
+                                                senderName = currentUser.name,
+                                                upiId = cleanUpi,
+                                                status = "PENDING",
+                                                timestamp = System.currentTimeMillis()
+                                            )
+                                            db.collection("users").document(currentUser.uid)
+                                                .collection("earning_transactions").document(reqId).set(tx)
+                                                .addOnSuccessListener {
+                                                    isSubmittingWithdrawal = false
+                                                    withdrawAmountText = ""
+                                                    Toast.makeText(context, "✅ Withdrawal request for ₹%.2f submitted! Processing to $cleanUpi".format(withdrawAmountVal), Toast.LENGTH_LONG).show()
+                                                }
+                                                .addOnFailureListener { e ->
+                                                    isSubmittingWithdrawal = false
+                                                    Toast.makeText(context, "Failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                }
+                                        },
+                                        enabled = canWithdraw,
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = BrandGold,
+                                            disabledContainerColor = Color.Gray.copy(alpha = 0.3f)
+                                        ),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        if (isSubmittingWithdrawal) {
+                                            CircularProgressIndicator(modifier = Modifier.size(18.dp), color = BrandDark, strokeWidth = 2.dp)
+                                        } else {
+                                            Text(
+                                                text = if (withdrawAmountVal > liveEarningsInr) "Insufficient Balance"
+                                                else if (withdrawAmountVal in 0.01..49.99) "Min. Withdrawal ₹50"
+                                                else if (!withdrawUpiId.contains("@") && withdrawAmountVal >= 50.0) "Enter Valid UPI ID (@)"
+                                                else if (withdrawAmountVal >= 50.0) "Withdraw ₹%.2f to UPI".format(withdrawAmountVal)
+                                                else "Request UPI Withdrawal",
+                                                color = if (canWithdraw) BrandDark else Color.LightGray,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 4. Real-Time Transaction & Payment History (PURE REAL-TIME FIRESTORE, ZERO DUMMY DATA)
+                        item {
+                            Text("📜 Transaction & Payment History", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        if (earningTransactions.isEmpty()) {
+                            item {
+                                Surface(
+                                    color = BrandCard,
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, BrandBorder),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(20.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text("📦", fontSize = 28.sp)
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Text("No transactions yet", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                        Text("Host live audio rooms and receive gifts to earn real cash commissions!", color = Color.Gray, fontSize = 11.sp, textAlign = TextAlign.Center)
+                                    }
+                                }
+                            }
+                        } else {
+                            items(earningTransactions) { tx ->
+                                val isCredit = tx.type == "GIFT_COMMISSION"
+                                val dateStr = remember(tx.timestamp) {
+                                    SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault()).format(Date(tx.timestamp))
+                                }
+
+                                Surface(
+                                    color = BrandCard,
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, BrandBorder),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.weight(1f),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(34.dp)
+                                                    .clip(CircleShape)
+                                                    .background(if (isCredit) Color(0xFF00E676).copy(alpha = 0.15f) else Color(0xFFFF9100).copy(alpha = 0.15f)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(if (isCredit) "🎁" else "🏦", fontSize = 16.sp)
+                                            }
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Column {
+                                                Text(
+                                                    text = tx.title.ifBlank { if (isCredit) "Gift Commission Received" else "UPI Withdrawal" },
+                                                    color = Color.White,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Text(
+                                                    text = if (tx.upiId.isNotBlank()) "To: ${tx.upiId} • $dateStr" else dateStr,
+                                                    color = Color.Gray,
+                                                    fontSize = 10.sp
+                                                )
+                                            }
+                                        }
+
+                                        Column(horizontalAlignment = Alignment.End) {
+                                            Text(
+                                                text = if (isCredit) "+ ₹${"%.2f".format(tx.amountInr)}" else "- ₹${"%.2f".format(tx.amountInr)}",
+                                                color = if (isCredit) Color(0xFF00E676) else Color(0xFFFF9100),
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.ExtraBold
+                                            )
+                                            Surface(
+                                                color = if (tx.status == "APPROVED" || tx.status == "CREDITED") Color(0xFF00E676).copy(alpha = 0.2f)
+                                                else if (tx.status == "REJECTED") Color(0xFFFF5252).copy(alpha = 0.2f)
+                                                else Color(0xFFFF9100).copy(alpha = 0.2f),
+                                                shape = RoundedCornerShape(4.dp)
+                                            ) {
+                                                Text(
+                                                    text = tx.status,
+                                                    color = if (tx.status == "APPROVED" || tx.status == "CREDITED") Color(0xFF00E676)
+                                                    else if (tx.status == "REJECTED") Color(0xFFFF5252)
+                                                    else Color(0xFFFF9100),
+                                                    fontSize = 8.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
-
-                Text(
-                    text = "🔒 Supported UPI Apps: Google Pay, PhonePe, Paytm, BHIM, etc.",
-                    color = Color.Gray,
-                    fontSize = 10.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
             }
         }
     }
