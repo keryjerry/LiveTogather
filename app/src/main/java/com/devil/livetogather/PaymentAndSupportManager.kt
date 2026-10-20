@@ -98,6 +98,70 @@ data class PaymentRequestTicket(
     val timestamp: Long = System.currentTimeMillis()
 )
 
+fun parsePaymentRequestTicket(doc: com.google.firebase.firestore.DocumentSnapshot): PaymentRequestTicket? {
+    return try {
+        val status = doc.getString("status") ?: "PENDING"
+        val rawTs = doc.get("timestamp")
+        val ts = when (rawTs) {
+            is com.google.firebase.Timestamp -> rawTs.toDate().time
+            is Number -> rawTs.toLong()
+            is String -> rawTs.toLongOrNull() ?: 0L
+            else -> 0L
+        }
+        val coins = (doc.get("coinsRequested") as? Number)?.toLong()
+            ?: doc.getString("coinsRequested")?.toLongOrNull()
+            ?: 0L
+
+        PaymentRequestTicket(
+            requestId = doc.getString("requestId") ?: doc.id,
+            userId = doc.getString("userId") ?: "",
+            userNumericId = doc.getString("userNumericId") ?: "",
+            userName = doc.getString("userName") ?: "",
+            utrNumber = doc.getString("utrNumber") ?: "",
+            coinsRequested = coins,
+            amountPaid = doc.getString("amountPaid") ?: "",
+            status = status,
+            category = doc.getString("category") ?: "Payment Verification (Submit UTR for Coins)",
+            message = doc.getString("message") ?: "",
+            timestamp = ts
+        )
+    } catch (e: Exception) {
+        android.util.Log.e("PaymentAndSupport", "Error parsing payment request ${doc.id}: ${e.message}", e)
+        null
+    }
+}
+
+fun parseReportTicket(doc: com.google.firebase.firestore.DocumentSnapshot): ReportTicket? {
+    return try {
+        val status = doc.getString("status") ?: "PENDING"
+        val rawTs = doc.get("timestamp")
+        val ts = when (rawTs) {
+            is com.google.firebase.Timestamp -> rawTs.toDate().time
+            is Number -> rawTs.toLong()
+            is String -> rawTs.toLongOrNull() ?: 0L
+            else -> 0L
+        }
+
+        ReportTicket(
+            reportId = doc.getString("reportId") ?: doc.id,
+            reportedUid = doc.getString("reportedUid") ?: "",
+            reportedUserId = doc.getString("reportedUserId") ?: "",
+            reportedName = doc.getString("reportedName") ?: "",
+            reportedPhoto = doc.getString("reportedPhoto") ?: "",
+            reporterUid = doc.getString("reporterUid") ?: "",
+            reporterUserId = doc.getString("reporterUserId") ?: "",
+            reporterName = doc.getString("reporterName") ?: "",
+            reason = doc.getString("reason") ?: "",
+            details = doc.getString("details") ?: "",
+            timestamp = ts,
+            status = status
+        )
+    } catch (e: Exception) {
+        android.util.Log.e("PaymentAndSupport", "Error parsing report ${doc.id}: ${e.message}", e)
+        null
+    }
+}
+
 object PaymentAndSupportManager {
 
     /**
@@ -259,7 +323,7 @@ object PaymentAndSupportManager {
                 db.collection("users").whereEqualTo("isAdmin", true).get().addOnSuccessListener { adminsSnap ->
                     for (adminDoc in adminsSnap.documents) {
                         val adminUid = adminDoc.id
-                        if (adminUid.isNotBlank()) {
+                        if (adminUid.isNotBlank() && adminUid != userId) {
                             val userNotif = adminNotif.copy(id = "${notifId}_$adminUid", targetUserId = adminUid)
                             db.collection("notifications").document(userNotif.id).set(userNotif)
                             db.collection("users").document(adminUid).collection("notifications").document(notifId).set(userNotif)
@@ -968,25 +1032,7 @@ fun HelpDeskModal(
                     if (snapshot != null) {
                         myTickets.clear()
                         val list = snapshot.documents.mapNotNull { doc ->
-                            try {
-                                val ts = doc.getTimestamp("timestamp")?.toDate()?.time
-                                    ?: doc.getLong("timestamp") ?: 0L
-                                PaymentRequestTicket(
-                                    requestId = doc.getString("requestId") ?: doc.id,
-                                    userId = doc.getString("userId") ?: "",
-                                    userNumericId = doc.getString("userNumericId") ?: "",
-                                    userName = doc.getString("userName") ?: "",
-                                    utrNumber = doc.getString("utrNumber") ?: "",
-                                    coinsRequested = doc.getLong("coinsRequested") ?: 0L,
-                                    amountPaid = doc.getString("amountPaid") ?: "",
-                                    status = doc.getString("status") ?: "PENDING",
-                                    category = doc.getString("category") ?: "Payment Verification (Submit UTR for Coins)",
-                                    message = doc.getString("message") ?: "",
-                                    timestamp = ts
-                                )
-                            } catch (e: Exception) {
-                                null
-                            }
+                            parsePaymentRequestTicket(doc)
                         }.sortedByDescending { it.timestamp }
                         myTickets.addAll(list)
                     }
@@ -1571,63 +1617,37 @@ fun AdminApprovalDashboardModal(
         val db = FirebaseFirestore.getInstance()
         // 1. Pending Payments Listener
         db.collection("payment_requests")
-            .whereEqualTo("status", "PENDING")
-            .addSnapshotListener { snapshot, _ ->
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    android.util.Log.e("AdminApproval", "Payment requests error: ${error.message}", error)
+                    return@addSnapshotListener
+                }
                 if (snapshot != null) {
-                    pendingRequests.clear()
                     val list = snapshot.documents.mapNotNull { doc ->
-                        try {
-                            val ts = doc.getTimestamp("timestamp")?.toDate()?.time
-                                ?: doc.getLong("timestamp") ?: 0L
-                            PaymentRequestTicket(
-                                requestId = doc.getString("requestId") ?: doc.id,
-                                userId = doc.getString("userId") ?: "",
-                                userNumericId = doc.getString("userNumericId") ?: "",
-                                userName = doc.getString("userName") ?: "",
-                                utrNumber = doc.getString("utrNumber") ?: "",
-                                coinsRequested = doc.getLong("coinsRequested") ?: 0L,
-                                amountPaid = doc.getString("amountPaid") ?: "",
-                                status = doc.getString("status") ?: "PENDING",
-                                category = doc.getString("category") ?: "",
-                                message = doc.getString("message") ?: "",
-                                timestamp = ts
-                            )
-                        } catch (e: Exception) {
-                            null
-                        }
-                    }.sortedByDescending { it.timestamp }
+                        parsePaymentRequestTicket(doc)
+                    }.filter { it.status.equals("PENDING", ignoreCase = true) }
+                     .sortedByDescending { it.timestamp }
+                    pendingRequests.clear()
                     pendingRequests.addAll(list)
+                    android.util.Log.d("AdminApproval", "Loaded ${pendingRequests.size} pending payments")
                 }
             }
 
         // 2. Pending User Reports Listener
         db.collection("reports")
-            .whereEqualTo("status", "PENDING")
-            .addSnapshotListener { snapshot, _ ->
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    android.util.Log.e("AdminApproval", "Reports error: ${error.message}", error)
+                    return@addSnapshotListener
+                }
                 if (snapshot != null) {
-                    pendingReports.clear()
                     val list = snapshot.documents.mapNotNull { doc ->
-                        try {
-                            val ts = doc.getTimestamp("timestamp")?.toDate()?.time
-                                ?: doc.getLong("timestamp") ?: 0L
-                            ReportTicket(
-                                reportId = doc.getString("reportId") ?: doc.id,
-                                reportedUid = doc.getString("reportedUid") ?: "",
-                                reportedUserId = doc.getString("reportedUserId") ?: "",
-                                reportedName = doc.getString("reportedName") ?: "",
-                                reporterUid = doc.getString("reporterUid") ?: "",
-                                reporterUserId = doc.getString("reporterUserId") ?: "",
-                                reporterName = doc.getString("reporterName") ?: "",
-                                reason = doc.getString("reason") ?: "",
-                                details = doc.getString("details") ?: "",
-                                timestamp = ts,
-                                status = doc.getString("status") ?: "PENDING"
-                            )
-                        } catch (e: Exception) {
-                            null
-                        }
-                    }.sortedByDescending { it.timestamp }
+                        parseReportTicket(doc)
+                    }.filter { it.status.equals("PENDING", ignoreCase = true) }
+                     .sortedByDescending { it.timestamp }
+                    pendingReports.clear()
                     pendingReports.addAll(list)
+                    android.util.Log.d("AdminApproval", "Loaded ${pendingReports.size} pending reports")
                 }
             }
     }

@@ -701,7 +701,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
     }
 
     // --- Real-Time Firestore Listeners ---
-    LaunchedEffect(currentUserId) {
+    LaunchedEffect(currentUserId, currentUser.isAdmin) {
         // 1. Sync Current User Profile
         val userDoc = db.collection("users").document(currentUserId)
         userDoc.addSnapshotListener { snapshot, error ->
@@ -766,15 +766,38 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
         val notifTargets = if (currentUser.isAdmin) listOf(currentUserId, "admin") else listOf(currentUserId)
         db.collection("notifications")
             .whereIn("targetUserId", notifTargets)
-            .addSnapshotListener { snapshot, _ ->
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.w("Firestore", "Notifications listener error: ${error.message}")
+                    return@addSnapshotListener
+                }
                 if (snapshot != null) {
-                    val items = snapshot.documents.mapNotNull { it.toObject(NotificationItem::class.java) }
+                    val rawItems = snapshot.documents.mapNotNull { it.toObject(NotificationItem::class.java) }
                         .sortedByDescending { it.timestamp }
+
+                    val items = rawItems.filter { notif ->
+                        val isSelf = notif.senderId == currentUserId
+                        val isAdminType = notif.type.contains("report") || notif.type.contains("payment") || notif.type.contains("utr") || notif.type.contains("pay_req")
+                        if (!currentUser.isAdmin && isAdminType) {
+                            false // Regular user should never see admin reports/payments in their bell
+                        } else if (isSelf && isAdminType) {
+                            false // Submitter should never see their own submission in the notification bell
+                        } else {
+                            true
+                        }
+                    }
 
                     for (dc in snapshot.documentChanges) {
                         if (dc.type == com.google.firebase.firestore.DocumentChange.Type.ADDED) {
                             val notif = dc.document.toObject(NotificationItem::class.java)
-                            if (!notif.isRead && (System.currentTimeMillis() - notif.timestamp) < 60_000L) {
+                            val isSelf = notif.senderId == currentUserId
+                            val isAdminType = notif.type.contains("report") || notif.type.contains("payment") || notif.type.contains("utr") || notif.type.contains("pay_req")
+                            val shouldShowSystem = if (isAdminType) {
+                                currentUser.isAdmin && !isSelf
+                            } else {
+                                !isSelf
+                            }
+                            if (shouldShowSystem && !notif.isRead && (System.currentTimeMillis() - notif.timestamp) < 60_000L) {
                                 AppNotificationHelper.showSystemNotification(
                                     context = context,
                                     title = notif.title.ifBlank { "LiveTogether Alert" },
@@ -790,6 +813,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                     notifications.addAll(items)
                 }
             }
+
 
         // 4. Incoming Swipes Listener
         db.collection("swipes")
@@ -4536,6 +4560,32 @@ fun ProfileScreenContent(
 
                     // 3. Admin Approval Dashboard (STRICTLY VISIBLE ONLY IF currentUser.isAdmin == true)
                     if (currentUser.isAdmin) {
+                        var pendingPayments by remember { mutableIntStateOf(0) }
+                        var pendingReports by remember { mutableIntStateOf(0) }
+
+                        LaunchedEffect(Unit) {
+                            db.collection("payment_requests")
+                                .addSnapshotListener { snapshot, _ ->
+                                    if (snapshot != null) {
+                                        pendingPayments = snapshot.documents.count { doc ->
+                                            val s = doc.getString("status") ?: "PENDING"
+                                            s.equals("PENDING", ignoreCase = true)
+                                        }
+                                    }
+                                }
+                            db.collection("reports")
+                                .addSnapshotListener { snapshot, _ ->
+                                    if (snapshot != null) {
+                                        pendingReports = snapshot.documents.count { doc ->
+                                            val s = doc.getString("status") ?: "PENDING"
+                                            s.equals("PENDING", ignoreCase = true)
+                                        }
+                                    }
+                                }
+                        }
+
+                        val totalPending = pendingPayments + pendingReports
+
                         Surface(
                             color = BrandCardSubtle,
                             shape = RoundedCornerShape(12.dp),
@@ -4573,25 +4623,30 @@ fun ProfileScreenContent(
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Surface(
-                                            color = BrandGold.copy(alpha = 0.2f),
+                                            color = if (totalPending > 0) BrandCoral else BrandGold.copy(alpha = 0.2f),
                                             shape = RoundedCornerShape(4.dp),
-                                            border = BorderStroke(0.6.dp, BrandGold)
+                                            border = BorderStroke(0.6.dp, if (totalPending > 0) BrandCoral else BrandGold)
                                         ) {
                                             Text(
-                                                "ADMIN",
-                                                color = BrandGold,
+                                                text = if (totalPending > 0) "$totalPending PENDING" else "ADMIN",
+                                                color = if (totalPending > 0) Color.White else BrandGold,
                                                 fontSize = 9.sp,
                                                 fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
                                             )
                                         }
                                     }
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
-                                        text = "Review & approve pending UPI top-up requests",
-                                        color = Color.LightGray,
+                                        text = if (totalPending > 0) {
+                                            "🚨 $pendingPayments payments & $pendingReports reports pending"
+                                        } else {
+                                            "Review & approve pending UPI top-up requests"
+                                        },
+                                        color = if (totalPending > 0) BrandCoral else Color.LightGray,
                                         fontSize = 11.sp,
-                                        lineHeight = 15.sp
+                                        lineHeight = 15.sp,
+                                        fontWeight = if (totalPending > 0) FontWeight.SemiBold else FontWeight.Normal
                                     )
                                 }
 
