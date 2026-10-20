@@ -55,6 +55,7 @@ import com.google.firebase.firestore.SetOptions
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -108,12 +109,20 @@ fun LevelBadgePill(
                 .background(Brush.horizontalGradient(tierInfo.gradientColors.map { it.copy(alpha = 0.35f) }))
                 .padding(horizontal = 6.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(2.dp)
+            horizontalArrangement = Arrangement.spacedBy(3.dp)
         ) {
-            Text(
-                text = tierInfo.badgeIcon,
-                fontSize = 9.sp
-            )
+            if (level >= 10) {
+                Image(
+                    painter = painterResource(id = tierInfo.badgeDrawableRes),
+                    contentDescription = tierInfo.tierName,
+                    modifier = Modifier.size(16.dp)
+                )
+            } else {
+                Text(
+                    text = tierInfo.badgeIcon,
+                    fontSize = 9.sp
+                )
+            }
             Text(
                 text = "Lv.$level",
                 color = Color.White,
@@ -139,71 +148,471 @@ fun GrandBroadEntranceBanner(
     modifier: Modifier = Modifier
 ) {
     val isHighTier = level >= 20 || LevelBadgeSystem.isSpecialHighTierUser(userName)
+    val tierInfo = LevelBadgeSystem.getLevelTierInfo(level)
 
     val infiniteTransition = rememberInfiniteTransition(label = "entrance_pulse")
     val glowAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.5f,
+        initialValue = 0.6f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(tween(600, easing = LinearEasing), RepeatMode.Reverse),
         label = "glow"
     )
 
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(50))
-            .background(
-                Brush.horizontalGradient(
-                    if (isHighTier) listOf(Color(0xFFFF8F00).copy(alpha = 0.95f), Color(0xFFB71C1C).copy(alpha = 0.95f), Color(0xFFFFD700).copy(alpha = 0.95f))
-                    else listOf(BrandCoral.copy(alpha = 0.95f), BrandGold.copy(alpha = 0.95f))
-                )
-            )
-            .border(
-                1.2.dp,
-                if (isHighTier) BrandGold.copy(alpha = glowAlpha) else Color.White.copy(alpha = 0.4f),
-                RoundedCornerShape(50)
-            )
-            .padding(horizontal = 14.dp, vertical = 6.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+    if (isHighTier) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF140D18).copy(alpha = 0.95f)),
+            border = BorderStroke(1.5.dp, Brush.horizontalGradient(listOf(BrandGold, Color(0xFFFF1744), BrandGold))),
+            elevation = CardDefaults.cardElevation(defaultElevation = 14.dp),
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp)
         ) {
-            if (isHighTier) {
-                Box(
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Luxury Gold Hypercar
+                Image(
+                    painter = painterResource(id = R.drawable.grand_entrance_gold_car),
+                    contentDescription = "Grand Entrance Hypercar",
+                    contentScale = ContentScale.Fit,
                     modifier = Modifier
-                        .size(28.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.5f))
-                        .border(1.dp, BrandGold, CircleShape),
-                    contentAlignment = Alignment.Center
+                        .fillMaxWidth()
+                        .height(84.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
                 ) {
+                    Image(
+                        painter = painterResource(id = tierInfo.badgeDrawableRes),
+                        contentDescription = "Badge",
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (level >= 70) "🏎️" else if (level >= 35) "👑" else "✨",
-                        fontSize = 14.sp
+                        text = "👑 ${userName.uppercase()} [LV.$level] ENTERED THE ROOM!",
+                        color = BrandGold,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Black,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
-                Spacer(modifier = Modifier.width(8.dp))
-            } else {
-                Text("✨", fontSize = 13.sp)
-                Spacer(modifier = Modifier.width(6.dp))
             }
-
+        }
+    } else {
+        Box(
+            modifier = modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(50))
+                .background(Brush.horizontalGradient(listOf(BrandCoral.copy(alpha = 0.95f), BrandGold.copy(alpha = 0.95f))))
+                .border(1.dp, Color.White.copy(alpha = 0.4f), RoundedCornerShape(50))
+                .padding(horizontal = 14.dp, vertical = 6.dp),
+            contentAlignment = Alignment.Center
+        ) {
             Row(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                LevelBadgePill(level = level)
-                Spacer(modifier = Modifier.width(5.dp))
-                Text(
-                    text = if (isHighTier) "👑 $userName entered the palace! 🏆" else "$userName joined the live room! Welcome! 👋",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 11.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                Text("✨", fontSize = 13.sp)
+                Spacer(modifier = Modifier.width(6.dp))
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    LevelBadgePill(level = level)
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Text(
+                        text = "$userName joined the live room! Welcome! 👋",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// 0B. LIVE ROOM PK BATTLE ARENA (1v1 COMPETITION, TUG-OF-WAR, MVP PODIUM)
+// -------------------------------------------------------------
+@Composable
+fun LiveRoomPkBattleArena(
+    room: RoomItem,
+    currentUser: UserProfile,
+    isHost: Boolean,
+    blueSupporters: List<PkSupporter>,
+    redSupporters: List<PkSupporter>,
+    onBoostBlue: () -> Unit,
+    onBoostRed: () -> Unit,
+    onEndPk: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var currentTimeMs by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(room.pkStartTime) {
+        while (true) {
+            delay(1000L)
+            currentTimeMs = System.currentTimeMillis()
+        }
+    }
+
+    val totalDurationMs = (room.pkDurationSec.coerceAtLeast(60)) * 1000L
+    val elapsedMs = (currentTimeMs - room.pkStartTime).coerceAtLeast(0L)
+    val remainingSec = ((totalDurationMs - elapsedMs) / 1000L).coerceAtLeast(0L)
+    val isPkEnded = remainingSec <= 0L || room.pkStatus == "ended"
+
+    val timerFormatted = String.format("%02d:%02d", remainingSec / 60, remainingSec % 60)
+
+    val scoreBlue = room.pkHost1Score.coerceAtLeast(0L)
+    val scoreRed = room.pkHost2Score.coerceAtLeast(0L)
+    val totalScore = scoreBlue + scoreRed
+    val targetRatio = if (totalScore == 0L) 0.5f else (scoreBlue.toFloat() / totalScore.toFloat()).coerceIn(0.12f, 0.88f)
+    val animatedBlueRatio by animateFloatAsState(targetValue = targetRatio, animationSpec = tween(500), label = "pk_bar")
+
+    val pulseTransition = rememberInfiniteTransition(label = "pk_flame_pulse")
+    val flameScale by pulseTransition.animateFloat(
+        initialValue = 0.95f,
+        targetValue = 1.15f,
+        animationSpec = infiniteRepeatable(tween(500, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "flame_scale"
+    )
+
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF140D1E).copy(alpha = 0.96f)),
+        border = BorderStroke(1.5.dp, Brush.horizontalGradient(listOf(Color(0xFF0091EA), Color(0xFFFF1744)))),
+        elevation = CardDefaults.cardElevation(defaultElevation = 12.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // TOP HEADER: Fiery Timer & Team Labels
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF00E5FF))
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("BLUE TEAM", color = Color(0xFF00E5FF), fontSize = 10.sp, fontWeight = FontWeight.Black)
+                }
+
+                Surface(
+                    color = Color.Black.copy(alpha = 0.75f),
+                    shape = RoundedCornerShape(50),
+                    border = BorderStroke(1.dp, Brush.horizontalGradient(listOf(Color(0xFFFF9100), Color(0xFFFF1744))))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("🔥", fontSize = 11.sp, modifier = Modifier.scale(flameScale))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (isPkEnded) "PK OVER" else "PK $timerFormatted",
+                            color = Color(0xFFFFD700),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("RED TEAM", color = Color(0xFFFF5252), fontSize = 10.sp, fontWeight = FontWeight.Black)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFFF1744))
+                    )
+                    if (isHost) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color.White.copy(alpha = 0.15f))
+                                .clickable { onEndPk() }
+                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                        ) {
+                            Text("End", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // TOP 3 MVP SUPPORTERS PODIUM
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Blue Top 3
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val blueTop = (0..2).map { idx -> blueSupporters.getOrNull(idx) }
+                    blueTop.forEachIndexed { i, supp ->
+                        val medal = when (i) {
+                            0 -> "🥇"
+                            1 -> "🥈"
+                            else -> "🥉"
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(medal, fontSize = 9.sp)
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF0D47A1))
+                                    .border(1.dp, Color(0xFF00E5FF), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (supp != null && supp.photo.isNotBlank()) {
+                                    AsyncImage(
+                                        model = supp.photo,
+                                        contentDescription = supp.name,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
+                                    Text(
+                                        text = supp?.name?.take(1) ?: "${i + 1}",
+                                        color = Color.White,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Points summary
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("%,d".format(scoreBlue), color = Color(0xFF00E5FF), fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+                    Text(" : ", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("%,d".format(scoreRed), color = Color(0xFFFF5252), fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+                }
+
+                // Red Top 3
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val redTop = (0..2).map { idx -> redSupporters.getOrNull(idx) }
+                    redTop.forEachIndexed { i, supp ->
+                        val medal = when (i) {
+                            0 -> "🥇"
+                            1 -> "🥈"
+                            else -> "🥉"
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(medal, fontSize = 9.sp)
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFB71C1C))
+                                    .border(1.dp, Color(0xFFFF1744), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (supp != null && supp.photo.isNotBlank()) {
+                                    AsyncImage(
+                                        model = supp.photo,
+                                        contentDescription = supp.name,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
+                                    Text(
+                                        text = supp?.name?.take(1) ?: "${i + 1}",
+                                        color = Color.White,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // DYNAMIC TUG-OF-WAR PROGRESS BAR
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(14.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color(0xFF211428))
+            ) {
+                Row(modifier = Modifier.fillMaxSize()) {
+                    Box(
+                        modifier = Modifier
+                            .weight(animatedBlueRatio)
+                            .fillMaxHeight()
+                            .background(Brush.horizontalGradient(listOf(Color(0xFF0277BD), Color(0xFF00E5FF))))
+                    )
+                    Box(
+                        modifier = Modifier
+                            .weight(1f - animatedBlueRatio)
+                            .fillMaxHeight()
+                            .background(Brush.horizontalGradient(listOf(Color(0xFFFF1744), Color(0xFFFF9100))))
+                    )
+                }
+
+                Image(
+                    painter = painterResource(id = R.drawable.ic_pk_flame_vs),
+                    contentDescription = "VS Flame",
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .size(26.dp)
                 )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // HOST 1 (BLUE) vs HOST 2 (RED)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Host 1
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(52.dp)
+                            .clip(CircleShape)
+                            .border(2.dp, Color(0xFF00E5FF), CircleShape)
+                    ) {
+                        AsyncImage(
+                            model = room.pkHost1Photo.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                            contentDescription = room.pkHost1Name,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text(
+                        text = room.pkHost1Name.ifBlank { "Host 1" },
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (isPkEnded) {
+                        if (scoreBlue > scoreRed) {
+                            Text("🏆 VICTORY!", color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                        } else if (scoreRed > scoreBlue) {
+                            Text("💀 DEFEAT", color = Color(0xFFFF5252), fontSize = 11.sp, fontWeight = FontWeight.Black)
+                        } else {
+                            Text("🤝 DRAW", color = Color.LightGray, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                        }
+                    } else {
+                        Button(
+                            onClick = onBoostBlue,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0091EA)),
+                            shape = RoundedCornerShape(50),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.height(24.dp).padding(top = 2.dp)
+                        ) {
+                            Text("⚡ Boost Blue", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                // Center VS Emblem
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_pk_flame_vs),
+                        contentDescription = "VS Flame",
+                        modifier = Modifier
+                            .size(42.dp)
+                            .scale(flameScale)
+                    )
+                }
+
+                // Host 2
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(52.dp)
+                            .clip(CircleShape)
+                            .border(2.dp, Color(0xFFFF1744), CircleShape)
+                    ) {
+                        AsyncImage(
+                            model = room.pkHost2Photo.ifEmpty { "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d" },
+                            contentDescription = room.pkHost2Name,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text(
+                        text = room.pkHost2Name.ifBlank { "Host 2" },
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (isPkEnded) {
+                        if (scoreRed > scoreBlue) {
+                            Text("🏆 VICTORY!", color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                        } else if (scoreBlue > scoreRed) {
+                            Text("💀 DEFEAT", color = Color(0xFFFF5252), fontSize = 11.sp, fontWeight = FontWeight.Black)
+                        } else {
+                            Text("🤝 DRAW", color = Color.LightGray, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                        }
+                    } else {
+                        Button(
+                            onClick = onBoostRed,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF1744)),
+                            shape = RoundedCornerShape(50),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.height(24.dp).padding(top = 2.dp)
+                        ) {
+                            Text("🔥 Boost Red", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
             }
         }
     }
@@ -1816,72 +2225,6 @@ fun RoomMemberProfileSheet(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // Member Photo with Flowing Outer Frame & VIP Badge
-                val memberFrameId = if (isSelf) currentUser.activeFrame else (userProfile?.activeFrame ?: "")
-                val memberVipLvl = if (isSelf) currentUser.getVipLevel() else (userProfile?.getVipLevel() ?: if (isMemberVip) 1 else 0)
-
-                FlowingAvatarFrame(
-                    photoUrl = member.photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
-                    frameId = memberFrameId,
-                    avatarSize = 64.dp,
-                    frameSize = 114.dp,
-                    vipLevel = memberVipLvl
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Name & Age
-                val ageText = userProfile?.age?.let { ", $it" } ?: ""
-                Text(
-                    text = "${if (isSelf) "You (${member.name})" else member.name}$ageText",
-                    color = Color.White,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold
-                )
-
-                // Role & Tier Badges
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.padding(top = 4.dp)
-                ) {
-                    if (member.role == "host" || isHost && isSelf) {
-                        Text(
-                            text = "👑 Room Host",
-                            color = BrandGold,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier
-                                .background(BrandGold.copy(alpha = 0.2f), RoundedCornerShape(50))
-                                .padding(horizontal = 8.dp, vertical = 2.dp)
-                        )
-                    }
-
-                    if (member.uid in roomAdminUserIds) {
-                        Text(
-                            text = "🛡️ Room Admin",
-                            color = Color(0xFF4FC3F7),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier
-                                .background(Color(0xFF0288D1).copy(alpha = 0.25f), RoundedCornerShape(50))
-                                .border(0.5.dp, Color(0xFF4FC3F7), RoundedCornerShape(50))
-                                .padding(horizontal = 8.dp, vertical = 2.dp)
-                        )
-                    }
-
-                    Text(
-                        text = if (isMemberVip) "VIP LEVEL ★" else if (isMemberPlat) "PLATINUM" else "Standard Member",
-                        color = if (isMemberVip) BrandGold else if (isMemberPlat) BrandCyan else Color.LightGray,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(50))
-                            .border(0.5.dp, BrandBorder, RoundedCornerShape(50))
-                            .padding(horizontal = 8.dp, vertical = 2.dp)
-                    )
-                }
-
                 // 3D Level Badges & Progress Cards in RoomMemberProfileSheet
                 val targetProfileForLevels = userProfile ?: UserProfile(uid = member.uid, name = member.name)
                 val targetWealthLvl = targetProfileForLevels.getEffectiveWealthLevel()
@@ -1900,13 +2243,134 @@ fun RoomMemberProfileSheet(
                     ((targetCharmXp - tMinCharmXp).toFloat() / (tMaxCharmXp - tMinCharmXp).toFloat()).coerceIn(0f, 1f)
                 } else 1f
 
-                Spacer(modifier = Modifier.height(6.dp))
+                val memberFrameId = if (isSelf) currentUser.activeFrame else (userProfile?.activeFrame ?: "")
+                val memberVipLvl = if (isSelf) currentUser.getVipLevel() else (userProfile?.getVipLevel() ?: if (isMemberVip) 1 else 0)
+
+                // User Identity Header: Avatar (Left) + Details (Center) + 3D Prestige Badge (Right)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        FlowingAvatarFrame(
+                            photoUrl = member.photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                            frameId = memberFrameId,
+                            avatarSize = 58.dp,
+                            frameSize = 98.dp,
+                            vipLevel = memberVipLvl
+                        )
+
+                        Spacer(modifier = Modifier.width(10.dp))
+
+                        Column {
+                            val ageText = userProfile?.age?.let { ", $it" } ?: ""
+                            Text(
+                                text = "${if (isSelf) "You (${member.name})" else member.name}$ageText",
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(top = 2.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(7.dp)
+                                        .clip(CircleShape)
+                                        .background(BrandGreen)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Online • Live", color = Color.LightGray, fontSize = 11.sp)
+                            }
+
+                            // Role & Tier Badges
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier.padding(top = 4.dp)
+                            ) {
+                                if (member.role == "host" || isHost && isSelf) {
+                                    Text(
+                                        text = "👑 Host",
+                                        color = BrandGold,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier
+                                            .background(BrandGold.copy(alpha = 0.2f), RoundedCornerShape(50))
+                                            .padding(horizontal = 6.dp, vertical = 1.dp)
+                                    )
+                                }
+
+                                if (member.uid in roomAdminUserIds) {
+                                    Text(
+                                        text = "🛡️ Admin",
+                                        color = Color(0xFF4FC3F7),
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier
+                                            .background(Color(0xFF0288D1).copy(alpha = 0.25f), RoundedCornerShape(50))
+                                            .padding(horizontal = 6.dp, vertical = 1.dp)
+                                    )
+                                }
+
+                                Text(
+                                    text = if (isMemberVip) "VIP 1" else if (isMemberPlat) "PLAT" else "Member",
+                                    color = if (isMemberVip) BrandGold else if (isMemberPlat) BrandCyan else Color.LightGray,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier
+                                        .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(50))
+                                        .border(0.5.dp, BrandBorder, RoundedCornerShape(50))
+                                        .padding(horizontal = 6.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // Large 3D Digital Badge (Lv.10+)
+                    if (targetWealthLvl >= 10) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(start = 6.dp)
+                        ) {
+                            Image(
+                                painter = painterResource(id = targetWealthTier.badgeDrawableRes),
+                                contentDescription = targetWealthTier.tierName,
+                                modifier = Modifier.size(68.dp)
+                            )
+                            Surface(
+                                color = Color(0xFF1E171C),
+                                shape = RoundedCornerShape(50),
+                                border = BorderStroke(1.dp, Brush.horizontalGradient(targetWealthTier.gradientColors)),
+                                modifier = Modifier.offset(y = (-5).dp)
+                            ) {
+                                Text(
+                                    text = "LV.$targetWealthLvl",
+                                    color = Color.White,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Black,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
 
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    // Wealth Level Card
+                    // Wealth Level Card (3D Shield Icon)
                     Card(
                         colors = CardDefaults.cardColors(containerColor = Color(0xFF1E171C)),
                         shape = RoundedCornerShape(14.dp),
@@ -1920,19 +2384,27 @@ fun RoomMemberProfileSheet(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(28.dp)
-                                            .clip(CircleShape)
-                                            .background(Brush.linearGradient(targetWealthTier.gradientColors)),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(targetWealthTier.badgeIcon, fontSize = 14.sp)
+                                    if (targetWealthLvl >= 10) {
+                                        Image(
+                                            painter = painterResource(id = R.drawable.ic_wealth_shield_3d),
+                                            contentDescription = "Wealth Shield",
+                                            modifier = Modifier.size(32.dp)
+                                        )
+                                    } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(28.dp)
+                                                .clip(CircleShape)
+                                                .background(Brush.linearGradient(targetWealthTier.gradientColors)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(targetWealthTier.badgeIcon, fontSize = 14.sp)
+                                        }
                                     }
-                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     Column {
                                         Text(
-                                            text = "Wealth • Lv.$targetWealthLvl",
+                                            text = "Wealth Level • Lv.$targetWealthLvl",
                                             color = Color.White,
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 12.sp
@@ -1945,11 +2417,15 @@ fun RoomMemberProfileSheet(
                                         )
                                     }
                                 }
-                                Text(
-                                    text = "%,d / %,d XP".format(targetWealthXp, tMaxWealthXp),
-                                    color = Color.LightGray,
-                                    fontSize = 10.sp
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "%,d / %,d XP".format(targetWealthXp, tMaxWealthXp),
+                                        color = Color.LightGray,
+                                        fontSize = 10.sp
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(14.dp))
+                                }
                             }
                             Spacer(modifier = Modifier.height(6.dp))
                             LinearProgressIndicator(
@@ -1961,7 +2437,7 @@ fun RoomMemberProfileSheet(
                         }
                     }
 
-                    // Charm Level Card
+                    // Charm Level Card (3D Heart Icon)
                     Card(
                         colors = CardDefaults.cardColors(containerColor = Color(0xFF181528)),
                         shape = RoundedCornerShape(14.dp),
@@ -1975,19 +2451,27 @@ fun RoomMemberProfileSheet(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(28.dp)
-                                            .clip(CircleShape)
-                                            .background(Brush.linearGradient(targetCharmTier.gradientColors)),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text("💖", fontSize = 14.sp)
+                                    if (targetCharmLvl >= 10) {
+                                        Image(
+                                            painter = painterResource(id = R.drawable.ic_charm_heart_3d),
+                                            contentDescription = "Charm Heart",
+                                            modifier = Modifier.size(32.dp)
+                                        )
+                                    } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(28.dp)
+                                                .clip(CircleShape)
+                                                .background(Brush.linearGradient(targetCharmTier.gradientColors)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text("💖", fontSize = 14.sp)
+                                        }
                                     }
-                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     Column {
                                         Text(
-                                            text = "Charm • Lv.$targetCharmLvl",
+                                            text = "Charm Level • Lv.$targetCharmLvl",
                                             color = Color.White,
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 12.sp
@@ -2000,11 +2484,15 @@ fun RoomMemberProfileSheet(
                                         )
                                     }
                                 }
-                                Text(
-                                    text = "%,d / %,d XP".format(targetCharmXp, tMaxCharmXp),
-                                    color = Color.LightGray,
-                                    fontSize = 10.sp
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "%,d / %,d XP".format(targetCharmXp, tMaxCharmXp),
+                                        color = Color.LightGray,
+                                        fontSize = 10.sp
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(14.dp))
+                                }
                             }
                             Spacer(modifier = Modifier.height(6.dp))
                             LinearProgressIndicator(
@@ -2765,6 +3253,103 @@ fun RoomSettingsDialog(
                                         color = if (room.announcement.isNotBlank()) BrandGold else Color.LightGray,
                                         fontSize = 12.sp
                                     )
+                                }
+                            }
+                        }
+                    }
+
+                    // 0B. PK BATTLE ARENA CONTROLS (HOST ONLY)
+                    if (isHost) {
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF201222)),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(Color(0xFF0091EA), Color(0xFFFF1744))))
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Image(
+                                                painter = painterResource(id = R.drawable.ic_pk_flame_vs),
+                                                contentDescription = "PK Battle",
+                                                modifier = Modifier.size(22.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("⚔️ Live PK Battle Arena", color = BrandGold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                        if (room.isPkActive) {
+                                            Surface(
+                                                color = Color.Red.copy(alpha = 0.25f),
+                                                shape = RoundedCornerShape(50),
+                                                border = BorderStroke(0.8.dp, Color(0xFFFF1744))
+                                            ) {
+                                                Text("ACTIVE 🔥", color = Color(0xFFFF5252), fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                            }
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("Start a 5-minute Tug-of-War PK challenge against a co-host or guest!", color = Color.LightGray, fontSize = 11.sp)
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    if (!room.isPkActive) {
+                                        Button(
+                                            onClick = {
+                                                onDismiss()
+                                                val candidate = activeMembers.firstOrNull { it.uid != currentUser.uid }
+                                                val oppUid = candidate?.uid ?: "guest_challenger"
+                                                val oppName = candidate?.name ?: "Challenger Host"
+                                                val oppPhoto = candidate?.photoUrl ?: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d"
+                                                val now = System.currentTimeMillis()
+                                                db.collection("rooms").document(room.id).update(
+                                                    mapOf(
+                                                        "isPkActive" to true,
+                                                        "pkHost1Uid" to room.hostUid,
+                                                        "pkHost1Name" to room.hostName,
+                                                        "pkHost1Photo" to room.hostPhotoUrl,
+                                                        "pkHost1Score" to 0L,
+                                                        "pkHost2Uid" to oppUid,
+                                                        "pkHost2Name" to oppName,
+                                                        "pkHost2Photo" to oppPhoto,
+                                                        "pkHost2Score" to 0L,
+                                                        "pkStartTime" to now,
+                                                        "pkDurationSec" to 300,
+                                                        "pkStatus" to "active",
+                                                        "pkWinnerUid" to ""
+                                                    )
+                                                )
+                                                db.collection("rooms").document(room.id).collection("pk_supporters").get().addOnSuccessListener { snaps ->
+                                                    for (d in snaps.documents) d.reference.delete()
+                                                }
+                                                Toast.makeText(context, "⚔️ 5-Minute PK Battle Started! 🔥", Toast.LENGTH_SHORT).show()
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF1744)),
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.fillMaxWidth().height(36.dp)
+                                        ) {
+                                            Text("⚔️ Start 5-Minute PK Battle", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                        }
+                                    } else {
+                                        Button(
+                                            onClick = {
+                                                onDismiss()
+                                                db.collection("rooms").document(room.id).update(
+                                                    mapOf(
+                                                        "isPkActive" to false,
+                                                        "pkStatus" to "ended"
+                                                    )
+                                                )
+                                                Toast.makeText(context, "🛑 PK Battle Ended", Toast.LENGTH_SHORT).show()
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF37474F)),
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.fillMaxWidth().height(36.dp)
+                                        ) {
+                                            Text("🛑 End PK Battle", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -3741,6 +4326,100 @@ fun AudioHangoutRoomDialog(
             .set(reaction)
     }
 
+    // PK Battle Arena Real-Time State
+    val pkBlueSupporters = remember { mutableStateListOf<PkSupporter>() }
+    val pkRedSupporters = remember { mutableStateListOf<PkSupporter>() }
+    var selectedPkTeamForBoost by remember { mutableStateOf("blue") }
+
+    LaunchedEffect(room.id, room.isPkActive) {
+        if (room.id.isBlank() || !room.isPkActive) return@LaunchedEffect
+        db.collection("rooms").document(room.id)
+            .collection("pk_supporters")
+            .orderBy("points", Query.Direction.DESCENDING)
+            .addSnapshotListener { snapshot, _ ->
+                if (snapshot != null) {
+                    val list = snapshot.documents.mapNotNull { doc ->
+                        val team = doc.getString("team") ?: "blue"
+                        val uid = doc.getString("uid") ?: ""
+                        val name = doc.getString("name") ?: ""
+                        val photo = doc.getString("photo") ?: ""
+                        val points = doc.getLong("points") ?: 0L
+                        Pair(team, PkSupporter(uid = uid, name = name, photo = photo, points = points))
+                    }
+                    pkBlueSupporters.clear()
+                    pkBlueSupporters.addAll(list.filter { it.first == "blue" }.map { it.second }.take(3))
+                    pkRedSupporters.clear()
+                    pkRedSupporters.addAll(list.filter { it.first == "red" }.map { it.second }.take(3))
+                }
+            }
+    }
+
+    fun startPkBattleWithOpponent(opponentUid: String, opponentName: String, opponentPhoto: String) {
+        val now = System.currentTimeMillis()
+        val curHostId = room.hostUid.ifBlank { room.hostId }
+        val curHostName = room.hostName.ifBlank { "Host" }
+        val curHostPhoto = room.hostPhotoUrl
+        val updates = mapOf<String, Any>(
+            "isPkActive" to true,
+            "pkHost1Uid" to curHostId,
+            "pkHost1Name" to curHostName,
+            "pkHost1Photo" to curHostPhoto,
+            "pkHost1Score" to 0L,
+            "pkHost2Uid" to opponentUid,
+            "pkHost2Name" to opponentName,
+            "pkHost2Photo" to opponentPhoto,
+            "pkHost2Score" to 0L,
+            "pkStartTime" to now,
+            "pkDurationSec" to 300,
+            "pkStatus" to "active",
+            "pkWinnerUid" to ""
+        )
+        db.collection("rooms").document(room.id).update(updates)
+        db.collection("rooms").document(room.id).collection("pk_supporters").get().addOnSuccessListener { snaps ->
+            for (d in snaps.documents) {
+                d.reference.delete()
+            }
+        }
+        val pkNotice = LiveRoomComment(
+            id = UUID.randomUUID().toString(),
+            roomId = room.id,
+            userId = "system_notice",
+            userName = "⚔️ PK ARENA",
+            userPhoto = curHostPhoto,
+            tier = "VIP",
+            message = "🔥 PK BATTLE STARTED! $curHostName [BLUE] VS $opponentName [RED]! Send gifts to support!",
+            timestamp = now
+        )
+        db.collection("rooms").document(room.id).collection("live_comments").document(pkNotice.id).set(pkNotice)
+        Toast.makeText(context, "⚔️ 5-Minute PK Battle Started! Let's Go! 🔥", Toast.LENGTH_LONG).show()
+    }
+
+    fun endPkBattle() {
+        val curHostPhoto = room.hostPhotoUrl
+        val winnerUid = if (room.pkHost1Score > room.pkHost2Score) room.pkHost1Uid
+                        else if (room.pkHost2Score > room.pkHost1Score) room.pkHost2Uid
+                        else ""
+        val winnerName = if (winnerUid == room.pkHost1Uid) room.pkHost1Name else if (winnerUid == room.pkHost2Uid) room.pkHost2Name else "Draw"
+        val updates = mapOf<String, Any>(
+            "isPkActive" to false,
+            "pkStatus" to "ended",
+            "pkWinnerUid" to winnerUid
+        )
+        db.collection("rooms").document(room.id).update(updates)
+        val endNotice = LiveRoomComment(
+            id = UUID.randomUUID().toString(),
+            roomId = room.id,
+            userId = "system_notice",
+            userName = "⚔️ PK ARENA",
+            userPhoto = curHostPhoto,
+            tier = "VIP",
+            message = "🏆 PK Battle Finished! Winner: $winnerName! Amazing fight!",
+            timestamp = System.currentTimeMillis()
+        )
+        db.collection("rooms").document(room.id).collection("live_comments").document(endNotice.id).set(endNotice)
+        Toast.makeText(context, "🛑 PK Battle Ended", Toast.LENGTH_SHORT).show()
+    }
+
     val recordAudioPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
@@ -4548,6 +5227,40 @@ fun AudioHangoutRoomDialog(
 
                             Spacer(modifier = Modifier.width(6.dp))
 
+                            if (isUserHost) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .background(if (room.isPkActive) Color(0xFFFF1744) else BrandCard.copy(alpha = 0.85f))
+                                        .border(1.dp, if (room.isPkActive) BrandGold else Color(0xFFFF5252).copy(alpha = 0.8f), CircleShape)
+                                        .clickable {
+                                            if (room.isPkActive) {
+                                                endPkBattle()
+                                            } else {
+                                                val opponentSeat = micSeats.firstOrNull { it.seatIndex > 0 && it.uid.isNotBlank() }
+                                                if (opponentSeat != null) {
+                                                    startPkBattleWithOpponent(opponentSeat.uid, opponentSeat.name, opponentSeat.photo)
+                                                } else {
+                                                    val oppMember = activeMembers.firstOrNull { it.uid != currentUser.uid }
+                                                    if (oppMember != null) {
+                                                        startPkBattleWithOpponent(oppMember.uid, oppMember.name, oppMember.photoUrl)
+                                                    } else {
+                                                        startPkBattleWithOpponent("guest_challenger", "Challenger Host", "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d")
+                                                    }
+                                                }
+                                            }
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = if (room.isPkActive) "🔥" else "⚔️",
+                                        fontSize = 14.sp
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(6.dp))
+                            }
+
                             IconButton(
                                 onClick = { showRoomSettingsDialog = true },
                                 modifier = Modifier
@@ -5214,6 +5927,29 @@ fun AudioHangoutRoomDialog(
                             }
                         )
                         Spacer(modifier = Modifier.height(8.dp))
+                    }
+
+                    // 2.4 LIVE ROOM PK BATTLE ARENA (1v1 REAL-TIME ARENA)
+                    if (room.isPkActive) {
+                        LiveRoomPkBattleArena(
+                            room = room,
+                            currentUser = currentUser,
+                            isHost = isUserHost,
+                            blueSupporters = pkBlueSupporters,
+                            redSupporters = pkRedSupporters,
+                            onBoostBlue = {
+                                selectedPkTeamForBoost = "blue"
+                                showGiftStoreDialog = true
+                            },
+                            onBoostRed = {
+                                selectedPkTeamForBoost = "red"
+                                showGiftStoreDialog = true
+                            },
+                            onEndPk = {
+                                endPkBattle()
+                            }
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
                     }
 
                     // ---------------------------------------------------------
@@ -6141,6 +6877,25 @@ fun AudioHangoutRoomDialog(
                         db.collection("rooms").document(room.id)
                         .collection("gift_events").document(giftEvent.id)
                         .set(giftEvent)
+
+                        // Real-Time PK Battle Score & Supporters Sync
+                        if (room.isPkActive) {
+                            val supportedTeam = selectedPkTeamForBoost
+                            val scoreField = if (supportedTeam == "red") "pkHost2Score" else "pkHost1Score"
+                            db.collection("rooms").document(room.id).update(scoreField, FieldValue.increment(giftItem.cost.toLong()))
+                            db.collection("rooms").document(room.id)
+                                .collection("pk_supporters").document("${supportedTeam}_${currentUser.uid}").set(
+                                    mapOf(
+                                        "team" to supportedTeam,
+                                        "uid" to currentUser.uid,
+                                        "name" to currentUser.name,
+                                        "photo" to currentUser.photo,
+                                        "points" to FieldValue.increment(giftItem.cost.toLong())
+                                    ),
+                                    SetOptions.merge()
+                                )
+                        }
+
                         showGiftStoreDialog = false
                     } else {
                         Toast.makeText(context, "⚠️ Insufficient Diamonds! Needed: %,d 💎 to send ${giftItem.name} (Available: %,d 💎). Please recharge.".format(giftItem.cost, userDiamonds), Toast.LENGTH_LONG).show()

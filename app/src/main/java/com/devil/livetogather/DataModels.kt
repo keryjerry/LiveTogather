@@ -61,7 +61,21 @@ data class RoomItem(
     @get:PropertyName("isLive") @set:PropertyName("isLive") var isLive: Boolean = true,
     @get:PropertyName("announcement") @set:PropertyName("announcement") var announcement: String = "",
     @get:PropertyName("isLocked") @set:PropertyName("isLocked") var isLocked: Boolean = false,
-    @get:PropertyName("trackStartedAt") @set:PropertyName("trackStartedAt") var trackStartedAt: Long = 0L
+    @get:PropertyName("trackStartedAt") @set:PropertyName("trackStartedAt") var trackStartedAt: Long = 0L,
+    // Real-Time Live Room PK Battle Arena
+    @get:PropertyName("isPkActive") @set:PropertyName("isPkActive") var isPkActive: Boolean = false,
+    @get:PropertyName("pkHost1Uid") @set:PropertyName("pkHost1Uid") var pkHost1Uid: String = "",
+    @get:PropertyName("pkHost1Name") @set:PropertyName("pkHost1Name") var pkHost1Name: String = "",
+    @get:PropertyName("pkHost1Photo") @set:PropertyName("pkHost1Photo") var pkHost1Photo: String = "",
+    @get:PropertyName("pkHost1Score") @set:PropertyName("pkHost1Score") var pkHost1Score: Long = 0L,
+    @get:PropertyName("pkHost2Uid") @set:PropertyName("pkHost2Uid") var pkHost2Uid: String = "",
+    @get:PropertyName("pkHost2Name") @set:PropertyName("pkHost2Name") var pkHost2Name: String = "",
+    @get:PropertyName("pkHost2Photo") @set:PropertyName("pkHost2Photo") var pkHost2Photo: String = "",
+    @get:PropertyName("pkHost2Score") @set:PropertyName("pkHost2Score") var pkHost2Score: Long = 0L,
+    @get:PropertyName("pkStartTime") @set:PropertyName("pkStartTime") var pkStartTime: Long = 0L,
+    @get:PropertyName("pkDurationSec") @set:PropertyName("pkDurationSec") var pkDurationSec: Int = 300,
+    @get:PropertyName("pkStatus") @set:PropertyName("pkStatus") var pkStatus: String = "idle",
+    @get:PropertyName("pkWinnerUid") @set:PropertyName("pkWinnerUid") var pkWinnerUid: String = ""
 ) {
     val isVipRoom: Boolean get() = privacy.equals("vip_only", ignoreCase = true)
 }
@@ -132,6 +146,20 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
     val isLocked = doc.getBoolean("isLocked") ?: doc.getBoolean("locked") ?: false
     val trackStartedAt = doc.getLong("trackStartedAt") ?: 0L
 
+    val isPkActive = doc.getBoolean("isPkActive") ?: false
+    val pkHost1Uid = doc.getString("pkHost1Uid") ?: ""
+    val pkHost1Name = doc.getString("pkHost1Name") ?: ""
+    val pkHost1Photo = doc.getString("pkHost1Photo") ?: ""
+    val pkHost1Score = doc.getLong("pkHost1Score") ?: 0L
+    val pkHost2Uid = doc.getString("pkHost2Uid") ?: ""
+    val pkHost2Name = doc.getString("pkHost2Name") ?: ""
+    val pkHost2Photo = doc.getString("pkHost2Photo") ?: ""
+    val pkHost2Score = doc.getLong("pkHost2Score") ?: 0L
+    val pkStartTime = doc.getLong("pkStartTime") ?: 0L
+    val pkDurationSec = (doc.getLong("pkDurationSec") ?: 300L).toInt()
+    val pkStatus = doc.getString("pkStatus") ?: "idle"
+    val pkWinnerUid = doc.getString("pkWinnerUid") ?: ""
+
     return RoomItem(
         id = id,
         title = title,
@@ -164,7 +192,20 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
         isLive = isLive,
         announcement = announcement,
         isLocked = isLocked,
-        trackStartedAt = trackStartedAt
+        trackStartedAt = trackStartedAt,
+        isPkActive = isPkActive,
+        pkHost1Uid = pkHost1Uid,
+        pkHost1Name = pkHost1Name,
+        pkHost1Photo = pkHost1Photo,
+        pkHost1Score = pkHost1Score,
+        pkHost2Uid = pkHost2Uid,
+        pkHost2Name = pkHost2Name,
+        pkHost2Photo = pkHost2Photo,
+        pkHost2Score = pkHost2Score,
+        pkStartTime = pkStartTime,
+        pkDurationSec = pkDurationSec,
+        pkStatus = pkStatus,
+        pkWinnerUid = pkWinnerUid
     )
 }
 
@@ -458,6 +499,14 @@ val SUBSCRIPTION_PLANS = listOf(
     SubscriptionPlanItem("vip", "VIP LEVEL ★", "₹399", "/ mo", "Direct Msg + Visitors", isPopular = true)
 )
 
+data class PkSupporter(
+    val uid: String = "",
+    val name: String = "",
+    val photo: String = "",
+    val points: Long = 0L,
+    val rank: Int = 1
+)
+
 data class LevelTierInfo(
     val tierName: String,
     val level: Int,
@@ -465,7 +514,8 @@ data class LevelTierInfo(
     val gradientColors: List<Color>,
     val crownEmoji: String,
     val minXp: Long,
-    val maxXp: Long
+    val maxXp: Long,
+    val badgeDrawableRes: Int = R.drawable.badge_level_bronze
 )
 
 object LevelBadgeSystem {
@@ -518,7 +568,8 @@ object LevelBadgeSystem {
                 gradientColors = listOf(Color(0xFF2E7D32), Color(0xFF66BB6A)),
                 crownEmoji = "🥉",
                 minXp = minXp,
-                maxXp = maxXp
+                maxXp = maxXp,
+                badgeDrawableRes = R.drawable.badge_level_bronze
             )
             safeLvl <= 30 -> LevelTierInfo(
                 tierName = "Sapphire Knight",
@@ -527,7 +578,8 @@ object LevelBadgeSystem {
                 gradientColors = listOf(Color(0xFF1565C0), Color(0xFF00E5FF)),
                 crownEmoji = "🥈",
                 minXp = minXp,
-                maxXp = maxXp
+                maxXp = maxXp,
+                badgeDrawableRes = R.drawable.badge_level_sapphire
             )
             safeLvl <= 50 -> LevelTierInfo(
                 tierName = "Royal Star VIP",
@@ -536,7 +588,8 @@ object LevelBadgeSystem {
                 gradientColors = listOf(Color(0xFF6A1B9A), Color(0xFFFFD700)),
                 crownEmoji = "⭐",
                 minXp = minXp,
-                maxXp = maxXp
+                maxXp = maxXp,
+                badgeDrawableRes = R.drawable.badge_level_royal
             )
             safeLvl <= 75 -> LevelTierInfo(
                 tierName = "Crimson Dragon",
@@ -545,7 +598,8 @@ object LevelBadgeSystem {
                 gradientColors = listOf(Color(0xFFB71C1C), Color(0xFFFF6D00)),
                 crownEmoji = "🔥",
                 minXp = minXp,
-                maxXp = maxXp
+                maxXp = maxXp,
+                badgeDrawableRes = R.drawable.badge_level_dragon
             )
             safeLvl <= 99 -> LevelTierInfo(
                 tierName = "Cyber Diamond",
@@ -554,7 +608,8 @@ object LevelBadgeSystem {
                 gradientColors = listOf(Color(0xFF00838F), Color(0xFF80DEEA)),
                 crownEmoji = "💠",
                 minXp = minXp,
-                maxXp = maxXp
+                maxXp = maxXp,
+                badgeDrawableRes = R.drawable.badge_level_diamond
             )
             else -> LevelTierInfo(
                 tierName = "Sovereign Emperor",
@@ -563,7 +618,8 @@ object LevelBadgeSystem {
                 gradientColors = listOf(Color(0xFFFF8F00), Color(0xFFFFD700), Color(0xFFFF1744)),
                 crownEmoji = "👑",
                 minXp = minXp,
-                maxXp = maxXp
+                maxXp = maxXp,
+                badgeDrawableRes = R.drawable.badge_level_emperor
             )
         }
     }

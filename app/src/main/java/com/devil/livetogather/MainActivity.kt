@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.text.KeyboardActions
@@ -4221,83 +4222,120 @@ fun ProfileScreenContent(
             }
         }
 
-        // 3. User Identity (Name & Location & Age)
+        // 3. User Identity (Name & Location & Age & 3D Prestige Badge)
         item {
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = name,
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.ExtraBold
-                    )
-                    Spacer(modifier = Modifier.width(5.dp))
-                    Surface(
-                        color = BrandGold.copy(alpha = 0.2f),
-                        shape = CircleShape
-                    ) {
-                        Icon(
-                            Icons.Default.Check,
-                            contentDescription = "Verified",
-                            tint = BrandGold,
-                            modifier = Modifier.size(14.dp).padding(2.dp)
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(2.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.clickable { onOpenLocationSetup() }
-                ) {
-                    Text(
-                        text = "📍 ${currentUser.locationName.ifBlank { city }} • $age yrs • $gender",
-                        color = Color.LightGray,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("✏️", fontSize = 11.sp)
-                }
+            val effWealthLvl = currentUser.getEffectiveWealthLevel()
+            val wealthTier = currentUser.getWealthTierInfo()
 
-                Spacer(modifier = Modifier.height(6.dp))
-
-                // 8-digit User ID Chip with Click-to-Copy
-                val displayProfileUserId = remember(currentUser.userId, currentUser.uid) {
-                    val uidVal = currentUser.uid.ifBlank { currentUserId }
-                    if (currentUser.userId.isNotBlank() && currentUser.userId.length == 8 && currentUser.userId.all { it.isDigit() }) {
-                        currentUser.userId
-                    } else {
-                        (10000000 + kotlin.math.abs(uidVal.hashCode()) % 90000000).toString()
-                    }
-                }
-                Surface(
-                    color = Color.White.copy(alpha = 0.08f),
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
-                    modifier = Modifier.clickable {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                        val clip = android.content.ClipData.newPlainText("User ID", displayProfileUserId)
-                        clipboard.setPrimaryClip(clip)
-                        Toast.makeText(context, "User ID $displayProfileUserId copied! 📋", Toast.LENGTH_SHORT).show()
-                    }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = "User ID: $displayProfileUserId",
-                            color = BrandGold,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
+                            text = name,
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.ExtraBold
                         )
                         Spacer(modifier = Modifier.width(5.dp))
-                        Icon(
-                            Icons.Default.ContentCopy,
-                            contentDescription = "Copy User ID",
-                            tint = BrandGold,
-                            modifier = Modifier.size(12.dp)
+                        Surface(
+                            color = BrandGold.copy(alpha = 0.2f),
+                            shape = CircleShape
+                        ) {
+                            Icon(
+                                Icons.Default.Check,
+                                contentDescription = "Verified",
+                                tint = BrandGold,
+                                modifier = Modifier.size(14.dp).padding(2.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { onOpenLocationSetup() }
+                    ) {
+                        Text(
+                            text = "📍 ${currentUser.locationName.ifBlank { city }} • $age yrs • $gender",
+                            color = Color.LightGray,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
                         )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("✏️", fontSize = 11.sp)
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // 8-digit User ID Chip with Click-to-Copy
+                    val displayProfileUserId = remember(currentUser.userId, currentUser.uid) {
+                        val uidVal = currentUser.uid.ifBlank { currentUserId }
+                        if (currentUser.userId.isNotBlank() && currentUser.userId.length == 8 && currentUser.userId.all { it.isDigit() }) {
+                            currentUser.userId
+                        } else {
+                            (10000000 + kotlin.math.abs(uidVal.hashCode()) % 90000000).toString()
+                        }
+                    }
+                    Surface(
+                        color = Color.White.copy(alpha = 0.08f),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
+                        modifier = Modifier.clickable {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            val clip = android.content.ClipData.newPlainText("User ID", displayProfileUserId)
+                            clipboard.setPrimaryClip(clip)
+                            Toast.makeText(context, "User ID $displayProfileUserId copied! 📋", Toast.LENGTH_SHORT).show()
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "User ID: $displayProfileUserId",
+                                color = BrandGold,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Icon(
+                                Icons.Default.ContentCopy,
+                                contentDescription = "Copy User ID",
+                                tint = BrandGold,
+                                modifier = Modifier.size(12.dp)
+                            )
+                        }
+                    }
+                }
+
+                // High-Definition 3D Digital Badge (Lv.10+) exactly like Mockup
+                if (effWealthLvl >= 10) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(start = 8.dp)
+                    ) {
+                        Image(
+                            painter = painterResource(id = wealthTier.badgeDrawableRes),
+                            contentDescription = wealthTier.tierName,
+                            modifier = Modifier.size(74.dp)
+                        )
+                        Surface(
+                            color = Color(0xFF1E171C),
+                            shape = RoundedCornerShape(50),
+                            border = BorderStroke(1.dp, Brush.horizontalGradient(wealthTier.gradientColors)),
+                            modifier = Modifier.offset(y = (-6).dp)
+                        ) {
+                            Text(
+                                text = "LV.$effWealthLvl",
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Black,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 1.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -4339,14 +4377,22 @@ fun ProfileScreenContent(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .clip(CircleShape)
-                                        .background(Brush.linearGradient(wealthTier.gradientColors)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(wealthTier.badgeIcon, fontSize = 16.sp)
+                                if (effWealthLvl >= 10) {
+                                    Image(
+                                        painter = painterResource(id = R.drawable.ic_wealth_shield_3d),
+                                        contentDescription = "Wealth Shield",
+                                        modifier = Modifier.size(36.dp)
+                                    )
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(CircleShape)
+                                            .background(Brush.linearGradient(wealthTier.gradientColors)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(wealthTier.badgeIcon, fontSize = 16.sp)
+                                    }
                                 }
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Column {
@@ -4364,11 +4410,20 @@ fun ProfileScreenContent(
                                     )
                                 }
                             }
-                            Text(
-                                text = "%,d / %,d XP".format(effWealthXp, maxWealthXp),
-                                color = Color.LightGray,
-                                fontSize = 11.sp
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "%,d / %,d XP".format(effWealthXp, maxWealthXp),
+                                    color = Color.LightGray,
+                                    fontSize = 11.sp
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(
+                                    Icons.Default.ChevronRight,
+                                    contentDescription = "Details",
+                                    tint = Color.Gray,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         LinearProgressIndicator(
@@ -4394,14 +4449,22 @@ fun ProfileScreenContent(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .clip(CircleShape)
-                                        .background(Brush.linearGradient(charmTier.gradientColors)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text("💖", fontSize = 16.sp)
+                                if (effCharmLvl >= 10) {
+                                    Image(
+                                        painter = painterResource(id = R.drawable.ic_charm_heart_3d),
+                                        contentDescription = "Charm Heart",
+                                        modifier = Modifier.size(36.dp)
+                                    )
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(CircleShape)
+                                            .background(Brush.linearGradient(charmTier.gradientColors)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text("💖", fontSize = 16.sp)
+                                    }
                                 }
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Column {
@@ -4419,11 +4482,20 @@ fun ProfileScreenContent(
                                     )
                                 }
                             }
-                            Text(
-                                text = "%,d / %,d XP".format(effCharmXp, maxCharmXp),
-                                color = Color.LightGray,
-                                fontSize = 11.sp
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "%,d / %,d XP".format(effCharmXp, maxCharmXp),
+                                    color = Color.LightGray,
+                                    fontSize = 11.sp
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(
+                                    Icons.Default.ChevronRight,
+                                    contentDescription = "Details",
+                                    tint = Color.Gray,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         LinearProgressIndicator(
