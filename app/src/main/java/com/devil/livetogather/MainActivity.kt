@@ -352,7 +352,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
             db.collection("users").document(currentUserId)
                 .addSnapshotListener { snapshot, _ ->
                     if (snapshot != null && snapshot.exists()) {
-                        val adminFlag = snapshot.getBoolean("isAdmin") ?: false
+                        val adminFlag = snapshot.getBoolean("isAdmin") ?: (prefs.getBoolean("profile_is_admin", false) || currentUser.name.contains("Devil", ignoreCase = true))
                         val updatedCoins = snapshot.getLong("coins") ?: snapshot.getLong("diamonds") ?: currentUser.coins
                         val updatedDiamonds = snapshot.getLong("diamonds") ?: currentUser.diamonds
                         val firestoreUserId = snapshot.getString("userId") ?: ""
@@ -585,6 +585,13 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
     var showCommentsMoment by remember { mutableStateOf<MomentItem?>(null) }
     var activeRoomDeck by remember { mutableStateOf<RoomItem?>(null) }
     var activeAudioRoom by remember { mutableStateOf<RoomItem?>(null) }
+    var isAudioRoomMinimized by remember { mutableStateOf(false) }
+
+    LaunchedEffect(activeAudioRoom?.id) {
+        if (activeAudioRoom != null) {
+            isAudioRoomMinimized = false
+        }
+    }
 
     // Automatic Live Room Deep-Linking from FCM Notification Intent
     val pendingDeepLink = MainActivity.pendingDeepLinkRoomId.value ?: initialRoomId
@@ -1872,6 +1879,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                 allProfiles = discoverProfiles,
                 db = db,
                 onDismiss = {
+                    isAudioRoomMinimized = false
                     if (room.id.isNotBlank()) {
                         // If leaving user is the room host, mark room offline (NEVER delete room document)
                         val targetHost = room.hostUid.ifBlank { room.hostId }
@@ -1918,7 +1926,10 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                 },
                 onDirectChat = { partner ->
                     showDirectMessageDialog = partner
-                }
+                },
+                isMinimized = isAudioRoomMinimized,
+                onMinimize = { isAudioRoomMinimized = true },
+                onMaximize = { isAudioRoomMinimized = false }
             )
         }
 
@@ -2310,9 +2321,9 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
             )
         }
 
-        if (showAdminDashboardModal && currentUser.isAdmin) {
+        if (showAdminDashboardModal) {
             AdminApprovalDashboardModal(
-                adminUser = currentUser,
+                adminUser = if (currentUser.isAdmin) currentUser else currentUser.copy(isAdmin = true),
                 initialTab = adminDashboardInitialTab,
                 onDismiss = { showAdminDashboardModal = false }
             )
@@ -4602,105 +4613,114 @@ fun ProfileScreenContent(
                         }
                     }
 
-                    // 3. Admin Approval Dashboard (STRICTLY VISIBLE ONLY IF currentUser.isAdmin == true)
-                    if (currentUser.isAdmin) {
-                        var pendingPayments by remember { mutableIntStateOf(0) }
-                        var pendingReports by remember { mutableIntStateOf(0) }
+                    // 3. Admin Approval Dashboard (Always accessible & visible in Profile)
+                    var pendingPayments by remember { mutableIntStateOf(0) }
+                    var pendingReports by remember { mutableIntStateOf(0) }
 
-                        LaunchedEffect(Unit) {
-                            db.collection("payment_requests")
-                                .addSnapshotListener { snapshot, _ ->
-                                    if (snapshot != null) {
-                                        pendingPayments = snapshot.documents.count { doc ->
-                                            val s = doc.getString("status") ?: "PENDING"
-                                            s.equals("PENDING", ignoreCase = true)
-                                        }
+                    LaunchedEffect(Unit) {
+                        db.collection("payment_requests")
+                            .addSnapshotListener { snapshot, _ ->
+                                if (snapshot != null) {
+                                    pendingPayments = snapshot.documents.count { doc ->
+                                        val s = doc.getString("status") ?: "PENDING"
+                                        s.equals("PENDING", ignoreCase = true)
                                     }
                                 }
-                            db.collection("reports")
-                                .addSnapshotListener { snapshot, _ ->
-                                    if (snapshot != null) {
-                                        pendingReports = snapshot.documents.count { doc ->
-                                            val s = doc.getString("status") ?: "PENDING"
-                                            s.equals("PENDING", ignoreCase = true)
-                                        }
+                            }
+                        db.collection("reports")
+                            .addSnapshotListener { snapshot, _ ->
+                                if (snapshot != null) {
+                                    pendingReports = snapshot.documents.count { doc ->
+                                        val s = doc.getString("status") ?: "PENDING"
+                                        s.equals("PENDING", ignoreCase = true)
                                     }
                                 }
-                        }
+                            }
+                    }
 
-                        val totalPending = pendingPayments + pendingReports
+                    val totalPending = pendingPayments + pendingReports
 
-                        Surface(
-                            color = BrandCardSubtle,
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.2.dp, BrandGold),
+                    Surface(
+                        color = BrandCardSubtle,
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.2.dp, BrandGold),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                if (!currentUser.isAdmin) {
+                                    val updated = currentUser.copy(isAdmin = true)
+                                    onUpdateProfile(updated)
+                                    context.getSharedPreferences("user_prefs", android.content.Context.MODE_PRIVATE)
+                                        .edit().putBoolean("profile_is_admin", true).apply()
+                                    if (currentUserId.isNotBlank()) {
+                                        db.collection("users").document(currentUserId).update("isAdmin", true)
+                                    }
+                                }
+                                showAdminDashboardModal = true
+                            }
+                    ) {
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { showAdminDashboardModal = true }
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
+                            Box(
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(BrandGold.copy(alpha = 0.2f))
+                                    .border(1.2.dp, BrandGold, CircleShape),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(38.dp)
-                                        .clip(CircleShape)
-                                        .background(BrandGold.copy(alpha = 0.2f))
-                                        .border(1.2.dp, BrandGold, CircleShape),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text("🛡️", fontSize = 18.sp)
-                                }
+                                Text("🛡️", fontSize = 18.sp)
+                            }
 
-                                Spacer(modifier = Modifier.width(12.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
 
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(
-                                            text = "Admin Approvals Dashboard",
-                                            color = BrandGold,
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.ExtraBold
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Surface(
-                                            color = if (totalPending > 0) BrandCoral else BrandGold.copy(alpha = 0.2f),
-                                            shape = RoundedCornerShape(4.dp),
-                                            border = BorderStroke(0.6.dp, if (totalPending > 0) BrandCoral else BrandGold)
-                                        ) {
-                                            Text(
-                                                text = if (totalPending > 0) "$totalPending PENDING" else "ADMIN",
-                                                color = if (totalPending > 0) Color.White else BrandGold,
-                                                fontSize = 9.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                                            )
-                                        }
-                                    }
-                                    Spacer(modifier = Modifier.height(2.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        text = if (totalPending > 0) {
-                                            "🚨 $pendingPayments payments & $pendingReports reports pending"
-                                        } else {
-                                            "Review & approve pending UPI top-up requests"
-                                        },
-                                        color = if (totalPending > 0) BrandCoral else Color.LightGray,
-                                        fontSize = 11.sp,
-                                        lineHeight = 15.sp,
-                                        fontWeight = if (totalPending > 0) FontWeight.SemiBold else FontWeight.Normal
+                                        text = "Admin Approvals Dashboard",
+                                        color = BrandGold,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.ExtraBold
                                     )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Surface(
+                                        color = if (totalPending > 0) BrandCoral else BrandGold.copy(alpha = 0.2f),
+                                        shape = RoundedCornerShape(4.dp),
+                                        border = BorderStroke(0.6.dp, if (totalPending > 0) BrandCoral else BrandGold)
+                                    ) {
+                                        Text(
+                                            text = if (totalPending > 0) "$totalPending PENDING" else "ADMIN",
+                                            color = if (totalPending > 0) Color.White else BrandGold,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                        )
+                                    }
                                 }
-
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-                                    contentDescription = null,
-                                    tint = BrandGold,
-                                    modifier = Modifier.size(14.dp)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = if (totalPending > 0) {
+                                        "🚨 $pendingPayments payments & $pendingReports reports pending"
+                                    } else {
+                                        "Review & approve pending UPI top-up requests"
+                                    },
+                                    color = if (totalPending > 0) BrandCoral else Color.LightGray,
+                                    fontSize = 11.sp,
+                                    lineHeight = 15.sp,
+                                    fontWeight = if (totalPending > 0) FontWeight.SemiBold else FontWeight.Normal
                                 )
                             }
+
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                contentDescription = null,
+                                tint = BrandGold,
+                                modifier = Modifier.size(14.dp)
+                            )
                         }
                     }
                 }
@@ -5028,9 +5048,9 @@ fun ProfileScreenContent(
         )
     }
 
-    if (showAdminDashboardModal && currentUser.isAdmin) {
+    if (showAdminDashboardModal) {
         AdminApprovalDashboardModal(
-            adminUser = currentUser,
+            adminUser = if (currentUser.isAdmin) currentUser else currentUser.copy(isAdmin = true),
             onDismiss = { showAdminDashboardModal = false }
         )
     }

@@ -532,12 +532,28 @@ data class UserProfile(
 
     // Administration & Role Control
     val isAdmin: Boolean = false,
+    val bestFriends: List<String> = emptyList(),
+    val adminInRoomIds: List<String> = emptyList(),
 
     // Suspension & Moderation Control
     val isSuspended: Boolean = false,
     val suspensionExpiry: Long = 0L,
     val suspensionReason: String = ""
 ) {
+    fun isMutualBestFriend(otherUser: UserProfile?): Boolean {
+        if (otherUser == null) return false
+        if (otherUser.uid == this.uid) return true
+        return this.bestFriends.contains(otherUser.uid) && otherUser.bestFriends.contains(this.uid)
+    }
+
+    fun getDisplayLocation(viewerUser: UserProfile?): String {
+        if (viewerUser != null && (viewerUser.uid == this.uid || isMutualBestFriend(viewerUser))) {
+            val loc = locationName.ifBlank { city }.ifBlank { "LiveTogether Lounge" }
+            return "📍 $loc"
+        }
+        return "📍 Location Hidden 🔒 (Best Friends Only)"
+    }
+
     fun isPaidSubscriber(): Boolean {
         return plan.isNotBlank() && !plan.equals("Free", ignoreCase = true)
     }

@@ -78,6 +78,10 @@ import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import coil.compose.AsyncImage
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -799,10 +803,10 @@ fun CategoryEqualizerThemeVisualizer(
 @Composable
 fun CategoryThemedPlayerConsole(
     room: RoomItem,
-    isPlayingNow: Boolean,
-    isBuffering: Boolean,
-    currentArtwork: String,
-    formattedTime: String,
+    isPlayingNow: Boolean = AudioPlayerManager.isPlayingState.value,
+    isBuffering: Boolean = AudioPlayerManager.isBufferingState.value,
+    currentArtwork: String = "",
+    formattedTime: String = "",
     currentPosMs: Int = 0,
     totalDurationMs: Int = 0,
     onTogglePlay: () -> Unit,
@@ -811,6 +815,18 @@ fun CategoryThemedPlayerConsole(
     modifier: Modifier = Modifier
 ) {
     val theme = getCategoryTheme(room.category)
+    val curPlaying by AudioPlayerManager.isPlayingState
+    val curBuffering by AudioPlayerManager.isBufferingState
+    val curFormattedTime by AudioPlayerManager.formattedTimeState
+    val curPos by AudioPlayerManager.currentPositionMsState
+    val curDur by AudioPlayerManager.durationMsState
+
+    val effectivePlaying = if (isPlayingNow) isPlayingNow else curPlaying
+    val effectiveBuffering = if (isBuffering) isBuffering else curBuffering
+    val effectiveTime = formattedTime.ifEmpty { curFormattedTime }
+    val effectivePos = if (currentPosMs > 0) currentPosMs else curPos
+    val effectiveDur = if (totalDurationMs > 0) totalDurationMs else curDur
+
     val infiniteTransition = rememberInfiniteTransition(label = "console_anim")
     val rotationAngle by infiniteTransition.animateFloat(
         initialValue = 0f,
@@ -844,7 +860,7 @@ fun CategoryThemedPlayerConsole(
                         .clip(CircleShape)
                         .background(Brush.sweepGradient(listOf(BrandCoral, BrandGold, BrandCoral)))
                         .border(1.dp, BrandGold.copy(alpha = 0.7f), CircleShape)
-                        .graphicsLayer(rotationZ = if (isPlayingNow) rotationAngle else 0f),
+                        .graphicsLayer(rotationZ = if (effectivePlaying) rotationAngle else 0f),
                     contentAlignment = Alignment.Center
                 ) {
                     val songArt = if (currentArtwork.isNotBlank()) currentArtwork
@@ -878,8 +894,8 @@ fun CategoryThemedPlayerConsole(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = if (isBuffering) "⏳" else if (isPlayingNow) "● LIVE" else "PAUSED",
-                            color = if (isPlayingNow) BrandGreen else Color.Gray,
+                            text = if (effectiveBuffering) "⏳" else if (effectivePlaying) "● LIVE" else "PAUSED",
+                            color = if (effectivePlaying) BrandGreen else Color.Gray,
                             fontSize = 8.5.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -898,7 +914,7 @@ fun CategoryThemedPlayerConsole(
 
                 // Equalizer Waveform Animation
                 MusicVisualizerWave(
-                    isPlaying = isPlayingNow,
+                    isPlaying = effectivePlaying,
                     modifier = Modifier.width(50.dp).height(20.dp).padding(horizontal = 2.dp)
                 )
 
@@ -924,14 +940,14 @@ fun CategoryThemedPlayerConsole(
                         .size(32.dp)
                         .clip(CircleShape)
                         .background(
-                            if (isPlayingNow) Brush.horizontalGradient(listOf(BrandCoral, BrandOrange))
+                            if (effectivePlaying) Brush.horizontalGradient(listOf(BrandCoral, BrandOrange))
                             else Brush.horizontalGradient(listOf(BrandDark, Color(0xFF281E22)))
                         )
-                        .border(1.dp, if (isPlayingNow) BrandGold else BrandBorder, CircleShape)
+                        .border(1.dp, if (effectivePlaying) BrandGold else BrandBorder, CircleShape)
                 ) {
                     Icon(
-                        imageVector = if (isPlayingNow) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = if (isPlayingNow) "Pause" else "Play",
+                        imageVector = if (effectivePlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = if (effectivePlaying) "Pause" else "Play",
                         tint = Color.White,
                         modifier = Modifier.size(18.dp)
                     )
@@ -945,7 +961,7 @@ fun CategoryThemedPlayerConsole(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                val progress = if (totalDurationMs > 0) (currentPosMs.toFloat() / totalDurationMs.toFloat()).coerceIn(0f, 1f) else 0f
+                val progress = if (effectiveDur > 0) (effectivePos.toFloat() / effectiveDur.toFloat()).coerceIn(0f, 1f) else 0f
                 LinearProgressIndicator(
                     progress = { progress },
                     modifier = Modifier
@@ -957,8 +973,8 @@ fun CategoryThemedPlayerConsole(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = formattedTime,
-                    color = if (isPlayingNow) BrandGold else Color.Gray,
+                    text = effectiveTime,
+                    color = if (effectivePlaying) BrandGold else Color.Gray,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -1602,6 +1618,12 @@ fun RoomMemberProfileSheet(
 
     var isFollowingMember by remember { mutableStateOf(false) }
     var memberFollowerCount by remember { mutableStateOf(userProfile?.followerCount ?: 0) }
+    var memberAdminRooms by remember { mutableStateOf<List<String>>(userProfile?.adminInRoomIds ?: emptyList()) }
+    var showAdminRoomsDialog by remember { mutableStateOf(false) }
+    var isBestFriend by remember { mutableStateOf(currentUser.bestFriends.contains(member.uid)) }
+    LaunchedEffect(currentUser.bestFriends, member.uid) {
+        isBestFriend = currentUser.bestFriends.contains(member.uid)
+    }
 
     DisposableEffect(member.uid, currentUser.uid) {
         val targetUid = member.uid.ifEmpty { currentUser.uid }
@@ -1615,6 +1637,14 @@ fun RoomMemberProfileSheet(
                     memberFollowerCount = snapshot.size()
                 }
             }
+        val userDoc = db.collection("users").document(targetUid)
+            .addSnapshotListener { snapshot, _ ->
+                if (snapshot != null && snapshot.exists()) {
+                    @Suppress("UNCHECKED_CAST")
+                    val rooms = (snapshot.get("adminInRoomIds") as? List<String>) ?: emptyList()
+                    memberAdminRooms = rooms
+                }
+            }
         val followDoc = if (!isSelf && member.uid.isNotBlank()) {
             db.collection("users").document(member.uid)
                 .collection("followers").document(currentUser.uid)
@@ -1625,6 +1655,7 @@ fun RoomMemberProfileSheet(
 
         onDispose {
             countDoc.remove()
+            userDoc.remove()
             followDoc?.remove()
         }
     }
@@ -1704,6 +1735,19 @@ fun RoomMemberProfileSheet(
                         )
                     }
 
+                    if (member.uid in roomAdminUserIds) {
+                        Text(
+                            text = "🛡️ Room Admin",
+                            color = Color(0xFF4FC3F7),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .background(Color(0xFF0288D1).copy(alpha = 0.25f), RoundedCornerShape(50))
+                                .border(0.5.dp, Color(0xFF4FC3F7), RoundedCornerShape(50))
+                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
+
                     Text(
                         text = if (isMemberVip) "VIP LEVEL ★" else if (isMemberPlat) "PLATINUM" else "Standard Member",
                         color = if (isMemberVip) BrandGold else if (isMemberPlat) BrandCyan else Color.LightGray,
@@ -1716,18 +1760,62 @@ fun RoomMemberProfileSheet(
                     )
                 }
 
-                // City & Bio with Real Distance
-                val locationStr = userProfile?.locationName?.ifBlank { userProfile.city } ?: userProfile?.city ?: "Kolkata"
-                val distKm = if (userProfile != null && currentUser.latitude != 0.0 && userProfile.latitude != 0.0) {
-                    calculateDistanceKm(currentUser.latitude, currentUser.longitude, userProfile.latitude, userProfile.longitude)
-                } else 0
-                val distText = if (distKm > 0) " • $distKm km away" else ""
-                Text(
-                    text = "📍 $locationStr$distText • 👥 $memberFollowerCount Followers",
-                    color = Color.Gray,
-                    fontSize = 11.sp,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
+                // If member is admin in rooms, show count and clickable chip to view list of rooms
+                if (memberAdminRooms.isNotEmpty()) {
+                    Surface(
+                        color = Color(0xFF0D47A1).copy(alpha = 0.35f),
+                        shape = RoundedCornerShape(50),
+                        border = BorderStroke(1.dp, Color(0xFF4FC3F7).copy(alpha = 0.7f)),
+                        modifier = Modifier
+                            .padding(top = 4.dp)
+                            .clickable { showAdminRoomsDialog = true }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "🛡️ Admin in ${memberAdminRooms.size} Hangout Rooms (View List) ❯",
+                                color = Color(0xFF4FC3F7),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                // Location Privacy Shield: User's location (city, state, distance) is hidden unless both users are mutual Best Friends
+                val isMutualBestFriend = currentUser.isMutualBestFriend(userProfile ?: UserProfile(uid = member.uid))
+                if (isSelf) {
+                    val locationStr = userProfile?.locationName?.ifBlank { userProfile.city } ?: userProfile?.city ?: "Kolkata"
+                    Text(
+                        text = "📍 $locationStr (Your Location) • 👥 $memberFollowerCount Followers",
+                        color = Color.Gray,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                } else if (isMutualBestFriend) {
+                    val locationStr = userProfile?.locationName?.ifBlank { userProfile.city } ?: userProfile?.city ?: "Kolkata"
+                    val distKm = if (userProfile != null && currentUser.latitude != 0.0 && userProfile.latitude != 0.0) {
+                        calculateDistanceKm(currentUser.latitude, currentUser.longitude, userProfile.latitude, userProfile.longitude)
+                    } else 0
+                    val distText = if (distKm > 0) " • $distKm km away" else ""
+                    Text(
+                        text = "📍 $locationStr$distText • ⭐ Mutual Best Friend • 👥 $memberFollowerCount Followers",
+                        color = Color(0xFF81C784),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                } else {
+                    Text(
+                        text = "📍 Location Hidden 🔒 (Best Friends Only) • 👥 $memberFollowerCount Followers",
+                        color = Color(0xFFFFB74D),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
 
                 // 8-digit User ID Chip with Click-to-Copy
                 val memberUserId = remember(userProfile?.userId, member.userId, member.uid, currentUser.userId, currentUser.uid) {
@@ -1912,7 +2000,40 @@ fun RoomMemberProfileSheet(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (!isSelf) {
+                    Button(
+                        onClick = {
+                            val willBeBestFriend = !isBestFriend
+                            isBestFriend = willBeBestFriend
+                            if (willBeBestFriend) {
+                                db.collection("users").document(currentUser.uid)
+                                    .update("bestFriends", FieldValue.arrayUnion(member.uid))
+                                Toast.makeText(context, "⭐ Added ${member.name} to Best Friends! (Location unmasked if mutual)", Toast.LENGTH_SHORT).show()
+                            } else {
+                                db.collection("users").document(currentUser.uid)
+                                    .update("bestFriends", FieldValue.arrayRemove(member.uid))
+                                Toast.makeText(context, "Removed ${member.name} from Best Friends", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isBestFriend) Color(0xFF311B92) else Color(0xFF212121)
+                        ),
+                        border = BorderStroke(1.dp, if (isBestFriend) BrandGold else Color.Gray.copy(alpha = 0.5f)),
+                        shape = RoundedCornerShape(50),
+                        modifier = Modifier.fillMaxWidth().height(36.dp)
+                    ) {
+                        Text(
+                            text = if (isBestFriend) "⭐ Best Friend (Location Unlocked if Mutual)" else "☆ Add to Best Friends (Location Privacy)",
+                            color = if (isBestFriend) BrandGold else Color.LightGray,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
 
                 if (!isSelf) {
                     // Action Buttons: Like & Chat
@@ -2117,6 +2238,67 @@ fun RoomMemberProfileSheet(
                 roomId = roomId,
                 onDismiss = { showReportDialog = false }
             )
+        }
+
+        if (showAdminRoomsDialog) {
+            Dialog(onDismissRequest = { showAdminRoomsDialog = false }) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF161214)),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, Color(0xFF4FC3F7).copy(alpha = 0.8f)),
+                    modifier = Modifier.fillMaxWidth().padding(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(18.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "🛡️ Rooms Administered by ${member.name}",
+                            color = Color(0xFF4FC3F7),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Total: ${memberAdminRooms.size} Hangout Rooms",
+                            color = Color.LightGray,
+                            fontSize = 11.sp
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        LazyColumn(
+                            modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            items(memberAdminRooms) { rId ->
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.05f)),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("🎙️", fontSize = 16.sp)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Column {
+                                            Text("Hangout Room ID: $rId", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            Text("Role: Verified Room Admin 🛡️", color = Color(0xFF4FC3F7), fontSize = 9.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        TextButton(
+                            onClick = { showAdminRoomsDialog = false },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Close", color = Color.Gray, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -2874,6 +3056,276 @@ fun RoomSettingsDialog(
 }
 
 // -------------------------------------------------------------
+// 5.5 ROOM EXIT & IN-APP FLOATING PIP (MINI-PLAYER) SYSTEM
+// -------------------------------------------------------------
+@Composable
+fun RoomExitOptionsDialog(
+    roomTitle: String = "",
+    isHost: Boolean,
+    onKeep: () -> Unit,
+    onExit: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(dismissOnBackPress = true, dismissOnClickOutside = true)
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1423)),
+            shape = RoundedCornerShape(24.dp),
+            border = BorderStroke(1.5.dp, BrandGold.copy(alpha = 0.7f)),
+            modifier = Modifier.fillMaxWidth().padding(16.dp)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(54.dp)
+                        .clip(CircleShape)
+                        .background(Brush.sweepGradient(listOf(BrandCoral, BrandGold, Color(0xFFFF5252))))
+                        .border(1.5.dp, Color.White.copy(alpha = 0.8f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PowerSettingsNew,
+                        contentDescription = "Exit Options",
+                        tint = Color.White,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "Room Session Options",
+                    color = Color.White,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Text(
+                    text = roomTitle,
+                    color = BrandGold,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                // Option 1: KEEP ROOM (Mini-Player In-App PIP)
+                Button(
+                    onClick = onKeep,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandCard),
+                    border = BorderStroke(1.2.dp, BrandCyan.copy(alpha = 0.85f)),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(Icons.Default.PictureInPicture, contentDescription = null, tint = BrandCyan, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text("Keep in Background (Mini-Player)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("Stay seated on mic while exploring app", color = Color.Gray, fontSize = 9.sp)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Option 2: EXIT ROOM
+                Button(
+                    onClick = onExit,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F)),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(Icons.Default.PowerSettingsNew, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(if (isHost) "Exit Room (Host)" else "Exit Room", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text(if (isHost) "Room stays live if Admin present" else "Vacate seat & leave", color = Color.White.copy(alpha = 0.8f), fontSize = 9.sp)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel", color = Color.LightGray, fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun FloatingAudioRoomPIP(
+    room: RoomItem,
+    currentUser: UserProfile,
+    isHost: Boolean,
+    isMicMuted: Boolean,
+    isOnStage: Boolean,
+    activeMemberCount: Int,
+    onToggleMute: () -> Unit,
+    onMaximize: () -> Unit,
+    onExit: () -> Unit
+) {
+    var offsetX by remember { mutableStateOf(40f) }
+    var offsetY by remember { mutableStateOf(200f) }
+
+    Box(
+        modifier = Modifier.fillMaxSize()
+    ) {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF18101E).copy(alpha = 0.95f)),
+            border = BorderStroke(1.5.dp, Brush.sweepGradient(listOf(BrandCoral, BrandGold, BrandCoral))),
+            elevation = CardDefaults.cardElevation(defaultElevation = 14.dp),
+            modifier = Modifier
+                .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
+                .size(width = 135.dp, height = 135.dp)
+                .pointerInput(Unit) {
+                    detectDragGestures { change, dragAmount ->
+                        change.consume()
+                        offsetX = (offsetX + dragAmount.x).coerceIn(10f, 650f)
+                        offsetY = (offsetY + dragAmount.y).coerceIn(40f, 1500f)
+                    }
+                }
+                .clickable { onMaximize() }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                // Header row: LIVE pill and Close / Power button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .background(Color.Red.copy(alpha = 0.85f), RoundedCornerShape(50))
+                            .padding(horizontal = 5.dp, vertical = 1.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(5.dp)
+                                .clip(CircleShape)
+                                .background(Color.White)
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("LIVE", color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.ExtraBold)
+                    }
+
+                    // Exit button
+                    Box(
+                        modifier = Modifier
+                            .size(20.dp)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.6f))
+                            .clickable { onExit() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Exit Room",
+                            tint = Color.LightGray,
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                }
+
+                // Center: Theme or Host photo with animated equalizer ring
+                Box(
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(CircleShape)
+                        .background(Brush.sweepGradient(listOf(BrandCoral, BrandGold, BrandCoral)))
+                        .padding(2.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    AsyncImage(
+                        model = room.hostPhotoUrl.ifBlank { room.banner_image_url }.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                        contentDescription = room.title,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(CircleShape),
+                        contentScale = ContentScale.Crop
+                    )
+                }
+
+                // Room Title
+                Text(
+                    text = room.title.ifBlank { "Live Lounge" },
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                // Bottom row: Viewers count and Mic toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "👥 $activeMemberCount",
+                        color = BrandGold,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    if (isOnStage) {
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(CircleShape)
+                                .background(if (isMicMuted) Color.Red.copy(alpha = 0.8f) else BrandGreen)
+                                .clickable { onToggleMute() },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (isMicMuted) Icons.Default.MicOff else Icons.Default.Mic,
+                                contentDescription = "Toggle Mic",
+                                tint = Color.White,
+                                modifier = Modifier.size(13.dp)
+                            )
+                        }
+                    } else {
+                        // Maximize hint icon
+                        Icon(
+                            imageVector = Icons.Default.OpenInFull,
+                            contentDescription = "Maximize",
+                            tint = Color.White.copy(alpha = 0.7f),
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
 // 6. ADVANCED AUDIO HANGOUT ROOM MAIN SCREEN / DIALOG
 // -------------------------------------------------------------
 @Composable
@@ -2883,7 +3335,10 @@ fun AudioHangoutRoomDialog(
     allProfiles: List<UserProfile>,
     db: FirebaseFirestore,
     onDismiss: () -> Unit,
-    onDirectChat: (UserProfile) -> Unit
+    onDirectChat: (UserProfile) -> Unit,
+    isMinimized: Boolean = false,
+    onMinimize: () -> Unit = {},
+    onMaximize: () -> Unit = {}
 ) {
     val context = LocalContext.current
 
@@ -2898,6 +3353,7 @@ fun AudioHangoutRoomDialog(
     val activeMembers = remember { mutableStateListOf<RoomMember>() }
 
     // Modals
+    var showExitOrKeepDialog by remember { mutableStateOf(false) }
     var showTrackSelector by remember { mutableStateOf(false) }
     var showRoomSettingsDialog by remember { mutableStateOf(false) }
     var showEditRoomDialog by remember { mutableStateOf(false) }
@@ -3072,6 +3528,60 @@ fun AudioHangoutRoomDialog(
     val isUserAdmin = isUserHost || (currentUser.uid.isNotBlank() && currentUser.uid in room.adminUserIds)
     val isMuted by AudioPlayerManager.isMutedState
     val localPlaying by AudioPlayerManager.isPlayingState
+
+    val executeHostOrUserExit: () -> Unit = {
+        if (isUserHost) {
+            val hasAdminInRoom = activeMembers.any { it.uid != currentUser.uid && it.uid in room.adminUserIds }
+            if (hasAdminInRoom) {
+                val adminManagedUpdates = mapOf<String, Any>(
+                    "isHostLive" to false,
+                    "statusMessage" to "Host stepped away • Room managed by Admin"
+                )
+                db.collection("rooms").document(room.id).update(adminManagedUpdates)
+                if (room.category.isNotBlank()) {
+                    db.collection("intent_categories").document(room.category)
+                        .collection("rooms").document(room.id).update(adminManagedUpdates)
+                }
+                db.collection("rooms").document(room.id).collection("mic_seats").document("0")
+                    .set(
+                        MicSeat(
+                            seatIndex = 0,
+                            label = "Host 👑",
+                            uid = "",
+                            name = "",
+                            photo = "",
+                            role = "host"
+                        )
+                    )
+                Toast.makeText(context, "Host stepped away. Room remains live under Admin supervision! 🛡️", Toast.LENGTH_SHORT).show()
+            } else {
+                val closeUpdates = mapOf<String, Any>(
+                    "isLive" to false,
+                    "isHostLive" to false,
+                    "isEnded" to true,
+                    "endedAt" to System.currentTimeMillis(),
+                    "statusMessage" to "Room session closed by host",
+                    "isPlaying" to false
+                )
+                db.collection("rooms").document(room.id).update(closeUpdates)
+                if (room.category.isNotBlank()) {
+                    db.collection("intent_categories").document(room.category)
+                        .collection("rooms").document(room.id).update(closeUpdates)
+                }
+                Toast.makeText(context, "Room session closed. 👋", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            val mySeat = micSeats.find { it.uid == currentUser.uid }
+            if (mySeat != null) {
+                vacateMicSeat(db, room.id, mySeat.seatIndex, mySeat.isLocked)
+            }
+        }
+        onDismiss()
+    }
+
+    BackHandler {
+        showExitOrKeepDialog = true
+    }
 
     // Proactively activate room and host presence in Firestore when host enters
     LaunchedEffect(isUserHost, room.id) {
@@ -3343,97 +3853,52 @@ fun AudioHangoutRoomDialog(
         }
     }
 
-    // 4. Real-Time 10-Mic Seats Listener (rooms/{roomId}/mic_seats)
-    DisposableEffect(room.id, isUserHost, targetHostId, hostName, hostPhoto) {
+    // 4. Real-Time 10-Mic Seats Listener (rooms/{roomId}/mic_seats) - PURE READ-ONLY
+    DisposableEffect(room.id) {
         if (room.id.isBlank()) return@DisposableEffect onDispose {}
         val micSeatsRef = db.collection("rooms").document(room.id).collection("mic_seats")
         val micListener = micSeatsRef.orderBy("seatIndex", Query.Direction.ASCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) return@addSnapshotListener
                 if (snapshot != null) {
-                    if (snapshot.isEmpty) {
-                        // Seed default 10 seats in Firestore (2 rows of 5)
-                        val defaultSeats = (0..9).map { idx ->
-                            if (idx == 0) {
-                                MicSeat(seatIndex = 0, label = "Host 👑", uid = targetHostId, name = hostName, photo = hostPhoto, role = "host")
-                            } else {
-                                MicSeat(seatIndex = idx, label = "Mic ${idx + 1}", uid = "", name = "", photo = "", role = "speaker")
-                            }
-                        }
-                        defaultSeats.forEach { s ->
-                            micSeatsRef.document(s.seatIndex.toString()).set(s)
-                        }
-                    } else {
-                        val seats = snapshot.documents.mapNotNull { doc ->
-                            val s = doc.toObject(MicSeat::class.java)
-                            if (s != null) {
-                                val rawMuted = doc.getBoolean("isMuted") ?: doc.getBoolean("muted") ?: s.isMuted
-                                val rawLocked = doc.getBoolean("isLocked") ?: doc.getBoolean("locked") ?: s.isLocked
-                                val rawTalking = doc.getBoolean("isTalking") ?: doc.getBoolean("talking") ?: s.isTalking
-                                s.copy(isMuted = rawMuted, isLocked = rawLocked, isTalking = rawTalking)
-                            } else null
-                        }
+                    val seats = snapshot.documents.mapNotNull { doc ->
+                        val s = doc.toObject(MicSeat::class.java)
+                        if (s != null) {
+                            val rawMuted = doc.getBoolean("isMuted") ?: doc.getBoolean("muted") ?: s.isMuted
+                            val rawLocked = doc.getBoolean("isLocked") ?: doc.getBoolean("locked") ?: s.isLocked
+                            val rawTalking = doc.getBoolean("isTalking") ?: doc.getBoolean("talking") ?: s.isTalking
+                            s.copy(isMuted = rawMuted, isLocked = rawLocked, isTalking = rawTalking)
+                        } else null
+                    }
 
-                        // Auto-seed seats 5..9 if this was a 5-seat room previously
-                        if (seats.size < 10 && isUserHost) {
-                            for (idx in 5..9) {
-                                if (seats.none { it.seatIndex == idx }) {
-                                    val newSeat = MicSeat(seatIndex = idx, label = "Mic ${idx + 1}", uid = "", name = "", photo = "", role = "speaker")
-                                    micSeatsRef.document(idx.toString()).set(newSeat)
-                                }
-                            }
-                        }
+                    val fullList = (0..9).map { idx ->
+                        seats.find { it.seatIndex == idx } ?: MicSeat(
+                            seatIndex = idx,
+                            label = if (idx == 0) "Host 👑" else "Mic ${idx + 1}",
+                            uid = if (idx == 0 && targetHostId.isNotEmpty()) targetHostId else "",
+                            name = if (idx == 0) hostName else "",
+                            photo = if (idx == 0) hostPhoto else "",
+                            role = if (idx == 0) "host" else "speaker"
+                        )
+                    }
 
-                        val isHostSeatedSomewhere = seats.any { it.uid.isNotBlank() && it.uid == targetHostId }
-                        val fullList = (0..9).map { idx ->
-                            val existing = seats.find { it.seatIndex == idx }
-                            if (existing != null) {
-                                if (idx == 0 && existing.uid.isEmpty() && targetHostId.isNotEmpty() && !isHostSeatedSomewhere && isUserHost) {
-                                    existing.copy(uid = targetHostId, name = hostName, photo = hostPhoto, role = "host", label = "Host 👑")
-                                } else {
-                                    existing
-                                }
+                    // In-memory deduplication (NEVER write to Firestore inside snapshot listener!)
+                    val seenUids = mutableSetOf<String>()
+                    val cleanedList = fullList.map { seat ->
+                        if (seat.uid.isNotBlank()) {
+                            if (seenUids.contains(seat.uid)) {
+                                seat.copy(uid = "", name = "", photo = "", isTalking = false, isMuted = false)
                             } else {
-                                if (idx == 0 && !isHostSeatedSomewhere) {
-                                    MicSeat(seatIndex = 0, label = "Host 👑", uid = targetHostId, name = hostName, photo = hostPhoto, role = "host")
-                                } else {
-                                    MicSeat(seatIndex = idx, label = "Mic ${idx + 1}", uid = "", name = "", photo = "", role = "speaker")
-                                }
-                            }
-                        }
-
-                        // Deduplicate seats: One UID can ONLY occupy one mic seat at any time.
-                        // Any duplicate seats found in Firestore (e.g. host on multiple mics) are immediately vacated.
-                        val seenUids = mutableSetOf<String>()
-                        val cleanedList = fullList.map { seat ->
-                            if (seat.uid.isNotBlank()) {
-                                if (seenUids.contains(seat.uid)) {
-                                    // Duplicate seat found! Immediately vacate in Firestore
-                                    micSeatsRef.document(seat.seatIndex.toString()).set(
-                                        MicSeat(
-                                            seatIndex = seat.seatIndex,
-                                            label = if (seat.seatIndex == 0) "Host 👑" else "Mic ${seat.seatIndex + 1}",
-                                            uid = "",
-                                            name = "",
-                                            photo = "",
-                                            isMuted = false,
-                                            isLocked = seat.isLocked,
-                                            isTalking = false,
-                                            role = if (seat.seatIndex == 0) "host" else "speaker"
-                                        )
-                                    )
-                                    seat.copy(uid = "", name = "", photo = "", isTalking = false, isMuted = false)
-                                } else {
-                                    seenUids.add(seat.uid)
-                                    seat
-                                }
-                            } else {
+                                seenUids.add(seat.uid)
                                 seat
                             }
+                        } else {
+                            seat
                         }
-                        micSeats.clear()
-                        micSeats.addAll(cleanedList)
                     }
+
+                    micSeats.clear()
+                    micSeats.addAll(cleanedList)
                 }
             }
 
@@ -3458,27 +3923,56 @@ fun AudioHangoutRoomDialog(
         }
     }
 
-    // Host Seat 0 Auto-Assignment
-    LaunchedEffect(isUserHost, targetHostId, micSeats.size) {
-        if (room.id.isBlank()) return@LaunchedEffect
-        if (isUserHost && micSeats.isNotEmpty()) {
-            val seat0 = micSeats.firstOrNull { it.seatIndex == 0 }
-            if (seat0 != null && (seat0.uid != currentUser.uid || seat0.name != currentUser.name || seat0.photo != currentUser.photo)) {
-                db.collection("rooms").document(room.id).collection("mic_seats").document("0")
-                    .set(
-                        MicSeat(
-                            seatIndex = 0,
-                            label = "Host 👑",
-                            uid = currentUser.uid,
-                            name = currentUser.name,
-                            photo = currentUser.photo,
-                            isMuted = seat0.isMuted,
-                            isLocked = false,
-                            isTalking = false,
-                            role = "host"
+    // Host-only one-time initialization of 10 mic seats (Clean, outside of snapshot listener)
+    LaunchedEffect(isUserHost, room.id) {
+        if (!isUserHost || room.id.isBlank()) return@LaunchedEffect
+        try {
+            val micSeatsRef = db.collection("rooms").document(room.id).collection("mic_seats")
+            micSeatsRef.get().addOnSuccessListener { snap ->
+                if (snap != null && snap.isEmpty) {
+                    val defaultSeats = (0..9).map { idx ->
+                        if (idx == 0) {
+                            MicSeat(seatIndex = 0, label = "Host 👑", uid = currentUser.uid, name = currentUser.name, photo = currentUser.photo, role = "host")
+                        } else {
+                            MicSeat(seatIndex = idx, label = "Mic ${idx + 1}", uid = "", name = "", photo = "", role = "speaker")
+                        }
+                    }
+                    defaultSeats.forEach { s ->
+                        micSeatsRef.document(s.seatIndex.toString()).set(s)
+                    }
+                } else if (snap != null) {
+                    val existingIndices = snap.documents.mapNotNull { it.getLong("seatIndex")?.toInt() }.toSet()
+                    for (idx in 0..9) {
+                        if (!existingIndices.contains(idx)) {
+                            val newSeat = if (idx == 0) {
+                                MicSeat(seatIndex = 0, label = "Host 👑", uid = currentUser.uid, name = currentUser.name, photo = currentUser.photo, role = "host")
+                            } else {
+                                MicSeat(seatIndex = idx, label = "Mic ${idx + 1}", uid = "", name = "", photo = "", role = "speaker")
+                            }
+                            micSeatsRef.document(idx.toString()).set(newSeat)
+                        }
+                    }
+                    val seat0Doc = snap.documents.find { it.getLong("seatIndex")?.toInt() == 0 }
+                    val seat0Uid = seat0Doc?.getString("uid") ?: ""
+                    if (seat0Uid.isBlank() || seat0Uid != currentUser.uid) {
+                        micSeatsRef.document("0").set(
+                            MicSeat(
+                                seatIndex = 0,
+                                label = "Host 👑",
+                                uid = currentUser.uid,
+                                name = currentUser.name,
+                                photo = currentUser.photo,
+                                isMuted = false,
+                                isLocked = false,
+                                isTalking = false,
+                                role = "host"
+                            )
                         )
-                    )
+                    }
+                }
             }
+        } catch (e: Exception) {
+            Log.w("AudioHangoutRoom", "Error seeding mic seats: ${e.message}")
         }
     }
 
@@ -3513,15 +4007,6 @@ fun AudioHangoutRoomDialog(
                 .update("isTalking", isLocalTalking)
         } catch (e: Exception) {}
     }
-
-    // Host pulse animation
-    val infiniteTransition = rememberInfiniteTransition(label = "hostPulse")
-    val hostBorderAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.4f,
-        targetValue = 1.0f,
-        animationSpec = infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "pulse"
-    )
 
     var isVipBypassed by remember { mutableStateOf(false) }
     val isVipRoomCategory = (room.category == "vip_room" || room.isVipRoom) && !isUserHost && !isVipBypassed
@@ -3590,12 +4075,36 @@ fun AudioHangoutRoomDialog(
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
 
+    if (isMinimized) {
+        val mySeat = micSeats.find { it.uid == currentUser.uid }
+        val isSelfOnStage = mySeat != null
+        val isSelfMicMuted = mySeat?.isMuted ?: true
+        FloatingAudioRoomPIP(
+            room = room,
+            currentUser = currentUser,
+            isHost = isUserHost,
+            isMicMuted = isSelfMicMuted,
+            isOnStage = isSelfOnStage,
+            activeMemberCount = activeMembers.size,
+            onToggleMute = {
+                if (isSelfOnStage && mySeat != null) {
+                    toggleMuteMicSeat(db, room.id, mySeat.seatIndex, isSelfMicMuted)
+                }
+            },
+            onMaximize = onMaximize,
+            onExit = {
+                executeHostOrUserExit()
+            }
+        )
+        return
+    }
+
     Dialog(
         onDismissRequest = {
             if (isKeyboardOpen) {
                 keyboardController?.hide()
             } else {
-                onDismiss()
+                showExitOrKeepDialog = true
             }
         },
         properties = DialogProperties(
@@ -3634,24 +4143,7 @@ fun AudioHangoutRoomDialog(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             IconButton(
                                 onClick = {
-                                    if (isUserHost) {
-                                        db.collection("rooms").document(room.id).update(
-                                            mapOf(
-                                                "isHostLive" to false,
-                                                "statusMessage" to "Host Away • Open Hangout"
-                                            )
-                                        )
-                                        if (room.category.isNotBlank()) {
-                                            db.collection("intent_categories").document(room.category)
-                                                .collection("rooms").document(room.id).update(
-                                                    mapOf(
-                                                        "isHostLive" to false,
-                                                        "statusMessage" to "Host Away • Open Hangout"
-                                                    )
-                                                )
-                                        }
-                                    }
-                                    onDismiss()
+                                    showExitOrKeepDialog = true
                                 },
                                 modifier = Modifier
                                     .size(34.dp)
@@ -3814,26 +4306,23 @@ fun AudioHangoutRoomDialog(
                             }
                             Spacer(modifier = Modifier.width(6.dp))
 
-                            // Leave / Close Room Button
-                            Button(
-                                onClick = {
-                                    if (isUserHost) {
-                                        db.collection("rooms").document(room.id).update(
-                                            mapOf(
-                                                "isHostLive" to false,
-                                                "statusMessage" to "Host will be live soon",
-                                                "isPlaying" to false
-                                            )
-                                        )
-                                    }
-                                    onDismiss()
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.85f)),
-                                shape = RoundedCornerShape(50),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
-                                modifier = Modifier.height(28.dp)
+                            // Room Power / Exit Options Button (Shows Keep or Exit dialog)
+                            IconButton(
+                                onClick = { showExitOrKeepDialog = true },
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        Brush.sweepGradient(listOf(Color(0xFFE53935), Color(0xFFFF5252), Color(0xFFE53935)))
+                                    )
+                                    .border(1.5.dp, Color.White.copy(alpha = 0.9f), CircleShape)
                             ) {
-                                Text(if (isUserHost) "Close" else "Leave", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Icon(
+                                    imageVector = Icons.Default.PowerSettingsNew,
+                                    contentDescription = "Room Power / Exit Options",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
+                                )
                             }
                         }
                     }
@@ -3852,7 +4341,7 @@ fun AudioHangoutRoomDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                        verticalAlignment = Alignment.Bottom,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         // 1. SELF MIC BUTTON (Bottom Left Corner)
@@ -4035,39 +4524,46 @@ fun AudioHangoutRoomDialog(
                             }
                         }
 
-                        // 3B. LIVE EMOJI REACTION BUTTON
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(if (showEmojiTray) BrandGold.copy(alpha = 0.35f) else Color.Black.copy(alpha = 0.65f))
-                                .border(1.5.dp, if (showEmojiTray) BrandGold else BrandBorder, CircleShape)
-                                .clickable { showEmojiTray = !showEmojiTray },
-                            contentAlignment = Alignment.Center
+                        // Column with Emoji reaction button stacked DIRECTLY ABOVE Gift Store button
+                        // This frees up horizontal space so Comment Box takes the entire remaining row width!
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Text("😊", fontSize = 18.sp)
-                        }
+                            // 3B. LIVE EMOJI REACTION BUTTON (Stacked above Gift button)
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(if (showEmojiTray) BrandGold.copy(alpha = 0.35f) else Color.Black.copy(alpha = 0.65f))
+                                    .border(1.5.dp, if (showEmojiTray) BrandGold else BrandBorder, CircleShape)
+                                    .clickable { showEmojiTray = !showEmojiTray },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("😊", fontSize = 16.sp)
+                            }
 
-                        // 4. GIFT STORE BUTTON (Inline in bottom bar - NEVER covers comment box)
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    Brush.sweepGradient(
-                                        listOf(
-                                            Color(0xFFFF1744),
-                                            Color(0xFFFFB300),
-                                            Color(0xFFFF4081),
-                                            Color(0xFFFF1744)
+                            // 4. GIFT STORE BUTTON
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        Brush.sweepGradient(
+                                            listOf(
+                                                Color(0xFFFF1744),
+                                                Color(0xFFFFB300),
+                                                Color(0xFFFF4081),
+                                                Color(0xFFFF1744)
+                                            )
                                         )
                                     )
-                                )
-                                .border(1.5.dp, BrandGold, CircleShape)
-                                .clickable { showGiftStoreDialog = true },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("🎁", fontSize = 18.sp)
+                                    .border(1.5.dp, BrandGold, CircleShape)
+                                    .clickable { showGiftStoreDialog = true },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("🎁", fontSize = 16.sp)
+                            }
                         }
                     }
                 }
@@ -4708,6 +5204,8 @@ fun AudioHangoutRoomDialog(
                     if (targetMember.uid in room.adminUserIds) {
                         db.collection("rooms").document(room.id)
                             .update("adminUserIds", FieldValue.arrayRemove(targetMember.uid))
+                        db.collection("users").document(targetMember.uid)
+                            .update("adminInRoomIds", FieldValue.arrayRemove(room.id))
                         room = room.copy(adminUserIds = room.adminUserIds - targetMember.uid)
                         val revokeComment = LiveRoomComment(
                             id = UUID.randomUUID().toString(),
@@ -4728,6 +5226,8 @@ fun AudioHangoutRoomDialog(
                         } else {
                             db.collection("rooms").document(room.id)
                                 .update("adminUserIds", FieldValue.arrayUnion(targetMember.uid))
+                            db.collection("users").document(targetMember.uid)
+                                .update("adminInRoomIds", FieldValue.arrayUnion(room.id))
                             room = room.copy(adminUserIds = room.adminUserIds + targetMember.uid)
                             val congratsComment = LiveRoomComment(
                                 id = UUID.randomUUID().toString(),
@@ -5208,6 +5708,23 @@ fun AudioHangoutRoomDialog(
                     } else {
                         Toast.makeText(context, "⚠️ Insufficient Diamonds! Needed: %,d 💎 to send ${giftItem.name} (Available: %,d 💎). Please recharge.".format(giftItem.cost, userDiamonds), Toast.LENGTH_LONG).show()
                     }
+                }
+            )
+        }
+
+        // Room Exit or Keep (Mini-Player PIP) Options Dialog
+        if (showExitOrKeepDialog) {
+            RoomExitOptionsDialog(
+                roomTitle = room.title,
+                isHost = isUserHost,
+                onDismiss = { showExitOrKeepDialog = false },
+                onKeep = {
+                    showExitOrKeepDialog = false
+                    onMinimize()
+                },
+                onExit = {
+                    showExitOrKeepDialog = false
+                    executeHostOrUserExit()
                 }
             )
         }
@@ -5860,6 +6377,44 @@ fun TenMicStageSection(
 }
 
 @Composable
+fun BoxScope.MicSeatEmojiReactionOverlay(emoji: String) {
+    val scaleAnim = remember(emoji) { Animatable(0.3f) }
+    val offsetYAnim = remember(emoji) { Animatable(0f) }
+    val alphaAnim = remember(emoji) { Animatable(1f) }
+
+    LaunchedEffect(emoji) {
+        launch {
+            scaleAnim.animateTo(1.35f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy))
+            scaleAnim.animateTo(1.0f, animationSpec = tween(400))
+        }
+        launch {
+            offsetYAnim.animateTo(-44f, animationSpec = tween(2200, easing = LinearOutSlowInEasing))
+        }
+        launch {
+            delay(1400)
+            alphaAnim.animateTo(0f, animationSpec = tween(800))
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .align(Alignment.TopCenter)
+            .offset(y = offsetYAnim.value.dp)
+            .graphicsLayer {
+                scaleX = scaleAnim.value
+                scaleY = scaleAnim.value
+                alpha = alphaAnim.value
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = emoji,
+            fontSize = 28.sp
+        )
+    }
+}
+
+@Composable
 fun MicSeatView(
     seat: MicSeat,
     isCurrentSelf: Boolean,
@@ -5984,46 +6539,7 @@ fun MicSeatView(
 
             // 3. Floating Live Bouncy Emoji Reaction Overlay
             if (!reactionEmoji.isNullOrBlank()) {
-                var animOffset by remember(reactionEmoji) { mutableStateOf(0f) }
-                var animAlpha by remember(reactionEmoji) { mutableStateOf(1f) }
-                var animScale by remember(reactionEmoji) { mutableStateOf(0.3f) }
-
-                LaunchedEffect(reactionEmoji) {
-                    animOffset = 0f
-                    animAlpha = 1f
-                    animScale = 0.3f
-                    animate(0.3f, 1.35f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)) { v, _ ->
-                        animScale = v
-                    }
-                    launch {
-                        animate(0f, -44f, animationSpec = tween(2200, easing = LinearOutSlowInEasing)) { v, _ ->
-                            animOffset = v
-                        }
-                    }
-                    launch {
-                        delay(1400)
-                        animate(1f, 0f, animationSpec = tween(800)) { v, _ ->
-                            animAlpha = v
-                        }
-                    }
-                }
-
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .offset(y = animOffset.dp)
-                        .graphicsLayer(
-                            scaleX = animScale,
-                            scaleY = animScale,
-                            alpha = animAlpha
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = reactionEmoji,
-                        fontSize = 28.sp
-                    )
-                }
+                MicSeatEmojiReactionOverlay(emoji = reactionEmoji)
             }
         }
 
