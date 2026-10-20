@@ -3029,10 +3029,32 @@ fun AudioHangoutRoomDialog(
         }
     }
 
-    val isUserHost = currentUser.uid == room.hostId || currentUser.uid == room.hostUid || (room.hostId.isEmpty() && room.hostUid.isEmpty() && activeMembers.firstOrNull()?.uid == currentUser.uid)
+    val isUserHost = currentUser.uid == room.hostId || currentUser.uid == room.hostUid || (room.hostId.isEmpty() && room.hostUid.isEmpty() && (activeMembers.firstOrNull()?.uid == currentUser.uid || room.isCustom))
     val isUserAdmin = isUserHost || (currentUser.uid in room.adminUserIds)
     val isMuted by AudioPlayerManager.isMutedState
     val localPlaying by AudioPlayerManager.isPlayingState
+
+    // Proactively activate room and host presence in Firestore when host enters
+    LaunchedEffect(isUserHost, room.id) {
+        if (room.id.isNotBlank() && isUserHost) {
+            val hostUpdates = mutableMapOf<String, Any>(
+                "isLive" to true,
+                "isHostLive" to true,
+                "statusMessage" to "LIVE NOW"
+            )
+            if (room.hostId.isBlank() || room.hostId == currentUser.uid) {
+                hostUpdates["hostId"] = currentUser.uid
+                hostUpdates["hostUid"] = currentUser.uid
+                hostUpdates["hostName"] = currentUser.name
+                hostUpdates["hostPhotoUrl"] = currentUser.photo
+            }
+            db.collection("rooms").document(room.id).update(hostUpdates)
+            if (room.category.isNotBlank()) {
+                db.collection("intent_categories").document(room.category)
+                    .collection("rooms").document(room.id).update(hostUpdates)
+            }
+        }
+    }
 
     // Automated Room Entry Welcome Message in Live Comments
     LaunchedEffect(room.id, currentUser.uid) {
@@ -3179,8 +3201,9 @@ fun AudioHangoutRoomDialog(
                 if (error != null) return@addSnapshotListener
                 if (snapshot != null && snapshot.exists()) {
                     snapshot.toObject(RoomItem::class.java)?.let { updated ->
-                        if (!updated.isLive && !isUserHost) {
-                            Toast.makeText(context, "The host has closed this room", Toast.LENGTH_SHORT).show()
+                        val isRoomOfficiallyEnded = (snapshot.getBoolean("isEnded") == true) || (snapshot.getLong("endedAt") ?: 0L) > 0L
+                        if (isRoomOfficiallyEnded && !isUserHost) {
+                            Toast.makeText(context, "This room session has ended", Toast.LENGTH_SHORT).show()
                             AudioPlayerManager.pause()
                             onDismiss()
                             return@addSnapshotListener
@@ -3206,8 +3229,8 @@ fun AudioHangoutRoomDialog(
                             AudioPlayerManager.pause()
                         }
                     }
-                } else if (snapshot != null && !snapshot.exists() && !isUserHost) {
-                    Toast.makeText(context, "The host has closed this room", Toast.LENGTH_SHORT).show()
+                } else if (snapshot != null && !snapshot.exists() && !isUserHost && (System.currentTimeMillis() - room.createdAt > 15_000L)) {
+                    Toast.makeText(context, "This room is no longer active", Toast.LENGTH_SHORT).show()
                     AudioPlayerManager.pause()
                     onDismiss()
                 }
@@ -3557,17 +3580,16 @@ fun AudioHangoutRoomDialog(
                                     if (isUserHost) {
                                         db.collection("rooms").document(room.id).update(
                                             mapOf(
-                                                "isLive" to false,
                                                 "isHostLive" to false,
-                                                "endedAt" to System.currentTimeMillis()
+                                                "statusMessage" to "Host Away • Open Hangout"
                                             )
                                         )
                                         if (room.category.isNotBlank()) {
                                             db.collection("intent_categories").document(room.category)
                                                 .collection("rooms").document(room.id).update(
                                                     mapOf(
-                                                        "isLive" to false,
-                                                        "isHostLive" to false
+                                                        "isHostLive" to false,
+                                                        "statusMessage" to "Host Away • Open Hangout"
                                                     )
                                                 )
                                         }

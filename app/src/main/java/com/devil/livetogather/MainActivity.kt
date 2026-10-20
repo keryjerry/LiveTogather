@@ -590,12 +590,28 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
     val pendingDeepLink = MainActivity.pendingDeepLinkRoomId.value ?: initialRoomId
     LaunchedEffect(pendingDeepLink) {
         if (!pendingDeepLink.isNullOrBlank()) {
-            db.collection("rooms").document(pendingDeepLink).get()
+            val targetKey = pendingDeepLink.trim()
+            db.collection("rooms").document(targetKey).get()
                 .addOnSuccessListener { doc ->
                     if (doc != null && doc.exists()) {
                         val r = parseRoomFromDoc(doc)
                         activeAudioRoom = r
+                        MainActivity.pendingDeepLinkRoomId.value = null
+                    } else {
+                        db.collection("rooms").whereEqualTo("roomId", targetKey).limit(1).get()
+                            .addOnSuccessListener { snap ->
+                                if (snap != null && !snap.isEmpty) {
+                                    val r = parseRoomFromDoc(snap.documents[0])
+                                    activeAudioRoom = r
+                                }
+                                MainActivity.pendingDeepLinkRoomId.value = null
+                            }
+                            .addOnFailureListener {
+                                MainActivity.pendingDeepLinkRoomId.value = null
+                            }
                     }
+                }
+                .addOnFailureListener {
                     MainActivity.pendingDeepLinkRoomId.value = null
                 }
         }
@@ -1646,12 +1662,22 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                                             .set(member)
 
                                         if (isHost) {
-                                            db.collection("rooms").document(room.id).update(
-                                                mapOf(
-                                                    "isHostLive" to true,
-                                                    "statusMessage" to "LIVE NOW"
-                                                )
+                                            val hostUpdates = mutableMapOf<String, Any>(
+                                                "isLive" to true,
+                                                "isHostLive" to true,
+                                                "statusMessage" to "LIVE NOW"
                                             )
+                                            if (room.hostId.isBlank()) {
+                                                hostUpdates["hostId"] = currentUserId
+                                                hostUpdates["hostUid"] = currentUserId
+                                                hostUpdates["hostName"] = currentUser.name
+                                                hostUpdates["hostPhotoUrl"] = currentUser.photo
+                                            }
+                                            db.collection("rooms").document(room.id).update(hostUpdates)
+                                            if (room.category.isNotBlank()) {
+                                                db.collection("intent_categories").document(room.category)
+                                                    .collection("rooms").document(room.id).update(hostUpdates)
+                                            }
                                             broadcastLiveNotificationToFollowers(
                                                 db = db,
                                                 hostId = currentUserId,
@@ -1961,12 +1987,22 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                         .set(member)
 
                     if (isHost) {
-                        db.collection("rooms").document(room.id).update(
-                            mapOf(
-                                "isHostLive" to true,
-                                "statusMessage" to "LIVE NOW"
-                            )
+                        val hostUpdates = mutableMapOf<String, Any>(
+                            "isLive" to true,
+                            "isHostLive" to true,
+                            "statusMessage" to "LIVE NOW"
                         )
+                        if (room.hostId.isBlank()) {
+                            hostUpdates["hostId"] = currentUserId
+                            hostUpdates["hostUid"] = currentUserId
+                            hostUpdates["hostName"] = currentUser.name
+                            hostUpdates["hostPhotoUrl"] = currentUser.photo
+                        }
+                        db.collection("rooms").document(room.id).update(hostUpdates)
+                        if (room.category.isNotBlank()) {
+                            db.collection("intent_categories").document(room.category)
+                                .collection("rooms").document(room.id).update(hostUpdates)
+                        }
                         broadcastLiveNotificationToFollowers(
                             db = db,
                             hostId = currentUserId,

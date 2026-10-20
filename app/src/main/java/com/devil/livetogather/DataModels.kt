@@ -77,8 +77,8 @@ data class MicSeat(
 )
 
 fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
-    val id = doc.getString("roomId") ?: doc.getString("id") ?: doc.id
-    val title = doc.getString("roomName") ?: doc.getString("title") ?: ""
+    val id = doc.id.ifBlank { doc.getString("roomId") ?: doc.getString("id") ?: "" }
+    val title = doc.getString("roomName") ?: doc.getString("title") ?: "Live Hangout"
     val emoji = doc.getString("emoji") ?: "🎙️"
     val bannerUrl = doc.getString("banner_image_url") ?: ""
     val activeCount = (doc.getLong("activeUserCount") ?: 0L).toInt()
@@ -94,7 +94,7 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
     val playbackPosition = doc.getLong("playbackPosition") ?: 0L
     val isPlaying = doc.getBoolean("isPlaying") ?: doc.getBoolean("playing") ?: false
     val isCustom = doc.getBoolean("isCustom") ?: doc.getBoolean("custom") ?: true
-    val isHostLive = doc.getBoolean("isLive") ?: doc.getBoolean("isHostLive") ?: doc.getBoolean("hostLive") ?: true
+    val isHostLive = doc.getBoolean("isHostLive") ?: doc.getBoolean("hostLive") ?: doc.getBoolean("isLive") ?: true
     val scheduledTime = doc.getString("scheduledTime") ?: ""
     val statusMessage = doc.getString("statusMessage") ?: ""
     val privacy = doc.getString("privacy") ?: "public"
@@ -115,7 +115,7 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
     }
     val roomName = doc.getString("roomName") ?: title
     val hostUid = doc.getString("hostUid") ?: hostId
-    val isLive = doc.getBoolean("isLive") ?: isHostLive
+    val isLive = doc.getBoolean("isLive") ?: true
 
     val announcement = doc.getString("announcement") ?: ""
     val isLocked = doc.getBoolean("isLocked") ?: doc.getBoolean("locked") ?: false
