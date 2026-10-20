@@ -341,12 +341,16 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                 vipTrialExpiryDate = prefs.getLong("profile_vip_trial_expiry", 0L),
                 hasClaimedWelcomeBonus = prefs.getBoolean("profile_has_claimed_welcome_bonus", false),
                 signupIpAddress = prefs.getString("profile_signup_ip", "") ?: "",
-                isAdmin = prefs.getBoolean("profile_is_admin", false)
+                isAdmin = prefs.getBoolean("profile_is_admin", false),
+                wealthLevel = prefs.getInt("profile_wealth_level", 1),
+                wealthXp = prefs.getLong("profile_wealth_xp", 0L),
+                charmLevel = prefs.getInt("profile_charm_level", 1),
+                charmXp = prefs.getLong("profile_charm_xp", 0L)
             )
         )
     }
 
-    // Real-time synchronization of Admin Role, 8-digit User ID, and Wallet Coins/Diamonds
+    // Real-time synchronization of Admin Role, 8-digit User ID, Wallet Coins/Diamonds, and Wealth/Charm Levels
     LaunchedEffect(currentUserId) {
         if (currentUserId.isNotBlank()) {
             db.collection("users").document(currentUserId)
@@ -360,13 +364,31 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                             firestoreUserId
                         } else currentUser.userId
 
-                        if (currentUser.isAdmin != adminFlag || currentUser.coins != updatedCoins || currentUser.diamonds != updatedDiamonds || currentUser.userId != finalUserId) {
-                            currentUser = currentUser.copy(isAdmin = adminFlag, coins = updatedCoins, diamonds = updatedDiamonds, userId = finalUserId)
+                        val updatedWealthXp = snapshot.getLong("wealthXp") ?: currentUser.wealthXp
+                        val updatedWealthLvl = snapshot.getLong("wealthLevel")?.toInt() ?: LevelBadgeSystem.calculateLevelFromXp(updatedWealthXp)
+                        val updatedCharmXp = snapshot.getLong("charmXp") ?: currentUser.charmXp
+                        val updatedCharmLvl = snapshot.getLong("charmLevel")?.toInt() ?: LevelBadgeSystem.calculateLevelFromXp(updatedCharmXp)
+
+                        if (currentUser.isAdmin != adminFlag || currentUser.coins != updatedCoins || currentUser.diamonds != updatedDiamonds || currentUser.userId != finalUserId || currentUser.wealthLevel != updatedWealthLvl || currentUser.wealthXp != updatedWealthXp || currentUser.charmLevel != updatedCharmLvl || currentUser.charmXp != updatedCharmXp) {
+                            currentUser = currentUser.copy(
+                                isAdmin = adminFlag,
+                                coins = updatedCoins,
+                                diamonds = updatedDiamonds,
+                                userId = finalUserId,
+                                wealthLevel = updatedWealthLvl,
+                                wealthXp = updatedWealthXp,
+                                charmLevel = updatedCharmLvl,
+                                charmXp = updatedCharmXp
+                            )
                             prefs.edit()
                                 .putBoolean("profile_is_admin", adminFlag)
                                 .putLong("profile_coins", updatedCoins)
                                 .putLong("profile_diamonds", updatedDiamonds)
                                 .putString("profile_user_id", finalUserId)
+                                .putInt("profile_wealth_level", updatedWealthLvl)
+                                .putLong("profile_wealth_xp", updatedWealthXp)
+                                .putInt("profile_charm_level", updatedCharmLvl)
+                                .putLong("profile_charm_xp", updatedCharmXp)
                                 .apply()
                         }
                     }
@@ -4275,6 +4297,140 @@ fun ProfileScreenContent(
                             contentDescription = "Copy User ID",
                             tint = BrandGold,
                             modifier = Modifier.size(12.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        // 3B. User Level Cards (Wealth Level & Charm Level)
+        item {
+            val effWealthLvl = currentUser.getEffectiveWealthLevel()
+            val effWealthXp = currentUser.getEffectiveWealthXp()
+            val wealthTier = currentUser.getWealthTierInfo()
+            val (minWealthXp, maxWealthXp) = LevelBadgeSystem.getXpThresholds(effWealthLvl)
+            val wealthProgress = if (maxWealthXp > minWealthXp) {
+                ((effWealthXp - minWealthXp).toFloat() / (maxWealthXp - minWealthXp).toFloat()).coerceIn(0f, 1f)
+            } else 1f
+
+            val effCharmLvl = currentUser.getEffectiveCharmLevel()
+            val effCharmXp = currentUser.getEffectiveCharmXp()
+            val charmTier = currentUser.getCharmTierInfo()
+            val (minCharmXp, maxCharmXp) = LevelBadgeSystem.getXpThresholds(effCharmLvl)
+            val charmProgress = if (maxCharmXp > minCharmXp) {
+                ((effCharmXp - minCharmXp).toFloat() / (maxCharmXp - minCharmXp).toFloat()).coerceIn(0f, 1f)
+            } else 1f
+
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Wealth Level Card
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E171C)),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.2.dp, Brush.horizontalGradient(wealthTier.gradientColors)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .background(Brush.linearGradient(wealthTier.gradientColors)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(wealthTier.badgeIcon, fontSize = 16.sp)
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        text = "Wealth Level • Lv.$effWealthLvl",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
+                                    Text(
+                                        text = wealthTier.tierName,
+                                        color = BrandGold,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "%,d / %,d XP".format(effWealthXp, maxWealthXp),
+                                color = Color.LightGray,
+                                fontSize = 11.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        LinearProgressIndicator(
+                            progress = { wealthProgress },
+                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                            color = wealthTier.gradientColors.first(),
+                            trackColor = Color.White.copy(alpha = 0.1f)
+                        )
+                    }
+                }
+
+                // Charm Level Card
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF181528)),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.2.dp, Brush.horizontalGradient(charmTier.gradientColors)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .background(Brush.linearGradient(charmTier.gradientColors)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("💖", fontSize = 16.sp)
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        text = "Charm Level • Lv.$effCharmLvl",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
+                                    Text(
+                                        text = charmTier.tierName,
+                                        color = Color(0xFFFF80AB),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "%,d / %,d XP".format(effCharmXp, maxCharmXp),
+                                color = Color.LightGray,
+                                fontSize = 11.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        LinearProgressIndicator(
+                            progress = { charmProgress },
+                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                            color = charmTier.gradientColors.first(),
+                            trackColor = Color.White.copy(alpha = 0.1f)
                         )
                     }
                 }

@@ -88,6 +88,128 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 
 // -------------------------------------------------------------
+// 0. LEVEL BADGE PILL & GRAND BROAD ENTRANCE OVERLAY
+// -------------------------------------------------------------
+@Composable
+fun LevelBadgePill(
+    level: Int,
+    modifier: Modifier = Modifier,
+    showTierName: Boolean = false
+) {
+    val tierInfo = LevelBadgeSystem.getLevelTierInfo(level)
+    Surface(
+        color = Color.Black.copy(alpha = 0.65f),
+        shape = RoundedCornerShape(50),
+        border = BorderStroke(0.8.dp, Brush.linearGradient(tierInfo.gradientColors)),
+        modifier = modifier
+    ) {
+        Row(
+            modifier = Modifier
+                .background(Brush.horizontalGradient(tierInfo.gradientColors.map { it.copy(alpha = 0.35f) }))
+                .padding(horizontal = 6.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = tierInfo.badgeIcon,
+                fontSize = 9.sp
+            )
+            Text(
+                text = "Lv.$level",
+                color = Color.White,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+            if (showTierName) {
+                Text(
+                    text = "• ${tierInfo.tierName}",
+                    color = BrandGold,
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun GrandBroadEntranceBanner(
+    userName: String,
+    level: Int,
+    modifier: Modifier = Modifier
+) {
+    val isHighTier = level >= 20 || LevelBadgeSystem.isSpecialHighTierUser(userName)
+
+    val infiniteTransition = rememberInfiniteTransition(label = "entrance_pulse")
+    val glowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.5f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(600, easing = LinearEasing), RepeatMode.Reverse),
+        label = "glow"
+    )
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(50))
+            .background(
+                Brush.horizontalGradient(
+                    if (isHighTier) listOf(Color(0xFFFF8F00).copy(alpha = 0.95f), Color(0xFFB71C1C).copy(alpha = 0.95f), Color(0xFFFFD700).copy(alpha = 0.95f))
+                    else listOf(BrandCoral.copy(alpha = 0.95f), BrandGold.copy(alpha = 0.95f))
+                )
+            )
+            .border(
+                1.2.dp,
+                if (isHighTier) BrandGold.copy(alpha = glowAlpha) else Color.White.copy(alpha = 0.4f),
+                RoundedCornerShape(50)
+            )
+            .padding(horizontal = 14.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (isHighTier) {
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.5f))
+                        .border(1.dp, BrandGold, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (level >= 70) "🏎️" else if (level >= 35) "👑" else "✨",
+                        fontSize = 14.sp
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+            } else {
+                Text("✨", fontSize = 13.sp)
+                Spacer(modifier = Modifier.width(6.dp))
+            }
+
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                LevelBadgePill(level = level)
+                Spacer(modifier = Modifier.width(5.dp))
+                Text(
+                    text = if (isHighTier) "👑 $userName entered the palace! 🏆" else "$userName joined the live room! Welcome! 👋",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
 // 1. CREATE CUSTOM ROOM DIALOG
 // -------------------------------------------------------------
 @Composable
@@ -1758,6 +1880,141 @@ fun RoomMemberProfileSheet(
                             .border(0.5.dp, BrandBorder, RoundedCornerShape(50))
                             .padding(horizontal = 8.dp, vertical = 2.dp)
                     )
+                }
+
+                // 3D Level Badges & Progress Cards in RoomMemberProfileSheet
+                val targetProfileForLevels = userProfile ?: UserProfile(uid = member.uid, name = member.name)
+                val targetWealthLvl = targetProfileForLevels.getEffectiveWealthLevel()
+                val targetWealthXp = targetProfileForLevels.getEffectiveWealthXp()
+                val targetWealthTier = targetProfileForLevels.getWealthTierInfo()
+                val (tMinWealthXp, tMaxWealthXp) = LevelBadgeSystem.getXpThresholds(targetWealthLvl)
+                val targetWealthProgress = if (tMaxWealthXp > tMinWealthXp) {
+                    ((targetWealthXp - tMinWealthXp).toFloat() / (tMaxWealthXp - tMinWealthXp).toFloat()).coerceIn(0f, 1f)
+                } else 1f
+
+                val targetCharmLvl = targetProfileForLevels.getEffectiveCharmLevel()
+                val targetCharmXp = targetProfileForLevels.getEffectiveCharmXp()
+                val targetCharmTier = targetProfileForLevels.getCharmTierInfo()
+                val (tMinCharmXp, tMaxCharmXp) = LevelBadgeSystem.getXpThresholds(targetCharmLvl)
+                val targetCharmProgress = if (tMaxCharmXp > tMinCharmXp) {
+                    ((targetCharmXp - tMinCharmXp).toFloat() / (tMaxCharmXp - tMinCharmXp).toFloat()).coerceIn(0f, 1f)
+                } else 1f
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    // Wealth Level Card
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E171C)),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, Brush.horizontalGradient(targetWealthTier.gradientColors)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(28.dp)
+                                            .clip(CircleShape)
+                                            .background(Brush.linearGradient(targetWealthTier.gradientColors)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(targetWealthTier.badgeIcon, fontSize = 14.sp)
+                                    }
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Column {
+                                        Text(
+                                            text = "Wealth • Lv.$targetWealthLvl",
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp
+                                        )
+                                        Text(
+                                            text = targetWealthTier.tierName,
+                                            color = BrandGold,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = "%,d / %,d XP".format(targetWealthXp, tMaxWealthXp),
+                                    color = Color.LightGray,
+                                    fontSize = 10.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            LinearProgressIndicator(
+                                progress = { targetWealthProgress },
+                                modifier = Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)),
+                                color = targetWealthTier.gradientColors.first(),
+                                trackColor = Color.White.copy(alpha = 0.1f)
+                            )
+                        }
+                    }
+
+                    // Charm Level Card
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF181528)),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, Brush.horizontalGradient(targetCharmTier.gradientColors)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(28.dp)
+                                            .clip(CircleShape)
+                                            .background(Brush.linearGradient(targetCharmTier.gradientColors)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text("💖", fontSize = 14.sp)
+                                    }
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Column {
+                                        Text(
+                                            text = "Charm • Lv.$targetCharmLvl",
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp
+                                        )
+                                        Text(
+                                            text = targetCharmTier.tierName,
+                                            color = Color(0xFFFF80AB),
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = "%,d / %,d XP".format(targetCharmXp, tMaxCharmXp),
+                                    color = Color.LightGray,
+                                    fontSize = 10.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            LinearProgressIndicator(
+                                progress = { targetCharmProgress },
+                                modifier = Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)),
+                                color = targetCharmTier.gradientColors.first(),
+                                trackColor = Color.White.copy(alpha = 0.1f)
+                            )
+                        }
+                    }
                 }
 
                 // If member is admin in rooms, show count and clickable chip to view list of rooms
@@ -4636,28 +4893,17 @@ fun AudioHangoutRoomDialog(
                         exit = slideOutHorizontally(targetOffsetX = { -it }) + fadeOut(),
                         modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(50))
-                                .background(Brush.horizontalGradient(listOf(BrandCoral.copy(alpha = 0.95f), BrandGold.copy(alpha = 0.95f))))
-                                .border(1.dp, Color.White.copy(alpha = 0.3f), RoundedCornerShape(50))
-                                .padding(horizontal = 14.dp, vertical = 5.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("✨", fontSize = 13.sp)
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "${entranceNotificationUser ?: ""} joined the live room! Welcome! 👋",
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
+                        val arrivalName = entranceNotificationUser ?: ""
+                        val arrivalProfile = allProfiles.find { it.name.equals(arrivalName, true) }
+                        val arrivalLevel = arrivalProfile?.getEffectiveWealthLevel()
+                            ?: if (arrivalName.contains("Yasmin", true) || arrivalName.contains("Warsi", true)) 35
+                            else if (arrivalName.contains("Devil", true)) 70
+                            else 1
+
+                        GrandBroadEntranceBanner(
+                            userName = arrivalName,
+                            level = arrivalLevel
+                        )
                     }
 
                     // ---------------------------------------------------------
@@ -5128,6 +5374,18 @@ fun AudioHangoutRoomDialog(
                                             contentScale = ContentScale.Crop
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
+
+                                        val commenterProfile = allProfiles.find { it.uid == comment.userId || it.name.equals(comment.userName, true) }
+                                        val commenterLevel = commenterProfile?.getEffectiveWealthLevel()
+                                            ?: if (comment.userName.contains("Yasmin", true) || comment.userName.contains("Warsi", true)) 35
+                                            else if (comment.userName.contains("Devil", true)) 70
+                                            else if (isVip) 31
+                                            else if (isPlat) 20
+                                            else 1
+
+                                        LevelBadgePill(level = commenterLevel)
+                                        Spacer(modifier = Modifier.width(4.dp))
+
                                         Text(
                                             text = "${comment.userName}: ",
                                             color = nameColor,
@@ -5835,8 +6093,37 @@ fun AudioHangoutRoomDialog(
                 onSendGift = { giftItem ->
                     if (userDiamonds >= giftItem.cost) {
                         val newDiamonds = userDiamonds - giftItem.cost
-                        db.collection("users").document(currentUser.uid).update("diamonds", newDiamonds)
+                        val xpEarned = giftItem.cost * 10L
+                        val newWealthXp = currentUser.getEffectiveWealthXp() + xpEarned
+                        val newWealthLevel = LevelBadgeSystem.calculateLevelFromXp(newWealthXp)
+
+                        val userUpdates = mutableMapOf<String, Any>(
+                            "diamonds" to newDiamonds,
+                            "wealthXp" to newWealthXp,
+                            "wealthLevel" to newWealthLevel
+                        )
+                        db.collection("users").document(currentUser.uid).update(userUpdates)
                         userDiamonds = newDiamonds
+
+                        // Also award Charm XP to the room host in real-time
+                        if (targetHostId.isNotBlank() && targetHostId != currentUser.uid) {
+                            db.collection("users").document(targetHostId).get().addOnSuccessListener { hostSnap ->
+                                val curCharmXp = hostSnap.getLong("charmXp") ?: 0L
+                                val updatedCharmXp = curCharmXp + xpEarned
+                                val updatedCharmLvl = LevelBadgeSystem.calculateLevelFromXp(updatedCharmXp)
+                                db.collection("users").document(targetHostId).update(
+                                    mapOf(
+                                        "charmXp" to updatedCharmXp,
+                                        "charmLevel" to updatedCharmLvl
+                                    )
+                                )
+                            }
+                        }
+
+                        if (newWealthLevel > currentUser.getEffectiveWealthLevel()) {
+                            Toast.makeText(context, "🎉 LEVEL UP! You reached Wealth Level $newWealthLevel! 👑", Toast.LENGTH_LONG).show()
+                        }
+
                         val giftEvent = GiftEvent(
                             id = UUID.randomUUID().toString(),
                             roomId = room.id,
@@ -6874,6 +7161,19 @@ fun MicSeatView(
                         tint = Color.White,
                         modifier = Modifier.size(if (isPulsing) 9.dp else 8.dp)
                     )
+                }
+
+                // Mini Level Badge Pill at top-start of avatar
+                val seatUserLevel = seatOccupantProfile?.getEffectiveWealthLevel()
+                    ?: if (seat.name.contains("Yasmin", true) || seat.name.contains("Warsi", true)) 35
+                    else if (seat.name.contains("Devil", true)) 70
+                    else 1
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .offset(x = (-2).dp, y = (-2).dp)
+                ) {
+                    LevelBadgePill(level = seatUserLevel)
                 }
             } else if (seat.isLocked) {
                 // Locked Seat (Matching red-tinted circle with red lock icon)

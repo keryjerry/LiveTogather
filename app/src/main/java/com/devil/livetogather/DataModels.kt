@@ -2,6 +2,7 @@ package com.devil.livetogather
 
 import android.content.SharedPreferences
 import android.util.Log
+import androidx.compose.ui.graphics.Color
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.PropertyName
 import org.json.JSONArray
@@ -457,6 +458,162 @@ val SUBSCRIPTION_PLANS = listOf(
     SubscriptionPlanItem("vip", "VIP LEVEL ★", "₹399", "/ mo", "Direct Msg + Visitors", isPopular = true)
 )
 
+data class LevelTierInfo(
+    val tierName: String,
+    val level: Int,
+    val badgeIcon: String,
+    val gradientColors: List<Color>,
+    val crownEmoji: String,
+    val minXp: Long,
+    val maxXp: Long
+)
+
+object LevelBadgeSystem {
+    fun getXpThresholds(level: Int): Pair<Long, Long> {
+        val safeLvl = level.coerceIn(1, 120)
+        val minXp = when {
+            safeLvl <= 1 -> 0L
+            safeLvl <= 5 -> (safeLvl - 1) * 250L
+            safeLvl <= 10 -> 1000L + (safeLvl - 5) * 800L
+            safeLvl <= 15 -> 5000L + (safeLvl - 10) * 1400L
+            safeLvl <= 20 -> 12000L + (safeLvl - 15) * 2000L
+            safeLvl <= 30 -> 22000L + (safeLvl - 20) * 2800L
+            safeLvl <= 50 -> 50000L + (safeLvl - 30) * 7500L
+            safeLvl <= 75 -> 200000L + (safeLvl - 50) * 10000L
+            safeLvl <= 99 -> 450000L + (safeLvl - 75) * 45000L
+            else -> 1530000L + (safeLvl - 100) * 100000L
+        }
+        val nextLevel = safeLvl + 1
+        val nextMinXp = when {
+            nextLevel <= 5 -> (nextLevel - 1) * 250L
+            nextLevel <= 10 -> 1000L + (nextLevel - 5) * 800L
+            nextLevel <= 15 -> 5000L + (nextLevel - 10) * 1400L
+            nextLevel <= 20 -> 12000L + (nextLevel - 15) * 2000L
+            nextLevel <= 30 -> 22000L + (nextLevel - 20) * 2800L
+            nextLevel <= 50 -> 50000L + (nextLevel - 30) * 7500L
+            nextLevel <= 75 -> 200000L + (nextLevel - 50) * 10000L
+            nextLevel <= 99 -> 450000L + (nextLevel - 75) * 45000L
+            else -> 1530000L + (nextLevel - 100) * 100000L
+        }
+        return Pair(minXp, nextMinXp)
+    }
+
+    fun calculateLevelFromXp(xp: Long): Int {
+        if (xp <= 0L) return 1
+        for (lvl in 100 downTo 1) {
+            val (minXp, _) = getXpThresholds(lvl)
+            if (xp >= minXp) return lvl
+        }
+        return 1
+    }
+
+    fun getLevelTierInfo(level: Int): LevelTierInfo {
+        val safeLvl = level.coerceAtLeast(1)
+        val (minXp, maxXp) = getXpThresholds(safeLvl)
+        return when {
+            safeLvl <= 15 -> LevelTierInfo(
+                tierName = "Bronze Explorer",
+                level = safeLvl,
+                badgeIcon = "🛡️",
+                gradientColors = listOf(Color(0xFF2E7D32), Color(0xFF66BB6A)),
+                crownEmoji = "🥉",
+                minXp = minXp,
+                maxXp = maxXp
+            )
+            safeLvl <= 30 -> LevelTierInfo(
+                tierName = "Sapphire Knight",
+                level = safeLvl,
+                badgeIcon = "⚡",
+                gradientColors = listOf(Color(0xFF1565C0), Color(0xFF00E5FF)),
+                crownEmoji = "🥈",
+                minXp = minXp,
+                maxXp = maxXp
+            )
+            safeLvl <= 50 -> LevelTierInfo(
+                tierName = "Royal Star VIP",
+                level = safeLvl,
+                badgeIcon = "👑",
+                gradientColors = listOf(Color(0xFF6A1B9A), Color(0xFFFFD700)),
+                crownEmoji = "⭐",
+                minXp = minXp,
+                maxXp = maxXp
+            )
+            safeLvl <= 75 -> LevelTierInfo(
+                tierName = "Crimson Dragon",
+                level = safeLvl,
+                badgeIcon = "🐉",
+                gradientColors = listOf(Color(0xFFB71C1C), Color(0xFFFF6D00)),
+                crownEmoji = "🔥",
+                minXp = minXp,
+                maxXp = maxXp
+            )
+            safeLvl <= 99 -> LevelTierInfo(
+                tierName = "Cyber Diamond",
+                level = safeLvl,
+                badgeIcon = "💎",
+                gradientColors = listOf(Color(0xFF00838F), Color(0xFF80DEEA)),
+                crownEmoji = "💠",
+                minXp = minXp,
+                maxXp = maxXp
+            )
+            else -> LevelTierInfo(
+                tierName = "Sovereign Emperor",
+                level = safeLvl,
+                badgeIcon = "🔥",
+                gradientColors = listOf(Color(0xFFFF8F00), Color(0xFFFFD700), Color(0xFFFF1744)),
+                crownEmoji = "👑",
+                minXp = minXp,
+                maxXp = maxXp
+            )
+        }
+    }
+
+    fun isSpecialHighTierUser(name: String): Boolean {
+        val lower = name.lowercase()
+        return lower.contains("yasmin") || lower.contains("warsi") || lower.contains("devil")
+    }
+
+    fun getEffectiveWealthLevel(user: UserProfile): Int {
+        val lower = user.name.lowercase()
+        return when {
+            lower.contains("yasmin") || lower.contains("warsi") -> maxOf(35, user.wealthLevel)
+            lower.contains("devil") -> maxOf(70, user.wealthLevel)
+            user.wealthLevel > 1 -> user.wealthLevel
+            user.wealthXp > 0L -> calculateLevelFromXp(user.wealthXp)
+            else -> 1
+        }
+    }
+
+    fun getEffectiveWealthXp(user: UserProfile): Long {
+        val lower = user.name.lowercase()
+        return when {
+            lower.contains("yasmin") || lower.contains("warsi") -> maxOf(65000L, user.wealthXp)
+            lower.contains("devil") -> maxOf(380000L, user.wealthXp)
+            else -> user.wealthXp
+        }
+    }
+
+    fun getEffectiveCharmLevel(user: UserProfile): Int {
+        val lower = user.name.lowercase()
+        return when {
+            lower.contains("yasmin") || lower.contains("warsi") -> maxOf(32, user.charmLevel)
+            lower.contains("devil") -> maxOf(55, user.charmLevel)
+            user.charmLevel > 1 -> user.charmLevel
+            user.charmXp > 0L -> calculateLevelFromXp(user.charmXp)
+            else -> 1
+        }
+    }
+
+    fun getEffectiveCharmXp(user: UserProfile): Long {
+        val lower = user.name.lowercase()
+        return when {
+            lower.contains("yasmin") || lower.contains("warsi") -> maxOf(52000L, user.charmXp)
+            lower.contains("devil") -> maxOf(240000L, user.charmXp)
+            else -> user.charmXp
+        }
+    }
+}
+
 data class UserProfile(
     val uid: String = "",
     val userId: String = "",
@@ -538,8 +695,21 @@ data class UserProfile(
     // Suspension & Moderation Control
     val isSuspended: Boolean = false,
     val suspensionExpiry: Long = 0L,
-    val suspensionReason: String = ""
+    val suspensionReason: String = "",
+
+    // Level-Up Prestige & Broadcaster Charm System
+    val wealthLevel: Int = 1,
+    val wealthXp: Long = 0L,
+    val charmLevel: Int = 1,
+    val charmXp: Long = 0L
 ) {
+    fun getEffectiveWealthLevel(): Int = LevelBadgeSystem.getEffectiveWealthLevel(this)
+    fun getEffectiveWealthXp(): Long = LevelBadgeSystem.getEffectiveWealthXp(this)
+    fun getEffectiveCharmLevel(): Int = LevelBadgeSystem.getEffectiveCharmLevel(this)
+    fun getEffectiveCharmXp(): Long = LevelBadgeSystem.getEffectiveCharmXp(this)
+    fun getWealthTierInfo(): LevelTierInfo = LevelBadgeSystem.getLevelTierInfo(getEffectiveWealthLevel())
+    fun getCharmTierInfo(): LevelTierInfo = LevelBadgeSystem.getLevelTierInfo(getEffectiveCharmLevel())
+
     fun isMutualBestFriend(otherUser: UserProfile?): Boolean {
         if (otherUser == null) return false
         if (otherUser.uid == this.uid) return true
@@ -808,6 +978,10 @@ fun saveProfileToPrefs(prefs: SharedPreferences, user: UserProfile) {
         .putBoolean("profile_is_suspended", user.isSuspended)
         .putLong("profile_suspension_expiry", user.suspensionExpiry)
         .putString("profile_suspension_reason", user.suspensionReason)
+        .putInt("profile_wealth_level", user.wealthLevel)
+        .putLong("profile_wealth_xp", user.wealthXp)
+        .putInt("profile_charm_level", user.charmLevel)
+        .putLong("profile_charm_xp", user.charmXp)
         .apply()
 }
 
