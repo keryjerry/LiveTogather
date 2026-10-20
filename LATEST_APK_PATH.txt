@@ -1,0 +1,16 @@
+==================================================
+LIVE TOGATHER - LATEST INSTALLED / BUILT APK PATH
+==================================================
+
+1. APK File Full Path:
+C:\Users\user\LiveTogather\app\build\outputs\apk\debug\app-debug.apk
+
+2. APK Folder Path:
+C:\Users\user\LiveTogather\app\build\outputs\apk\debug
+
+3. Phone (Installed Package):
+Package: com.devil.livetogather
+Device Path: /data/app/~~XstlzEqtQK41-DZebK6H9w==/com.devil.livetogather-WqL5gVxDI4ZQBvFlUnNVSA==/base.apk
+
+4. Open in Explorer (Win + R):
+explorer.exe " C:\Users\user\LiveTogather\app\build\outputs\apk\debug\
