@@ -2068,12 +2068,13 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                         hostUid = currentUserId,
                         hostName = currentUser.name,
                         hostPhotoUrl = currentUser.photo,
-                        nowPlayingTitle = "",
-                        nowPlayingArtist = "",
-                        nowPlayingUrl = "",
-                        currentPlayingTrack = "",
+                        nowPlayingTitle = CURATED_HANGOUT_TRACKS[0].title,
+                        nowPlayingArtist = CURATED_HANGOUT_TRACKS[0].artist,
+                        nowPlayingUrl = CURATED_HANGOUT_TRACKS[0].url,
+                        nowPlayingArtworkUrl = CURATED_HANGOUT_TRACKS[0].artworkUrl,
+                        currentPlayingTrack = CURATED_HANGOUT_TRACKS[0].title,
                         playbackPosition = 0L,
-                        isPlaying = false,
+                        isPlaying = true,
                         isCustom = true,
                         isHostLive = true,
                         isLive = true,
@@ -2229,12 +2230,12 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                     showAdminDashboardModal = true
                 },
                 onMarkAllRead = {
-                    val updated = notifications.map { it.copy(isRead = true) }
+                    val toDelete = notifications.toList()
                     notifications.clear()
-                    notifications.addAll(updated)
-                    updated.forEach { notif ->
+                    toDelete.forEach { notif ->
                         if (notif.id.isNotBlank()) {
-                            db.collection("notifications").document(notif.id).set(mapOf("isRead" to true), SetOptions.merge())
+                            db.collection("notifications").document(notif.id).delete()
+                            db.collection("users").document(currentUser.uid).collection("notifications").document(notif.id).delete()
                         }
                     }
                 }
@@ -6868,7 +6869,7 @@ fun NotificationsDialog(
                         Text("Notifications", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     }
                     TextButton(onClick = onMarkAllRead) {
-                        Text("Mark all read", color = BrandOrange, fontSize = 11.sp)
+                        Text("Wipe All 🗑️", color = BrandCoral, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
 
@@ -6888,10 +6889,10 @@ fun NotificationsDialog(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        if (notif.type == "user_report") {
+                                        if (notif.type.contains("report")) {
                                             onOpenAdmin?.invoke(1)
                                             onDismiss()
-                                        } else if (notif.type == "payment_utr_submitted") {
+                                        } else if (notif.type.contains("payment") || notif.type.contains("utr") || notif.type.contains("pay_req")) {
                                             onOpenAdmin?.invoke(0)
                                             onDismiss()
                                         } else if (notif.roomId.isNotBlank()) {
@@ -6998,6 +6999,11 @@ fun PostMomentDialog(
 
     val canPost = !isUploading && (pickedMediaUrls.isNotEmpty() || caption.isNotBlank())
 
+    BackHandler(enabled = isKeyboardOpen) {
+        keyboardController?.hide()
+        focusManager.clearFocus()
+    }
+
     Dialog(
         onDismissRequest = {
             if (isKeyboardOpen) {
@@ -7008,12 +7014,14 @@ fun PostMomentDialog(
             }
         },
         properties = DialogProperties(
-            dismissOnBackPress = !isUploading,
+            dismissOnBackPress = !isUploading && !isKeyboardOpen,
             dismissOnClickOutside = !isUploading
         )
     ) {
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .imePadding(),
             colors = CardDefaults.cardColors(containerColor = BrandCard),
             shape = RoundedCornerShape(20.dp)
         ) {

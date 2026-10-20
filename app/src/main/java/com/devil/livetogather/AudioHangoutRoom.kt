@@ -636,113 +636,64 @@ fun MusicVisualizerWave(isPlaying: Boolean, modifier: Modifier = Modifier) {
     val infiniteTransition = rememberInfiniteTransition(label = "dense_eq_wave")
 
     val h1 by infiniteTransition.animateFloat(
-        initialValue = if (isPlaying) 6f else 4f,
-        targetValue = if (isPlaying) 32f else 5f,
-        animationSpec = infiniteRepeatable(tween(420, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        initialValue = 6f,
+        targetValue = if (isPlaying) 20f else 6f,
+        animationSpec = infiniteRepeatable(tween(380, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "eq1"
     )
     val h2 by infiniteTransition.animateFloat(
-        initialValue = if (isPlaying) 28f else 5f,
-        targetValue = if (isPlaying) 7f else 4f,
-        animationSpec = infiniteRepeatable(tween(560, easing = LinearEasing), RepeatMode.Reverse),
+        initialValue = 18f,
+        targetValue = if (isPlaying) 8f else 6f,
+        animationSpec = infiniteRepeatable(tween(460, easing = LinearEasing), RepeatMode.Reverse),
         label = "eq2"
     )
     val h3 by infiniteTransition.animateFloat(
-        initialValue = if (isPlaying) 8f else 4f,
-        targetValue = if (isPlaying) 34f else 6f,
-        animationSpec = infiniteRepeatable(tween(380, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        initialValue = 10f,
+        targetValue = if (isPlaying) 22f else 6f,
+        animationSpec = infiniteRepeatable(tween(320, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "eq3"
     )
     val h4 by infiniteTransition.animateFloat(
-        initialValue = if (isPlaying) 30f else 6f,
-        targetValue = if (isPlaying) 9f else 4f,
-        animationSpec = infiniteRepeatable(tween(490, easing = LinearEasing), RepeatMode.Reverse),
+        initialValue = 20f,
+        targetValue = if (isPlaying) 7f else 6f,
+        animationSpec = infiniteRepeatable(tween(510, easing = LinearEasing), RepeatMode.Reverse),
         label = "eq4"
     )
     val h5 by infiniteTransition.animateFloat(
-        initialValue = if (isPlaying) 11f else 4f,
-        targetValue = if (isPlaying) 33f else 5f,
-        animationSpec = infiniteRepeatable(tween(620, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        initialValue = 12f,
+        targetValue = if (isPlaying) 19f else 6f,
+        animationSpec = infiniteRepeatable(tween(420, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "eq5"
     )
     val h6 by infiniteTransition.animateFloat(
-        initialValue = if (isPlaying) 25f else 5f,
-        targetValue = if (isPlaying) 8f else 4f,
-        animationSpec = infiniteRepeatable(tween(440, easing = LinearEasing), RepeatMode.Reverse),
+        initialValue = 16f,
+        targetValue = if (isPlaying) 9f else 6f,
+        animationSpec = infiniteRepeatable(tween(360, easing = LinearEasing), RepeatMode.Reverse),
         label = "eq6"
     )
-    val h7 by infiniteTransition.animateFloat(
-        initialValue = if (isPlaying) 7f else 4f,
-        targetValue = if (isPlaying) 31f else 5f,
-        animationSpec = infiniteRepeatable(tween(510, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "eq7"
-    )
-    val h8 by infiniteTransition.animateFloat(
-        initialValue = if (isPlaying) 33f else 6f,
-        targetValue = if (isPlaying) 10f else 4f,
-        animationSpec = infiniteRepeatable(tween(390, easing = LinearEasing), RepeatMode.Reverse),
-        label = "eq8"
-    )
 
-    val barHeights = listOf(
-        h1, h2, h3, h4, h5, h6, h7, h8,
-        h2, h4, h1, h6, h3, h7, h5, h8,
-        h3, h1, h5, h2, h7, h4, h8, h6,
-        h4, h6, h2, h8, h1, h5, h7, h3,
-        h5, h7, h2
-    )
-
+    val barHeights = listOf(h1, h2, h3, h4, h5, h6)
     val eqColors = listOf(
-        Color(0xFFEF4444), // red-500
-        Color(0xFFF87171), // red-400
-        Color(0xFFF97316), // orange-500
-        Color(0xFFFBBF24), // amber-400
-        Color(0xFFFACC15), // yellow-400
-        Color(0xFFA3E635), // lime-400
-        Color(0xFF4ADE80), // green-400
-        Color(0xFF34D399), // emerald-400
-        Color(0xFF2DD4BF), // teal-400
-        Color(0xFF22D3EE), // cyan-400
-        Color(0xFF38BDF8), // sky-400
-        Color(0xFF3B82F6), // blue-500
-        Color(0xFF6366F1), // indigo-500
-        Color(0xFFA855F7), // purple-500
-        Color(0xFFEC4899), // pink-500
-        Color(0xFFF43F5E), // rose-500
-        Color(0xFFEF4444), // red-500
-        Color(0xFFFBBF24), // amber-400
-        Color(0xFF4ADE80), // green-400
-        Color(0xFF22D3EE), // cyan-400
-        Color(0xFF3B82F6), // blue-500
-        Color(0xFFA855F7), // purple-500
-        Color(0xFFEC4899), // pink-500
-        Color(0xFFFB7185), // rose-400
-        Color(0xFFFB923C), // orange-400
-        Color(0xFFFACC15), // yellow-400
-        Color(0xFF34D399), // emerald-400
-        Color(0xFF2DD4BF), // teal-400
-        Color(0xFF22D3EE), // cyan-400
-        Color(0xFF818CF8), // indigo-400
-        Color(0xFFC084FC), // purple-400
-        Color(0xFFF472B6), // pink-400
-        Color(0xFFFB7185), // rose-400
-        Color(0xFFEF4444), // red-500
-        Color(0xFFFBBF24)  // amber-400
+        Color(0xFFFF5E62), // coral
+        Color(0xFFFF9966), // orange
+        Color(0xFFFFD700), // gold
+        Color(0xFF00E5FF), // cyan
+        Color(0xFF00E676), // green
+        Color(0xFFE040FB)  // purple
     )
 
     Row(
-        modifier = modifier.height(34.dp),
+        modifier = modifier.height(24.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalAlignment = Alignment.Bottom
     ) {
         barHeights.forEachIndexed { idx, h ->
-            val color = eqColors[idx % eqColors.size]
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .height(h.dp)
                     .clip(RoundedCornerShape(2.dp))
-                    .background(color)
+                    .background(eqColors[idx % eqColors.size])
             )
         }
     }
@@ -3085,6 +3036,7 @@ fun AudioHangoutRoomDialog(
 
     // Automated Room Entry Welcome Message in Live Comments
     LaunchedEffect(room.id, currentUser.uid) {
+        if (room.id.isBlank()) return@LaunchedEffect
         val welcomeDoc = LiveRoomComment(
             id = UUID.randomUUID().toString(),
             roomId = room.id,
@@ -3428,6 +3380,7 @@ fun AudioHangoutRoomDialog(
 
     // Host Seat 0 Auto-Assignment
     LaunchedEffect(isUserHost, targetHostId, micSeats.size) {
+        if (room.id.isBlank()) return@LaunchedEffect
         if (isUserHost && micSeats.isNotEmpty()) {
             val seat0 = micSeats.firstOrNull { it.seatIndex == 0 }
             if (seat0 != null && (seat0.uid != currentUser.uid || seat0.name != currentUser.name || seat0.photo != currentUser.photo)) {
@@ -3473,6 +3426,7 @@ fun AudioHangoutRoomDialog(
 
     // Sync speech detection to Firestore for remote participants
     LaunchedEffect(isLocalTalking, myCurrentMicSeat?.seatIndex) {
+        if (room.id.isBlank()) return@LaunchedEffect
         val seatIdx = myCurrentMicSeat?.seatIndex ?: return@LaunchedEffect
         try {
             db.collection("rooms").document(room.id).collection("mic_seats").document(seatIdx.toString())
@@ -7674,9 +7628,15 @@ fun ReportUserDialog(
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
 
+    BackHandler(enabled = isKeyboardOpen) {
+        keyboardController?.hide()
+        focusManager.clearFocus()
+    }
+
     androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismiss,
         properties = androidx.compose.ui.window.DialogProperties(
+            dismissOnBackPress = !isKeyboardOpen,
             usePlatformDefaultWidth = false
         )
     ) {
@@ -7695,6 +7655,7 @@ fun ReportUserDialog(
             modifier = Modifier
                 .fillMaxWidth(0.92f)
                 .fillMaxHeight(0.85f)
+                .imePadding()
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null

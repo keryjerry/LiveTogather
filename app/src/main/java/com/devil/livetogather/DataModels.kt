@@ -948,29 +948,9 @@ data class HangoutTrack(
 )
 
 val CURATED_HANGOUT_TRACKS = listOf(
-    // 1. Bollywood & Romantic (Full Length 3 to 5 mins)
+    // 1. Lo-Fi Chill & Hangout Vibes (Guaranteed High-Reliability MP3 Stream)
     HangoutTrack(
         id = "track_1",
-        title = "Nashe Si Chadh Gayi",
-        artist = "Arijit Singh & Vishal-Shekhar",
-        category = "Acoustic Romantic",
-        url = "https://aac.saavncdn.com/574/e045a751c0975c2014cf625206184950_160.mp4",
-        artworkUrl = "https://c.saavncdn.com/574/Best-of-Arijit-Singh-Hindi-2019-20190715123118-500x500.jpg",
-        durationSec = 238
-    ),
-    HangoutTrack(
-        id = "track_2",
-        title = "Main Rang Sharbaton Ka",
-        artist = "Arijit Singh & Chinmayi Sripada",
-        category = "Acoustic Romantic",
-        url = "https://aac.saavncdn.com/495/e1c4df3bf87bb9be4a9ef19ec31a3962_160.mp4",
-        artworkUrl = "https://c.saavncdn.com/495/Phata-Poster-Nikhla-Hero-Hindi-2013-500x500.jpg",
-        durationSec = 282
-    ),
-
-    // 2. Lo-Fi Chill & Sleep (Full Length)
-    HangoutTrack(
-        id = "track_3",
         title = "Lofi Midnight Reverie",
         artist = "Chillhop Sessions",
         category = "Lo-Fi Chill",
@@ -979,13 +959,33 @@ val CURATED_HANGOUT_TRACKS = listOf(
         durationSec = 205
     ),
     HangoutTrack(
-        id = "track_4",
+        id = "track_2",
         title = "Coffee Break Chill Cafe",
         artist = "FM STAR Lounge",
         category = "Lo-Fi Chill",
         url = "https://freepd.com/music/Sweet%20Treat.mp3",
         artworkUrl = "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=500&q=80",
         durationSec = 192
+    ),
+
+    // 2. Cafe Jazz & Lounge (Full Length)
+    HangoutTrack(
+        id = "track_3",
+        title = "Soulful Jazz Whispers",
+        artist = "Velvet Sax Quartet",
+        category = "Cafe Jazz",
+        url = "https://freepd.com/music/Bossa%20Antigua.mp3",
+        artworkUrl = "https://images.unsplash.com/photo-1511192336575-5a79af67a629?auto=format&fit=crop&w=500&q=80",
+        durationSec = 246
+    ),
+    HangoutTrack(
+        id = "track_4",
+        title = "Gentle Sunset Bossa",
+        artist = "Lounge Collective",
+        category = "Cafe Jazz",
+        url = "https://freepd.com/music/Late%20Night%20Coffee.mp3",
+        artworkUrl = "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=500&q=80",
+        durationSec = 228
     ),
 
     // 3. Cafe Jazz & Lounge (Full Length)

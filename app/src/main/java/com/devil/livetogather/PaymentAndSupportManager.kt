@@ -4,6 +4,7 @@ package com.devil.livetogather
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.activity.compose.BackHandler
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -524,9 +525,15 @@ fun UpiPaymentCheckoutModal(
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
 
+    BackHandler(enabled = isKeyboardOpen) {
+        keyboardController?.hide()
+        focusManager.clearFocus()
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
+            dismissOnBackPress = !isKeyboardOpen,
             usePlatformDefaultWidth = false
         )
     ) {
@@ -545,6 +552,7 @@ fun UpiPaymentCheckoutModal(
             modifier = Modifier
                 .fillMaxWidth(0.94f)
                 .fillMaxHeight(0.90f)
+                .imePadding()
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null
@@ -990,9 +998,15 @@ fun HelpDeskModal(
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
 
+    BackHandler(enabled = isKeyboardOpen) {
+        keyboardController?.hide()
+        focusManager.clearFocus()
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
+            dismissOnBackPress = !isKeyboardOpen,
             usePlatformDefaultWidth = false
         )
     ) {
@@ -1011,6 +1025,7 @@ fun HelpDeskModal(
             modifier = Modifier
                 .fillMaxWidth(0.95f)
                 .fillMaxHeight(0.92f)
+                .imePadding()
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null
@@ -1549,7 +1564,7 @@ fun AdminApprovalDashboardModal(
     val context = LocalContext.current
     val pendingRequests = remember { mutableStateListOf<PaymentRequestTicket>() }
     val pendingReports = remember { mutableStateListOf<ReportTicket>() }
-    var selectedAdminTab by remember { mutableStateOf(initialTab) } // 0: Payments, 1: User Reports
+    var selectedAdminTab by remember(initialTab) { mutableIntStateOf(initialTab) } // 0: Payments, 1: User Reports
     var processingReqId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
@@ -1624,7 +1639,8 @@ fun AdminApprovalDashboardModal(
         Surface(
             modifier = Modifier
                 .fillMaxWidth(0.96f)
-                .fillMaxHeight(0.92f),
+                .fillMaxHeight(0.92f)
+                .imePadding(),
             shape = RoundedCornerShape(24.dp),
             color = BrandDark,
             border = BorderStroke(1.5.dp, BrandGold)

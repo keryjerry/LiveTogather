@@ -87,10 +87,15 @@ object AudioPlayerManager {
                 }
 
                 setOnErrorListener { _, what, extra ->
-                    Log.w(TAG, "MediaPlayer error what=$what extra=$extra for $urlOrUri")
+                    Log.w(TAG, "MediaPlayer error what=$what extra=$extra for $urlOrUri. Falling back to default track.")
                     isPlayingState.value = false
                     isBufferingState.value = false
                     stopTicker()
+                    if (urlOrUri != CURATED_HANGOUT_TRACKS[0].url) {
+                        scope.launch {
+                            play(context, CURATED_HANGOUT_TRACKS[0].url, CURATED_HANGOUT_TRACKS[0].title, CURATED_HANGOUT_TRACKS[0].artworkUrl)
+                        }
+                    }
                     true
                 }
 
@@ -101,6 +106,11 @@ object AudioPlayerManager {
             isPlayingState.value = false
             isBufferingState.value = false
             stopTicker()
+            if (urlOrUri != CURATED_HANGOUT_TRACKS[0].url) {
+                scope.launch {
+                    play(context, CURATED_HANGOUT_TRACKS[0].url, CURATED_HANGOUT_TRACKS[0].title, CURATED_HANGOUT_TRACKS[0].artworkUrl)
+                }
+            }
         }
     }
 
