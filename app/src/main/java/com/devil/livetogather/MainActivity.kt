@@ -686,21 +686,12 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
 
     // --- Firebase Authentication & Firestore Setup ---
     LaunchedEffect(Unit) {
-        // Authenticate anonymously so Firestore security rules don't block requests with PERMISSION_DENIED
         if (auth.currentUser == null) {
-            auth.signInAnonymously()
-                .addOnSuccessListener { result ->
-                    val authUid = result.user?.uid
-                    if (authUid != null) {
-                        currentUserId = authUid
-                        prefs.edit().putString("user_uid", authUid).apply()
-                        currentUser = currentUser.copy(uid = authUid)
-                    }
-                    Log.d("Auth", "Signed in anonymously as $currentUserId")
-                }
-                .addOnFailureListener { e ->
-                    Log.w("Auth", "Anonymous auth failed: ${e.message}")
-                }
+            Log.d("Auth", "No active user session in MainActivity, redirecting to LoginActivity")
+            val loginIntent = Intent(context, LoginActivity::class.java)
+            loginIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            context.startActivity(loginIntent)
+            return@LaunchedEffect
         } else {
             val authUid = auth.currentUser!!.uid
             currentUserId = authUid
@@ -738,10 +729,9 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                     }
                     r
                 }
-                val localUnsynced = roomsList.filter { local -> local.hostId == currentUserId && fetchedRooms.none { it.id == local.id } }
                 roomsList.clear()
-                roomsList.addAll(localUnsynced + fetchedRooms)
-                Log.d("Firestore", "Loaded ${fetchedRooms.size} real-time rooms from Firestore (total ${roomsList.size})")
+                roomsList.addAll(fetchedRooms)
+                Log.d("Firestore", "Loaded ${fetchedRooms.size} real-time rooms from Firestore")
             }
         }
     }
@@ -763,6 +753,10 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                 val currentDocUserId = snapshot.getString("userId") ?: ""
                 if (currentDocUserId.isBlank() || currentDocUserId.length != 8 || !currentDocUserId.all { it.isDigit() }) {
                     userDoc.update("userId", fresh.userId)
+                }
+                val authEmail = auth.currentUser?.email ?: ""
+                if (authEmail.isNotBlank() && (snapshot.getString("email").isNullOrBlank())) {
+                    userDoc.update("email", authEmail)
                 }
             } else {
                 // If profile doesn't exist for currentUserId yet, check if there's a profile for this deviceId
@@ -4023,6 +4017,7 @@ fun ProfileScreenContent(
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
     var showSubscriptionModal by remember { mutableStateOf(false) }
     var showCoinStoreModal by remember { mutableStateOf(false) }
+    var showVipStatusDialog by remember { mutableStateOf(false) }
     var showHelpDeskModal by remember { mutableStateOf(false) }
     var showAdminDashboardModal by remember { mutableStateOf(false) }
     var helpDeskPrefilledPackage by remember { mutableStateOf<CoinPackageItem?>(null) }
@@ -4242,6 +4237,26 @@ fun ProfileScreenContent(
                                 modifier = Modifier.size(14.dp).padding(2.dp)
                             )
                         }
+
+                        val userVipLevel = currentUser.getVipLevel()
+                        if (userVipLevel > 0) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                color = BrandGold.copy(alpha = 0.2f),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, BrandGold),
+                                modifier = Modifier.clickable { showVipStatusDialog = true }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("👑", fontSize = 10.sp)
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    Text("VIP $userVipLevel", color = BrandGold, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                                }
+                            }
+                        }
                     }
                     Spacer(modifier = Modifier.height(2.dp))
                     Row(
@@ -4297,6 +4312,30 @@ fun ProfileScreenContent(
                                 tint = BrandGold,
                                 modifier = Modifier.size(12.dp)
                             )
+                        }
+                    }
+
+                    if (currentUser.isVipTrialActive()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Surface(
+                            color = Color(0xFF22162E),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.8f)),
+                            modifier = Modifier.clickable { showVipStatusDialog = true }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("⏳", fontSize = 11.sp)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "VIP 1 Trial: ${currentUser.getVipTrialDaysLeft()}d left • Manage ➔",
+                                    color = BrandGold,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     }
                 }
@@ -4589,7 +4628,7 @@ fun ProfileScreenContent(
 
                 // VIP Club Pass
                 Button(
-                    onClick = { showSubscriptionModal = true },
+                    onClick = { showVipStatusDialog = true },
                     colors = ButtonDefaults.buttonColors(containerColor = BrandCardSubtle),
                     border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.6f)),
                     shape = RoundedCornerShape(10.dp),
@@ -4961,7 +5000,7 @@ fun ProfileScreenContent(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(18.dp))
-                        .clickable { showSubscriptionModal = true },
+                        .clickable { showVipStatusDialog = true },
                     shape = RoundedCornerShape(18.dp),
                     colors = CardDefaults.cardColors(containerColor = BrandCard),
                     border = BorderStroke(1.5.dp, Brush.horizontalGradient(listOf(BrandGold, BrandCoral)))
@@ -5004,7 +5043,7 @@ fun ProfileScreenContent(
                             Column(modifier = Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        "VIP Membership Center",
+                                        if (currentUser.isVipTrialActive()) "VIP 1 Trial Active ⏳" else "VIP Membership Center",
                                         color = Color.White,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 15.sp
@@ -5016,7 +5055,7 @@ fun ProfileScreenContent(
                                         border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.6f))
                                     ) {
                                         Text(
-                                            currentUser.plan.uppercase(),
+                                            if (currentUser.isVipTrialActive()) "TRIAL (${currentUser.getVipTrialDaysLeft()}D LEFT)" else currentUser.plan.uppercase(),
                                             color = BrandGold,
                                             fontSize = 9.sp,
                                             fontWeight = FontWeight.Black,
@@ -5026,7 +5065,7 @@ fun ProfileScreenContent(
                                 }
                                 Spacer(modifier = Modifier.height(3.dp))
                                 Text(
-                                    "Tap to view all subscription tiers, purchase passes & unlock privileges",
+                                    if (currentUser.isVipTrialActive()) "Tap to see real-time countdown timer. 50,000 Diamonds never expire!" else "Tap to view subscription tiers, purchase passes & unlock privileges",
                                     color = Color.LightGray,
                                     fontSize = 11.sp,
                                     lineHeight = 15.sp
@@ -5034,7 +5073,7 @@ fun ProfileScreenContent(
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        "Explore 4 Subscription Tiers",
+                                        if (currentUser.isVipTrialActive()) "Manage VIP & View Countdown ➔" else "Explore Subscription Tiers",
                                         color = BrandGold,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 12.sp
@@ -5229,6 +5268,21 @@ fun ProfileScreenContent(
                 TextButton(onClick = { showDeleteConfirmDialog = false }) {
                     Text("Cancel", color = Color.Gray)
                 }
+            }
+        )
+    }
+
+    if (showVipStatusDialog) {
+        VipStatusAndPurchaseDialog(
+            currentUser = currentUser,
+            onDismiss = { showVipStatusDialog = false },
+            onOpenCoinStore = {
+                showVipStatusDialog = false
+                showCoinStoreModal = true
+            },
+            onOpenSubscriptionPlans = {
+                showVipStatusDialog = false
+                showSubscriptionModal = true
             }
         )
     }

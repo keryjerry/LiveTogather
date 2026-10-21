@@ -61,6 +61,28 @@ private val BorderColor = Color(0xFF2A2226)
 class ProfileSetupActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Fast Check: if profile already exists in Firestore for this user, jump straight to MainActivity
+        val auth = FirebaseAuth.getInstance()
+        val user = auth.currentUser
+        if (user != null) {
+            val db = FirebaseFirestore.getInstance()
+            val prefs = getSharedPreferences("livetogather_user_prefs", Context.MODE_PRIVATE)
+            db.collection("users").document(user.uid).get(com.google.firebase.firestore.Source.SERVER)
+                .addOnSuccessListener { doc ->
+                    if (doc != null && doc.exists()) {
+                        val profile = parseUserProfileFromDoc(doc)
+                        if (profile.name.isNotBlank()) {
+                            saveProfileToPrefs(prefs, profile)
+                            val intent = Intent(this@ProfileSetupActivity, MainActivity::class.java)
+                            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                            startActivity(intent)
+                            finish()
+                        }
+                    }
+                }
+        }
+
         val imageLoader = coil.ImageLoader.Builder(this)
             .components {
                 add(DataUriFetcher.Factory(this@ProfileSetupActivity))
@@ -544,6 +566,7 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
                         val initialProfile = UserProfile(
                             uid = effectiveUid,
                             userId = generatedUserId,
+                            email = auth.currentUser?.email?.trim() ?: prefs.getString("profile_email", "") ?: "",
                             deviceId = deviceId.ifBlank { WelcomeBonusManager.getDeviceId(context) },
                             name = name.trim(),
                             age = ageVal,

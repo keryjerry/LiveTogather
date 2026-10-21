@@ -12,6 +12,7 @@ import java.util.Locale
 object AudioPlayerManager {
     private const val TAG = "AudioPlayerManager"
     private var mediaPlayer: MediaPlayer? = null
+    private var isPrepared: Boolean = false
     private var tickerJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
@@ -29,13 +30,14 @@ object AudioPlayerManager {
         if (urlOrUri.isBlank()) return
 
         // If already playing this track, don't restart
-        if (currentTrackUrlState.value == urlOrUri && isPlayingState.value && mediaPlayer?.isPlaying == true) {
+        if (currentTrackUrlState.value == urlOrUri && isPlayingState.value && isPrepared && mediaPlayer?.isPlaying == true) {
             return
         }
 
         try {
             stop()
             isBufferingState.value = true
+            isPrepared = false
             currentTrackTitleState.value = title
             currentTrackUrlState.value = urlOrUri
             currentTrackArtworkUrlState.value = artworkUrl
@@ -57,6 +59,7 @@ object AudioPlayerManager {
                 isLooping = true
 
                 setOnPreparedListener { mp ->
+                    isPrepared = true
                     isBufferingState.value = false
                     try {
                         val vol = if (isMutedState.value) 0f else 1f
@@ -77,12 +80,16 @@ object AudioPlayerManager {
                     }
                 }
 
-                setOnCompletionListener {
+                setOnCompletionListener { mp ->
                     try {
-                        it.seekTo(0)
-                        it.start()
-                        isPlayingState.value = true
-                        startTicker()
+                        if (isPrepared) {
+                            mp.seekTo(0)
+                            mp.start()
+                            isPlayingState.value = true
+                            startTicker()
+                        } else {
+                            onCompletion()
+                        }
                     } catch (e: Exception) {
                         isPlayingState.value = false
                         isBufferingState.value = false
@@ -92,15 +99,11 @@ object AudioPlayerManager {
                 }
 
                 setOnErrorListener { _, what, extra ->
-                    Log.w(TAG, "MediaPlayer error what=$what extra=$extra for $urlOrUri. Falling back to default track.")
+                    Log.w(TAG, "MediaPlayer error what=$what extra=$extra for $urlOrUri")
+                    isPrepared = false
                     isPlayingState.value = false
                     isBufferingState.value = false
                     stopTicker()
-                    if (urlOrUri != CURATED_HANGOUT_TRACKS[0].url) {
-                        scope.launch {
-                            play(context, CURATED_HANGOUT_TRACKS[0].url, CURATED_HANGOUT_TRACKS[0].title, CURATED_HANGOUT_TRACKS[0].artworkUrl)
-                        }
-                    }
                     true
                 }
 
@@ -108,14 +111,10 @@ object AudioPlayerManager {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize MediaPlayer for $urlOrUri: ${e.message}")
+            isPrepared = false
             isPlayingState.value = false
             isBufferingState.value = false
             stopTicker()
-            if (urlOrUri != CURATED_HANGOUT_TRACKS[0].url) {
-                scope.launch {
-                    play(context, CURATED_HANGOUT_TRACKS[0].url, CURATED_HANGOUT_TRACKS[0].title, CURATED_HANGOUT_TRACKS[0].artworkUrl)
-                }
-            }
         }
     }
 
@@ -174,7 +173,7 @@ object AudioPlayerManager {
 
     fun resume(context: Context? = null) {
         try {
-            if (mediaPlayer != null) {
+            if (mediaPlayer != null && isPrepared) {
                 mediaPlayer?.start()
                 isPlayingState.value = true
                 isBufferingState.value = false
@@ -204,12 +203,31 @@ object AudioPlayerManager {
     fun stop() {
         try {
             stopTicker()
-            mediaPlayer?.stop()
-            mediaPlayer?.release()
+            isPrepared = false
+            mediaPlayer?.let { mp ->
+                try {
+                    if (mp.isPlaying) {
+                        mp.stop()
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "mp.stop error: ${e.message}")
+                }
+                try {
+                    mp.reset()
+                } catch (e: Exception) {
+                    Log.w(TAG, "mp.reset error: ${e.message}")
+                }
+                try {
+                    mp.release()
+                } catch (e: Exception) {
+                    Log.w(TAG, "mp.release error: ${e.message}")
+                }
+            }
         } catch (e: Exception) {
             Log.w(TAG, "Stop error: ${e.message}")
         } finally {
             mediaPlayer = null
+            isPrepared = false
             isPlayingState.value = false
             isBufferingState.value = false
             currentTrackTitleState.value = ""

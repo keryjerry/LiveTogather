@@ -52,7 +52,7 @@ import java.util.UUID
 object WelcomeBonusManager {
 
     const val WELCOME_BONUS_DIAMONDS = 50_000L // 50,000 Diamonds
-    const val VIP_TRIAL_DURATION_MS = 7L * 24 * 60 * 60 * 1000L // 7 Days
+    const val VIP_TRIAL_DURATION_MS = 3L * 24 * 60 * 60 * 1000L // Strictly 3 Days (72 Hours)
     const val VIP1_FRAME_ID = "frame_vip1_archangel"
     const val PREF_SHOW_WELCOME_DIALOG = "show_welcome_bonus_dialog"
     const val NOTIFICATION_CHANNEL_ID = "welcome_bonus_channel"
@@ -195,7 +195,7 @@ object WelcomeBonusManager {
                 "claimedAt" to now,
                 "diamonds" to WELCOME_BONUS_DIAMONDS,
                 "vipLevel" to 1,
-                "trialDays" to 7
+                "trialDays" to 3
             )
 
             try {
@@ -304,10 +304,10 @@ object WelcomeBonusManager {
             val notification = NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
                 .setSmallIcon(R.drawable.app_logo)
                 .setContentTitle("🎉 First-Time Welcome Gift Unlocked! 🎁")
-                .setContentText("50,000 Diamonds + VIP 1 Archangel Frame & Badge (7 Days Free) are now in your wallet!")
+                .setContentText("50,000 Diamonds + VIP 1 Archangel Frame & Badge (3 Days Free) are now in your wallet!")
                 .setStyle(
                     NotificationCompat.BigTextStyle()
-                        .bigText("Congratulations on signing up for the first time!\n\n💎 50,000 Diamonds added to your wallet\n👑 VIP 1 Noble Archangel Frame & Badge unlocked (7 Days)\n\nEnjoy LiveTogether to the fullest!")
+                        .bigText("Congratulations on signing up for the first time!\n\n💎 50,000 Diamonds added to your wallet (Permanent)\n👑 VIP 1 Noble Archangel Frame & Badge unlocked (3 Days)\n\nEnjoy LiveTogether to the fullest!")
                 )
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setAutoCancel(true)
@@ -428,7 +428,7 @@ fun WelcomeBonusCelebrationDialog(
                                 fontWeight = FontWeight.ExtraBold
                             )
                             Text(
-                                text = "7 दिनों के लिए मुफ़्त अनलॉक (Valid for 7 Days)",
+                                text = "3 दिनों के लिए मुफ़्त अनलॉक (Valid for 3 Days)",
                                 color = Color.Gray,
                                 fontSize = 11.sp
                             )

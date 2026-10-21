@@ -52,6 +52,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlinx.coroutines.delay
 
 /**
  * Data model for selectable Coin / Diamond top-up packages.
@@ -359,14 +360,20 @@ object PaymentAndSupportManager {
             )
         )
 
-        // 2. Increment target user wallet coins & diamonds atomically
+        // 2. Increment target user wallet coins & diamonds atomically, or activate host monetization
         val userRef = db.collection("users").document(request.userId)
-        batch.update(
-            userRef, mapOf(
-                "coins" to FieldValue.increment(request.coinsRequested),
-                "diamonds" to FieldValue.increment(request.coinsRequested)
-            )
-        )
+        val updateMap = mutableMapOf<String, Any>()
+        if (request.coinsRequested > 0L) {
+            updateMap["coins"] = FieldValue.increment(request.coinsRequested)
+            updateMap["diamonds"] = FieldValue.increment(request.coinsRequested)
+        }
+        if (request.category.contains("Monetization", ignoreCase = true) || request.amountPaid.contains("599")) {
+            updateMap["isHostMonetized"] = true
+            updateMap["hostMonetizationDate"] = System.currentTimeMillis()
+        }
+        if (updateMap.isNotEmpty()) {
+            batch.update(userRef, updateMap)
+        }
 
         // 3. Create an internal wallet ledger record in users/{userId}/coin_transactions
         val ledgerRef = userRef.collection("coin_transactions").document()
@@ -642,9 +649,10 @@ fun UpiPaymentCheckoutModal(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    val isMonetizationPkg = selectedPackage.id == "pkg_host_monetization_599" || selectedPackage.title.contains("Monetization", ignoreCase = true)
                     Column {
                         Text(
-                            text = "💎 Diamond Recharge",
+                            text = if (isMonetizationPkg) "🚀 Host Monetization" else "💎 Diamond Recharge",
                             color = Color.White,
                             fontSize = 17.sp,
                             fontWeight = FontWeight.Bold
@@ -681,12 +689,13 @@ fun UpiPaymentCheckoutModal(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        val isMonetizationPkg = selectedPackage.id == "pkg_host_monetization_599" || selectedPackage.title.contains("Monetization", ignoreCase = true)
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("💎", fontSize = 24.sp)
+                            Text(if (isMonetizationPkg) "🚀" else "💎", fontSize = 24.sp)
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
                                 Text(
-                                    text = "%,d Diamonds".format(selectedPackage.coins),
+                                    text = if (isMonetizationPkg) "Host Monetization Lifetime Access" else "%,d Diamonds".format(selectedPackage.coins),
                                     color = Color.White,
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold
@@ -949,6 +958,7 @@ fun UpiPaymentCheckoutModal(
                                 return@Button
                             }
                             isSubmitting = true
+                            val isMonetizationPkg = selectedPackage.id == "pkg_host_monetization_599" || selectedPackage.title.contains("Monetization", ignoreCase = true)
                             val finalNumericId = if (currentUser.userId.isNotBlank()) currentUser.userId else (10000000 + kotlin.math.abs(currentUser.uid.hashCode()) % 90000000).toString()
                             PaymentAndSupportManager.submitPaymentVerificationRequest(
                                 userId = currentUser.uid,
@@ -957,9 +967,31 @@ fun UpiPaymentCheckoutModal(
                                 utrNumber = trimmed,
                                 packCoins = selectedPackage.coins,
                                 packAmount = selectedPackage.priceInr,
+                                category = if (isMonetizationPkg) "Host Monetization Activation" else "Payment Verification (Submit UTR for Coins)",
+                                message = if (isMonetizationPkg) "Host Monetization ₹599 paid" else "",
                                 onSuccess = {
                                     isSubmitting = false
-                                    Toast.makeText(context, "✅ UTR #$trimmed submitted! Diamonds will be credited.", Toast.LENGTH_LONG).show()
+                                    if (isMonetizationPkg) {
+                                        try {
+                                            val db = FirebaseFirestore.getInstance()
+                                            db.collection("users").document(currentUser.uid).update(
+                                                mapOf(
+                                                    "isHostMonetized" to true,
+                                                    "hostMonetizationDate" to System.currentTimeMillis()
+                                                )
+                                            )
+                                            val prefs = context.getSharedPreferences("livetogather_user_prefs", Context.MODE_PRIVATE)
+                                            prefs.edit()
+                                                .putBoolean("profile_is_host_monetized", true)
+                                                .putLong("profile_host_monetization_date", System.currentTimeMillis())
+                                                .apply()
+                                        } catch (e: Exception) {
+                                            android.util.Log.e("Checkout", "Monetization activation error: ${e.message}")
+                                        }
+                                        Toast.makeText(context, "✅ UTR #$trimmed submitted! Host Monetization activated successfully! 🚀", Toast.LENGTH_LONG).show()
+                                    } else {
+                                        Toast.makeText(context, "✅ UTR #$trimmed submitted! Diamonds will be credited.", Toast.LENGTH_LONG).show()
+                                    }
                                     onSuccess()
                                     onDismiss()
                                 },
@@ -979,8 +1011,9 @@ fun UpiPaymentCheckoutModal(
                         if (isSubmitting) {
                             CircularProgressIndicator(color = BrandDark, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                         } else {
+                            val isMonetizationPkg = selectedPackage.id == "pkg_host_monetization_599" || selectedPackage.title.contains("Monetization", ignoreCase = true)
                             Text(
-                                text = "Verify & Credit %,d Diamonds 💎".format(selectedPackage.coins),
+                                text = if (isMonetizationPkg) "Verify & Activate Host Monetization (₹599) 🚀" else "Verify & Credit %,d Diamonds 💎".format(selectedPackage.coins),
                                 color = BrandDark,
                                 fontWeight = FontWeight.ExtraBold,
                                 fontSize = 13.sp
@@ -2194,6 +2227,7 @@ fun CoinStoreTopUpDialog(
     var liveTotalEarningsInr by remember { mutableDoubleStateOf(currentUser.totalEarningsInr) }
     var liveWithdrawnInr by remember { mutableDoubleStateOf(currentUser.withdrawnInr) }
     var liveUpiId by remember { mutableStateOf(currentUser.upiId) }
+    var liveIsHostMonetized by remember { mutableStateOf(currentUser.isHostMonetized) }
 
     LaunchedEffect(currentUser.uid) {
         if (currentUser.uid.isNotBlank()) {
@@ -2208,6 +2242,8 @@ fun CoinStoreTopUpDialog(
                         if (!savedUpi.isNullOrBlank()) {
                             liveUpiId = savedUpi
                         }
+                        val isMon = snap.getBoolean("isHostMonetized") ?: snap.getBoolean("profile_is_host_monetized") ?: (currentUser.isAdmin || currentUser.name.equals("Devil", true) || currentUser.isHostMonetized)
+                        liveIsHostMonetized = isMon
                     }
                 }
         }
@@ -2418,6 +2454,40 @@ fun CoinStoreTopUpDialog(
                             .fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        if (!liveIsHostMonetized) {
+                            item {
+                                Surface(
+                                    color = Color(0xFF22162B),
+                                    shape = RoundedCornerShape(14.dp),
+                                    border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(BrandGold, Color(0xFFFF5E62)))),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { selectedTab = 1 }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                                            Text("🚀", fontSize = 22.sp)
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Column {
+                                                Text("Activate Host Monetization • ₹599", color = BrandGold, fontSize = 12.5.sp, fontWeight = FontWeight.ExtraBold)
+                                                Text("Convert room gifts into direct cash income (INR)", color = Color.LightGray, fontSize = 10.sp)
+                                            }
+                                        }
+                                        Surface(
+                                            color = BrandGold,
+                                            shape = RoundedCornerShape(8.dp)
+                                        ) {
+                                            Text("Activate ➔", color = BrandDark, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         items(APP_COIN_PACKAGES) { pack ->
                             Surface(
                                 color = BrandCard,
@@ -2502,6 +2572,132 @@ fun CoinStoreTopUpDialog(
                             .fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
+                        // 0. Host Monetization Status & Activation Card
+                        item {
+                            if (!liveIsHostMonetized) {
+                                Surface(
+                                    color = Color(0xFF23152B),
+                                    shape = RoundedCornerShape(18.dp),
+                                    border = BorderStroke(1.5.dp, Brush.horizontalGradient(listOf(BrandGold, Color(0xFFFF5E62), Color(0xFFFF9966)))),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(15.dp),
+                                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text("🚀", fontSize = 24.sp)
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Column {
+                                                    Text(
+                                                        text = "Host Monetization",
+                                                        color = BrandGold,
+                                                        fontSize = 16.sp,
+                                                        fontWeight = FontWeight.Black
+                                                    )
+                                                    Text(
+                                                        text = "Start Earning Real Cash in Live Rooms",
+                                                        color = Color.LightGray,
+                                                        fontSize = 11.sp
+                                                    )
+                                                }
+                                            }
+                                            Surface(
+                                                color = Color(0xFFFF5E62).copy(alpha = 0.2f),
+                                                shape = RoundedCornerShape(20.dp),
+                                                border = BorderStroke(1.dp, Color(0xFFFF5E62))
+                                            ) {
+                                                Text(
+                                                    text = "NOT ACTIVE",
+                                                    color = Color(0xFFFF5E62),
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Black,
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                                )
+                                            }
+                                        }
+
+                                        Text(
+                                            text = "Unlock live audio room monetization! When activated, diamonds gifted to you in live hangout rooms convert directly into real cash (INR) with instant UPI withdrawals to your bank.",
+                                            color = Color(0xFFDDDDDD),
+                                            fontSize = 11.5.sp,
+                                            lineHeight = 16.sp
+                                        )
+
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(Color(0xFF150F1E), RoundedCornerShape(12.dp))
+                                                .padding(10.dp),
+                                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text("💰", fontSize = 13.sp)
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text("Real Cash Income: Gift diamonds convert to ₹ INR", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                            }
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text("👑", fontSize = 13.sp)
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text("5% - 8% Host Commission on all audio room gifts", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                            }
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text("⚡", fontSize = 13.sp)
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text("Instant UPI Withdrawals to PhonePe, Google Pay, Paytm", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                            }
+                                        }
+
+                                        Button(
+                                            onClick = {
+                                                checkoutPackage = CoinPackageItem(
+                                                    id = "pkg_host_monetization_599",
+                                                    coins = 0L,
+                                                    priceInr = "₹599",
+                                                    numericPrice = "599",
+                                                    title = "Host Monetization Lifetime Activation 🚀",
+                                                    badge = "OFFICIAL"
+                                                )
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.fillMaxWidth().height(46.dp)
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text("Activate Host Monetization • ₹599", color = BrandDark, fontSize = 13.5.sp, fontWeight = FontWeight.Black)
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text("➔", color = BrandDark, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                Surface(
+                                    color = Color(0xFF13251A),
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.2.dp, Color(0xFF00E676).copy(alpha = 0.6f)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("✅", fontSize = 20.sp)
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Column {
+                                            Text("Host Monetization Active 🚀", color = Color(0xFF00E676), fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+                                            Text("You are receiving real cash commissions on all room gifts with instant UPI withdrawals.", color = Color.LightGray, fontSize = 10.5.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         // 1. Available Earnings Balance Card
                         item {
                             Surface(
@@ -2684,13 +2880,25 @@ fun CoinStoreTopUpDialog(
                                     Spacer(modifier = Modifier.height(10.dp))
 
                                     val withdrawAmountVal = withdrawAmountText.toDoubleOrNull() ?: 0.0
-                                    val canWithdraw = withdrawAmountVal >= 50.0 &&
+                                    val canWithdraw = liveIsHostMonetized &&
+                                            withdrawAmountVal >= 50.0 &&
                                             withdrawAmountVal <= liveEarningsInr &&
                                             withdrawUpiId.contains("@") &&
                                             !isSubmittingWithdrawal
 
                                     Button(
                                         onClick = {
+                                            if (!liveIsHostMonetized) {
+                                                checkoutPackage = CoinPackageItem(
+                                                    id = "pkg_host_monetization_599",
+                                                    coins = 0L,
+                                                    priceInr = "₹599",
+                                                    numericPrice = "599",
+                                                    title = "Host Monetization Lifetime Activation 🚀",
+                                                    badge = "OFFICIAL"
+                                                )
+                                                return@Button
+                                            }
                                             if (!canWithdraw) return@Button
                                             isSubmittingWithdrawal = true
                                             val reqId = UUID.randomUUID().toString()
@@ -2743,9 +2951,9 @@ fun CoinStoreTopUpDialog(
                                                     Toast.makeText(context, "Failed: ${e.message}", Toast.LENGTH_SHORT).show()
                                                 }
                                         },
-                                        enabled = canWithdraw,
+                                        enabled = canWithdraw || !liveIsHostMonetized,
                                         colors = ButtonDefaults.buttonColors(
-                                            containerColor = BrandGold,
+                                            containerColor = if (!liveIsHostMonetized) Color(0xFFFF9966) else BrandGold,
                                             disabledContainerColor = Color.Gray.copy(alpha = 0.3f)
                                         ),
                                         shape = RoundedCornerShape(10.dp),
@@ -2755,12 +2963,13 @@ fun CoinStoreTopUpDialog(
                                             CircularProgressIndicator(modifier = Modifier.size(18.dp), color = BrandDark, strokeWidth = 2.dp)
                                         } else {
                                             Text(
-                                                text = if (withdrawAmountVal > liveEarningsInr) "Insufficient Balance"
+                                                text = if (!liveIsHostMonetized) "Activate Monetization (₹599) to Withdraw 🚀"
+                                                else if (withdrawAmountVal > liveEarningsInr) "Insufficient Balance"
                                                 else if (withdrawAmountVal in 0.01..49.99) "Min. Withdrawal ₹50"
                                                 else if (!withdrawUpiId.contains("@") && withdrawAmountVal >= 50.0) "Enter Valid UPI ID (@)"
                                                 else if (withdrawAmountVal >= 50.0) "Withdraw ₹%.2f to UPI".format(withdrawAmountVal)
                                                 else "Request UPI Withdrawal",
-                                                color = if (canWithdraw) BrandDark else Color.LightGray,
+                                                color = if (canWithdraw || !liveIsHostMonetized) BrandDark else Color.LightGray,
                                                 fontWeight = FontWeight.Bold,
                                                 fontSize = 13.sp
                                             )
@@ -2878,6 +3087,298 @@ fun CoinStoreTopUpDialog(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * VipStatusAndPurchaseDialog
+ *
+ * Displays active VIP trial real-time countdown (Strictly 3 Days / 72 Hours).
+ * Clearly conveys that all 50,000 diamonds are PERMANENT and never expire.
+ * Allows users to renew/upgrade VIP status or purchase VIP animated frames using diamonds/recharge.
+ */
+@Composable
+fun VipStatusAndPurchaseDialog(
+    currentUser: UserProfile,
+    onDismiss: () -> Unit,
+    onOpenCoinStore: () -> Unit,
+    onOpenSubscriptionPlans: () -> Unit
+) {
+    val now = remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1000L)
+            now.longValue = System.currentTimeMillis()
+        }
+    }
+
+    val isTrialActive = currentUser.vipTrialExpiryDate > 0L && now.longValue <= currentUser.vipTrialExpiryDate
+    val remainingMs = maxOf(0L, currentUser.vipTrialExpiryDate - now.longValue)
+    val daysLeft = (remainingMs / (1000 * 60 * 60 * 24)).toInt()
+    val hoursLeft = ((remainingMs / (1000 * 60 * 60)) % 24).toInt()
+    val minutesLeft = ((remainingMs / (1000 * 60)) % 60).toInt()
+    val secondsLeft = ((remainingMs / 1000) % 60).toInt()
+
+    val brandDark = Color(0xFF0D0A11)
+    val brandCard = Color(0xFF171222)
+    val brandGold = Color(0xFFFFD700)
+    val brandCoral = Color(0xFFFF5E62)
+    val brandCyan = Color(0xFF00E5FF)
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .fillMaxHeight(0.85f),
+            shape = RoundedCornerShape(22.dp),
+            color = brandDark,
+            border = BorderStroke(1.5.dp, Brush.linearGradient(listOf(brandGold, brandCoral)))
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(18.dp)
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(brandGold.copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("👑", fontSize = 20.sp)
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = if (isTrialActive) "VIP 1 Trial Active" else "VIP Membership & Frames",
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = if (isTrialActive) "Exclusive 3-Day Welcome Access" else "Upgrade for exclusive royal privileges",
+                                color = Color.LightGray,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .size(32.dp)
+                            .background(brandCard, CircleShape)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(16.dp))
+                    }
+                }
+
+                // Countdown Card (If trial is active)
+                if (isTrialActive) {
+                    Surface(
+                        color = Color(0xFF1F162E),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.2.dp, brandGold),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "⏳ VIP TRIAL EXPIRATION COUNTDOWN",
+                                color = brandGold,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Black,
+                                letterSpacing = 1.sp
+                            )
+
+                            // Digital Countdown Blocks
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CountdownUnitBlock(value = "%02d".format(daysLeft), label = "DAYS")
+                                Text(":", color = brandGold, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                                CountdownUnitBlock(value = "%02d".format(hoursLeft), label = "HOURS")
+                                Text(":", color = brandGold, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                                CountdownUnitBlock(value = "%02d".format(minutesLeft), label = "MINS")
+                                Text(":", color = brandGold, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                                CountdownUnitBlock(value = "%02d".format(secondsLeft), label = "SECS")
+                            }
+
+                            Text(
+                                text = "Your VIP 1 Noble Archangel Frame & Badge auto-expire after 3 days.",
+                                color = Color.LightGray,
+                                fontSize = 11.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+
+                // Permanent Diamonds Guarantee Card (Crucial for user peace of mind)
+                Surface(
+                    color = Color(0xFF131D24),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, brandCyan.copy(alpha = 0.6f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("💎", fontSize = 24.sp)
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "Diamonds Never Expire!",
+                                color = brandCyan,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                            Text(
+                                text = "All diamonds (including 50,000 welcome bonus) are 100% permanent in your wallet. Only the VIP 1 Frame & Badge expire.",
+                                color = Color(0xFFBBDEFB),
+                                fontSize = 10.5.sp,
+                                lineHeight = 14.sp
+                            )
+                        }
+                    }
+                }
+
+                // VIP Benefits List
+                Surface(
+                    color = brandCard,
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text("👑 VIP Perks & Privileges", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("✨", fontSize = 12.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Exclusive Flowing Animated Archangel Avatar Frame", color = Color.LightGray, fontSize = 11.sp)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("🛡️", fontSize = 12.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("VIP 1 Gold Royal Badge in Room & Profile", color = Color.LightGray, fontSize = 11.sp)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("🚀", fontSize = 12.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Unlimited Audio Room Swipes & Host Privileges", color = Color.LightGray, fontSize = 11.sp)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("⚡", fontSize = 12.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Priority Mic Seating & Entrance Animation", color = Color.LightGray, fontSize = 11.sp)
+                        }
+                    }
+                }
+
+                // Wallet Diamonds Quick Check
+                Surface(
+                    color = Color(0xFF1E1428),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, brandGold.copy(alpha = 0.4f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("Wallet Balance", color = Color.Gray, fontSize = 10.sp)
+                            Text(
+                                text = "%,d Diamonds".format(currentUser.diamonds),
+                                color = brandGold,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
+                        Button(
+                            onClick = {
+                                onDismiss()
+                                onOpenCoinStore()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = brandGold),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.height(30.dp)
+                        ) {
+                            Text("+ Recharge", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                // Primary Action Button (Renew / Upgrade Plan)
+                Button(
+                    onClick = {
+                        onDismiss()
+                        onOpenSubscriptionPlans()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = brandCoral),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(46.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("👑", fontSize = 14.sp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (isTrialActive) "Extend / Upgrade VIP Plan ➔" else "Unlock VIP Membership ➔",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CountdownUnitBlock(value: String, label: String) {
+    Surface(
+        color = Color(0xFF140D21),
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, Color(0xFFFFD700).copy(alpha = 0.5f))
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(text = value, color = Color(0xFFFFD700), fontSize = 17.sp, fontWeight = FontWeight.Black)
+            Text(text = label, color = Color.Gray, fontSize = 8.sp, fontWeight = FontWeight.Bold)
         }
     }
 }

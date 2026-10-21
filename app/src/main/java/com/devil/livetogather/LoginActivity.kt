@@ -17,12 +17,17 @@ import com.facebook.login.LoginBehavior
 import com.facebook.login.LoginManager
 import com.facebook.login.LoginResult
 import com.google.android.gms.auth.api.signin.GoogleSignIn
+import android.content.SharedPreferences
+import android.provider.Settings
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 import com.google.firebase.auth.FacebookAuthProvider
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.GoogleAuthProvider
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
+import com.google.firebase.firestore.Source
 
 /**
  * Dedicated Standalone Login Screen for LiveTogether.
@@ -87,50 +92,11 @@ class LoginActivity : ComponentActivity() {
         auth = FirebaseAuth.getInstance()
 
         // Persistent Session / Auto-Login:
-        // If user has already signed in, do not display login screen on relaunch / kill from recents
+        // If user is already authenticated with Firebase Auth, verify Firestore from SERVER
         val currentUser = auth.currentUser
         if (currentUser != null) {
-            val prefs = getSharedPreferences("livetogather_user_prefs", Context.MODE_PRIVATE)
-            val profileName = prefs.getString("profile_name", "") ?: ""
-            if (profileName.isNotBlank()) {
-                val intent = Intent(this, MainActivity::class.java)
-                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                startActivity(intent)
-                finish()
-                return
-            } else {
-                val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
-                db.collection("users").document(currentUser.uid).get()
-                    .addOnSuccessListener { doc ->
-                        if (doc != null && doc.exists()) {
-                            var userObj = parseUserProfileFromDoc(doc)
-                            if (userObj.userId.isBlank()) {
-                                val genId = (10000000..99999999).random().toString()
-                                userObj = userObj.copy(userId = genId)
-                                db.collection("users").document(currentUser.uid).update("userId", genId)
-                            }
-                            if (userObj.name.isNotBlank()) {
-                                saveProfileToPrefs(prefs, userObj)
-                                val intent = Intent(this, MainActivity::class.java)
-                                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                                startActivity(intent)
-                                finish()
-                                return@addOnSuccessListener
-                            }
-                        }
-                        val intent = Intent(this, ProfileSetupActivity::class.java)
-                        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                        startActivity(intent)
-                        finish()
-                    }
-                    .addOnFailureListener {
-                        val intent = Intent(this, ProfileSetupActivity::class.java)
-                        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                        startActivity(intent)
-                        finish()
-                    }
-                return
-            }
+            checkExistingProfileAndProceed()
+            return
         }
 
         setContentView(R.layout.activity_login)
@@ -241,7 +207,7 @@ class LoginActivity : ComponentActivity() {
             auth.createUserWithEmailAndPassword(email, password)
                 .addOnSuccessListener {
                     Toast.makeText(this, "Account created successfully! 🎉", Toast.LENGTH_SHORT).show()
-                    navigateToProfileSetup()
+                    checkExistingProfileAndProceed()
                 }
                 .addOnFailureListener { e ->
                     setLoading(false)
@@ -252,7 +218,7 @@ class LoginActivity : ComponentActivity() {
             auth.signInWithEmailAndPassword(email, password)
                 .addOnSuccessListener {
                     Toast.makeText(this, "Welcome back! 🎉", Toast.LENGTH_SHORT).show()
-                    navigateToProfileSetup()
+                    checkExistingProfileAndProceed()
                 }
                 .addOnFailureListener { e ->
                     setLoading(false)
@@ -315,7 +281,7 @@ class LoginActivity : ComponentActivity() {
         auth.signInWithCredential(credential)
             .addOnSuccessListener {
                 Toast.makeText(this, "Google sign-in successful! 🎉", Toast.LENGTH_SHORT).show()
-                navigateToProfileSetup()
+                checkExistingProfileAndProceed()
             }
             .addOnFailureListener { e ->
                 setLoading(false)
@@ -328,7 +294,7 @@ class LoginActivity : ComponentActivity() {
         auth.signInWithCredential(credential)
             .addOnSuccessListener {
                 Toast.makeText(this, "Facebook sign-in successful! 🎉", Toast.LENGTH_SHORT).show()
-                navigateToProfileSetup()
+                checkExistingProfileAndProceed()
             }
             .addOnFailureListener { e ->
                 setLoading(false)
@@ -337,59 +303,160 @@ class LoginActivity : ComponentActivity() {
     }
 
     /**
-     * Flow Requirement:
-     * Directly navigate the user to ProfileSetupActivity so they can complete profile setup/creation.
-     * Do NOT navigate to MainActivity. Finish LoginActivity.
+     * 100% Cloud-First Architecture & Multi-Device Login:
+     * Check Cloud Firestore directly (Source.SERVER) for user's account by UID, email, or device ID.
+     * Restores existing profile (diamonds, followers, VIP) without resetting or prompting "Create Account".
      */
-    private fun navigateToProfileSetup() {
-        setLoading(false)
-        val uid = auth.currentUser?.uid
-        if (!uid.isNullOrBlank()) {
-            val prefs = getSharedPreferences("livetogather_user_prefs", Context.MODE_PRIVATE)
-            prefs.edit().putString("user_uid", uid).apply()
+    private fun checkExistingProfileAndProceed() {
+        setLoading(true)
+        val user = auth.currentUser
+        if (user == null) {
+            setLoading(false)
+            return
+        }
+        val uid = user.uid
+        val email = user.email?.trim() ?: ""
+        val prefs = getSharedPreferences("livetogather_user_prefs", Context.MODE_PRIVATE)
+        prefs.edit().putString("user_uid", uid).apply()
+        if (email.isNotBlank()) {
+            prefs.edit().putString("profile_email", email).apply()
+        }
 
-            val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
-            db.collection("users").document(uid).get()
-                .addOnSuccessListener { doc ->
-                    if (doc != null && doc.exists()) {
-                        var userObj = parseUserProfileFromDoc(doc)
-                        if (userObj.userId.isBlank()) {
+        val db = FirebaseFirestore.getInstance()
+        val deviceId = try {
+            Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: ""
+        } catch (e: Exception) { "" }
+
+        // Step 1: Check users/{uid} directly from Firestore SERVER
+        db.collection("users").document(uid).get(Source.SERVER)
+            .addOnSuccessListener { doc ->
+                if (doc != null && doc.exists()) {
+                    var userObj = parseUserProfileFromDoc(doc)
+                    val diamonds = doc.getLong("diamonds") ?: 0L
+                    if (userObj.name.isNotBlank() && (diamonds > 0L || userObj.hasClaimedWelcomeBonus || userObj.isAdmin)) {
+                        if (email.isNotBlank() && userObj.email.isBlank()) {
+                            userObj = userObj.copy(email = email)
+                            db.collection("users").document(uid).update("email", email)
+                        }
+                        if (userObj.userId.isBlank() || userObj.userId.length != 8 || !userObj.userId.all { it.isDigit() }) {
                             val genId = (10000000..99999999).random().toString()
                             userObj = userObj.copy(userId = genId)
                             db.collection("users").document(uid).update("userId", genId)
                         }
-                        if (userObj.name.isNotBlank()) {
-                            saveProfileToPrefs(prefs, userObj)
-                            val intent = Intent(this, MainActivity::class.java)
-                            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                            startActivity(intent)
-                            finish()
-                            return@addOnSuccessListener
-                        }
+                        saveProfileToPrefs(prefs, userObj)
+                        setLoading(false)
+                        val intent = Intent(this, MainActivity::class.java)
+                        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                        startActivity(intent)
+                        finish()
+                        return@addOnSuccessListener
                     }
-                    val intent = Intent(this, ProfileSetupActivity::class.java)
+                }
+
+                // Step 2: Check by email if available
+                if (email.isNotBlank()) {
+                    db.collection("users").whereEqualTo("email", email).limit(1).get(Source.SERVER)
+                        .addOnSuccessListener { emailDocs ->
+                            if (emailDocs != null && !emailDocs.isEmpty) {
+                                val matchedDoc = emailDocs.documents[0]
+                                val restoredProfile = parseUserProfileFromDoc(matchedDoc).copy(
+                                    uid = uid,
+                                    email = email,
+                                    deviceId = if (deviceId.isNotBlank()) deviceId else matchedDoc.getString("deviceId") ?: ""
+                                )
+                                saveProfileToPrefs(prefs, restoredProfile)
+                                db.collection("users").document(uid).set(restoredProfile, SetOptions.merge())
+                                setLoading(false)
+                                val intent = Intent(this, MainActivity::class.java)
+                                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                                startActivity(intent)
+                                finish()
+                                return@addOnSuccessListener
+                            }
+                            checkByDeviceIdOrFallback(db, uid, email, deviceId, prefs)
+                        }
+                        .addOnFailureListener {
+                            checkByDeviceIdOrFallback(db, uid, email, deviceId, prefs)
+                        }
+                } else {
+                    checkByDeviceIdOrFallback(db, uid, email, deviceId, prefs)
+                }
+            }
+            .addOnFailureListener {
+                val cachedName = prefs.getString("profile_name", "") ?: ""
+                if (cachedName.isNotBlank()) {
+                    setLoading(false)
+                    val intent = Intent(this, MainActivity::class.java)
                     intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                     startActivity(intent)
                     finish()
+                } else {
+                    proceedToProfileSetup()
+                }
+            }
+    }
+
+    private fun checkByDeviceIdOrFallback(
+        db: FirebaseFirestore,
+        uid: String,
+        email: String,
+        deviceId: String,
+        prefs: SharedPreferences
+    ) {
+        if (deviceId.isNotBlank()) {
+            db.collection("users").whereEqualTo("deviceId", deviceId).limit(5).get(Source.SERVER)
+                .addOnSuccessListener { devDocs ->
+                    if (devDocs != null && !devDocs.isEmpty) {
+                        val bestDoc = devDocs.documents.maxByOrNull { (it.getLong("diamonds") ?: 0L) + (it.getLong("wealthXp") ?: 0L) }
+                            ?: devDocs.documents[0]
+                        val parsed = parseUserProfileFromDoc(bestDoc)
+                        var restored = parsed.copy(
+                            uid = uid,
+                            deviceId = deviceId
+                        )
+                        if (email.isNotBlank()) {
+                            restored = restored.copy(email = email)
+                            bestDoc.reference.update("email", email)
+                        }
+                        saveProfileToPrefs(prefs, restored)
+                        db.collection("users").document(uid).set(restored, SetOptions.merge())
+                        setLoading(false)
+                        val intent = Intent(this, MainActivity::class.java)
+                        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                        startActivity(intent)
+                        finish()
+                        return@addOnSuccessListener
+                    }
+                    proceedToProfileSetup()
                 }
                 .addOnFailureListener {
-                    val intent = Intent(this, ProfileSetupActivity::class.java)
-                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                    startActivity(intent)
-                    finish()
+                    proceedToProfileSetup()
                 }
         } else {
-            val intent = Intent(this, ProfileSetupActivity::class.java)
-            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-            startActivity(intent)
-            finish()
+            proceedToProfileSetup()
         }
     }
 
+    private fun proceedToProfileSetup() {
+        setLoading(false)
+        val intent = Intent(this, ProfileSetupActivity::class.java)
+        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        startActivity(intent)
+        finish()
+    }
+
     private fun setLoading(loading: Boolean) {
-        progressBar.visibility = if (loading) View.VISIBLE else View.GONE
-        btnSignIn.isEnabled = !loading
-        btnGoogleSignIn.isEnabled = !loading
-        btnFacebookSignIn.isEnabled = !loading
+        if (::progressBar.isInitialized) {
+            progressBar.visibility = if (loading) View.VISIBLE else View.GONE
+        }
+        if (::btnSignIn.isInitialized) {
+            btnSignIn.isEnabled = !loading
+        }
+        if (::btnGoogleSignIn.isInitialized) {
+            btnGoogleSignIn.isEnabled = !loading
+        }
+        if (::btnFacebookSignIn.isInitialized) {
+            btnFacebookSignIn.isEnabled = !loading
+        }
     }
 }

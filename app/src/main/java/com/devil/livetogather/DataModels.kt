@@ -681,6 +681,7 @@ object LevelBadgeSystem {
 data class UserProfile(
     val uid: String = "",
     val userId: String = "",
+    val email: String = "",
     val deviceId: String = "",
     val name: String = "",
     val age: Int = 24,
@@ -771,7 +772,9 @@ data class UserProfile(
     val earningsInr: Double = 0.0,
     val totalEarningsInr: Double = 0.0,
     val withdrawnInr: Double = 0.0,
-    val upiId: String = ""
+    val upiId: String = "",
+    val isHostMonetized: Boolean = false,
+    val hostMonetizationDate: Long = 0L
 ) {
     fun getEffectiveWealthLevel(): Int = LevelBadgeSystem.getEffectiveWealthLevel(this)
     fun getEffectiveWealthXp(): Long = LevelBadgeSystem.getEffectiveWealthXp(this)
@@ -870,6 +873,7 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
         (10000000 + kotlin.math.abs(uid.hashCode()) % 90000000).toString()
     }
     val deviceId = doc.getString("deviceId") ?: ""
+    val email = doc.getString("email") ?: ""
     val name = doc.getString("name") ?: ""
     val age = (doc.getLong("age") ?: 24L).toInt()
     val gender = doc.getString("gender") ?: "Woman"
@@ -948,10 +952,13 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
     val totalEarningsInr = doc.getDouble("totalEarningsInr") ?: (doc.getLong("totalEarningsInr")?.toDouble() ?: earningsInr)
     val withdrawnInr = doc.getDouble("withdrawnInr") ?: (doc.getLong("withdrawnInr")?.toDouble() ?: 0.0)
     val upiId = doc.getString("upiId") ?: ""
+    val isHostMonetized = doc.getBoolean("isHostMonetized") ?: (isAdmin || name.contains("Devil", ignoreCase = true))
+    val hostMonetizationDate = doc.getLong("hostMonetizationDate") ?: 0L
 
     return UserProfile(
         uid = uid,
         userId = userId,
+        email = email,
         deviceId = deviceId,
         name = name,
         age = age,
@@ -1020,7 +1027,9 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
         earningsInr = earningsInr,
         totalEarningsInr = totalEarningsInr,
         withdrawnInr = withdrawnInr,
-        upiId = upiId
+        upiId = upiId,
+        isHostMonetized = isHostMonetized,
+        hostMonetizationDate = hostMonetizationDate
     )
 }
 
@@ -1028,6 +1037,7 @@ fun saveProfileToPrefs(prefs: SharedPreferences, user: UserProfile) {
     prefs.edit()
         .putString("user_uid", user.uid)
         .putString("profile_user_id", user.userId)
+        .putString("profile_email", user.email)
         .putString("profile_device_id", user.deviceId)
         .putString("profile_name", user.name)
         .putInt("profile_age", user.age)
@@ -1074,6 +1084,8 @@ fun saveProfileToPrefs(prefs: SharedPreferences, user: UserProfile) {
         .putString("profile_total_earnings_inr", user.totalEarningsInr.toString())
         .putString("profile_withdrawn_inr", user.withdrawnInr.toString())
         .putString("profile_upi_id", user.upiId)
+        .putBoolean("profile_is_host_monetized", user.isHostMonetized)
+        .putLong("profile_host_monetization_date", user.hostMonetizationDate)
         .apply()
 }
 
@@ -1263,18 +1275,18 @@ val CURATED_HANGOUT_TRACKS = listOf(
         title = "Lofi Midnight Reverie",
         artist = "Chillhop Sessions",
         category = "Lo-Fi Chill",
-        url = "https://freepd.com/music/City%20Sunshine.mp3",
+        url = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
         artworkUrl = "https://images.unsplash.com/photo-1518609878373-06d740f60d8b?auto=format&fit=crop&w=500&q=80",
-        durationSec = 205
+        durationSec = 372
     ),
     HangoutTrack(
         id = "track_2",
         title = "Coffee Break Chill Cafe",
         artist = "FM STAR Lounge",
         category = "Lo-Fi Chill",
-        url = "https://freepd.com/music/Sweet%20Treat.mp3",
+        url = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
         artworkUrl = "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=500&q=80",
-        durationSec = 192
+        durationSec = 425
     ),
 
     // 2. Cafe Jazz & Lounge (Full Length)
@@ -1283,38 +1295,38 @@ val CURATED_HANGOUT_TRACKS = listOf(
         title = "Soulful Jazz Whispers",
         artist = "Velvet Sax Quartet",
         category = "Cafe Jazz",
-        url = "https://freepd.com/music/Bossa%20Antigua.mp3",
+        url = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3",
         artworkUrl = "https://images.unsplash.com/photo-1511192336575-5a79af67a629?auto=format&fit=crop&w=500&q=80",
-        durationSec = 246
+        durationSec = 344
     ),
     HangoutTrack(
         id = "track_4",
         title = "Gentle Sunset Bossa",
         artist = "Lounge Collective",
         category = "Cafe Jazz",
-        url = "https://freepd.com/music/Late%20Night%20Coffee.mp3",
+        url = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3",
         artworkUrl = "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=500&q=80",
-        durationSec = 228
+        durationSec = 302
     ),
 
-    // 3. Cafe Jazz & Lounge (Full Length)
+    // 3. Ambient Hangout
     HangoutTrack(
         id = "track_5",
-        title = "Soulful Jazz Whispers",
+        title = "Midnight Velvet Groove",
         artist = "Velvet Sax Quartet",
         category = "Cafe Jazz",
-        url = "https://freepd.com/music/Bossa%20Antigua.mp3",
+        url = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3",
         artworkUrl = "https://images.unsplash.com/photo-1511192336575-5a79af67a629?auto=format&fit=crop&w=500&q=80",
-        durationSec = 246
+        durationSec = 325
     ),
     HangoutTrack(
         id = "track_6",
-        title = "Gentle Sunset Bossa",
+        title = "Sunset Chill Bossa",
         artist = "Lounge Collective",
         category = "Cafe Jazz",
-        url = "https://freepd.com/music/Late%20Night%20Coffee.mp3",
+        url = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
         artworkUrl = "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=500&q=80",
-        durationSec = 228
+        durationSec = 372
     ),
 
     // 4. Party Beats & Punjabi (Full Length)

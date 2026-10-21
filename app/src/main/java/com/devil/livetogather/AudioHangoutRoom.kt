@@ -6762,13 +6762,15 @@ fun AudioHangoutRoomDialog(
                     showDeleteConfirmation = false
                     showRoomSettingsDialog = false
                     db.collection("rooms").document(room.id).delete()
-                        .addOnSuccessListener {
-                            Toast.makeText(context, "Room \"${room.title}\" deleted successfully", Toast.LENGTH_SHORT).show()
-                            onDismiss()
-                        }
-                        .addOnFailureListener { e ->
-                            Toast.makeText(context, "Failed to delete room: ${e.message}", Toast.LENGTH_SHORT).show()
-                        }
+                    if (room.category.isNotBlank()) {
+                        db.collection("intent_categories").document(room.category)
+                            .collection("rooms").document(room.id).delete()
+                    }
+                    if (currentUser.current_room == room.id) {
+                        db.collection("users").document(currentUser.uid).update("current_room", "")
+                    }
+                    Toast.makeText(context, "Room \"${room.title}\" deleted successfully", Toast.LENGTH_SHORT).show()
+                    onDismiss()
                 }
             )
         }
@@ -7085,36 +7087,42 @@ fun AudioHangoutRoomDialog(
                                 val updatedCharmXp = curCharmXp + xpEarned
                                 val updatedCharmLvl = LevelBadgeSystem.calculateLevelFromXp(updatedCharmXp)
 
+                                val isHostMonetized = hostSnap.getBoolean("isHostMonetized") ?: hostSnap.getBoolean("profile_is_host_monetized") ?: (hostSnap.getString("role")?.equals("admin", true) == true || hostSnap.getString("name")?.equals("Devil", true) == true)
+
                                 val hostWealthLvl = (hostSnap.getLong("wealthLevel") ?: 1L).toInt()
                                 val commissionPercent = LevelBadgeSystem.getHostCommissionPercent(hostWealthLvl)
                                 // 10,000 diamonds = ₹100 => 1 diamond = ₹0.01
                                 val giftValueInr = giftItem.cost * 0.01
                                 val hostEarningsInr = giftValueInr * (commissionPercent / 100.0)
 
-                                db.collection("users").document(recipientHostId).update(
-                                    mapOf(
-                                        "charmXp" to updatedCharmXp,
-                                        "charmLevel" to updatedCharmLvl,
-                                        "earningsInr" to FieldValue.increment(hostEarningsInr),
-                                        "totalEarningsInr" to FieldValue.increment(hostEarningsInr)
-                                    )
+                                val hostUpdateMap = mutableMapOf<String, Any>(
+                                    "charmXp" to updatedCharmXp,
+                                    "charmLevel" to updatedCharmLvl
                                 )
+                                if (isHostMonetized) {
+                                    hostUpdateMap["earningsInr"] = FieldValue.increment(hostEarningsInr)
+                                    hostUpdateMap["totalEarningsInr"] = FieldValue.increment(hostEarningsInr)
+                                }
 
-                                // Real-Time Earning Transaction Record
-                                val txId = UUID.randomUUID().toString()
-                                val tx = EarningTransaction(
-                                    id = txId,
-                                    type = "GIFT_COMMISSION",
-                                    title = "Gift received: ${giftItem.name} 🎁",
-                                    amountInr = hostEarningsInr,
-                                    diamonds = giftItem.cost,
-                                    senderName = currentUser.name,
-                                    upiId = "",
-                                    status = "CREDITED",
-                                    timestamp = System.currentTimeMillis()
-                                )
-                                db.collection("users").document(recipientHostId)
-                                    .collection("earning_transactions").document(txId).set(tx)
+                                db.collection("users").document(recipientHostId).update(hostUpdateMap)
+
+                                if (isHostMonetized) {
+                                    // Real-Time Earning Transaction Record
+                                    val txId = UUID.randomUUID().toString()
+                                    val tx = EarningTransaction(
+                                        id = txId,
+                                        type = "GIFT_COMMISSION",
+                                        title = "Gift received: ${giftItem.name} 🎁",
+                                        amountInr = hostEarningsInr,
+                                        diamonds = giftItem.cost,
+                                        senderName = currentUser.name,
+                                        upiId = "",
+                                        status = "CREDITED",
+                                        timestamp = System.currentTimeMillis()
+                                    )
+                                    db.collection("users").document(recipientHostId)
+                                        .collection("earning_transactions").document(txId).set(tx)
+                                }
                             }
                         }
 
@@ -9849,6 +9857,47 @@ private fun DiamondsRechargeSection(
             }
         }
 
+        if (!currentUser.isHostMonetized) {
+            Surface(
+                color = Color(0xFF22162B),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(BrandGold, Color(0xFFFF5E62)))),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        checkoutPackage = CoinPackageItem(
+                            id = "pkg_host_monetization_599",
+                            coins = 0L,
+                            priceInr = "₹599",
+                            numericPrice = "599",
+                            title = "Host Monetization Lifetime Activation 🚀",
+                            badge = "OFFICIAL"
+                        )
+                    }
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                        Text("🚀", fontSize = 22.sp)
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text("Activate Host Monetization • ₹599", color = BrandGold, fontSize = 12.5.sp, fontWeight = FontWeight.ExtraBold)
+                            Text("Earn real cash INR on gifts received in your rooms!", color = Color.LightGray, fontSize = 10.sp)
+                        }
+                    }
+                    Surface(
+                        color = BrandGold,
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("Activate ➔", color = BrandDark, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp))
+                    }
+                }
+            }
+        }
+
         Text(
             text = "More Diamond Packs",
             color = Color.White,
@@ -10008,6 +10057,29 @@ private fun AvatarFramesSection(
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.clickable { onGoToRecharge() }
             )
+        }
+
+        if (currentUser.isVipTrialActive()) {
+            Surface(
+                color = Color(0xFF22162E),
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.8f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("⏳", fontSize = 12.sp)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "VIP 1 Archangel Frame Trial: ${currentUser.getVipTrialDaysLeft()}d left (Diamonds never expire)",
+                        color = BrandGold,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
         }
 
         // Category Filter Chips
