@@ -10342,7 +10342,15 @@ fun FullScreenGiftAnimationOverlay(
                         "king_lion_mp4" -> R.raw.king_lion_entry
                         "terminator_dragon_mp4" -> R.raw.terminator_entry
                         "king_entry_mp4" -> R.raw.king_entry
-                        else -> R.raw.lamborgini_car
+                        "diamond_ring_proposal_mp4" -> R.raw.diamond_ring_proposal
+                        "golden_super_car_mp4" -> R.raw.golden_super_car
+                        "princess_ruby_necklace_mp4" -> R.raw.princess_ruby_necklace
+                        "rose_proposal_mp4" -> R.raw.rose_proposal
+                        "treasure_for_you_mp4" -> R.raw.treasure_for_you
+                        "founded_treasure_mp4" -> R.raw.founded_treasure
+                        "heaven_ship_mp4" -> R.raw.heaven_ship
+                        "royal_jet_mp4" -> R.raw.royal_jet
+                        else -> VIDEO_GIFT_CATALOG.find { it.id == giftEvent.giftId }?.rawResId ?: R.raw.lamborgini_car
                     }
                     AndroidView(
                         factory = { ctx ->

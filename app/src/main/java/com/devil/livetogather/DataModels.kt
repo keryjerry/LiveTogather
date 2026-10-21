@@ -1134,20 +1134,32 @@ data class VideoGiftItem(
 )
 
 val VIDEO_GIFT_CATALOG = listOf(
-    VideoGiftItem("lamborghini_mp4", "Cyber Lamborghini", "🏎️", 20000L, "video_mp4", "Crystal ice luxury hypercar roaring drift", R.raw.lamborgini_car, R.drawable.thumb_lamborgini_car),
-    VideoGiftItem("eagle_entry_mp4", "Fire Phoenix Eagle", "🦅", 25000L, "video_mp4", "Blazing golden fire phoenix flight", R.raw.eagle_entry, R.drawable.thumb_eagle_entry),
-    VideoGiftItem("king_lion_mp4", "Blazing Fire Lion", "🦁", 30000L, "video_mp4", "Majestic roaring solar flame lion", R.raw.king_lion_entry, R.drawable.thumb_king_lion_entry),
-    VideoGiftItem("terminator_dragon_mp4", "Cyber Mecha Dragon", "🐉", 40000L, "video_mp4", "Futuristic mecha dragon lightning burst", R.raw.terminator_entry, R.drawable.thumb_terminator_entry),
-    VideoGiftItem("king_entry_mp4", "Imperial King Palace", "👑", 50000L, "video_mp4", "Royal King Coronation palace walk", R.raw.king_entry, R.drawable.thumb_king_entry),
-    VideoGiftItem("rose_storm", "Rose Storm", "🌹", 5000L, "roses", "Romantic cascading rose petals shower"),
-    VideoGiftItem("supercar", "Cyber Supercar", "🏎️", 10000L, "car", "Ultra luxury roaring sports car drift"),
-    VideoGiftItem("roaring_lion", "Roaring Lion King", "🦁", 15000L, "lion", "Fierce majestic lion with solar shockwave"),
-    VideoGiftItem("rocket", "Galactic Rocket", "🚀", 20000L, "rocket", "Cosmic space blastoff across the sky"),
-    VideoGiftItem("luxury_jet", "Private Falcon Jet", "✈️", 25000L, "jet", "Supersonic luxury jet crossing screen"),
-    VideoGiftItem("golden_palace", "Imperial Palace", "🏰", 35000L, "castle", "Majestic golden palace fireworks"),
-    VideoGiftItem("luxury_yacht", "Billionaire Yacht", "🛥️", 40000L, "yacht", "High-seas mega luxury yacht cruise"),
-    VideoGiftItem("dragon", "Golden Dragon", "🐉", 50000L, "dragon", "Legendary flaming golden dragon roar"),
-    VideoGiftItem("crown_coronation", "Imperial Crown", "👑", 60000L, "crown", "Royal diamond crown coronation shower")
+    // 1. Cyber Lamborghini (Existing 3D MP4)
+    VideoGiftItem("lamborghini_mp4", "Cyber Lamborghini", "🏎️", 30000L, "video_mp4", "Crystal ice luxury hypercar roaring drift", R.raw.lamborgini_car, R.drawable.thumb_lamborgini_car),
+    // 2. Fire Phoenix Eagle (Existing 3D MP4)
+    VideoGiftItem("eagle_entry_mp4", "Fire Phoenix Eagle", "🦅", 35000L, "video_mp4", "Blazing golden fire phoenix flight", R.raw.eagle_entry, R.drawable.thumb_eagle_entry),
+    // 3. Diamond Proposal Ring (NEW 3D MP4)
+    VideoGiftItem("diamond_ring_proposal_mp4", "Diamond Proposal Ring", "💍", 40000L, "video_mp4", "Sparkling solitaire diamond ring with prism dispersion", R.raw.diamond_ring_proposal, R.drawable.thumb_diamond_ring_proposal),
+    // 4. Blazing Fire Lion (Existing 3D MP4)
+    VideoGiftItem("king_lion_mp4", "Blazing Fire Lion", "🦁", 45000L, "video_mp4", "Majestic roaring solar flame lion", R.raw.king_lion_entry, R.drawable.thumb_king_lion_entry),
+    // 5. Golden Supercar Drift (NEW 3D MP4)
+    VideoGiftItem("golden_super_car_mp4", "Golden Supercar Drift", "🏎️", 50000L, "video_mp4", "High-speed 3D gold sports car power drift", R.raw.golden_super_car, R.drawable.thumb_golden_super_car),
+    // 6. Cyber Mecha Dragon (Existing 3D MP4)
+    VideoGiftItem("terminator_dragon_mp4", "Cyber Mecha Dragon", "🐉", 60000L, "video_mp4", "Futuristic mecha dragon lightning burst", R.raw.terminator_entry, R.drawable.thumb_terminator_entry),
+    // 7. Princess Ruby Necklace (NEW 3D MP4)
+    VideoGiftItem("princess_ruby_necklace_mp4", "Princess Ruby Necklace", "💎", 65000L, "video_mp4", "Royal pigeon-blood ruby & diamond necklace", R.raw.princess_ruby_necklace, R.drawable.thumb_princess_ruby_necklace),
+    // 8. Rose For Proposal (NEW 3D MP4 - 75k Diamond)
+    VideoGiftItem("rose_proposal_mp4", "Rose For Proposal", "🌹", 75000L, "video_mp4", "Romantic blooming velvet rose with gold dew drops", R.raw.rose_proposal, R.drawable.thumb_rose_proposal),
+    // 9. Treasure For You (NEW 3D MP4)
+    VideoGiftItem("treasure_for_you_mp4", "Treasure For You", "📦", 80000L, "video_mp4", "Royal diamond crown and glittering gold vault", R.raw.treasure_for_you, R.drawable.thumb_treasure_for_you),
+    // 10. Imperial King Palace (Existing 3D MP4)
+    VideoGiftItem("king_entry_mp4", "Imperial King Palace", "👑", 85000L, "video_mp4", "Royal King Coronation palace walk", R.raw.king_entry, R.drawable.thumb_king_entry),
+    // 11. Imperial Lost Treasure (NEW 3D MP4)
+    VideoGiftItem("founded_treasure_mp4", "Imperial Lost Treasure", "👑", 90000L, "video_mp4", "Ancient royal gold chest opening with gems and coins", R.raw.founded_treasure, R.drawable.thumb_founded_treasure),
+    // 12. Take You On Heaven Ship (NEW 3D MP4 - 100k Diamond)
+    VideoGiftItem("heaven_ship_mp4", "Take You On Heaven Ship", "🛥️", 100000L, "video_mp4", "Billionaire mega yacht cruising with sky fireworks", R.raw.heaven_ship, R.drawable.thumb_heaven_ship),
+    // 13. Will Take You On Jet (NEW 3D MP4 - 120k Diamond)
+    VideoGiftItem("royal_jet_mp4", "Will Take You On Jet", "✈️", 120000L, "video_mp4", "Supersonic luxury private jet soaring into sunset", R.raw.royal_jet, R.drawable.thumb_royal_jet)
 )
 
 data class SwipeRecord(
