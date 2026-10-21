@@ -109,34 +109,40 @@ fun SilverSwordsRankBadge(
     modifier: Modifier = Modifier
 ) {
     Box(
-        modifier = modifier.size(width = 24.dp, height = 20.dp),
+        modifier = modifier
+            .size(width = 28.dp, height = 22.dp),
         contentAlignment = Alignment.Center
     ) {
-        // Crossed swords behind
+        // Crossed swords behind extending prominently
         Text(
             text = "⚔️",
-            fontSize = 14.sp,
-            modifier = Modifier.alpha(0.85f)
+            fontSize = 20.sp,
+            modifier = Modifier.offset(y = (-1).dp)
         )
         // Silver shield foreground with rank number
-        Box(
-            modifier = Modifier
-                .size(14.dp)
-                .clip(RoundedCornerShape(3.dp))
-                .background(
-                    Brush.verticalGradient(
-                        listOf(Color(0xFFFFFFFF), Color(0xFFC0C0C0), Color(0xFF757575))
-                    )
-                )
-                .border(0.6.dp, Color.White, RoundedCornerShape(3.dp)),
-            contentAlignment = Alignment.Center
+        Surface(
+            color = Color.Transparent,
+            shape = RoundedCornerShape(3.dp),
+            border = BorderStroke(0.8.dp, Color.White),
+            modifier = Modifier.size(14.dp)
         ) {
-            Text(
-                text = "$rank",
-                color = Color(0xFF1E1E1E),
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Black
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color(0xFFFFFFFF), Color(0xFFC8C8C8), Color(0xFF707070))
+                        )
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "$rank",
+                    color = Color(0xFF151515),
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Black
+                )
+            }
         }
     }
 }
@@ -146,24 +152,41 @@ fun BlueLevelBadgePill(
     level: Int,
     modifier: Modifier = Modifier
 ) {
-    Box(
-        modifier = modifier
-            .height(18.dp)
-            .clip(RoundedCornerShape(50))
-            .background(
-                Brush.horizontalGradient(
-                    listOf(Color(0xFF5A95E5), Color(0xFF7CB5F9))
-                )
-            )
-            .padding(horizontal = 8.dp),
-        contentAlignment = Alignment.Center
+    val tierInfo = LevelBadgeSystem.getLevelTierInfo(level)
+    Surface(
+        color = Color.Black.copy(alpha = 0.65f),
+        shape = RoundedCornerShape(50),
+        border = BorderStroke(1.dp, Brush.horizontalGradient(tierInfo.gradientColors)),
+        modifier = modifier.height(20.dp)
     ) {
-        Text(
-            text = "Lv.$level",
-            color = Color.White,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold
-        )
+        Row(
+            modifier = Modifier
+                .background(
+                    Brush.horizontalGradient(tierInfo.gradientColors.map { it.copy(alpha = 0.45f) })
+                )
+                .padding(horizontal = 6.dp, vertical = 1.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            if (level >= 10) {
+                Image(
+                    painter = painterResource(id = tierInfo.badgeDrawableRes),
+                    contentDescription = tierInfo.tierName,
+                    modifier = Modifier.size(17.dp)
+                )
+            } else {
+                Text(
+                    text = tierInfo.badgeIcon,
+                    fontSize = 10.sp
+                )
+            }
+            Text(
+                text = "Lv.$level",
+                color = Color.White,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+        }
     }
 }
 
@@ -175,17 +198,18 @@ fun SapphireCharmBadgePill(
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
-            .height(18.dp)
-            .clip(RoundedCornerShape(9.dp))
+            .height(20.dp)
+            .clip(RoundedCornerShape(10.dp))
             .background(
                 Brush.horizontalGradient(
-                    listOf(Color(0xFF2E62C4), Color(0xFF558EF0))
+                    listOf(Color(0xFF1E5BBF), Color(0xFF4B8DF2))
                 )
             )
+            .border(0.6.dp, Color(0xFF80D8FF).copy(alpha = 0.6f), RoundedCornerShape(10.dp))
     ) {
         Box(
             modifier = Modifier
-                .size(18.dp)
+                .size(20.dp)
                 .clip(CircleShape)
                 .background(
                     Brush.radialGradient(
@@ -195,9 +219,10 @@ fun SapphireCharmBadgePill(
                 .border(0.8.dp, Color(0xFF80D8FF), CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = "🔷",
-                fontSize = 9.sp
+            Image(
+                painter = painterResource(id = R.drawable.ic_charm_heart_3d),
+                contentDescription = null,
+                modifier = Modifier.size(15.dp)
             )
         }
         Text(
@@ -218,17 +243,18 @@ fun GoldenMedalBadgePill(
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
-            .height(18.dp)
-            .clip(RoundedCornerShape(9.dp))
+            .height(20.dp)
+            .clip(RoundedCornerShape(10.dp))
             .background(
                 Brush.horizontalGradient(
                     listOf(Color(0xFFB3732E), Color(0xFFD69C4E))
                 )
             )
+            .border(0.6.dp, Color(0xFFFFE082).copy(alpha = 0.6f), RoundedCornerShape(10.dp))
     ) {
         Box(
             modifier = Modifier
-                .size(18.dp)
+                .size(20.dp)
                 .clip(CircleShape)
                 .background(
                     Brush.radialGradient(
@@ -238,9 +264,10 @@ fun GoldenMedalBadgePill(
                 .border(0.8.dp, Color(0xFFFFE082), CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = "🍂",
-                fontSize = 9.sp
+            Image(
+                painter = painterResource(id = R.drawable.ic_wealth_shield_3d),
+                contentDescription = null,
+                modifier = Modifier.size(15.dp)
             )
         }
         Text(
@@ -6201,19 +6228,22 @@ fun AudioHangoutRoomDialog(
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 items(liveComments) { comment ->
-                                    val commenterProfile = allProfiles.find { it.uid == comment.userId || it.name.equals(comment.userName, true) }
+                                    val commenterProfile = (if (comment.userId == currentUser.uid) currentUser else null)
+                                        ?: allProfiles.find { it.uid == comment.userId || it.name.equals(comment.userName, true) }
                                     val isCommenterHost = comment.userId == room.hostId || (room.hostName.isNotBlank() && comment.userName.equals(room.hostName, true))
                                     val isCommenterAdmin = room.adminUserIds.contains(comment.userId) || commenterProfile?.isAdmin == true
 
                                     val commenterLevel = commenterProfile?.getEffectiveWealthLevel()
-                                        ?: if (comment.userName.contains("Yasmin", true) || comment.userName.contains("Warsi", true)) 35
+                                        ?: if (comment.userId == currentUser.uid) currentUser.getEffectiveWealthLevel()
+                                        else if (comment.userName.contains("Yasmin", true) || comment.userName.contains("Warsi", true)) 35
                                         else if (comment.userName.contains("Devil", true)) 70
                                         else if (comment.tier.contains("VIP", true)) 31
                                         else if (comment.tier.contains("Platinum", true)) 20
                                         else 17
 
                                     val commenterCharm = commenterProfile?.getEffectiveCharmLevel()
-                                        ?: if (commenterLevel >= 70) 70
+                                        ?: if (comment.userId == currentUser.uid) currentUser.getEffectiveCharmLevel()
+                                        else if (commenterLevel >= 70) 70
                                         else if (commenterLevel >= 35) 35
                                         else 15
 
@@ -6225,8 +6255,9 @@ fun AudioHangoutRoomDialog(
                                         else -> 3
                                     }
 
-                                    val commenterMedal = (commenterProfile?.followerCount?.coerceIn(1, 99))
-                                        ?: if (commenterLevel >= 70) 99
+                                    val commenterMedal = (commenterProfile?.followerCount?.takeIf { it > 0 })
+                                        ?: if (comment.userId == currentUser.uid && currentUser.followerCount > 0) currentUser.followerCount
+                                        else if (commenterLevel >= 70) 99
                                         else if (commenterLevel >= 35) 28
                                         else 11
 
