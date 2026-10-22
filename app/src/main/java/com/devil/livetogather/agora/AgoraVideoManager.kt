@@ -59,6 +59,14 @@ object AgoraVideoManager {
         override fun onFirstRemoteVideoDecoded(uid: Int, width: Int, height: Int, elapsed: Int) {
             Log.d(TAG, "First remote video decoded for uid: $uid, size: ${width}x${height}")
             eventListener?.onFirstRemoteVideoDecoded(uid, width, height, elapsed)
+            eventListener?.onUserJoined(uid)
+        }
+
+        override fun onRemoteVideoStateChanged(uid: Int, state: Int, reason: Int, elapsed: Int) {
+            Log.d(TAG, "onRemoteVideoStateChanged: uid=$uid, state=$state, reason=$reason")
+            if (state == Constants.REMOTE_VIDEO_STATE_STARTING || state == Constants.REMOTE_VIDEO_STATE_DECODING) {
+                eventListener?.onUserJoined(uid)
+            }
         }
 
         override fun onAudioVolumeIndication(
@@ -124,6 +132,7 @@ object AgoraVideoManager {
 
     fun setupLocalVideo(surfaceView: SurfaceView) {
         try {
+            surfaceView.setZOrderMediaOverlay(true)
             val canvas = VideoCanvas(surfaceView, VideoCanvas.RENDER_MODE_HIDDEN, 0)
             canvas.mirrorMode = Constants.VIDEO_MIRROR_MODE_AUTO
             rtcEngine?.setupLocalVideo(canvas)
@@ -136,6 +145,7 @@ object AgoraVideoManager {
 
     fun setupRemoteVideo(surfaceView: SurfaceView, uid: Int) {
         try {
+            surfaceView.setZOrderMediaOverlay(true)
             val canvas = VideoCanvas(surfaceView, VideoCanvas.RENDER_MODE_HIDDEN, uid)
             canvas.mirrorMode = Constants.VIDEO_MIRROR_MODE_AUTO
             rtcEngine?.setupRemoteVideo(canvas)
@@ -179,9 +189,24 @@ object AgoraVideoManager {
             publishMicrophoneTrack = isBroadcaster && !startMuted
         }
 
-        val token = "" // Token security can be generated or empty for dev mode
+        val tokenBuilder = RtcTokenBuilder2()
+        val token = try {
+            tokenBuilder.buildTokenWithUid(
+                AGORA_APP_ID,
+                AGORA_PRIMARY_CERTIFICATE,
+                roomId,
+                uid,
+                if (isBroadcaster) RtcTokenBuilder2.Role.ROLE_PUBLISHER else RtcTokenBuilder2.Role.ROLE_SUBSCRIBER,
+                86400,
+                86400
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error generating Agora Video RTC token: ${e.message}")
+            ""
+        }
+
         val res = engine.joinChannel(token, roomId, uid, options)
-        Log.d(TAG, "joinRoom result: $res for channel: $roomId, uid: $uid, isBroadcaster: $isBroadcaster")
+        Log.d(TAG, "joinRoom result: $res for channel: $roomId, uid: $uid, isBroadcaster: $isBroadcaster, tokenLength: ${token.length}")
     }
 
     fun setBroadcasterRole(isBroadcaster: Boolean) {

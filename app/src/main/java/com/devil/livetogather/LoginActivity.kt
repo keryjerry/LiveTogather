@@ -24,7 +24,10 @@ import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 import com.google.firebase.auth.FacebookAuthProvider
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseAuthUserCollisionException
+import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
+import android.text.InputType
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.Source
@@ -211,7 +214,21 @@ class LoginActivity : ComponentActivity() {
                 }
                 .addOnFailureListener { e ->
                     setLoading(false)
-                    Toast.makeText(this, "Sign Up Failed: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                    if (e is FirebaseAuthUserCollisionException) {
+                        AlertDialog.Builder(this)
+                            .setTitle("Account Already Exists ℹ️")
+                            .setMessage("An account with this email ($email) is already registered.\n\nPlease sign in with your credentials.")
+                            .setPositiveButton("Go to Sign In") { _, _ ->
+                                toggleAuthMode()
+                                etEmail.setText(email)
+                                etPassword.setText("")
+                                etPassword.requestFocus()
+                            }
+                            .setNegativeButton("Cancel", null)
+                            .show()
+                    } else {
+                        Toast.makeText(this, "Sign Up Failed: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                    }
                 }
         } else {
             // Sign In Existing Account
@@ -276,12 +293,99 @@ class LoginActivity : ComponentActivity() {
             .show()
     }
 
+    private fun showCreatePasswordDialogForGoogleUser(user: FirebaseUser, onComplete: () -> Unit) {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(50, 30, 50, 10)
+        }
+        val etPass = EditText(this).apply {
+            hint = "Create Password (min 6 chars)"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setTextColor(android.graphics.Color.BLACK)
+        }
+        val etConfirm = EditText(this).apply {
+            hint = "Confirm Password"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setTextColor(android.graphics.Color.BLACK)
+        }
+        layout.addView(etPass)
+        layout.addView(etConfirm)
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Create Your Password 🔐")
+            .setMessage("Set a password for your account so you can log in anytime using either Google or your Email (${user.email}).")
+            .setView(layout)
+            .setCancelable(false)
+            .setPositiveButton("Set Password", null)
+            .setNegativeButton("Cancel") { _, _ ->
+                auth.signOut()
+                setLoading(false)
+            }
+            .create()
+
+        dialog.setOnShowListener {
+            val button = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+            button.setOnClickListener {
+                val p1 = etPass.text.toString().trim()
+                val p2 = etConfirm.text.toString().trim()
+                if (p1.length < 6) {
+                    Toast.makeText(this, "Password must be at least 6 characters", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                if (p1 != p2) {
+                    Toast.makeText(this, "Passwords do not match", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                setLoading(true)
+                user.updatePassword(p1)
+                    .addOnSuccessListener {
+                        dialog.dismiss()
+                        Toast.makeText(this, "Password created successfully! 🎉", Toast.LENGTH_SHORT).show()
+                        onComplete()
+                    }
+                    .addOnFailureListener { err ->
+                        setLoading(false)
+                        Toast.makeText(this, "Failed to set password: ${err.localizedMessage}", Toast.LENGTH_LONG).show()
+                    }
+            }
+        }
+        dialog.show()
+    }
+
     private fun firebaseAuthWithGoogle(idToken: String) {
         val credential = GoogleAuthProvider.getCredential(idToken, null)
         auth.signInWithCredential(credential)
-            .addOnSuccessListener {
-                Toast.makeText(this, "Google sign-in successful! 🎉", Toast.LENGTH_SHORT).show()
-                checkExistingProfileAndProceed()
+            .addOnSuccessListener { authResult ->
+                val isNewUser = authResult.additionalUserInfo?.isNewUser == true
+                val user = authResult.user
+
+                if (isSignUpMode && !isNewUser) {
+                    val userEmail = user?.email ?: ""
+                    auth.signOut()
+                    setLoading(false)
+                    AlertDialog.Builder(this)
+                        .setTitle("Account Already Exists ℹ️")
+                        .setMessage("You are already a registered user!\nYou have already signed up. Please sign in using your credentials.")
+                        .setPositiveButton("Go to Sign In") { _, _ ->
+                            if (isSignUpMode) toggleAuthMode()
+                            if (userEmail.isNotBlank()) etEmail.setText(userEmail)
+                            etPassword.setText("")
+                            etPassword.requestFocus()
+                        }
+                        .setNegativeButton("Close", null)
+                        .show()
+                    return@addOnSuccessListener
+                }
+
+                if (isNewUser && user != null) {
+                    setLoading(false)
+                    showCreatePasswordDialogForGoogleUser(user) {
+                        checkExistingProfileAndProceed()
+                    }
+                } else {
+                    Toast.makeText(this, "Google sign-in successful! 🎉", Toast.LENGTH_SHORT).show()
+                    checkExistingProfileAndProceed()
+                }
             }
             .addOnFailureListener { e ->
                 setLoading(false)

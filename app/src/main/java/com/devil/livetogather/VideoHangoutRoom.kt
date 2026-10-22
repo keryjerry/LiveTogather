@@ -146,6 +146,7 @@ fun VideoHangoutRoomDialog(
     var activeGiftEvent by remember { mutableStateOf<GiftEvent?>(null) }
     var isFollowingHost by remember { mutableStateOf(false) }
     var showFollowCelebrationDialog by remember { mutableStateOf(false) }
+    var showAllViewersDialog by remember { mutableStateOf(false) }
 
     // Audio & Mic States
     var isMuted by remember { mutableStateOf(!isUserHost) }
@@ -217,6 +218,12 @@ fun VideoHangoutRoomDialog(
         val initialRoleBroadcaster = isUserHost || isUserCoHost
         AgoraVideoManager.setEventListener(object : AgoraVideoManager.VideoEventListener {
             override fun onUserJoined(uid: Int) {
+                if (!remoteVideoUids.contains(uid)) {
+                    remoteVideoUids.add(uid)
+                }
+            }
+
+            override fun onFirstRemoteVideoDecoded(uid: Int, width: Int, height: Int, elapsed: Int) {
                 if (!remoteVideoUids.contains(uid)) {
                     remoteVideoUids.add(uid)
                 }
@@ -556,11 +563,16 @@ fun VideoHangoutRoomDialog(
         properties = DialogProperties(
             usePlatformDefaultWidth = false,
             dismissOnBackPress = false,
-            dismissOnClickOutside = false
+            dismissOnClickOutside = false,
+            decorFitsSystemWindows = false
         )
     ) {
         val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
         SideEffect {
+            dialogWindow?.setLayout(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT
+            )
             dialogWindow?.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
             dialogWindow?.statusBarColor = android.graphics.Color.TRANSPARENT
             dialogWindow?.navigationBarColor = android.graphics.Color.TRANSPARENT
@@ -581,9 +593,27 @@ fun VideoHangoutRoomDialog(
                     VideoLayout2P(
                         room = room,
                         isUserHost = isUserHost,
+                        isUserCoHost = isUserCoHost,
                         remoteUids = remoteVideoUids,
                         blueSupporters = blueSupporters,
                         redSupporters = redSupporters,
+                        onRequestJoinPk = {
+                            if (!isUserHost && !isUserCoHost) {
+                                isUserCoHost = true
+                                AgoraVideoManager.setBroadcasterRole(true)
+                                db.collection("rooms").document(room.id)
+                                    .collection("members").document(currentUserId)
+                                    .update("role", "co_host")
+                                db.collection("rooms").document(room.id).update(
+                                    mapOf(
+                                        "pkHost2Uid" to currentUserId,
+                                        "pkHost2Name" to currentUser.name,
+                                        "pkHost2Photo" to currentUser.photo
+                                    )
+                                )
+                                Toast.makeText(context, "⚔️ Joined PK Battle Stage!", Toast.LENGTH_SHORT).show()
+                            }
+                        },
                         onStartPk = { startPkBattle() },
                         onEndPk = { endPkBattle() }
                     )
@@ -717,17 +747,18 @@ fun VideoHangoutRoomDialog(
                         Surface(
                             color = Color.Black.copy(alpha = 0.55f),
                             shape = RoundedCornerShape(50),
-                            border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.25f))
+                            border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.25f)),
+                            modifier = Modifier.clickable { showAllViewersDialog = true }
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(6.dp)
-                                        .clip(CircleShape)
-                                        .background(Color(0xFFFF1744))
+                                Icon(
+                                    imageVector = Icons.Default.Visibility,
+                                    contentDescription = "Live Viewers",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(13.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
@@ -1516,6 +1547,29 @@ fun VideoHangoutRoomDialog(
                     onToggleAdmin = null
                 )
             }
+
+            if (showAllViewersDialog) {
+                AllRoomViewersDialog(
+                    viewers = activeMembers.filter { it.uid !in room.kickedUserIds && it.uid !in room.bannedUserIds },
+                    currentUser = currentUser,
+                    isHost = isUserHost,
+                    onSelectMember = { member ->
+                        selectedMemberForProfile = member
+                        showAllViewersDialog = false
+                    },
+                    onKickOut = { targetMember ->
+                        db.collection("rooms").document(room.id)
+                            .collection("members").document(targetMember.uid).delete()
+                    },
+                    onBan = { targetMember ->
+                        db.collection("rooms").document(room.id)
+                            .update("bannedUserIds", FieldValue.arrayUnion(targetMember.uid))
+                        db.collection("rooms").document(room.id)
+                            .collection("members").document(targetMember.uid).delete()
+                    },
+                    onDismiss = { showAllViewersDialog = false }
+                )
+            }
         }
     }
 }
@@ -1544,14 +1598,19 @@ fun VideoLayout1P(
             // Remote Host Video
             val targetUid = remoteUids.firstOrNull() ?: 0
             if (targetUid != 0) {
-                AndroidView(
-                    factory = { ctx ->
-                        SurfaceView(ctx).apply {
-                            AgoraVideoManager.setupRemoteVideo(this, targetUid)
-                        }
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
+                key(targetUid) {
+                    AndroidView(
+                        factory = { ctx ->
+                            SurfaceView(ctx).apply {
+                                AgoraVideoManager.setupRemoteVideo(this, targetUid)
+                            }
+                        },
+                        update = {
+                            AgoraVideoManager.setupRemoteVideo(it, targetUid)
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             } else {
                 // Connecting / Host Banner Placeholder
                 Box(
@@ -1579,7 +1638,7 @@ fun VideoLayout1P(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Connecting live Agora HD video feed...",
+                            text = "Connecting live HD video stream...",
                             color = Color.Gray,
                             fontSize = 11.sp
                         )
@@ -1603,9 +1662,11 @@ fun VideoLayout1P(
 fun VideoLayout2P(
     room: RoomItem,
     isUserHost: Boolean,
+    isUserCoHost: Boolean = false,
     remoteUids: List<Int>,
     blueSupporters: List<PkSupporter>,
     redSupporters: List<PkSupporter>,
+    onRequestJoinPk: () -> Unit = {},
     onStartPk: () -> Unit,
     onEndPk: () -> Unit
 ) {
@@ -1638,32 +1699,56 @@ fun VideoLayout2P(
                     .border(1.5.dp, Color(0xFF2979FF))
             ) {
                 if (isUserHost) {
-                    AndroidView(
-                        factory = { ctx ->
-                            SurfaceView(ctx).apply {
-                                AgoraVideoManager.setupLocalVideo(this)
-                            }
-                        },
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    val blueUid = remoteUids.firstOrNull() ?: 0
-                    if (blueUid != 0) {
+                    key("local_host_video") {
                         AndroidView(
                             factory = { ctx ->
                                 SurfaceView(ctx).apply {
-                                    AgoraVideoManager.setupRemoteVideo(this, blueUid)
+                                    AgoraVideoManager.setupLocalVideo(this)
                                 }
                             },
                             modifier = Modifier.fillMaxSize()
                         )
+                    }
+                } else {
+                    val blueUid = remoteUids.firstOrNull() ?: 0
+                    if (blueUid != 0) {
+                        key(blueUid) {
+                            AndroidView(
+                                factory = { ctx ->
+                                    SurfaceView(ctx).apply {
+                                        AgoraVideoManager.setupRemoteVideo(this, blueUid)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
                     } else {
-                        AsyncImage(
-                            model = room.hostPhotoUrl,
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            AsyncImage(
+                                model = room.hostPhotoUrl,
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        Brush.verticalGradient(
+                                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f))
+                                        )
+                                    )
+                            )
+                            Text(
+                                text = "Connecting host live stream...",
+                                color = Color.White.copy(alpha = 0.8f),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier
+                                    .align(Alignment.Center)
+                                    .padding(8.dp)
+                            )
+                        }
                     }
                 }
 
@@ -1693,24 +1778,110 @@ fun VideoLayout2P(
                     .fillMaxHeight()
                     .border(1.5.dp, Color(0xFFFF1744))
             ) {
-                val redUid = remoteUids.getOrNull(1) ?: remoteUids.firstOrNull() ?: 0
-                if (redUid != 0 && (!isUserHost || remoteUids.isNotEmpty())) {
-                    AndroidView(
-                        factory = { ctx ->
-                            SurfaceView(ctx).apply {
-                                AgoraVideoManager.setupRemoteVideo(this, redUid)
-                            }
-                        },
-                        modifier = Modifier.fillMaxSize()
-                    )
+                if (isUserCoHost) {
+                    key("local_challenger_video") {
+                        AndroidView(
+                            factory = { ctx ->
+                                SurfaceView(ctx).apply {
+                                    AgoraVideoManager.setupLocalVideo(this)
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 } else {
-                    // Placeholder Challenger
-                    AsyncImage(
-                        model = room.pkHost2Photo.ifBlank { "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d" },
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
+                    val redUid = if (isUserHost) {
+                        remoteUids.firstOrNull() ?: 0
+                    } else {
+                        remoteUids.getOrNull(1) ?: 0
+                    }
+
+                    if (redUid != 0) {
+                        key(redUid) {
+                            AndroidView(
+                                factory = { ctx ->
+                                    SurfaceView(ctx).apply {
+                                        AgoraVideoManager.setupRemoteVideo(this, redUid)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    } else if (room.pkHost2Photo.isNotBlank()) {
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            AsyncImage(
+                                model = room.pkHost2Photo,
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        Brush.verticalGradient(
+                                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f))
+                                        )
+                                    )
+                            )
+                            Text(
+                                text = "Connecting challenger video...",
+                                color = Color.White.copy(alpha = 0.8f),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier
+                                    .align(Alignment.Center)
+                                    .padding(8.dp)
+                            )
+                        }
+                    } else {
+                        // Clean "Waiting for Challenger" Stage (No dummy image)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(Color(0xFF1E0A10), Color(0xFF0F0508))
+                                    )
+                                )
+                                .clickable(enabled = !isUserHost) {
+                                    onRequestJoinPk()
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                                modifier = Modifier.padding(16.dp)
+                            ) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = Color(0xFFFF1744).copy(alpha = 0.18f),
+                                    border = BorderStroke(1.5.dp, Color(0xFFFF1744).copy(alpha = 0.6f)),
+                                    modifier = Modifier.size(52.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text("⚔️", fontSize = 24.sp)
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "Challenger Slot",
+                                    color = Color.White,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = if (isUserHost) "Waiting for challenger..." else "Tap to Join Battle",
+                                    color = if (isUserHost) Color.White.copy(alpha = 0.6f) else Color(0xFFFF5252),
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isUserHost) FontWeight.Normal else FontWeight.Bold,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
                 }
 
                 // Team Red Badge

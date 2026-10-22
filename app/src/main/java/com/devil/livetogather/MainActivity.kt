@@ -1090,11 +1090,12 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
         Scaffold(
             containerColor = BrandDark,
             topBar = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(BrandCard)
-                ) {
+                if (activeAudioRoom == null || isAudioRoomMinimized) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(BrandCard)
+                    ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1472,36 +1473,39 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                         }
                     }
                 }
-            },
-            bottomBar = {
-                NavigationBar(containerColor = BrandCard) {
-                    val items = listOf(
-                        Triple("discover", "Discover", Icons.Default.LocalFireDepartment),
-                        Triple("likes", "Likes", Icons.Default.Favorite),
-                        Triple("chats", "Chats", Icons.Default.ChatBubble),
-                        Triple("moments", "Moments", Icons.Default.CameraAlt),
-                        Triple("profile", "Profile", Icons.Default.Person)
-                    )
-                    items.forEach { (route, label, icon) ->
-                        val selected = currentScreen == route
-                        NavigationBarItem(
-                            selected = selected,
-                            onClick = { currentScreen = route },
-                            icon = {
-                                Icon(
-                                    icon,
-                                    contentDescription = label,
-                                    tint = if (selected) BrandCoral else Color.Gray
-                                )
-                            },
-                            label = {
-                                Text(
-                                    label,
-                                    fontSize = 10.sp,
-                                    color = if (selected) BrandCoral else Color.Gray
-                                )
-                            }
+            }
+        },
+        bottomBar = {
+                if (activeAudioRoom == null || isAudioRoomMinimized) {
+                    NavigationBar(containerColor = BrandCard) {
+                        val items = listOf(
+                            Triple("discover", "Discover", Icons.Default.LocalFireDepartment),
+                            Triple("likes", "Likes", Icons.Default.Favorite),
+                            Triple("chats", "Chats", Icons.Default.ChatBubble),
+                            Triple("moments", "Moments", Icons.Default.CameraAlt),
+                            Triple("profile", "Profile", Icons.Default.Person)
                         )
+                        items.forEach { (route, label, icon) ->
+                            val selected = currentScreen == route
+                            NavigationBarItem(
+                                selected = selected,
+                                onClick = { currentScreen = route },
+                                icon = {
+                                    Icon(
+                                        icon,
+                                        contentDescription = label,
+                                        tint = if (selected) BrandCoral else Color.Gray
+                                    )
+                                },
+                                label = {
+                                    Text(
+                                        label,
+                                        fontSize = 10.sp,
+                                        color = if (selected) BrandCoral else Color.Gray
+                                    )
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -2592,6 +2596,11 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
             var chatInput by remember { mutableStateOf("") }
             val isBlocked = currentUser.blockedUserIds.contains(partner.uid)
 
+            var showChatMenu by remember { mutableStateOf(false) }
+            var showClearConfirmDialog by remember { mutableStateOf(false) }
+            var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+            var showReportConfirmDialog by remember { mutableStateOf(false) }
+
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -2650,32 +2659,170 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                             )
                         }
 
-                        // Block / Unblock Toggle Action
-                        TextButton(
-                            onClick = {
-                                val updatedBlocked = if (isBlocked) {
-                                    currentUser.blockedUserIds - partner.uid
-                                } else {
-                                    currentUser.blockedUserIds + partner.uid
-                                }
-                                currentUser = currentUser.copy(blockedUserIds = updatedBlocked)
-                                saveProfileToPrefs(prefs, currentUser)
-                                db.collection("users").document(currentUserId)
-                                    .update("blockedUserIds", updatedBlocked)
-                                Toast.makeText(
-                                    context,
-                                    if (isBlocked) "${partner.name} unblocked" else "${partner.name} blocked",
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                        // 3-Dots More Options Menu
+                        Box {
+                            IconButton(onClick = { showChatMenu = true }) {
+                                Icon(
+                                    Icons.Default.MoreVert,
+                                    contentDescription = "Chat Options",
+                                    tint = Color.White
+                                )
                             }
-                        ) {
-                            Text(
-                                text = if (isBlocked) "Unblock" else "Block",
-                                color = if (isBlocked) BrandGreen else Color.Red,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp
-                            )
+                            DropdownMenu(
+                                expanded = showChatMenu,
+                                onDismissRequest = { showChatMenu = false },
+                                modifier = Modifier.background(BrandCard)
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("🧹 Clear Chat History", color = Color.White, fontSize = 13.sp) },
+                                    onClick = {
+                                        showChatMenu = false
+                                        showClearConfirmDialog = true
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            if (isBlocked) "✅ Unblock User" else "🚫 Block User",
+                                            color = if (isBlocked) BrandGreen else Color(0xFFFF5252),
+                                            fontSize = 13.sp
+                                        )
+                                    },
+                                    onClick = {
+                                        showChatMenu = false
+                                        val updatedBlocked = if (isBlocked) {
+                                            currentUser.blockedUserIds - partner.uid
+                                        } else {
+                                            currentUser.blockedUserIds + partner.uid
+                                        }
+                                        currentUser = currentUser.copy(blockedUserIds = updatedBlocked)
+                                        saveProfileToPrefs(prefs, currentUser)
+                                        db.collection("users").document(currentUserId)
+                                            .update("blockedUserIds", updatedBlocked)
+                                        Toast.makeText(
+                                            context,
+                                            if (isBlocked) "${partner.name} unblocked" else "${partner.name} blocked",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("🚨 Report User", color = Color(0xFFFF9100), fontSize = 13.sp) },
+                                    onClick = {
+                                        showChatMenu = false
+                                        showReportConfirmDialog = true
+                                    }
+                                )
+                                HorizontalDivider(color = BrandBorder, thickness = 0.5.dp)
+                                DropdownMenuItem(
+                                    text = { Text("🗑️ Delete Conversation", color = Color.Red, fontSize = 13.sp, fontWeight = FontWeight.Bold) },
+                                    onClick = {
+                                        showChatMenu = false
+                                        showDeleteConfirmDialog = true
+                                    }
+                                )
+                            }
                         }
+                    }
+
+                    if (showClearConfirmDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showClearConfirmDialog = false },
+                            containerColor = BrandCard,
+                            shape = RoundedCornerShape(20.dp),
+                            title = { Text("Clear Chat?", color = Color.White, fontWeight = FontWeight.Bold) },
+                            text = { Text("All messages in this chat will be cleared.", color = Color.LightGray, fontSize = 13.sp) },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        db.collection("matches").document(matchId).collection("messages").get()
+                                            .addOnSuccessListener { sn ->
+                                                for (d in sn.documents) { d.reference.delete() }
+                                                db.collection("matches").document(matchId).update("lastMessage", "")
+                                                chatMessages.clear()
+                                                Toast.makeText(context, "Chat history cleared", Toast.LENGTH_SHORT).show()
+                                            }
+                                        showClearConfirmDialog = false
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = BrandCoral)
+                                ) {
+                                    Text("Clear", color = Color.White, fontWeight = FontWeight.Bold)
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showClearConfirmDialog = false }) {
+                                    Text("Cancel", color = Color.Gray)
+                                }
+                            }
+                        )
+                    }
+
+                    if (showDeleteConfirmDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showDeleteConfirmDialog = false },
+                            containerColor = BrandCard,
+                            shape = RoundedCornerShape(20.dp),
+                            title = { Text("Delete Conversation?", color = Color.Red, fontWeight = FontWeight.Bold) },
+                            text = { Text("This will permanently remove this match and its messages from your inbox.", color = Color.LightGray, fontSize = 13.sp) },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        db.collection("matches").document(matchId).collection("messages").get()
+                                            .addOnSuccessListener { sn ->
+                                                for (d in sn.documents) { d.reference.delete() }
+                                                db.collection("matches").document(matchId).delete()
+                                                matches.removeAll { it.matchId == matchId }
+                                                activeChatPartner = null
+                                                Toast.makeText(context, "Conversation deleted", Toast.LENGTH_SHORT).show()
+                                            }
+                                        showDeleteConfirmDialog = false
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                                ) {
+                                    Text("Delete", color = Color.White, fontWeight = FontWeight.Bold)
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showDeleteConfirmDialog = false }) {
+                                    Text("Cancel", color = Color.Gray)
+                                }
+                            }
+                        )
+                    }
+
+                    if (showReportConfirmDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showReportConfirmDialog = false },
+                            containerColor = BrandCard,
+                            shape = RoundedCornerShape(20.dp),
+                            title = { Text("Report User 🚨", color = Color(0xFFFF9100), fontWeight = FontWeight.Bold) },
+                            text = { Text("Are you sure you want to report ${partner.name} for abusive or inappropriate behavior?", color = Color.LightGray, fontSize = 13.sp) },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        val reportData = hashMapOf(
+                                            "reporterId" to currentUserId,
+                                            "reporterName" to currentUser.name,
+                                            "reportedUserId" to partner.uid,
+                                            "reportedUserName" to partner.name,
+                                            "reason" to "Inappropriate behavior in direct chat",
+                                            "timestamp" to System.currentTimeMillis()
+                                        )
+                                        db.collection("reports").add(reportData)
+                                        Toast.makeText(context, "Report submitted to moderators. Thank you.", Toast.LENGTH_LONG).show()
+                                        showReportConfirmDialog = false
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9100))
+                                ) {
+                                    Text("Report", color = Color.White, fontWeight = FontWeight.Bold)
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showReportConfirmDialog = false }) {
+                                    Text("Cancel", color = Color.Gray)
+                                }
+                            }
+                        )
                     }
 
                     // Chat Messages List
@@ -3743,6 +3890,7 @@ fun LikesScreenContent(
 // -------------------------------------------------------------
 // CHATS SCREEN CONTENT WITH INBOX BLOCK / UNBLOCK
 // -------------------------------------------------------------
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ChatsScreenContent(
     matches: List<MatchItem>,
@@ -3752,7 +3900,10 @@ fun ChatsScreenContent(
     onOpenChat: (UserProfile) -> Unit,
     onToggleBlock: (UserProfile) -> Unit
 ) {
+    val context = LocalContext.current
     val partnerMap = remember { mutableStateMapOf<String, UserProfile>() }
+    var selectedActionMatch by remember { mutableStateOf<Pair<MatchItem, UserProfile>?>(null) }
+    val archivedMatchIds = remember { mutableStateListOf<String>() }
 
     LaunchedEffect(matches) {
         matches.forEach { match ->
@@ -3765,17 +3916,30 @@ fun ChatsScreenContent(
         }
     }
 
+    val visibleMatches = matches.filter { !archivedMatchIds.contains(it.matchId) }
+
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Text("Matches & Inbox", color = BrandCoral, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Matches & Inbox", color = BrandCoral, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            if (archivedMatchIds.isNotEmpty()) {
+                TextButton(onClick = { archivedMatchIds.clear() }) {
+                    Text("Show Archived (${archivedMatchIds.size})", color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
         Spacer(modifier = Modifier.height(12.dp))
 
-        if (matches.isEmpty()) {
+        if (visibleMatches.isEmpty()) {
             Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Text("No matches yet. Like back profiles to start chatting!", color = Color.Gray, fontSize = 13.sp)
+                Text("No messages yet. Like back profiles to start chatting!", color = Color.Gray, fontSize = 13.sp)
             }
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(matches) { match ->
+                items(visibleMatches) { match ->
                     val pId = match.users.firstOrNull { it != currentUserId }
                     val partner = partnerMap[pId]
                     if (partner != null) {
@@ -3783,7 +3947,10 @@ fun ChatsScreenContent(
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { onOpenChat(partner) },
+                                .combinedClickable(
+                                    onClick = { onOpenChat(partner) },
+                                    onLongClick = { selectedActionMatch = Pair(match, partner) }
+                                ),
                             colors = CardDefaults.cardColors(containerColor = BrandCard)
                         ) {
                             Row(
@@ -3813,27 +3980,161 @@ fun ChatsScreenContent(
                                             )
                                         }
                                     }
-                                    Text(match.lastMessage, color = Color.LightGray, fontSize = 12.sp, maxLines = 1)
-                                }
-
-                                TextButton(
-                                    onClick = { onToggleBlock(partner) }
-                                ) {
                                     Text(
-                                        text = if (isBlocked) "Unblock" else "Block",
-                                        color = if (isBlocked) BrandGreen else Color.Red.copy(alpha = 0.8f),
+                                        text = match.lastMessage.ifBlank { "Tap to send a message" },
+                                        color = Color.LightGray,
                                         fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                     )
                                 }
 
-                                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray)
+                                IconButton(
+                                    onClick = { selectedActionMatch = Pair(match, partner) },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = Color.LightGray)
+                                }
                             }
                         }
                     }
                 }
             }
         }
+    }
+
+    // Inbox Action Dialog (Archive, Clear Chat, Delete Conversation, Block, Report)
+    if (selectedActionMatch != null) {
+        val (selMatch, selPartner) = selectedActionMatch!!
+        val isBlocked = currentUser.blockedUserIds.contains(selPartner.uid)
+
+        AlertDialog(
+            onDismissRequest = { selectedActionMatch = null },
+            containerColor = BrandCard,
+            shape = RoundedCornerShape(20.dp),
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AsyncImage(
+                        model = selPartner.photo,
+                        contentDescription = null,
+                        modifier = Modifier.size(32.dp).clip(CircleShape),
+                        contentScale = ContentScale.Crop
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(selPartner.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // Archive Option
+                    TextButton(
+                        onClick = {
+                            archivedMatchIds.add(selMatch.matchId)
+                            selectedActionMatch = null
+                            Toast.makeText(context, "Chat archived", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text("📁", fontSize = 16.sp)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text("Archive Chat", color = Color.White, fontSize = 14.sp)
+                        }
+                    }
+
+                    // Clear Chat History Option
+                    TextButton(
+                        onClick = {
+                            db.collection("matches").document(selMatch.matchId).collection("messages").get()
+                                .addOnSuccessListener { sn ->
+                                    for (d in sn.documents) { d.reference.delete() }
+                                    db.collection("matches").document(selMatch.matchId).update("lastMessage", "")
+                                    Toast.makeText(context, "Chat history cleared", Toast.LENGTH_SHORT).show()
+                                }
+                            selectedActionMatch = null
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text("🧹", fontSize = 16.sp)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text("Clear Chat History", color = Color.White, fontSize = 14.sp)
+                        }
+                    }
+
+                    // Block / Unblock Option
+                    TextButton(
+                        onClick = {
+                            onToggleBlock(selPartner)
+                            selectedActionMatch = null
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(if (isBlocked) "✅" else "🚫", fontSize = 16.sp)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                if (isBlocked) "Unblock User" else "Block User",
+                                color = if (isBlocked) BrandGreen else Color(0xFFFF5252),
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+
+                    // Report User Option
+                    TextButton(
+                        onClick = {
+                            val reportData = hashMapOf(
+                                "reporterId" to currentUserId,
+                                "reporterName" to currentUser.name,
+                                "reportedUserId" to selPartner.uid,
+                                "reportedUserName" to selPartner.name,
+                                "reason" to "Reported from inbox",
+                                "timestamp" to System.currentTimeMillis()
+                            )
+                            db.collection("reports").add(reportData)
+                            Toast.makeText(context, "Report submitted. Thank you.", Toast.LENGTH_SHORT).show()
+                            selectedActionMatch = null
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text("🚨", fontSize = 16.sp)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text("Report User", color = Color(0xFFFF9100), fontSize = 14.sp)
+                        }
+                    }
+
+                    HorizontalDivider(color = BrandBorder, thickness = 0.5.dp)
+
+                    // Delete Conversation Option
+                    TextButton(
+                        onClick = {
+                            db.collection("matches").document(selMatch.matchId).collection("messages").get()
+                                .addOnSuccessListener { sn ->
+                                    for (d in sn.documents) { d.reference.delete() }
+                                    db.collection("matches").document(selMatch.matchId).delete()
+                                    Toast.makeText(context, "Conversation deleted", Toast.LENGTH_SHORT).show()
+                                }
+                            selectedActionMatch = null
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text("🗑️", fontSize = 16.sp)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text("Delete Conversation", color = Color.Red, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { selectedActionMatch = null }) {
+                    Text("Close", color = Color.Gray)
+                }
+            }
+        )
     }
 }
 
