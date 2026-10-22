@@ -40,6 +40,8 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -131,6 +133,8 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
     var city by remember { mutableStateOf(prefs.getString("profile_city", "Kolkata") ?: "Kolkata") }
     var bio by remember { mutableStateOf(prefs.getString("profile_bio", "Love late-night coffee and spontaneous road trips 🚗") ?: "") }
     var interestedIn by remember { mutableStateOf(prefs.getString("profile_interested_in", "Everyone") ?: "Everyone") }
+    var password by remember { mutableStateOf("") }
+    var isPasswordVisible by remember { mutableStateOf(false) }
     var photoUrl by remember { mutableStateOf(initialPhoto) }
     var localAvatarUri by remember { mutableStateOf<Uri?>(null) }
     var isSaving by remember { mutableStateOf(false) }
@@ -521,6 +525,43 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
                             unfocusedLabelColor = Color.Gray
                         )
                     )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text("Create Login Password (Mandatory) 🔒") },
+                        placeholder = { Text("Minimum 6 characters") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
+                                Icon(
+                                    imageVector = if (isPasswordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = if (isPasswordVisible) "Hide password" else "Show password",
+                                    tint = Color.Gray
+                                )
+                            }
+                        },
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
+                            imeAction = ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(onDone = {
+                            keyboardController?.hide()
+                            focusManager.clearFocus()
+                        }),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = CoralAccent,
+                            unfocusedBorderColor = BorderColor,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedLabelColor = CoralAccent,
+                            unfocusedLabelColor = Color.Gray
+                        )
+                    )
                 }
             }
 
@@ -551,6 +592,10 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
                         Toast.makeText(context, "You must be 18+ to use LiveTogether", Toast.LENGTH_SHORT).show()
                         return@Button
                     }
+                    if (password.trim().length < 6) {
+                        Toast.makeText(context, "Please enter a login password (min 6 characters) 🔒", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
                     if (isUploadingPhoto) {
                         Toast.makeText(context, "Optimizing photo, please wait a moment...", Toast.LENGTH_SHORT).show()
                         return@Button
@@ -558,6 +603,12 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
 
                     coroutineScope.launch {
                         isSaving = true
+                        try {
+                            auth.currentUser?.updatePassword(password.trim())
+                        } catch (e: Exception) {
+                            android.util.Log.w("ProfileSetup", "updatePassword error: ${e.message}")
+                        }
+
                         val effectiveUid = auth.currentUser?.uid
                             ?: prefs.getString("user_uid", null)
                             ?: currentUid.ifBlank { "user_${UUID.randomUUID().toString().take(8)}" }
@@ -580,7 +631,9 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
                             plan = "Free",
                             dailySwipeCount = 0,
                             lastSwipeDate = "",
-                            hostTrialStartDate = System.currentTimeMillis()
+                            hostTrialStartDate = System.currentTimeMillis(),
+                            hasPasswordSet = true,
+                            emailPrivacy = "only_me"
                         )
 
                         // Single Device & IP Verification for First-Time Welcome Bonus

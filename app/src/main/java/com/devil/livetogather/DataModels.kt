@@ -822,7 +822,9 @@ data class UserProfile(
     val withdrawnInr: Double = 0.0,
     val upiId: String = "",
     val isHostMonetized: Boolean = false,
-    val hostMonetizationDate: Long = 0L
+    val hostMonetizationDate: Long = 0L,
+    val emailPrivacy: String = "only_me",
+    val hasPasswordSet: Boolean = false
 ) {
     fun getEffectiveWealthLevel(): Int = LevelBadgeSystem.getEffectiveWealthLevel(this)
     fun getEffectiveWealthXp(): Long = LevelBadgeSystem.getEffectiveWealthXp(this)
@@ -1013,6 +1015,8 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
     val upiId = doc.getString("upiId") ?: ""
     val isHostMonetized = doc.getBoolean("isHostMonetized") ?: (isAdmin || name.contains("Devil", ignoreCase = true))
     val hostMonetizationDate = doc.getLong("hostMonetizationDate") ?: 0L
+    val emailPrivacy = doc.getString("emailPrivacy") ?: "only_me"
+    val hasPasswordSet = doc.getBoolean("hasPasswordSet") ?: false
 
     return UserProfile(
         uid = uid,
@@ -1091,7 +1095,9 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
         withdrawnInr = withdrawnInr,
         upiId = upiId,
         isHostMonetized = isHostMonetized,
-        hostMonetizationDate = hostMonetizationDate
+        hostMonetizationDate = hostMonetizationDate,
+        emailPrivacy = emailPrivacy,
+        hasPasswordSet = hasPasswordSet
     )
 }
 
@@ -1151,6 +1157,8 @@ fun saveProfileToPrefs(prefs: SharedPreferences, user: UserProfile) {
         .putString("profile_upi_id", user.upiId)
         .putBoolean("profile_is_host_monetized", user.isHostMonetized)
         .putLong("profile_host_monetization_date", user.hostMonetizationDate)
+        .putString("profile_email_privacy", user.emailPrivacy)
+        .putBoolean("profile_has_password_set", user.hasPasswordSet)
         .apply()
 }
 

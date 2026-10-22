@@ -64,6 +64,8 @@ import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -308,6 +310,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
             UserProfile(
                 uid = currentUserId,
                 userId = initialUserId,
+                email = auth.currentUser?.email?.takeIf { it.isNotBlank() } ?: prefs.getString("profile_email", "") ?: "",
                 deviceId = prefs.getString("profile_device_id", deviceId) ?: deviceId,
                 name = prefs.getString("profile_name", "Maya") ?: "Maya",
                 age = prefs.getInt("profile_age", 24),
@@ -342,14 +345,16 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                 vipTrialExpiryDate = prefs.getLong("profile_vip_trial_expiry", 0L),
                 hasClaimedWelcomeBonus = prefs.getBoolean("profile_has_claimed_welcome_bonus", false),
                 signupIpAddress = prefs.getString("profile_signup_ip", "") ?: "",
-                isAdmin = isUserWhitelistedAdmin(prefs.getString("profile_email", "") ?: ""),
+                isAdmin = isUserWhitelistedAdmin(auth.currentUser?.email ?: prefs.getString("profile_email", "") ?: ""),
                 wealthLevel = prefs.getInt("profile_wealth_level", 1),
                 wealthXp = prefs.getLong("profile_wealth_xp", 0L),
                 charmLevel = prefs.getInt("profile_charm_level", 1),
                 charmXp = prefs.getLong("profile_charm_xp", 0L),
                 pkLevel = prefs.getInt("profile_pk_level", 1),
                 pkWins = prefs.getInt("profile_pk_wins", 0),
-                pkScore = prefs.getLong("profile_pk_score", 0L)
+                pkScore = prefs.getLong("profile_pk_score", 0L),
+                emailPrivacy = prefs.getString("profile_email_privacy", "only_me") ?: "only_me",
+                hasPasswordSet = prefs.getBoolean("profile_has_password_set", false)
             )
         )
     }
@@ -379,10 +384,21 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                         val rawPkLvl = snapshot.getLong("pkLevel")?.toInt()
                         val updatedPkLvl = rawPkLvl?.takeIf { it > 1 } ?: LevelBadgeSystem.calculatePkLevel(updatedPkWins)
 
+                        val updatedEmail = auth.currentUser?.email?.takeIf { it.isNotBlank() } ?: snapshot.getString("email") ?: currentUser.email
+                        val updatedEmailPrivacy = snapshot.getString("emailPrivacy") ?: currentUser.emailPrivacy
+                        val updatedHasPasswordSet = snapshot.getBoolean("hasPasswordSet") ?: currentUser.hasPasswordSet
+
+                        if (isWhitelisted && snapshot.getBoolean("isAdmin") != true) {
+                            db.collection("users").document(currentUserId).update("isAdmin", true)
+                        } else if (!isWhitelisted && snapshot.getBoolean("isAdmin") == true) {
+                            db.collection("users").document(currentUserId).update("isAdmin", false)
+                        }
+
                         if (currentUser.isAdmin != adminFlag || currentUser.coins != updatedCoins || currentUser.diamonds != updatedDiamonds ||
                             currentUser.userId != finalUserId || currentUser.wealthLevel != updatedWealthLvl || currentUser.wealthXp != updatedWealthXp ||
                             currentUser.charmLevel != updatedCharmLvl || currentUser.charmXp != updatedCharmXp ||
-                            currentUser.pkLevel != updatedPkLvl || currentUser.pkWins != updatedPkWins || currentUser.pkScore != updatedPkScore) {
+                            currentUser.pkLevel != updatedPkLvl || currentUser.pkWins != updatedPkWins || currentUser.pkScore != updatedPkScore ||
+                            currentUser.email != updatedEmail || currentUser.emailPrivacy != updatedEmailPrivacy || currentUser.hasPasswordSet != updatedHasPasswordSet) {
                             currentUser = currentUser.copy(
                                 isAdmin = adminFlag,
                                 coins = updatedCoins,
@@ -394,7 +410,10 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                                 charmXp = updatedCharmXp,
                                 pkLevel = updatedPkLvl,
                                 pkWins = updatedPkWins,
-                                pkScore = updatedPkScore
+                                pkScore = updatedPkScore,
+                                email = updatedEmail,
+                                emailPrivacy = updatedEmailPrivacy,
+                                hasPasswordSet = updatedHasPasswordSet
                             )
                             prefs.edit()
                                 .putBoolean("profile_is_admin", adminFlag)
@@ -408,6 +427,9 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                                 .putInt("profile_pk_level", updatedPkLvl)
                                 .putInt("profile_pk_wins", updatedPkWins)
                                 .putLong("profile_pk_score", updatedPkScore)
+                                .putString("profile_email", updatedEmail)
+                                .putString("profile_email_privacy", updatedEmailPrivacy)
+                                .putBoolean("profile_has_password_set", updatedHasPasswordSet)
                                 .apply()
                         }
                     }
@@ -2343,7 +2365,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                         }
                 },
                 onOpenAdmin = { tab ->
-                    if (isUserWhitelistedAdmin(currentUser.email, currentUserId)) {
+                    if (currentUser.isOfficialAdmin(auth.currentUser?.email)) {
                         adminDashboardInitialTab = tab
                         showAdminDashboardModal = true
                     }
@@ -2361,7 +2383,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
             )
         }
 
-        if (showAdminDashboardModal && isUserWhitelistedAdmin(currentUser.email, currentUserId)) {
+        if (showAdminDashboardModal && currentUser.isOfficialAdmin(auth.currentUser?.email)) {
             AdminApprovalDashboardModal(
                 adminUser = currentUser.copy(isAdmin = true),
                 initialTab = adminDashboardInitialTab,
@@ -4041,6 +4063,7 @@ fun ProfileScreenContent(
     var showSubscriptionModal by remember { mutableStateOf(false) }
     var showCoinStoreModal by remember { mutableStateOf(false) }
     var showVipStatusDialog by remember { mutableStateOf(false) }
+    var showSetPasswordDialog by remember { mutableStateOf(false) }
     var showHelpDeskModal by remember { mutableStateOf(false) }
     var showAdminDashboardModal by remember { mutableStateOf(false) }
     var helpDeskPrefilledPackage by remember { mutableStateOf<CoinPackageItem?>(null) }
@@ -4335,6 +4358,74 @@ fun ProfileScreenContent(
                                 tint = BrandGold,
                                 modifier = Modifier.size(12.dp)
                             )
+                        }
+                    }
+
+                    // Registered Email & Privacy Setting
+                    val authEmail = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.email?.takeIf { it.isNotBlank() } ?: currentUser.email
+                    if (authEmail.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Surface(
+                            color = Color(0xFF1E1728),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, BrandBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    modifier = Modifier.weight(1f),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("📧", fontSize = 13.sp)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Column {
+                                        Text(
+                                            text = authEmail,
+                                            color = Color.White,
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = if (currentUser.emailPrivacy == "public") "Visibility: Public 🌐" else "Visibility: Only Me 🔒",
+                                            color = if (currentUser.emailPrivacy == "public") BrandCyan else BrandGold,
+                                            fontSize = 9.sp
+                                        )
+                                    }
+                                }
+
+                                Surface(
+                                    color = if (currentUser.emailPrivacy == "public") BrandCyan.copy(alpha = 0.2f) else BrandGold.copy(alpha = 0.2f),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.dp, if (currentUser.emailPrivacy == "public") BrandCyan else BrandGold),
+                                    modifier = Modifier.clickable {
+                                        val newPrivacy = if (currentUser.emailPrivacy == "public") "only_me" else "public"
+                                        val updated = currentUser.copy(email = authEmail, emailPrivacy = newPrivacy)
+                                        onUpdateProfile(updated)
+                                        db.collection("users").document(currentUserId)
+                                            .update(mapOf("email" to authEmail, "emailPrivacy" to newPrivacy))
+                                        val prefs = context.getSharedPreferences("livetogather_user_prefs", Context.MODE_PRIVATE)
+                                        prefs.edit()
+                                            .putString("profile_email", authEmail)
+                                            .putString("profile_email_privacy", newPrivacy)
+                                            .apply()
+                                        Toast.makeText(context, if (newPrivacy == "public") "Email visibility: Public 🌐" else "Email visibility: Only Me 🔒", Toast.LENGTH_SHORT).show()
+                                    }
+                                ) {
+                                    Text(
+                                        text = if (currentUser.emailPrivacy == "public") "Public 🌐" else "Only Me 🔒",
+                                        color = if (currentUser.emailPrivacy == "public") BrandCyan else BrandGold,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
                         }
                     }
 
@@ -4784,6 +4875,77 @@ fun ProfileScreenContent(
                         }
                     }
 
+                    // Account Security: Set / Change Password
+                    Surface(
+                        color = BrandCardSubtle,
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(0.8.dp, BrandBorder),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showSetPasswordDialog = true }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(BrandCyan.copy(alpha = 0.15f))
+                                    .border(1.dp, BrandCyan.copy(alpha = 0.35f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("🔐", fontSize = 18.sp)
+                            }
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = if (currentUser.hasPasswordSet) "Change Login Password" else "Set Login Password",
+                                        color = Color.White,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    if (currentUser.hasPasswordSet) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Surface(
+                                            color = BrandGreen.copy(alpha = 0.2f),
+                                            shape = RoundedCornerShape(4.dp),
+                                            border = BorderStroke(1.dp, BrandGreen.copy(alpha = 0.5f))
+                                        ) {
+                                            Text(
+                                                "Active",
+                                                color = BrandGreen,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = if (currentUser.hasPasswordSet) "Update your login password for email access" else "Set a password to log in with email on any device",
+                                    color = Color.LightGray,
+                                    fontSize = 11.sp,
+                                    lineHeight = 15.sp
+                                )
+                            }
+
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                contentDescription = null,
+                                tint = Color.Gray,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                    }
+
                     // 1. Coin Store & Top-Up
                     Surface(
                         color = BrandCardSubtle,
@@ -4918,7 +5080,7 @@ fun ProfileScreenContent(
                             }
                     }
 
-                    val isOwnerAdmin = isUserWhitelistedAdmin(currentUser.email, currentUserId)
+                    val isOwnerAdmin = currentUser.isOfficialAdmin(com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.email)
                     if (isOwnerAdmin) {
                         val totalPending = pendingPayments + pendingReports
 
@@ -5337,10 +5499,185 @@ fun ProfileScreenContent(
         )
     }
 
-    if (showAdminDashboardModal && isUserWhitelistedAdmin(currentUser.email, currentUserId)) {
+    if (showAdminDashboardModal && currentUser.isOfficialAdmin(com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.email)) {
         AdminApprovalDashboardModal(
             adminUser = currentUser.copy(isAdmin = true),
             onDismiss = { showAdminDashboardModal = false }
+        )
+    }
+
+    if (showSetPasswordDialog) {
+        var newPassword by remember { mutableStateOf("") }
+        var confirmPassword by remember { mutableStateOf("") }
+        var isNewPassVisible by remember { mutableStateOf(false) }
+        var isConfirmPassVisible by remember { mutableStateOf(false) }
+        var isSaving by remember { mutableStateOf(false) }
+        val authEmail = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.email?.takeIf { it.isNotBlank() } ?: currentUser.email
+
+        AlertDialog(
+            onDismissRequest = { if (!isSaving) showSetPasswordDialog = false },
+            containerColor = Color(0xFF1E1724),
+            shape = RoundedCornerShape(20.dp),
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("🔐", fontSize = 22.sp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (currentUser.hasPasswordSet) "Change Login Password" else "Set Login Password",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    )
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = if (authEmail.isNotBlank())
+                            "You can log in to LiveTogather using your email ($authEmail) and this password on any device."
+                        else
+                            "Create a secure password to log in to LiveTogather anytime.",
+                        color = Color.LightGray,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    )
+
+                    OutlinedTextField(
+                        value = newPassword,
+                        onValueChange = { newPassword = it },
+                        label = { Text("New Password (min 6 chars)", color = Color.Gray, fontSize = 12.sp) },
+                        visualTransformation = if (isNewPassVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
+                        trailingIcon = {
+                            IconButton(onClick = { isNewPassVisible = !isNewPassVisible }) {
+                                Icon(
+                                    imageVector = if (isNewPassVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = "Toggle password visibility",
+                                    tint = Color.Gray
+                                )
+                            }
+                        },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = BrandGold,
+                            unfocusedBorderColor = BrandBorder,
+                            cursorColor = BrandGold
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = confirmPassword,
+                        onValueChange = { confirmPassword = it },
+                        label = { Text("Confirm Password", color = Color.Gray, fontSize = 12.sp) },
+                        visualTransformation = if (isConfirmPassVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                        trailingIcon = {
+                            IconButton(onClick = { isConfirmPassVisible = !isConfirmPassVisible }) {
+                                Icon(
+                                    imageVector = if (isConfirmPassVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = "Toggle password visibility",
+                                    tint = Color.Gray
+                                )
+                            }
+                        },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = BrandGold,
+                            unfocusedBorderColor = BrandBorder,
+                            cursorColor = BrandGold
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    if (newPassword.isNotBlank() && newPassword.length < 6) {
+                        Text(
+                            text = "⚠️ Password must be at least 6 characters",
+                            color = BrandCoral,
+                            fontSize = 11.sp
+                        )
+                    } else if (newPassword.isNotBlank() && confirmPassword.isNotBlank() && newPassword != confirmPassword) {
+                        Text(
+                            text = "⚠️ Passwords do not match",
+                            color = BrandCoral,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val pass = newPassword.trim()
+                        val confirm = confirmPassword.trim()
+                        if (pass.length < 6) {
+                            Toast.makeText(context, "Password must be at least 6 characters", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        if (pass != confirm) {
+                            Toast.makeText(context, "Passwords do not match", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        isSaving = true
+                        val firebaseUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+                        if (firebaseUser != null) {
+                            firebaseUser.updatePassword(pass)
+                                .addOnSuccessListener {
+                                    db.collection("users").document(currentUserId)
+                                        .update(mapOf("hasPasswordSet" to true))
+                                    val prefs = context.getSharedPreferences("livetogather_user_prefs", Context.MODE_PRIVATE)
+                                    prefs.edit().putBoolean("profile_has_password_set", true).apply()
+                                    onUpdateProfile(currentUser.copy(hasPasswordSet = true))
+                                    isSaving = false
+                                    showSetPasswordDialog = false
+                                    Toast.makeText(context, "Login password saved successfully! 🔐", Toast.LENGTH_LONG).show()
+                                }
+                                .addOnFailureListener { err ->
+                                    isSaving = false
+                                    Toast.makeText(context, "Error: ${err.localizedMessage ?: "Could not update password"}", Toast.LENGTH_LONG).show()
+                                }
+                        } else {
+                            isSaving = false
+                            Toast.makeText(context, "User session not found. Please log in again.", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    enabled = !isSaving && newPassword.length >= 6 && newPassword == confirmPassword,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = BrandGold,
+                        contentColor = Color.Black
+                    ),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    if (isSaving) {
+                        CircularProgressIndicator(
+                            color = Color.Black,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    } else {
+                        Text("Save Password", fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showSetPasswordDialog = false },
+                    enabled = !isSaving
+                ) {
+                    Text("Cancel", color = Color.Gray)
+                }
+            }
         )
     }
 

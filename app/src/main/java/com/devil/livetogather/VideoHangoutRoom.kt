@@ -9,12 +9,15 @@ import android.util.Log
 import android.view.SurfaceView
 import android.view.WindowManager
 import android.widget.Toast
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.SetOptions
 import androidx.compose.animation.*
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -138,6 +141,7 @@ fun VideoHangoutRoomDialog(
     var showCommentInputDialog by remember { mutableStateOf(false) }
     var showInRoomInboxDialog by remember { mutableStateOf(false) }
     var showGiftStoreDialog by remember { mutableStateOf(false) }
+    var showTrackSelectorDialog by remember { mutableStateOf(false) }
     var showEmojiTray by remember { mutableStateOf(false) }
     var activeGiftEvent by remember { mutableStateOf<GiftEvent?>(null) }
     var isFollowingHost by remember { mutableStateOf(false) }
@@ -246,9 +250,35 @@ fun VideoHangoutRoomDialog(
             if (snapshot != null && snapshot.exists()) {
                 val updated = parseRoomFromDoc(snapshot)
                 room = updated
+
+                // Real-Time Global Music Synchronizer across all devices
+                if (updated.isPlaying && updated.nowPlayingUrl.isNotBlank()) {
+                    val trackStartedAt = snapshot.getLong("trackStartedAt") ?: updated.trackStartedAt
+                    val elapsedMs = if (trackStartedAt > 0L) {
+                        (System.currentTimeMillis() - trackStartedAt).toInt().coerceAtLeast(0)
+                    } else {
+                        updated.playbackPosition.toInt().coerceAtLeast(0)
+                    }
+
+                    if (AudioPlayerManager.currentTrackUrlState.value != updated.nowPlayingUrl || !AudioPlayerManager.isPlayingState.value) {
+                        AudioPlayerManager.play(context, updated.nowPlayingUrl, updated.nowPlayingTitle, updated.nowPlayingArtworkUrl, initialSeekMs = elapsedMs)
+                    } else {
+                        val currentLocalPos = AudioPlayerManager.currentPositionMsState.value
+                        val dur = AudioPlayerManager.durationMsState.value
+                        val targetPos = if (dur > 0) (elapsedMs % dur) else elapsedMs
+                        if (kotlin.math.abs(currentLocalPos - targetPos) > 4000) {
+                            AudioPlayerManager.seekTo(targetPos)
+                        }
+                    }
+                } else if (!updated.isPlaying && AudioPlayerManager.isPlayingState.value) {
+                    AudioPlayerManager.pause()
+                }
             }
         }
-        onDispose { roomListener.remove() }
+        onDispose {
+            AudioPlayerManager.pause()
+            roomListener.remove()
+        }
     }
 
     // 3. Real-Time Room Members Listener (rooms/{roomId}/members)
@@ -953,6 +983,112 @@ fun VideoHangoutRoomDialog(
             }
 
             // -------------------------------------------------------------
+            // LAYER 4B: ROUND FLOATABLE DRAGGABLE MUSIC EQUALIZER PIP
+            // -------------------------------------------------------------
+            if (room.isPlaying || room.nowPlayingUrl.isNotBlank() || AudioPlayerManager.isPlayingState.value) {
+                FloatingMusicEqualizerPlayer(
+                    room = room,
+                    isPlaying = AudioPlayerManager.isPlayingState.value,
+                    trackTitle = AudioPlayerManager.currentTrackTitleState.value.ifEmpty { room.nowPlayingTitle },
+                    trackArtist = room.nowPlayingArtist,
+                    artworkUrl = AudioPlayerManager.currentTrackArtworkUrlState.value.ifEmpty { room.nowPlayingArtworkUrl },
+                    isHostOrAdmin = isUserHost || currentUser.isOfficialAdmin(),
+                    onTogglePlay = {
+                        if (!isUserHost && !currentUser.isOfficialAdmin()) {
+                            Toast.makeText(context, "Only room host or admin can control music 🎵", Toast.LENGTH_SHORT).show()
+                        } else {
+                            val willPlay = !AudioPlayerManager.isPlayingState.value
+                            val now = System.currentTimeMillis()
+                            val curPos = AudioPlayerManager.currentPositionMsState.value
+                            val trackStarted = if (willPlay) (now - curPos) else 0L
+                            if (willPlay) {
+                                if (AudioPlayerManager.currentTrackUrlState.value.isNotBlank()) {
+                                    AudioPlayerManager.resume(context)
+                                } else {
+                                    val defaultUrl = room.nowPlayingUrl.ifEmpty { CURATED_HANGOUT_TRACKS[0].url }
+                                    val defaultTitle = room.nowPlayingTitle.ifEmpty { CURATED_HANGOUT_TRACKS[0].title }
+                                    val defaultArt = room.nowPlayingArtworkUrl.ifEmpty { CURATED_HANGOUT_TRACKS[0].artworkUrl }
+                                    AudioPlayerManager.play(context, defaultUrl, defaultTitle, defaultArt, initialSeekMs = curPos)
+                                }
+                            } else {
+                                AudioPlayerManager.pause()
+                            }
+                            room = room.copy(isPlaying = willPlay, trackStartedAt = trackStarted, playbackPosition = curPos.toLong())
+                            db.collection("rooms").document(room.id).set(
+                                mapOf(
+                                    "isPlaying" to willPlay,
+                                    "trackStartedAt" to trackStarted,
+                                    "playbackPosition" to curPos.toLong(),
+                                    "nowPlayingTitle" to AudioPlayerManager.currentTrackTitleState.value.ifEmpty { room.nowPlayingTitle },
+                                    "nowPlayingArtist" to room.nowPlayingArtist,
+                                    "nowPlayingUrl" to AudioPlayerManager.currentTrackUrlState.value.ifEmpty { room.nowPlayingUrl },
+                                    "nowPlayingArtworkUrl" to AudioPlayerManager.currentTrackArtworkUrlState.value.ifEmpty { room.nowPlayingArtworkUrl }
+                                ),
+                                SetOptions.merge()
+                            )
+                        }
+                    },
+                    onOpenSearch = {
+                        if (!isUserHost && !currentUser.isOfficialAdmin()) {
+                            Toast.makeText(context, "Only room host or admin can select music 🎵", Toast.LENGTH_SHORT).show()
+                        } else {
+                            showTrackSelectorDialog = true
+                        }
+                    },
+                    onStopMusic = {
+                        if (!isUserHost && !currentUser.isOfficialAdmin()) {
+                            Toast.makeText(context, "Only room host or admin can stop music 🛑", Toast.LENGTH_SHORT).show()
+                        } else {
+                            AudioPlayerManager.stop()
+                            room = room.copy(isPlaying = false, nowPlayingUrl = "", nowPlayingTitle = "")
+                            db.collection("rooms").document(room.id).set(
+                                mapOf(
+                                    "isPlaying" to false,
+                                    "nowPlayingUrl" to "",
+                                    "nowPlayingTitle" to "",
+                                    "trackStartedAt" to 0L,
+                                    "playbackPosition" to 0L
+                                ),
+                                SetOptions.merge()
+                            )
+                        }
+                    }
+                )
+            }
+
+            // -------------------------------------------------------------
+            // LAYER 4C: MUSIC FLOATING ICON BUTTON DIRECTLY ABOVE GIFT BOX
+            // -------------------------------------------------------------
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 14.dp, bottom = 68.dp)
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.sweepGradient(
+                            listOf(
+                                Color(0xFF8E24AA),
+                                Color(0xFFFF4081),
+                                BrandGold,
+                                Color(0xFF8E24AA)
+                            )
+                        )
+                    )
+                    .border(1.2.dp, BrandGold, CircleShape)
+                    .clickable {
+                        if (!isUserHost && !currentUser.isOfficialAdmin()) {
+                            Toast.makeText(context, "Only room host or admin can select music 🎵", Toast.LENGTH_SHORT).show()
+                        } else {
+                            showTrackSelectorDialog = true
+                        }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Text("🎵", fontSize = 19.sp)
+            }
+
+            // -------------------------------------------------------------
             // LAYER 5: FLOATING FLYING EMOJIS OVERLAY
             // -------------------------------------------------------------
             floatingEmojis.forEach { (emoji, timestamp) ->
@@ -1272,14 +1408,54 @@ fun VideoHangoutRoomDialog(
                 )
             }
 
+            if (showTrackSelectorDialog) {
+                TrackSelectorDialog(
+                    onDismiss = { showTrackSelectorDialog = false },
+                    onSelectTrack = { title, artist, category, url, artworkUrl ->
+                        val now = System.currentTimeMillis()
+                        db.collection("rooms").document(room.id).set(
+                            mapOf(
+                                "currentPlayingTrack" to title,
+                                "nowPlayingTitle" to title,
+                                "nowPlayingArtist" to artist,
+                                "nowPlayingUrl" to url,
+                                "nowPlayingArtworkUrl" to artworkUrl,
+                                "isPlaying" to true,
+                                "trackStartedAt" to now,
+                                "playbackPosition" to 0L
+                            ),
+                            SetOptions.merge()
+                        )
+                        room = room.copy(
+                            nowPlayingTitle = title,
+                            nowPlayingArtist = artist,
+                            nowPlayingUrl = url,
+                            nowPlayingArtworkUrl = artworkUrl,
+                            isPlaying = true,
+                            trackStartedAt = now,
+                            playbackPosition = 0L
+                        )
+                        AudioPlayerManager.play(context, url, title, artworkUrl, initialSeekMs = 0)
+                        showTrackSelectorDialog = false
+                        Toast.makeText(context, "Streaming: $title by $artist 🎵", Toast.LENGTH_SHORT).show()
+                    }
+                )
+            }
+
             if (showRoomSettingsDialog) {
                 VideoRoomSettingsSheet(
                     room = room,
                     isHost = isUserHost,
+                    currentUser = currentUser,
+                    activeMembers = activeMembers,
+                    db = db,
                     currentLayout = activeLayout,
                     onSwitchLayout = { switchLayout(it) },
                     onStartPk = { startPkBattle() },
                     onEndPk = { endPkBattle() },
+                    onUpdateTheme = { newTheme ->
+                        room = room.copy(banner_image_url = newTheme)
+                    },
                     onDismiss = { showRoomSettingsDialog = false }
                 )
             }
@@ -1858,110 +2034,615 @@ fun FloatingReactionEmoji(emoji: String) {
 fun VideoRoomSettingsSheet(
     room: RoomItem,
     isHost: Boolean,
+    currentUser: UserProfile,
+    activeMembers: List<RoomMember>,
+    db: FirebaseFirestore,
     currentLayout: String,
     onSwitchLayout: (String) -> Unit,
     onStartPk: () -> Unit,
     onEndPk: () -> Unit,
+    onUpdateTheme: (String) -> Unit = {},
     onDismiss: () -> Unit
 ) {
-    Dialog(onDismissRequest = onDismiss) {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    var announcementText by remember { mutableStateOf(room.announcement) }
+    var isRoomLocked by remember { mutableStateOf(room.isLocked) }
+    var isRoomVip by remember { mutableStateOf(room.privacy == "vip_only" || room.isVipRoom) }
+    var scheduledTimeText by remember { mutableStateOf(room.scheduledTime) }
+    var selectedPrivacy by remember { mutableStateOf(room.privacy) }
+    var isUploadingTheme by remember { mutableStateOf(false) }
+
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            isUploadingTheme = true
+            coroutineScope.launch {
+                val themeUrl = ImageUploadManager.uploadImage(context, uri, "rooms") ?: uri.toString()
+                onUpdateTheme(themeUrl)
+                db.collection("rooms").document(room.id).update("banner_image_url", themeUrl)
+                Toast.makeText(context, "Theme updated from gallery!", Toast.LENGTH_SHORT).show()
+                isUploadingTheme = false
+            }
+        }
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true
+        )
+    ) {
         Card(
             colors = CardDefaults.cardColors(containerColor = BrandCard),
             shape = RoundedCornerShape(22.dp),
             border = BorderStroke(1.2.dp, BrandBorder),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .fillMaxHeight(0.85f)
+                .padding(vertical = 10.dp)
         ) {
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .padding(20.dp)
+                    .fillMaxSize()
+                    .padding(16.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("📹 Video Stream Settings", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text("⚙️ Video Room Settings", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray)
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                if (isHost) {
-                    Text("Switch Video Layout", color = BrandCoral, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        val layouts = listOf(
-                            "1p" to "1P Solo",
-                            "2p" to "2P PK Battle",
-                            "4p" to "4P Grid"
-                        )
-                        layouts.forEach { (key, label) ->
-                            val isSelected = currentLayout == key
-                            Surface(
-                                color = if (isSelected) BrandCoral else BrandDark,
-                                shape = RoundedCornerShape(10.dp),
-                                border = BorderStroke(1.dp, if (isSelected) BrandCoral else BrandBorder),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clickable {
-                                        onSwitchLayout(key)
-                                        onDismiss()
-                                    }
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+
+                    if (isHost) {
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
+                                shape = RoundedCornerShape(14.dp)
                             ) {
-                                Text(
-                                    text = label,
-                                    color = Color.White,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.padding(vertical = 10.dp)
-                                )
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text("📹 Video Layout Switcher", color = BrandCoral, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        val layouts = listOf(
+                                            "1p" to "1P Solo",
+                                            "2p" to "2P PK Battle",
+                                            "4p" to "4P Grid"
+                                        )
+                                        layouts.forEach { (key, label) ->
+                                            val isSelected = currentLayout == key
+                                            Surface(
+                                                color = if (isSelected) BrandCoral else BrandDark,
+                                                shape = RoundedCornerShape(10.dp),
+                                                border = BorderStroke(1.dp, if (isSelected) BrandCoral else BrandBorder),
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .clickable { onSwitchLayout(key) }
+                                            ) {
+                                                Text(
+                                                    text = label,
+                                                    color = Color.White,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    textAlign = TextAlign.Center,
+                                                    modifier = Modifier.padding(vertical = 10.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(12.dp))
+
+                                    if (!room.isPkActive) {
+                                        Button(
+                                            onClick = {
+                                                onStartPk()
+                                                onDismiss()
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF1744)),
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.fillMaxWidth().height(38.dp)
+                                        ) {
+                                            Text("⚔️ Start 5-Minute PK Battle", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        }
+                                    } else {
+                                        Button(
+                                            onClick = {
+                                                onEndPk()
+                                                onDismiss()
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF37474F)),
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.fillMaxWidth().height(38.dp)
+                                        ) {
+                                            Text("⏹️ Conclude Active PK Battle", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // 2. ROOM ANNOUNCEMENT
+                    item {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("📢 Room Announcement", color = BrandGold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    if (isHost && announcementText.isNotBlank()) {
+                                        Text(
+                                            text = "Clear",
+                                            color = Color.Red,
+                                            fontSize = 11.sp,
+                                            modifier = Modifier.clickable {
+                                                announcementText = ""
+                                                db.collection("rooms").document(room.id).update("announcement", "")
+                                                Toast.makeText(context, "Announcement cleared", Toast.LENGTH_SHORT).show()
+                                            }
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("Pinned in room and broadcast in live comments.", color = Color.Gray, fontSize = 11.sp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                if (isHost) {
+                                    OutlinedTextField(
+                                        value = announcementText,
+                                        onValueChange = { announcementText = it },
+                                        placeholder = { Text("Write announcement (e.g. Welcome to our live stream! 🎉)", color = Color.Gray, fontSize = 11.sp) },
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedTextColor = Color.White,
+                                            unfocusedTextColor = Color.White,
+                                            focusedBorderColor = BrandGold,
+                                            unfocusedBorderColor = BrandBorder,
+                                            focusedContainerColor = BrandDark,
+                                            unfocusedContainerColor = BrandDark
+                                        ),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Button(
+                                        onClick = {
+                                            if (announcementText.isNotBlank()) {
+                                                db.collection("rooms").document(room.id).update("announcement", announcementText.trim())
+                                                val comment = LiveRoomComment(
+                                                    id = UUID.randomUUID().toString(),
+                                                    roomId = room.id,
+                                                    userId = currentUser.uid,
+                                                    userName = "📢 ANNOUNCEMENT",
+                                                    message = announcementText.trim(),
+                                                    timestamp = System.currentTimeMillis()
+                                                )
+                                                db.collection("rooms").document(room.id)
+                                                    .collection("live_comments").document(comment.id).set(comment)
+                                                Toast.makeText(context, "Announcement broadcasted! 📢", Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.fillMaxWidth().height(36.dp)
+                                    ) {
+                                        Text("Broadcast Announcement 📢", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                    }
+                                } else {
+                                    Text(
+                                        text = if (room.announcement.isNotBlank()) room.announcement else "No active announcement at this moment.",
+                                        color = if (room.announcement.isNotBlank()) BrandGold else Color.LightGray,
+                                        fontSize = 12.sp
+                                    )
+                                }
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    // 3. LIVE / OFFLINE BROADCAST STATUS
+                    if (isHost) {
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
+                                shape = RoundedCornerShape(14.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text("🔴 Live Broadcast Status", color = BrandCoral, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Button(
+                                            onClick = {
+                                                db.collection("rooms").document(room.id).update(
+                                                    mapOf(
+                                                        "isHostLive" to true,
+                                                        "statusMessage" to "LIVE NOW"
+                                                    )
+                                                )
+                                                broadcastLiveNotificationToFollowers(
+                                                    db = db,
+                                                    hostId = room.hostId,
+                                                    hostName = room.hostName,
+                                                    hostPhoto = room.hostPhotoUrl,
+                                                    room = room
+                                                )
+                                                Toast.makeText(context, "Room is now LIVE! Followers notified.", Toast.LENGTH_SHORT).show()
+                                            },
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = if (room.isHostLive) BrandGreen else BrandDark
+                                            ),
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text("🔴 Go Live", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        }
 
-                    if (!room.isPkActive) {
-                        Button(
-                            onClick = {
-                                onStartPk()
-                                onDismiss()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF1744)),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth().height(42.dp)
-                        ) {
-                            Text("⚔️ Start 5-Minute PK Battle", color = Color.White, fontWeight = FontWeight.Bold)
-                        }
-                    } else {
-                        Button(
-                            onClick = {
-                                onEndPk()
-                                onDismiss()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth().height(42.dp)
-                        ) {
-                            Text("⏹️ Conclude Active PK Battle", color = Color.White, fontWeight = FontWeight.Bold)
+                                        Button(
+                                            onClick = {
+                                                db.collection("rooms").document(room.id).update(
+                                                    mapOf(
+                                                        "isHostLive" to false,
+                                                        "statusMessage" to "Host will be live soon"
+                                                    )
+                                                )
+                                                Toast.makeText(context, "Room status set to 'Host will be live soon'", Toast.LENGTH_SHORT).show()
+                                            },
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = if (!room.isHostLive) BrandGold else BrandDark
+                                            ),
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text("⏳ Set Offline", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (!room.isHostLive) Color.Black else Color.White)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
-                } else {
-                    Text(
-                        text = "You are watching as an audience viewer in this HD live broadcast.",
-                        color = Color.LightGray,
-                        fontSize = 12.sp
-                    )
+                    // 4. SCHEDULE TIMING
+                    if (isHost) {
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
+                                shape = RoundedCornerShape(14.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text("⏰ Live Timing Schedule", color = BrandGold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("Notify users when you will be live next (e.g. Tonight 9:00 PM)", color = Color.Gray, fontSize = 11.sp)
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        OutlinedTextField(
+                                            value = scheduledTimeText,
+                                            onValueChange = { scheduledTimeText = it },
+                                            placeholder = { Text("e.g. Tonight 9:30 PM", color = Color.Gray, fontSize = 11.sp) },
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedTextColor = Color.White,
+                                                unfocusedTextColor = Color.White,
+                                                focusedBorderColor = BrandGold,
+                                                unfocusedBorderColor = BrandBorder,
+                                                focusedContainerColor = BrandDark,
+                                                unfocusedContainerColor = BrandDark
+                                            ),
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Button(
+                                            onClick = {
+                                                db.collection("rooms").document(room.id).update("scheduledTime", scheduledTimeText.trim())
+                                                Toast.makeText(context, "Schedule timing saved!", Toast.LENGTH_SHORT).show()
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
+                                            shape = RoundedCornerShape(10.dp)
+                                        ) {
+                                            Text("Save", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 5. ROOM PRIVACY & ACCESS CONTROLS
+                    item {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text("🔒 Room Access & Privacy", color = BrandCyan, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                listOf(
+                                    "public" to "🌐 Public (Open to everyone)",
+                                    "vip_only" to "⭐ VIP & Platinum Only",
+                                    "private" to "🔒 Invite Only"
+                                ).forEach { (key, label) ->
+                                    val isSelected = selectedPrivacy == key
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(if (isSelected) BrandCyan.copy(alpha = 0.15f) else Color.Transparent)
+                                            .clickable {
+                                                if (isHost) {
+                                                    selectedPrivacy = key
+                                                    db.collection("rooms").document(room.id).update("privacy", key)
+                                                    Toast.makeText(context, "Privacy set to: $label", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                            .padding(vertical = 8.dp, horizontal = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        RadioButton(
+                                            selected = isSelected,
+                                            onClick = {
+                                                if (isHost) {
+                                                    selectedPrivacy = key
+                                                    db.collection("rooms").document(room.id).update("privacy", key)
+                                                }
+                                            },
+                                            colors = RadioButtonDefaults.colors(selectedColor = BrandCyan)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(label, color = if (isSelected) Color.White else Color.LightGray, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                    }
+                                }
+
+                                if (isHost) {
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    HorizontalDivider(color = BrandBorder)
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    // Lock Room Toggle
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text("🔒 Lock Room", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                            Text(
+                                                text = if (isRoomLocked) "Room is currently locked 🔒" else "Room is open for everyone",
+                                                color = if (isRoomLocked) Color(0xFFFF8A80) else Color.Gray,
+                                                fontSize = 10.sp
+                                            )
+                                        }
+                                        Switch(
+                                            checked = isRoomLocked,
+                                            onCheckedChange = { locked ->
+                                                isRoomLocked = locked
+                                                db.collection("rooms").document(room.id).update("isLocked", locked)
+                                                Toast.makeText(context, if (locked) "Room is now locked 🔒" else "Room is now unlocked 🔓", Toast.LENGTH_SHORT).show()
+                                            },
+                                            colors = SwitchDefaults.colors(
+                                                checkedThumbColor = Color.White,
+                                                checkedTrackColor = Color.Red
+                                            )
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    // Room Premium (VIP) Toggle
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text("⭐ Room Premium (VIP)", color = BrandGold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                            Text(
+                                                text = if (isRoomVip) "Exclusive VIP room mode enabled ⭐" else "Standard room mode",
+                                                color = if (isRoomVip) BrandGold else Color.Gray,
+                                                fontSize = 10.sp
+                                            )
+                                        }
+                                        Switch(
+                                            checked = isRoomVip,
+                                            onCheckedChange = { vip ->
+                                                isRoomVip = vip
+                                                db.collection("rooms").document(room.id).update(
+                                                    mapOf(
+                                                        "isVipRoom" to vip,
+                                                        "privacy" to if (vip) "vip_only" else "public"
+                                                    )
+                                                )
+                                                Toast.makeText(context, if (vip) "Room set to Premium VIP ⭐" else "Room set to Standard Mode", Toast.LENGTH_SHORT).show()
+                                            },
+                                            colors = SwitchDefaults.colors(
+                                                checkedThumbColor = Color.Black,
+                                                checkedTrackColor = BrandGold
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 6. ROOM THEME CUSTOMIZER
+                    if (isHost) {
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
+                                shape = RoundedCornerShape(14.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("🎨 Room Theme & Background", color = BrandOrange, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                        Button(
+                                            onClick = { imagePickerLauncher.launch("image/*") },
+                                            colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                                            shape = RoundedCornerShape(50),
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                            modifier = Modifier.height(28.dp)
+                                        ) {
+                                            Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Pick from Phone", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        items(ROOM_THEME_PRESETS) { preset ->
+                                            val isCurrent = room.banner_image_url == preset.imageUrl
+                                            Column(
+                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                modifier = Modifier.clickable {
+                                                    onUpdateTheme(preset.imageUrl)
+                                                    db.collection("rooms").document(room.id).update("banner_image_url", preset.imageUrl)
+                                                    Toast.makeText(context, "Theme set to: ${preset.name}", Toast.LENGTH_SHORT).show()
+                                                }
+                                            ) {
+                                                AsyncImage(
+                                                    model = if (preset.imageUrl == "vip_royal_stage") R.drawable.vip_royal_stage else preset.imageUrl,
+                                                    contentDescription = preset.name,
+                                                    modifier = Modifier
+                                                        .size(64.dp)
+                                                        .clip(RoundedCornerShape(10.dp))
+                                                        .border(
+                                                            2.dp,
+                                                            if (isCurrent) BrandCoral else Color.Transparent,
+                                                            RoundedCornerShape(10.dp)
+                                                        ),
+                                                    contentScale = ContentScale.Crop
+                                                )
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text(
+                                                    text = preset.name.take(10),
+                                                    color = if (isCurrent) BrandCoral else Color.Gray,
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 7. MEMBER MODERATION (KICK & BAN)
+                    if (isHost) {
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
+                                shape = RoundedCornerShape(14.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text("🛡️ Room Member Moderation", color = Color.Red, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("Manage active members in your live room", color = Color.Gray, fontSize = 11.sp)
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    val nonHostMembers = activeMembers.filter { it.uid != room.hostId }
+                                    if (nonHostMembers.isEmpty()) {
+                                        Text("No other viewers currently in this room.", color = Color.Gray, fontSize = 11.sp)
+                                    } else {
+                                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            nonHostMembers.forEach { member ->
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .background(BrandDark, RoundedCornerShape(10.dp))
+                                                        .padding(8.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.SpaceBetween
+                                                ) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        AsyncImage(
+                                                            model = member.photoUrl,
+                                                            contentDescription = null,
+                                                            modifier = Modifier.size(32.dp).clip(CircleShape),
+                                                            contentScale = ContentScale.Crop
+                                                        )
+                                                        Spacer(modifier = Modifier.width(8.dp))
+                                                        Column {
+                                                            Text(member.name, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                            Text(member.tier, color = BrandGold, fontSize = 9.sp)
+                                                        }
+                                                    }
+
+                                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                        OutlinedButton(
+                                                            onClick = {
+                                                                db.collection("rooms").document(room.id)
+                                                                    .collection("members").document(member.uid).delete()
+                                                                db.collection("rooms").document(room.id)
+                                                                    .update("kickedUserIds", FieldValue.arrayUnion(member.uid))
+                                                                Toast.makeText(context, "${member.name} removed.", Toast.LENGTH_SHORT).show()
+                                                            },
+                                                            border = BorderStroke(1.dp, Color.Yellow),
+                                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                            modifier = Modifier.height(26.dp)
+                                                        ) {
+                                                            Text("Kick", color = Color.Yellow, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                                        }
+
+                                                        Button(
+                                                            onClick = {
+                                                                db.collection("rooms").document(room.id)
+                                                                    .collection("members").document(member.uid).delete()
+                                                                db.collection("rooms").document(room.id)
+                                                                    .update("bannedUserIds", FieldValue.arrayUnion(member.uid))
+                                                                Toast.makeText(context, "${member.name} banned.", Toast.LENGTH_SHORT).show()
+                                                            },
+                                                            colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                            modifier = Modifier.height(26.dp)
+                                                        ) {
+                                                            Text("Ban", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (!isHost) {
+                        item {
+                            Text(
+                                text = "You are watching as an audience viewer in this HD live broadcast.",
+                                color = Color.LightGray,
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(8.dp)
+                            )
+                        }
+                    }
                 }
             }
         }

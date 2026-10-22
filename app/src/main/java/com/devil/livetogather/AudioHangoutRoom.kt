@@ -3000,6 +3000,56 @@ fun RoomMemberProfileSheet(
                     }
                 }
 
+                // Registered Email Display & Admin Verified tag
+                val targetEmail = if (isSelf) {
+                    com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.email?.takeIf { it.isNotBlank() } ?: currentUser.email
+                } else {
+                    userProfile?.email ?: ""
+                }
+                val targetEmailPrivacy = if (isSelf) currentUser.emailPrivacy else (userProfile?.emailPrivacy ?: "only_me")
+                val isViewerAdmin = currentUser.isOfficialAdmin(com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.email)
+
+                if (targetEmail.isNotBlank()) {
+                    Surface(
+                        color = Color(0xFF1E1728),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(0.8.dp, if (isViewerAdmin) BrandCyan else BrandBorder),
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("📧", fontSize = 11.sp)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            if (isSelf || isViewerAdmin || targetEmailPrivacy == "public") {
+                                Text(
+                                    text = targetEmail,
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                if (isViewerAdmin && !isSelf) {
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "[🛡️ Admin Verified]",
+                                        color = BrandCyan,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            } else {
+                                Text(
+                                    text = "Email: Hidden 🔒 (Private)",
+                                    color = Color.LightGray,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+                }
+
                 val bioText = userProfile?.bio?.ifEmpty { "Excited to meet and hangout with awesome people!" }
                     ?: "Excited to meet and hangout with awesome people!"
                 Text(
@@ -9127,7 +9177,8 @@ fun MicSeatView(
                     avatarSize = 38.dp,
                     frameSize = 74.dp,
                     isSpeaking = isSpeaking,
-                    vipLevel = seatVipLvl
+                    vipLevel = seatVipLvl,
+                    showVipBadge = false
                 )
 
                 // Mic Mute / Unmute Status Badge at bottom-right with subtle voice pulse animation
@@ -9203,18 +9254,21 @@ fun MicSeatView(
 
         // Label / Subtitle
         if (seat.uid.isNotEmpty()) {
+            val occupantName = seatOccupantProfile?.name?.takeIf { it.isNotBlank() }
+                ?: seat.name.takeIf { it.isNotBlank() }
+                ?: (if (seat.seatIndex == 0) "Host" else "Speaker")
             Text(
-                text = if (isCurrentSelf) "You" else seat.name.substringBefore(' ').take(6),
+                text = occupantName,
                 color = Color.White,
-                fontSize = 8.5.sp,
+                fontSize = 9.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.width(60.dp)
+                modifier = Modifier.width(62.dp)
             )
             Text(
-                text = if (seat.seatIndex == 0) "Host 👑" else "Mic ${seat.seatIndex + 1}",
+                text = if (seat.seatIndex == 0) "Host 👑" else if (isCurrentSelf) "You" else "Mic ${seat.seatIndex + 1}",
                 color = if (seat.seatIndex == 0) BrandGold else BrandCoral,
                 fontSize = 7.5.sp,
                 fontWeight = FontWeight.SemiBold,
