@@ -40,6 +40,9 @@ object AgoraVideoManager {
         this.eventListener = listener
     }
 
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var currentUid: Int = 0
+
     private val rtcEventHandler = object : IRtcEngineEventHandler() {
         override fun onJoinChannelSuccess(channel: String?, uid: Int, elapsed: Int) {
             Log.d(TAG, "Joined Agora video channel: $channel, localUid: $uid, elapsed: $elapsed")
@@ -48,24 +51,32 @@ object AgoraVideoManager {
 
         override fun onUserJoined(uid: Int, elapsed: Int) {
             Log.d(TAG, "Remote user joined Agora video channel: $uid")
-            eventListener?.onUserJoined(uid)
+            mainHandler.post {
+                eventListener?.onUserJoined(uid)
+            }
         }
 
         override fun onUserOffline(uid: Int, reason: Int) {
             Log.d(TAG, "Remote user went offline: $uid, reason: $reason")
-            eventListener?.onUserOffline(uid, reason)
+            mainHandler.post {
+                eventListener?.onUserOffline(uid, reason)
+            }
         }
 
         override fun onFirstRemoteVideoDecoded(uid: Int, width: Int, height: Int, elapsed: Int) {
             Log.d(TAG, "First remote video decoded for uid: $uid, size: ${width}x${height}")
-            eventListener?.onFirstRemoteVideoDecoded(uid, width, height, elapsed)
-            eventListener?.onUserJoined(uid)
+            mainHandler.post {
+                eventListener?.onFirstRemoteVideoDecoded(uid, width, height, elapsed)
+                eventListener?.onUserJoined(uid)
+            }
         }
 
         override fun onRemoteVideoStateChanged(uid: Int, state: Int, reason: Int, elapsed: Int) {
             Log.d(TAG, "onRemoteVideoStateChanged: uid=$uid, state=$state, reason=$reason")
             if (state == Constants.REMOTE_VIDEO_STATE_STARTING || state == Constants.REMOTE_VIDEO_STATE_DECODING) {
-                eventListener?.onUserJoined(uid)
+                mainHandler.post {
+                    eventListener?.onUserJoined(uid)
+                }
             }
         }
 
@@ -73,12 +84,14 @@ object AgoraVideoManager {
             speakers: Array<out AudioVolumeInfo>?,
             totalVolume: Int
         ) {
-            eventListener?.onAudioVolumeIndication(speakers, totalVolume)
-            if (speakers != null) {
-                for (speaker in speakers) {
-                    if (speaker.uid == 0) {
-                        val talking = speaker.volume > 15 && !isMuted
-                        onLocalTalkingStateChanged?.invoke(talking)
+            mainHandler.post {
+                eventListener?.onAudioVolumeIndication(speakers, totalVolume)
+                if (speakers != null) {
+                    for (speaker in speakers) {
+                        if (speaker.uid == 0) {
+                            val talking = speaker.volume > 15 && !isMuted
+                            onLocalTalkingStateChanged?.invoke(talking)
+                        }
                     }
                 }
             }
@@ -86,7 +99,9 @@ object AgoraVideoManager {
 
         override fun onError(err: Int) {
             Log.e(TAG, "Agora Video RTC Error: $err")
-            eventListener?.onError(err)
+            mainHandler.post {
+                eventListener?.onError(err)
+            }
         }
     }
 
@@ -130,26 +145,30 @@ object AgoraVideoManager {
         }
     }
 
-    fun setupLocalVideo(surfaceView: SurfaceView) {
+    fun setupLocalVideo(view: android.view.View) {
         try {
-            surfaceView.setZOrderMediaOverlay(true)
-            val canvas = VideoCanvas(surfaceView, VideoCanvas.RENDER_MODE_HIDDEN, 0)
+            if (view is SurfaceView) {
+                view.setZOrderMediaOverlay(true)
+            }
+            val canvas = VideoCanvas(view, VideoCanvas.RENDER_MODE_HIDDEN, 0)
             canvas.mirrorMode = Constants.VIDEO_MIRROR_MODE_AUTO
             rtcEngine?.setupLocalVideo(canvas)
             rtcEngine?.startPreview()
-            Log.d(TAG, "Local video preview started on surfaceView")
+            Log.d(TAG, "Local video preview started on view: ${view.javaClass.simpleName}")
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up local video: ${e.message}")
         }
     }
 
-    fun setupRemoteVideo(surfaceView: SurfaceView, uid: Int) {
+    fun setupRemoteVideo(view: android.view.View, uid: Int) {
         try {
-            surfaceView.setZOrderMediaOverlay(true)
-            val canvas = VideoCanvas(surfaceView, VideoCanvas.RENDER_MODE_HIDDEN, uid)
+            if (view is SurfaceView) {
+                view.setZOrderMediaOverlay(true)
+            }
+            val canvas = VideoCanvas(view, VideoCanvas.RENDER_MODE_HIDDEN, uid)
             canvas.mirrorMode = Constants.VIDEO_MIRROR_MODE_AUTO
             rtcEngine?.setupRemoteVideo(canvas)
-            Log.d(TAG, "Remote video configured for uid $uid")
+            Log.d(TAG, "Remote video configured for uid $uid on view: ${view.javaClass.simpleName}")
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up remote video for uid $uid: ${e.message}")
         }
@@ -164,6 +183,8 @@ object AgoraVideoManager {
     ) {
         init(context)
         val engine = rtcEngine ?: return
+
+        currentUid = uid
 
         if (currentChannel == roomId) {
             Log.d(TAG, "Already in video channel $roomId")
@@ -189,6 +210,7 @@ object AgoraVideoManager {
             publishMicrophoneTrack = isBroadcaster && !startMuted
         }
 
+        // Always build token with ROLE_PUBLISHER so any room participant has instant authorization when promoted
         val tokenBuilder = RtcTokenBuilder2()
         val token = try {
             tokenBuilder.buildTokenWithUid(
@@ -196,7 +218,7 @@ object AgoraVideoManager {
                 AGORA_PRIMARY_CERTIFICATE,
                 roomId,
                 uid,
-                if (isBroadcaster) RtcTokenBuilder2.Role.ROLE_PUBLISHER else RtcTokenBuilder2.Role.ROLE_SUBSCRIBER,
+                RtcTokenBuilder2.Role.ROLE_PUBLISHER,
                 86400,
                 86400
             )
@@ -221,7 +243,29 @@ object AgoraVideoManager {
         if (isBroadcaster) {
             engine.enableVideo()
             engine.enableLocalVideo(true)
+            engine.muteLocalVideoStream(false)
+            engine.muteLocalAudioStream(false)
             engine.startPreview()
+
+            val ch = currentChannel
+            if (!ch.isNullOrBlank() && currentUid > 0) {
+                try {
+                    val tokenBuilder = RtcTokenBuilder2()
+                    val token = tokenBuilder.buildTokenWithUid(
+                        AGORA_APP_ID,
+                        AGORA_PRIMARY_CERTIFICATE,
+                        ch,
+                        currentUid,
+                        RtcTokenBuilder2.Role.ROLE_PUBLISHER,
+                        86400,
+                        86400
+                    )
+                    engine.renewToken(token)
+                    Log.d(TAG, "Renewed publisher token for Agora video channel")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed renewing token: ${e.message}")
+                }
+            }
         }
         Log.d(TAG, "Agora client role updated to: $role")
     }

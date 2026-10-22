@@ -2414,6 +2414,7 @@ fun AllRoomViewersDialog(
     onSelectMember: (RoomMember) -> Unit,
     onKickOut: (RoomMember) -> Unit,
     onBan: (RoomMember) -> Unit,
+    onInviteToVideo: ((RoomMember) -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     val isKeyboardOpen = WindowInsets.isImeVisible
@@ -2562,6 +2563,17 @@ fun AllRoomViewersDialog(
                                         }
 
                                         if (isHost && !isSelf) {
+                                            if (onInviteToVideo != null) {
+                                                Button(
+                                                    onClick = { onInviteToVideo(member) },
+                                                    colors = ButtonDefaults.buttonColors(containerColor = BrandCyan),
+                                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                                                    modifier = Modifier.height(24.dp)
+                                                ) {
+                                                    Text("Invite 📹", color = Color.Black, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+
                                             OutlinedButton(
                                                 onClick = { onKickOut(member) },
                                                 border = BorderStroke(1.dp, Color.Yellow),
@@ -7474,6 +7486,81 @@ fun AudioHangoutRoomDialog(
                     } else {
                         Toast.makeText(context, "⚠️ Insufficient Diamonds! Needed: %,d 💎 to send ${giftItem.name} (Available: %,d 💎). Please recharge.".format(giftItem.cost, userDiamonds), Toast.LENGTH_LONG).show()
                     }
+                },
+                micSeats = micSeats,
+                onSendMicroGift = { giftItem, quantity, targetSeatIndex, targetUserName, fromBackpack ->
+                    val occupiedSeats = micSeats.filter { it.uid.isNotBlank() }
+                    val multiplier = if (targetSeatIndex == -1) maxOf(1, occupiedSeats.size) else 1
+                    val totalCost = giftItem.cost * quantity * multiplier
+                    val canProceed = fromBackpack || userDiamonds >= totalCost
+
+                    if (canProceed) {
+                        if (!fromBackpack) {
+                            val newDiamonds = userDiamonds - totalCost
+                            val xpEarned = totalCost * 10L
+                            val newWealthXp = currentUser.getEffectiveWealthXp() + xpEarned
+                            val newWealthLevel = LevelBadgeSystem.calculateLevelFromXp(newWealthXp)
+                            db.collection("users").document(currentUser.uid).update(
+                                mapOf(
+                                    "diamonds" to newDiamonds,
+                                    "wealthXp" to newWealthXp,
+                                    "wealthLevel" to newWealthLevel
+                                )
+                            )
+                            userDiamonds = newDiamonds
+                        } else {
+                            val curBackpack = currentUser.backpack.toMutableMap()
+                            val curCount = curBackpack[giftItem.id] ?: 0
+                            val deductCount = quantity * multiplier
+                            val rem = maxOf(0, curCount - deductCount)
+                            if (rem > 0) curBackpack[giftItem.id] = rem else curBackpack.remove(giftItem.id)
+                            db.collection("users").document(currentUser.uid).update("backpack", curBackpack)
+                        }
+
+                        // Broadcast Gift Event for real-time trajectory & firecracker explosion
+                        val giftEvent = GiftEvent(
+                            id = UUID.randomUUID().toString(),
+                            roomId = room.id,
+                            senderId = currentUser.uid,
+                            senderName = currentUser.name,
+                            senderPhoto = currentUser.photo,
+                            giftId = giftItem.id,
+                            giftName = giftItem.name,
+                            giftEmoji = giftItem.emoji,
+                            cost = totalCost,
+                            animationType = giftItem.animationType,
+                            timestamp = System.currentTimeMillis(),
+                            targetUserId = if (targetSeatIndex >= 0) micSeats.find { it.seatIndex == targetSeatIndex }?.uid ?: "" else "",
+                            targetUserName = targetUserName,
+                            quantity = quantity,
+                            targetMicSeatIndex = targetSeatIndex,
+                            drawableResId = giftItem.drawableResId,
+                            fromBackpack = fromBackpack
+                        )
+                        activeGiftEvent = giftEvent
+                        db.collection("rooms").document(room.id)
+                            .collection("gift_events").document(giftEvent.id)
+                            .set(giftEvent)
+
+                        // Real-Time PK Battle Score sync
+                        if (room.isPkActive) {
+                            val supportedTeam = selectedPkTeamForBoost
+                            val scoreField = if (supportedTeam == "red") "pkHost2Score" else "pkHost1Score"
+                            db.collection("rooms").document(room.id).update(scoreField, FieldValue.increment(totalCost.toLong()))
+                        }
+
+                        showGiftStoreDialog = false
+                    } else {
+                        Toast.makeText(context, "⚠️ Insufficient Diamonds! Needed: %,d 💎".format(totalCost), Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onClaimStarterGifts = {
+                    val starterPack = mapOf(
+                        "gift_single_rose" to 5,
+                        "gift_firecracker_bomb" to 1
+                    )
+                    db.collection("users").document(currentUser.uid).update("backpack", starterPack)
+                    Toast.makeText(context, "🎉 Starter Gifts Claimed! 5x Roses & 1x Firecracker Bomb added to your Backpack!", Toast.LENGTH_SHORT).show()
                 }
             )
         }
@@ -10173,9 +10260,13 @@ fun GiftStoreDialog(
     onDiamondsRecharged: (Long) -> Unit,
     onBuyFrame: (frameId: String, cost: Long) -> Unit,
     onApplyFrame: (frameId: String) -> Unit,
-    onSendGift: (VideoGiftItem) -> Unit
+    onSendGift: (VideoGiftItem) -> Unit,
+    micSeats: List<MicSeat> = emptyList(),
+    onSendMicroGift: ((gift: RoomGiftItem, quantity: Int, targetSeatIndex: Int, targetUserName: String, fromBackpack: Boolean) -> Unit)? = null,
+    onClaimStarterGifts: (() -> Unit)? = null
 ) {
-    var selectedTab by remember { mutableStateOf(0) } // 0: Diamonds, 1: Frames, 2: Video Gifts
+    var selectedTab by remember { mutableStateOf(0) } // 0: 3D Gifts, 1: Backpack, 2: VIP Gifts, 3: Diamonds, 4: Frames
+    var localBackpack by remember(currentUser.backpack) { mutableStateOf(currentUser.backpack) }
     val context = LocalContext.current
 
     Dialog(
@@ -10187,14 +10278,14 @@ fun GiftStoreDialog(
             shape = RoundedCornerShape(22.dp),
             border = BorderStroke(1.5.dp, BrandGold.copy(alpha = 0.6f)),
             modifier = Modifier
-                .fillMaxWidth(0.94f)
-                .heightIn(max = 580.dp)
-                .padding(vertical = 12.dp)
+                .fillMaxWidth(0.95f)
+                .heightIn(max = 620.dp)
+                .padding(vertical = 10.dp)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp)
+                    .padding(14.dp)
             ) {
                 // Header
                 Row(
@@ -10220,7 +10311,7 @@ fun GiftStoreDialog(
                                 .clip(RoundedCornerShape(50))
                                 .background(Color(0xFF2B1D0E))
                                 .border(1.dp, BrandGold, RoundedCornerShape(50))
-                                .clickable { selectedTab = 0 }
+                                .clickable { selectedTab = 3 }
                                 .padding(horizontal = 9.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -10250,10 +10341,10 @@ fun GiftStoreDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                // Navigation Tabs
-                Row(
+                // Navigation Tabs (5 Tabs with horizontal scroll)
+                LazyRow(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
@@ -10261,19 +10352,19 @@ fun GiftStoreDialog(
                         .padding(3.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    val tabs = listOf("💎 Diamonds", "👑 Avatar Frames", "🎬 Video Gifts")
-                    tabs.forEachIndexed { index, title ->
+                    val tabs = listOf("🎁 3D Gifts", "🎒 Backpack", "🎬 VIP Gifts", "💎 Recharge", "👑 Frames")
+                    items(tabs.size) { index ->
+                        val title = tabs[index]
                         val isSelected = selectedTab == index
                         Box(
                             modifier = Modifier
-                                .weight(1f)
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(
                                     if (isSelected) Brush.horizontalGradient(listOf(BrandCoral, BrandOrange))
                                     else Brush.horizontalGradient(listOf(Color.Transparent, Color.Transparent))
                                 )
                                 .clickable { selectedTab = index }
-                                .padding(vertical = 7.dp),
+                                .padding(horizontal = 10.dp, vertical = 7.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
@@ -10286,7 +10377,7 @@ fun GiftStoreDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 // Tab Content
                 Box(
@@ -10295,23 +10386,50 @@ fun GiftStoreDialog(
                         .weight(1f)
                 ) {
                     when (selectedTab) {
-                        0 -> DiamondsRechargeSection(
+                        0 -> RoomMicroGiftsSection(
+                            currentDiamonds = currentDiamonds,
+                            seatedUsers = micSeats,
+                            onSendGift = { gift, qty, seatIdx, targetName ->
+                                onSendMicroGift?.invoke(gift, qty, seatIdx, targetName, false)
+                            },
+                            onGoToRecharge = { selectedTab = 3 }
+                        )
+                        1 -> BackpackSection(
+                            currentUser = currentUser.copy(backpack = localBackpack),
+                            seatedUsers = micSeats,
+                            onSendBackpackGift = { gift, qty, seatIdx, targetName ->
+                                onSendMicroGift?.invoke(gift, qty, seatIdx, targetName, true)
+                            },
+                            onClaimStarterGifts = {
+                                val starterPack = mapOf(
+                                    "gift_single_rose" to 5,
+                                    "gift_firecracker_bomb" to 1
+                                )
+                                localBackpack = starterPack
+                                onClaimStarterGifts?.invoke()
+                            }
+                        )
+                        2 -> VideoGiftsSection(
+                            currentDiamonds = currentDiamonds,
+                            seatedUsers = micSeats,
+                            onSendGift = { gift ->
+                                onSendGift(gift)
+                                onDismiss()
+                            },
+                            onGoToRecharge = { selectedTab = 3 }
+                        )
+                        3 -> DiamondsRechargeSection(
                             currentUser = currentUser,
                             onRecharge = { diamonds -> onDiamondsRecharged(diamonds) }
                         )
-                        1 -> AvatarFramesSection(
+                        4 -> AvatarFramesSection(
                             currentDiamonds = currentDiamonds,
                             activeFrame = activeFrame,
                             ownedFrames = ownedFrames,
                             currentUser = currentUser,
                             onBuy = { frameId, cost -> onBuyFrame(frameId, cost) },
                             onApply = { frameId -> onApplyFrame(frameId) },
-                            onGoToRecharge = { selectedTab = 0 }
-                        )
-                        2 -> VideoGiftsSection(
-                            currentDiamonds = currentDiamonds,
-                            onSendGift = { gift -> onSendGift(gift) },
-                            onGoToRecharge = { selectedTab = 0 }
+                            onGoToRecharge = { selectedTab = 3 }
                         )
                     }
                 }
@@ -10744,64 +10862,134 @@ private fun AvatarFramesSection(
 @Composable
 private fun VideoGiftsSection(
     currentDiamonds: Long,
+    seatedUsers: List<MicSeat> = emptyList(),
     onSendGift: (VideoGiftItem) -> Unit,
     onGoToRecharge: () -> Unit
 ) {
+    var selectedGift by remember { mutableStateOf(VIDEO_GIFT_CATALOG[0]) }
+    var selectedTargetSeatIndex by remember { mutableIntStateOf(-1) } // -1 = All Mics
+    var selectedTargetName by remember { mutableStateOf("All Mics") }
+
+    val occupiedSeats = remember(seatedUsers) {
+        seatedUsers.filter { it.uid.isNotBlank() }
+    }
+
+    val canAfford = currentDiamonds >= selectedGift.cost
+
     Column(
         modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // Balance Header
+        // ROW 1: TARGET SELECTOR ("All Mics" vs Specific Seated Users / Co-Hosts)
+        TargetMicSelectorRow(
+            occupiedSeats = occupiedSeats,
+            selectedTargetIndex = selectedTargetSeatIndex,
+            onSelectTarget = { seatIndex, name ->
+                selectedTargetSeatIndex = seatIndex
+                selectedTargetName = name
+            }
+        )
+
+        // ROW 2: Balance Header
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
                 .background(Color(0xFF1E1528))
                 .border(1.dp, BrandGold.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(horizontal = 12.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("💎", fontSize = 14.sp)
+                Text("💎", fontSize = 13.sp)
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = "%,d Diamonds".format(currentDiamonds),
                     color = BrandGold,
-                    fontSize = 13.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.ExtraBold
                 )
             }
             Text(
                 text = "+ Recharge",
                 color = BrandCoral,
-                fontSize = 12.sp,
+                fontSize = 11.5.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.clickable { onGoToRecharge() }
             )
         }
 
-        // Compact 3-Column Grid of Video Gifts
+        // ROW 3: Compact 3-Column Grid of Video Gifts (with selection highlight!)
         LazyVerticalGrid(
             columns = GridCells.Fixed(3),
-            contentPadding = PaddingValues(bottom = 20.dp),
+            contentPadding = PaddingValues(bottom = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
         ) {
             items(VIDEO_GIFT_CATALOG) { gift ->
-                val canAfford = currentDiamonds >= gift.cost
+                val canBuy = currentDiamonds >= gift.cost
+                val isSelected = selectedGift.id == gift.id
 
                 CompactVideoGiftThumbnailBox(
                     gift = gift,
-                    canAfford = canAfford,
+                    canAfford = canBuy,
+                    isSelected = isSelected,
                     onClick = {
-                        if (canAfford) {
-                            onSendGift(gift)
-                        } else {
-                            onGoToRecharge()
-                        }
+                        selectedGift = gift
                     }
+                )
+            }
+        }
+
+        // ROW 4: BOTTOM SEND ACTION BAR
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color(0xFF1B1325))
+                .border(1.dp, BrandGold.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = "Selected: ${selectedGift.name}",
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Cost: %,d 💎 • To: $selectedTargetName".format(selectedGift.cost),
+                    color = BrandGold,
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            Button(
+                onClick = {
+                    if (canAfford) {
+                        onSendGift(selectedGift)
+                    } else {
+                        onGoToRecharge()
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (canAfford) BrandCoral else Color(0xFF55382A)
+                ),
+                shape = RoundedCornerShape(50),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = if (canAfford) "SEND 🎁" else "+ Recharge",
+                    color = Color.White,
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.ExtraBold
                 )
             }
         }
@@ -10921,6 +11109,12 @@ fun FullScreenGiftAnimationOverlay(
 
             // 2. Full-Screen Transparent Animation Visuals
             when (giftEvent.animationType) {
+                "micro_gift", "firecracker_burst" -> {
+                    MicroGiftFlightAndBurstOverlay(
+                        giftEvent = giftEvent,
+                        onFinished = onDismiss
+                    )
+                }
                 "video_mp4" -> {
                     val rawResId = when (giftEvent.giftId) {
                         "lamborghini_mp4" -> R.raw.lamborgini_car

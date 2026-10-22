@@ -22,6 +22,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -421,6 +424,7 @@ fun CompactFrameThumbnailBox(
 fun CompactVideoGiftThumbnailBox(
     gift: VideoGiftItem,
     canAfford: Boolean,
+    isSelected: Boolean = false,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -460,16 +464,33 @@ fun CompactVideoGiftThumbnailBox(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(Color.White.copy(alpha = 0.05f))
+            .background(if (isSelected) Color(0xFF332048) else Color.White.copy(alpha = 0.05f))
             .border(
-                width = 1.dp,
-                color = if (canAfford) BrandGold.copy(alpha = 0.4f) else Color.White.copy(alpha = 0.12f),
+                width = if (isSelected) 2.dp else 1.dp,
+                color = if (isSelected) BrandGold else if (canAfford) BrandGold.copy(alpha = 0.4f) else Color.White.copy(alpha = 0.12f),
                 shape = RoundedCornerShape(12.dp)
             )
             .clickable { onClick() }
             .padding(6.dp),
         contentAlignment = Alignment.Center
     ) {
+        if (isSelected) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .size(16.dp)
+                    .clip(CircleShape)
+                    .background(BrandGold),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.Check,
+                    contentDescription = "Selected",
+                    tint = BrandDark,
+                    modifier = Modifier.size(11.dp)
+                )
+            }
+        }
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxSize()

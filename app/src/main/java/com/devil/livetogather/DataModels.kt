@@ -788,6 +788,7 @@ data class UserProfile(
     val activeFrame: String = "",
     val ownedFrames: List<String> = emptyList(),
     val frameExpiries: Map<String, Long> = emptyMap(),
+    val backpack: Map<String, Int> = emptyMap(), // giftId -> quantity
 
     // First-Time Sign Up Welcome Bonus & 7-Day VIP 1 Trial
     val vipTrialStartDate: Long = 0L,
@@ -1191,9 +1192,63 @@ data class GiftEvent(
     val giftName: String = "",
     val giftEmoji: String = "🎁",
     val cost: Long = 0L,
-    val animationType: String = "car", // "car", "lion", "dragon", "rocket", "jet", "yacht", "roses", "castle", "crown"
-    val timestamp: Long = System.currentTimeMillis()
+    val animationType: String = "micro_gift", // "micro_gift", "firecracker_burst", "car", "rocket", "video_mp4"
+    val timestamp: Long = System.currentTimeMillis(),
+    val targetUserId: String = "",
+    val targetUserName: String = "All Mics",
+    val quantity: Int = 1,
+    val targetMicSeatIndex: Int = -1, // -1 for All Mics, or 0..7 for specific mic seat
+    val drawableResId: Int = 0,
+    val fromBackpack: Boolean = false
 )
+
+data class RoomGiftItem(
+    val id: String,
+    val name: String,
+    val hindiName: String,
+    val emoji: String,
+    val cost: Long,
+    val category: String, // "romantic", "sweet", "party", "vip", "royal"
+    val drawableResId: Int,
+    val animationType: String = "micro_gift",
+    val description: String
+)
+
+val ROOM_GIFT_CATALOG = listOf(
+    // Tier 1: 1 - 5 Diamonds
+    RoomGiftItem("gift_single_rose", "Single Red Rose", "सिंगल रेड रोज़", "🌹", 1L, "romantic", R.drawable.gift_single_rose, "micro_gift", "Blooming red velvet rose with golden stem"),
+    RoomGiftItem("gift_lucky_clover", "Lucky Gold Clover", "लकी गोल्ड क्लोवर", "🍀", 2L, "good_luck", R.drawable.gift_lucky_clover, "micro_gift", "24K solid gold 4-leaf clover"),
+    RoomGiftItem("gift_swirl_lollipop", "Swirl Candy Lollipop", "कैंडी लॉलीपॉप", "🍭", 3L, "sweet", R.drawable.gift_swirl_lollipop, "micro_gift", "Crystal swirl candy lollipop on stick"),
+    RoomGiftItem("gift_floating_kiss", "Floating Kiss & Hearts", "फ्लाईंग किस & हार्ट्स", "💋", 4L, "romantic", R.drawable.gift_floating_kiss, "micro_gift", "3D glossy red lips blowing neon floating hearts"),
+    RoomGiftItem("gift_crystal_lily", "Crystal Glowing Lily", "क्रिस्टल ग्लोइंग लिली", "🪷", 5L, "floral", R.drawable.gift_crystal_lily, "micro_gift", "Luminous faceted crystal white lily"),
+
+    // Tier 2: 6 - 15 Diamonds
+    RoomGiftItem("gift_coffee_cup", "Hot Heart Coffee", "हॉट कॉफ़ी कप", "☕", 6L, "sweet", R.drawable.gift_coffee_cup, "micro_gift", "Steaming porcelain coffee mug with heart latte art"),
+    RoomGiftItem("gift_perfume_bottle", "French Amber Perfume", "फ्रेंच अंबर परफ्यूम", "✨", 7L, "luxury", R.drawable.gift_perfume_bottle, "micro_gift", "Crystal perfume bottle spraying gold mist"),
+    RoomGiftItem("gift_rose_bouquet", "99 Red Roses Bouquet", "99 रोज़ेस बुके", "💐", 8L, "romantic", R.drawable.gift_rose_bouquet, "micro_gift", "99 luxury velvet roses with gold foil ribbon"),
+    RoomGiftItem("gift_heart_chocolates", "Heart Velvet Chocolates", "हार्ट चॉकलेट बॉक्स", "🍫", 10L, "sweet", R.drawable.gift_heart_chocolates, "micro_gift", "Red velvet heart box with gold-leaf Belgian truffles"),
+    RoomGiftItem("gift_teddy_heart", "Teddy with Ruby Heart", "टेडी बेयर विथ रूबी हार्ट", "🧸", 10L, "cute", R.drawable.gift_teddy_heart, "micro_gift", "Fluffy mohair teddy holding glowing ruby heart"),
+    RoomGiftItem("gift_firecracker_bomb", "Celebration Firecracker", "पटाखा सेलिब्रेशन बॉम्ब", "💥", 12L, "party", R.drawable.gift_firecracker_bomb, "firecracker_burst", "Golden firecracker bomb with sparkling fuse"),
+    RoomGiftItem("gift_chocolate_bomb", "Molten Chocolate Bomb", "चॉकलेट बॉम्ब", "💣", 15L, "sweet", R.drawable.gift_chocolate_bomb, "micro_gift", "Belgian chocolate sphere cracking with molten caramel"),
+
+    // Tier 3: 18 - 30 Diamonds
+    RoomGiftItem("gift_magic_wand", "Magic Star Wand", "मैजिक स्टार वैंड", "🪄", 18L, "magic", R.drawable.gift_magic_wand, "micro_gift", "Golden star wand casting dynamic stardust spiral"),
+    RoomGiftItem("gift_golden_mic", "Vintage Golden Mic", "गोल्डन माइक", "🎙️", 20L, "music", R.drawable.gift_golden_mic, "micro_gift", "Solid 24k gold classic studio vocal microphone"),
+    RoomGiftItem("gift_pearl_necklace", "Royal Pearl Necklace", "रॉयल पर्ल नेकलेस", "📿", 22L, "luxury", R.drawable.gift_pearl_necklace, "micro_gift", "Lustrous South Sea pearls in navy velvet case"),
+    RoomGiftItem("gift_acoustic_guitar", "Acoustic Rosewood Guitar", "एकोस्टिक गिटार", "🎸", 24L, "music", R.drawable.gift_acoustic_guitar, "micro_gift", "Handcrafted polished rosewood acoustic guitar"),
+    RoomGiftItem("gift_golden_crown", "Imperial Gold Crown", "इम्पीरियल रॉयल क्राउन", "👑", 25L, "vip", R.drawable.gift_golden_crown, "micro_gift", "Solid gold crown with rubies & emeralds"),
+    RoomGiftItem("gift_champagne_pop", "Popping Champagne", "शैम्पेन बॉटल पॉप", "🍾", 28L, "party", R.drawable.gift_champagne_pop, "micro_gift", "Popping vintage champagne bottle with erupting bubbles"),
+    RoomGiftItem("gift_diamond_ring", "Solitaire Diamond Ring", "सॉलिटेयर डायमंड रिंग", "💍", 30L, "vip", R.drawable.gift_diamond_ring, "micro_gift", "Brilliant-cut diamond ring in midnight blue velvet box"),
+
+    // Tier 4: 32 - 50 Diamonds
+    RoomGiftItem("gift_gold_watch", "Swiss Chrono Gold Watch", "गोल्डन स्पोर्ट्स वॉच", "⌚", 32L, "luxury", R.drawable.gift_gold_watch, "micro_gift", "18k gold tourbillon chronograph sports watch"),
+    RoomGiftItem("gift_fireworks_rocket", "Fireworks Sky Rocket", "रॉकेट फायरवर्क्स", "🚀", 35L, "party", R.drawable.gift_fireworks_rocket, "firecracker_burst", "Multi-shot festive fireworks launcher battery"),
+    RoomGiftItem("gift_sports_car", "Neon Exotic Supercar", "नियॉन स्पोर्ट्स कार", "🏎️", 40L, "luxury", R.drawable.gift_sports_car, "car", "Candy-apple red supercar with cyan neon underglow"),
+    RoomGiftItem("gift_angel_wings", "Luminous Angel Wings", "गोल्डन एंजेल विंग्स", "🪽", 42L, "divine", R.drawable.gift_angel_wings, "micro_gift", "Giant 3D feathered wings of glowing golden light"),
+    RoomGiftItem("gift_crystal_carriage", "Crystal Royal Carriage", "क्रिस्टल बग्गी कैरिज", "🪞", 45L, "royal", R.drawable.gift_crystal_carriage, "micro_gift", "Cinderella-style glowing crystal carriage"),
+    RoomGiftItem("gift_golden_phoenix", "Mythical Golden Phoenix", "गोल्डन फीनिक्स", "🦅", 50L, "royal", R.drawable.gift_golden_phoenix, "micro_gift", "Legendary golden firebird with blazing flame aura")
+)
+
 
 data class VideoGiftItem(
     val id: String,

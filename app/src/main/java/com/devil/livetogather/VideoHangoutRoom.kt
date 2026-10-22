@@ -147,6 +147,8 @@ fun VideoHangoutRoomDialog(
     var isFollowingHost by remember { mutableStateOf(false) }
     var showFollowCelebrationDialog by remember { mutableStateOf(false) }
     var showAllViewersDialog by remember { mutableStateOf(false) }
+    var pendingVideoInvite by remember { mutableStateOf<Map<String, Any>?>(null) }
+    val pendingStageRequests = remember { mutableStateListOf<Map<String, Any>>() }
 
     // Audio & Mic States
     var isMuted by remember { mutableStateOf(!isUserHost) }
@@ -420,6 +422,33 @@ fun VideoHangoutRoomDialog(
         onDispose { pkListener.remove() }
     }
 
+    // 9. Real-Time Video Invites Listener for Viewer
+    DisposableEffect(room.id, currentUser.uid, isUserHost) {
+        if (room.id.isBlank() || isUserHost) return@DisposableEffect onDispose {}
+        val docRef = db.collection("rooms").document(room.id).collection("video_invites").document(currentUser.uid)
+        val listener = docRef.addSnapshotListener { snap, err ->
+            if (err == null && snap != null && snap.exists() && snap.getString("status") == "pending") {
+                pendingVideoInvite = snap.data
+            } else {
+                pendingVideoInvite = null
+            }
+        }
+        onDispose { listener.remove() }
+    }
+
+    // 10. Real-Time Stage Join Requests Listener for Host
+    DisposableEffect(room.id, isUserHost) {
+        if (room.id.isBlank() || !isUserHost) return@DisposableEffect onDispose {}
+        val colRef = db.collection("rooms").document(room.id).collection("stage_requests")
+        val listener = colRef.whereEqualTo("status", "pending").addSnapshotListener { snap, err ->
+            if (err == null && snap != null) {
+                pendingStageRequests.clear()
+                pendingStageRequests.addAll(snap.documents.mapNotNull { it.data })
+            }
+        }
+        onDispose { listener.remove() }
+    }
+
     // Helper functions for sending comments & PK controls
     fun sendComment(message: String) {
         if (message.isBlank()) return
@@ -595,6 +624,7 @@ fun VideoHangoutRoomDialog(
                         isUserHost = isUserHost,
                         isUserCoHost = isUserCoHost,
                         remoteUids = remoteVideoUids,
+                        activeMembers = activeMembers,
                         blueSupporters = blueSupporters,
                         redSupporters = redSupporters,
                         onRequestJoinPk = {
@@ -616,6 +646,26 @@ fun VideoHangoutRoomDialog(
                         },
                         onStartPk = { startPkBattle() },
                         onEndPk = { endPkBattle() }
+                    )
+                }
+                "3p" -> {
+                    VideoLayout3P(
+                        room = room,
+                        isUserHost = isUserHost,
+                        isUserCoHost = isUserCoHost,
+                        currentUserId = currentUserId,
+                        remoteUids = remoteVideoUids,
+                        activeMembers = activeMembers,
+                        onRequestJoin = {
+                            if (!isUserHost && !isUserCoHost) {
+                                isUserCoHost = true
+                                AgoraVideoManager.setBroadcasterRole(true)
+                                db.collection("rooms").document(room.id)
+                                    .collection("members").document(currentUserId)
+                                    .update("role", "co_host")
+                                Toast.makeText(context, "📹 Joined Video Stage as Co-Host!", Toast.LENGTH_SHORT).show()
+                            }
+                        }
                     )
                 }
                 "4p" -> {
@@ -915,26 +965,53 @@ fun VideoHangoutRoomDialog(
                         )
                     }
 
-                    // 2. Mic Mute / Unmute Button
-                    Box(
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(if (isMuted) Color(0xFFFF1744).copy(alpha = 0.25f) else Color.White.copy(alpha = 0.12f))
-                            .border(1.dp, if (isMuted) Color(0xFFFF1744) else Color.White.copy(alpha = 0.25f), CircleShape)
-                            .clickable {
-                                isMuted = !isMuted
-                                AgoraVideoManager.setMuted(isMuted)
-                                Toast.makeText(context, if (isMuted) "Microphone Muted" else "Microphone Live", Toast.LENGTH_SHORT).show()
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic,
-                            contentDescription = "Mic",
-                            tint = if (isMuted) Color(0xFFFF5252) else Color.White,
-                            modifier = Modifier.size(19.dp)
-                        )
+                    // 2. Mic Mute / Unmute Button OR Viewer "Join Stage" Button
+                    if (!isUserHost && !isUserCoHost) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(Brush.linearGradient(listOf(Color(0xFF00E5FF), Color(0xFF2979FF))))
+                                .border(1.dp, Color(0xFF00E5FF), CircleShape)
+                                .clickable {
+                                    db.collection("rooms").document(room.id)
+                                        .collection("stage_requests").document(currentUserId)
+                                        .set(
+                                            mapOf(
+                                                "uid" to currentUserId,
+                                                "name" to currentUser.name,
+                                                "photo" to currentUser.photo,
+                                                "status" to "pending",
+                                                "timestamp" to System.currentTimeMillis()
+                                            )
+                                        )
+                                    Toast.makeText(context, "✋ Request to join stage sent to Host!", Toast.LENGTH_SHORT).show()
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("✋", fontSize = 17.sp)
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(if (isMuted) Color(0xFFFF1744).copy(alpha = 0.25f) else Color.White.copy(alpha = 0.12f))
+                                .border(1.dp, if (isMuted) Color(0xFFFF1744) else Color.White.copy(alpha = 0.25f), CircleShape)
+                                .clickable {
+                                    isMuted = !isMuted
+                                    AgoraVideoManager.setMuted(isMuted)
+                                    Toast.makeText(context, if (isMuted) "Microphone Muted" else "Microphone Live", Toast.LENGTH_SHORT).show()
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic,
+                                contentDescription = "Mic",
+                                tint = if (isMuted) Color(0xFFFF5252) else Color.White,
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
                     }
 
                     // 3. Audio Speaker Button
@@ -1093,7 +1170,8 @@ fun VideoHangoutRoomDialog(
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(end = 14.dp, bottom = 68.dp)
+                    .navigationBarsPadding()
+                    .padding(end = 14.dp, bottom = 82.dp)
                     .size(42.dp)
                     .clip(CircleShape)
                     .background(
@@ -1122,9 +1200,12 @@ fun VideoHangoutRoomDialog(
             // -------------------------------------------------------------
             // LAYER 5: FLOATING FLYING EMOJIS OVERLAY
             // -------------------------------------------------------------
-            floatingEmojis.forEach { (emoji, timestamp) ->
-                key(timestamp) {
-                    FloatingReactionEmoji(emoji = emoji)
+            floatingEmojis.toList().forEach { item ->
+                key(item.second) {
+                    FloatingReactionEmoji(
+                        emoji = item.first,
+                        onFinished = { floatingEmojis.remove(item) }
+                    )
                 }
             }
 
@@ -1147,6 +1228,7 @@ fun VideoHangoutRoomDialog(
                 exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
                     .padding(bottom = 66.dp)
             ) {
                 Surface(
@@ -1157,7 +1239,8 @@ fun VideoHangoutRoomDialog(
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         val reactionList = listOf("❤️", "🔥", "👑", "🚀", "💎", "⚔️", "👏", "🎉")
                         reactionList.forEach { emo ->
@@ -1170,6 +1253,102 @@ fun VideoHangoutRoomDialog(
                                         sendComment(emo)
                                     }
                             )
+                        }
+
+                        // Clear All Flying Emojis
+                        Surface(
+                            color = Color(0xFFFF1744).copy(alpha = 0.25f),
+                            shape = CircleShape,
+                            border = BorderStroke(1.dp, Color(0xFFFF1744).copy(alpha = 0.6f)),
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clickable {
+                                    floatingEmojis.clear()
+                                    Toast.makeText(context, "Cleared reaction emojis 🧹", Toast.LENGTH_SHORT).show()
+                                }
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text("❌", fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // -------------------------------------------------------------
+            // LAYER 8: HOST INCOMING STAGE JOIN REQUESTS BANNER
+            // -------------------------------------------------------------
+            if (isUserHost && pendingStageRequests.isNotEmpty()) {
+                val firstReq = pendingStageRequests.first()
+                val reqUid = firstReq["uid"] as? String ?: ""
+                val reqName = firstReq["name"] as? String ?: "A viewer"
+                val reqPhoto = firstReq["photo"] as? String ?: ""
+
+                Surface(
+                    color = Color(0xFF1A1A2E).copy(alpha = 0.95f),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.2.dp, BrandGold),
+                    shadowElevation = 8.dp,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 110.dp, start = 16.dp, end = 16.dp)
+                        .fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        AsyncImage(
+                            model = reqPhoto.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                            contentDescription = null,
+                            modifier = Modifier
+                                .size(42.dp)
+                                .clip(CircleShape)
+                                .border(1.5.dp, BrandGold, CircleShape),
+                            contentScale = ContentScale.Crop
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "✋ $reqName",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                            Text(
+                                text = "Wants to join the video stage",
+                                color = Color.LightGray,
+                                fontSize = 11.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        // Decline Button
+                        IconButton(
+                            onClick = {
+                                db.collection("rooms").document(room.id)
+                                    .collection("stage_requests").document(reqUid).delete()
+                                pendingStageRequests.removeAll { (it["uid"] as? String) == reqUid }
+                            },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Text("❌", fontSize = 14.sp)
+                        }
+                        Spacer(modifier = Modifier.width(4.dp))
+                        // Accept Button
+                        Button(
+                            onClick = {
+                                db.collection("rooms").document(room.id)
+                                    .collection("members").document(reqUid).update("role", "co_host")
+                                db.collection("rooms").document(room.id)
+                                    .collection("stage_requests").document(reqUid).delete()
+                                pendingStageRequests.removeAll { (it["uid"] as? String) == reqUid }
+                                Toast.makeText(context, "Accepted $reqName to video stage! 📹", Toast.LENGTH_SHORT).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
+                            shape = RoundedCornerShape(20.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text("Accept", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
                     }
                 }
@@ -1431,10 +1610,107 @@ fun VideoHangoutRoomDialog(
                             db.collection("rooms").document(room.id).collection("live_comments")
                                 .document(giftComment.id).set(giftComment)
 
+                            showGiftStoreDialog = false
                             Toast.makeText(context, "🎁 Sent ${giftItem.name}!", Toast.LENGTH_SHORT).show()
                         } else {
                             Toast.makeText(context, "⚠️ Insufficient Diamonds! Needed: %,d 💎".format(giftItem.cost), Toast.LENGTH_SHORT).show()
                         }
+                    },
+                    micSeats = remember(room, activeMembers) {
+                        val list = mutableListOf(
+                            MicSeat(seatIndex = 0, label = "Host 👑", uid = room.hostUid.ifBlank { room.hostId }, name = room.hostName.ifBlank { "Host" }, photo = room.hostPhotoUrl)
+                        )
+                        val otherBroadcasters = activeMembers.filter { (it.role == "co_host" || it.role == "host") && it.uid != (room.hostUid.ifBlank { room.hostId }) }
+                        otherBroadcasters.forEachIndexed { idx, m ->
+                            list.add(MicSeat(seatIndex = idx + 1, label = "Co-Host 🎙️", uid = m.uid, name = m.name, photo = m.photoUrl))
+                        }
+                        if (list.size == 1 && room.isPkActive && room.pkHost2Uid.isNotBlank()) {
+                            list.add(MicSeat(seatIndex = 1, label = "PK Challenger ⚔️", uid = room.pkHost2Uid, name = room.pkHost2Name.ifBlank { "Challenger" }, photo = room.pkHost2Photo))
+                        }
+                        list
+                    },
+                    onSendMicroGift = { giftItem, quantity, targetSeatIndex, targetUserName, fromBackpack ->
+                        val targetUid = room.hostUid.ifBlank { room.hostId }
+                        val totalCost = giftItem.cost * quantity
+                        val canProceed = fromBackpack || userDiamonds >= totalCost
+
+                        if (canProceed) {
+                            if (!fromBackpack) {
+                                val newDiamonds = userDiamonds - totalCost
+                                val xpEarned = totalCost * 10L
+                                val newWealthXp = currentUser.getEffectiveWealthXp() + xpEarned
+                                val newWealthLevel = LevelBadgeSystem.calculateLevelFromXp(newWealthXp)
+                                db.collection("users").document(currentUser.uid).update(
+                                    mapOf(
+                                        "diamonds" to newDiamonds,
+                                        "wealthXp" to newWealthXp,
+                                        "wealthLevel" to newWealthLevel
+                                    )
+                                )
+                                userDiamonds = newDiamonds
+                            } else {
+                                val curBackpack = currentUser.backpack.toMutableMap()
+                                val curCount = curBackpack[giftItem.id] ?: 0
+                                val rem = maxOf(0, curCount - quantity)
+                                if (rem > 0) curBackpack[giftItem.id] = rem else curBackpack.remove(giftItem.id)
+                                db.collection("users").document(currentUser.uid).update("backpack", curBackpack)
+                            }
+
+                            // Event broadcast
+                            val event = GiftEvent(
+                                id = UUID.randomUUID().toString(),
+                                roomId = room.id,
+                                senderId = currentUser.uid,
+                                senderName = currentUser.name,
+                                senderPhoto = currentUser.photo,
+                                giftId = giftItem.id,
+                                giftName = giftItem.name,
+                                giftEmoji = giftItem.emoji,
+                                cost = totalCost,
+                                animationType = giftItem.animationType,
+                                timestamp = System.currentTimeMillis(),
+                                targetUserId = targetUid,
+                                targetUserName = targetUserName,
+                                quantity = quantity,
+                                targetMicSeatIndex = targetSeatIndex,
+                                drawableResId = giftItem.drawableResId,
+                                fromBackpack = fromBackpack
+                            )
+                            db.collection("rooms").document(room.id).collection("gift_events")
+                                .document(event.id).set(event)
+                            activeGiftEvent = event
+
+                            // Live comment
+                            val giftComment = LiveRoomComment(
+                                id = UUID.randomUUID().toString(),
+                                roomId = room.id,
+                                userId = currentUser.uid,
+                                userName = currentUser.name,
+                                userPhoto = currentUser.photo,
+                                tier = "VIP",
+                                message = "sent ${giftItem.name} x$quantity ${giftItem.emoji} (${if (fromBackpack) "Backpack" else "$totalCost 💎"})",
+                                timestamp = System.currentTimeMillis()
+                            )
+                            db.collection("rooms").document(room.id).collection("live_comments")
+                                .document(giftComment.id).set(giftComment)
+
+                            if (room.isPkActive) {
+                                db.collection("rooms").document(room.id).update("pkHost1Score", FieldValue.increment(totalCost.toLong()))
+                            }
+
+                            showGiftStoreDialog = false
+                            Toast.makeText(context, "🎁 Sent ${giftItem.name} x$quantity!", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "⚠️ Insufficient Diamonds! Needed: %,d 💎".format(totalCost), Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onClaimStarterGifts = {
+                        val starterPack = mapOf(
+                            "gift_single_rose" to 5,
+                            "gift_firecracker_bomb" to 1
+                        )
+                        db.collection("users").document(currentUser.uid).update("backpack", starterPack)
+                        Toast.makeText(context, "🎉 Starter Gifts Claimed! 5x Roses & 1x Firecracker Bomb added to your Backpack!", Toast.LENGTH_SHORT).show()
                     }
                 )
             }
@@ -1557,6 +1833,20 @@ fun VideoHangoutRoomDialog(
                         selectedMemberForProfile = member
                         showAllViewersDialog = false
                     },
+                    onInviteToVideo = { member ->
+                        db.collection("rooms").document(room.id)
+                            .collection("video_invites").document(member.uid)
+                            .set(
+                                mapOf(
+                                    "inviteeUid" to member.uid,
+                                    "inviterUid" to currentUser.uid,
+                                    "inviterName" to currentUser.name,
+                                    "status" to "pending",
+                                    "timestamp" to System.currentTimeMillis()
+                                )
+                            )
+                        Toast.makeText(context, "📹 Invitation sent to ${member.name}!", Toast.LENGTH_SHORT).show()
+                    },
                     onKickOut = { targetMember ->
                         db.collection("rooms").document(room.id)
                             .collection("members").document(targetMember.uid).delete()
@@ -1568,6 +1858,55 @@ fun VideoHangoutRoomDialog(
                             .collection("members").document(targetMember.uid).delete()
                     },
                     onDismiss = { showAllViewersDialog = false }
+                )
+            }
+
+            if (pendingVideoInvite != null) {
+                val inviterName = pendingVideoInvite!!["inviterName"] as? String ?: "Host"
+                AlertDialog(
+                    onDismissRequest = {
+                        db.collection("rooms").document(room.id)
+                            .collection("video_invites").document(currentUser.uid).delete()
+                        pendingVideoInvite = null
+                    },
+                    containerColor = BrandCard,
+                    title = {
+                        Text("📹 Video Stage Invitation", color = Color.White, fontWeight = FontWeight.Bold)
+                    },
+                    text = {
+                        Text(
+                            "$inviterName invited you to join the live video stage as a broadcaster!",
+                            color = Color.LightGray
+                        )
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                isUserCoHost = true
+                                AgoraVideoManager.setBroadcasterRole(true)
+                                db.collection("rooms").document(room.id)
+                                    .collection("members").document(currentUser.uid).update("role", "co_host")
+                                db.collection("rooms").document(room.id)
+                                    .collection("video_invites").document(currentUser.uid).delete()
+                                pendingVideoInvite = null
+                                Toast.makeText(context, "📹 Joined video stage!", Toast.LENGTH_SHORT).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandCoral)
+                        ) {
+                            Text("Accept & Go Live", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(
+                            onClick = {
+                                db.collection("rooms").document(room.id)
+                                    .collection("video_invites").document(currentUser.uid).delete()
+                                pendingVideoInvite = null
+                            }
+                        ) {
+                            Text("Decline", color = Color.Gray)
+                        }
+                    }
                 )
             }
         }
@@ -1656,7 +1995,7 @@ fun VideoLayout1P(
 }
 
 // -------------------------------------------------------------
-// LAYOUT 2: 2P (50/50 VERTICAL SPLIT PK BATTLE)
+// LAYOUT 2: 2P (50/50 TOP & BOTTOM HORIZONTAL SPLIT PK BATTLE)
 // -------------------------------------------------------------
 @Composable
 fun VideoLayout2P(
@@ -1664,6 +2003,7 @@ fun VideoLayout2P(
     isUserHost: Boolean,
     isUserCoHost: Boolean = false,
     remoteUids: List<Int>,
+    activeMembers: List<RoomMember> = emptyList(),
     blueSupporters: List<PkSupporter>,
     redSupporters: List<PkSupporter>,
     onRequestJoinPk: () -> Unit = {},
@@ -1689,13 +2029,13 @@ fun VideoLayout2P(
     val timerFormatted = String.format("%02d:%02d", remainingSec / 60, remainingSec % 60)
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // 50/50 Split Video Panels
-        Row(modifier = Modifier.fillMaxSize()) {
-            // LEFT HALF: BLUE TEAM (Host)
+        // TOP & BOTTOM 50/50 Horizontal Split
+        Column(modifier = Modifier.fillMaxSize()) {
+            // TOP HALF: BLUE TEAM (Host)
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxHeight()
+                    .fillMaxWidth()
                     .border(1.5.dp, Color(0xFF2979FF))
             ) {
                 if (isUserHost) {
@@ -1705,6 +2045,9 @@ fun VideoLayout2P(
                                 SurfaceView(ctx).apply {
                                     AgoraVideoManager.setupLocalVideo(this)
                                 }
+                            },
+                            update = {
+                                AgoraVideoManager.setupLocalVideo(it)
                             },
                             modifier = Modifier.fillMaxSize()
                         )
@@ -1718,6 +2061,9 @@ fun VideoLayout2P(
                                     SurfaceView(ctx).apply {
                                         AgoraVideoManager.setupRemoteVideo(this, blueUid)
                                     }
+                                },
+                                update = {
+                                    AgoraVideoManager.setupRemoteVideo(it, blueUid)
                                 },
                                 modifier = Modifier.fillMaxSize()
                             )
@@ -1771,11 +2117,11 @@ fun VideoLayout2P(
                 }
             }
 
-            // RIGHT HALF: RED TEAM (Challenger)
+            // BOTTOM HALF: RED TEAM (Challenger)
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxHeight()
+                    .fillMaxWidth()
                     .border(1.5.dp, Color(0xFFFF1744))
             ) {
                 if (isUserCoHost) {
@@ -1785,6 +2131,9 @@ fun VideoLayout2P(
                                 SurfaceView(ctx).apply {
                                     AgoraVideoManager.setupLocalVideo(this)
                                 }
+                            },
+                            update = {
+                                AgoraVideoManager.setupLocalVideo(it)
                             },
                             modifier = Modifier.fillMaxSize()
                         )
@@ -1803,6 +2152,9 @@ fun VideoLayout2P(
                                     SurfaceView(ctx).apply {
                                         AgoraVideoManager.setupRemoteVideo(this, redUid)
                                     }
+                                },
+                                update = {
+                                    AgoraVideoManager.setupRemoteVideo(it, redUid)
                                 },
                                 modifier = Modifier.fillMaxSize()
                             )
@@ -1835,7 +2187,7 @@ fun VideoLayout2P(
                             )
                         }
                     } else {
-                        // Clean "Waiting for Challenger" Stage (No dummy image)
+                        // Clean "Waiting for Challenger" Stage
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
@@ -1904,12 +2256,11 @@ fun VideoLayout2P(
             }
         }
 
-        // CENTER OVERLAY: PK BATTLE STATUS & TUG-OF-WAR BAR
+        // CENTER OVERLAY: PK BATTLE STATUS & TUG-OF-WAR BAR (Across Horizontal Dividing Line)
         Column(
             modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth(0.92f)
-                .padding(top = 58.dp),
+                .align(Alignment.Center)
+                .fillMaxWidth(0.92f),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Surface(
@@ -1974,6 +2325,146 @@ fun VideoLayout2P(
                             fontWeight = FontWeight.Black,
                             modifier = Modifier.align(Alignment.Center)
                         )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// LAYOUT 2.5: 3P (TRI-CAST: TOP 50% HOST, BOTTOM 50% SPLIT FOR 2 GUESTS)
+// -------------------------------------------------------------
+@Composable
+fun VideoLayout3P(
+    room: RoomItem,
+    isUserHost: Boolean,
+    isUserCoHost: Boolean,
+    currentUserId: String,
+    remoteUids: List<Int>,
+    activeMembers: List<RoomMember>,
+    onRequestJoin: () -> Unit
+) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // TOP HALF (50%): Host Video (Full Width)
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .border(1.dp, BrandGold.copy(alpha = 0.7f))
+            ) {
+                if (isUserHost) {
+                    AndroidView(
+                        factory = { ctx ->
+                            SurfaceView(ctx).apply {
+                                AgoraVideoManager.setupLocalVideo(this)
+                            }
+                        },
+                        update = {
+                            AgoraVideoManager.setupLocalVideo(it)
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    val hostUid = remoteUids.firstOrNull() ?: 0
+                    if (hostUid != 0) {
+                        AndroidView(
+                            factory = { ctx ->
+                                SurfaceView(ctx).apply {
+                                    AgoraVideoManager.setupRemoteVideo(this, hostUid)
+                                }
+                            },
+                            update = {
+                                AgoraVideoManager.setupRemoteVideo(it, hostUid)
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        AsyncImage(
+                            model = room.hostPhotoUrl,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    }
+                }
+                Surface(
+                    color = Color.Black.copy(alpha = 0.65f),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier.align(Alignment.BottomStart).padding(6.dp)
+                ) {
+                    Text(
+                        text = "👑 ${room.hostName} (Host)",
+                        color = BrandGold,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            // BOTTOM HALF (50%): 2 Guests Side-by-Side (50/50 Width)
+            Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                // Guest 1 (Bottom Left)
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .border(1.dp, Color.White.copy(alpha = 0.15f))
+                ) {
+                    val coHost1Uid = remoteUids.getOrNull(if (isUserHost) 0 else 1) ?: 0
+                    if (coHost1Uid != 0) {
+                        AndroidView(
+                            factory = { ctx ->
+                                SurfaceView(ctx).apply {
+                                    AgoraVideoManager.setupRemoteVideo(this, coHost1Uid)
+                                }
+                            },
+                            update = {
+                                AgoraVideoManager.setupRemoteVideo(it, coHost1Uid)
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else if (isUserCoHost) {
+                        AndroidView(
+                            factory = { ctx ->
+                                SurfaceView(ctx).apply {
+                                    AgoraVideoManager.setupLocalVideo(this)
+                                }
+                            },
+                            update = {
+                                AgoraVideoManager.setupLocalVideo(it)
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        EmptyCoHostSeat(onRequestJoin = onRequestJoin)
+                    }
+                }
+
+                // Guest 2 (Bottom Right)
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .border(1.dp, Color.White.copy(alpha = 0.15f))
+                ) {
+                    val coHost2Uid = remoteUids.getOrNull(if (isUserHost) 1 else 2) ?: 0
+                    if (coHost2Uid != 0) {
+                        AndroidView(
+                            factory = { ctx ->
+                                SurfaceView(ctx).apply {
+                                    AgoraVideoManager.setupRemoteVideo(this, coHost2Uid)
+                                }
+                            },
+                            update = {
+                                AgoraVideoManager.setupRemoteVideo(it, coHost2Uid)
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        EmptyCoHostSeat(onRequestJoin = onRequestJoin)
                     }
                 }
             }
@@ -2161,26 +2652,28 @@ fun EmptyCoHostSeat(onRequestJoin: () -> Unit) {
 // FLOATING REACTION EMOJI ANIMATION
 // -------------------------------------------------------------
 @Composable
-fun FloatingReactionEmoji(emoji: String) {
-    val infiniteTransition = rememberInfiniteTransition(label = "floating_emoji")
-    val offsetY by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = -350f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2200, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "offset_y"
-    )
-    val animAlpha by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2200, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "anim_alpha"
-    )
+fun FloatingReactionEmoji(
+    emoji: String,
+    onFinished: () -> Unit = {}
+) {
+    val offsetY = remember { Animatable(0f) }
+    val animAlpha = remember { Animatable(1f) }
+    val animScale = remember { Animatable(0.6f) }
+
+    LaunchedEffect(Unit) {
+        launch {
+            animScale.animateTo(1.2f, tween(300, easing = FastOutSlowInEasing))
+        }
+        launch {
+            offsetY.animateTo(-380f, tween(2200, easing = LinearEasing))
+        }
+        launch {
+            delay(1200L)
+            animAlpha.animateTo(0f, tween(1000, easing = LinearEasing))
+        }
+        delay(2250L)
+        onFinished()
+    }
 
     Box(
         modifier = Modifier
@@ -2192,8 +2685,9 @@ fun FloatingReactionEmoji(emoji: String) {
             text = emoji,
             fontSize = 28.sp,
             modifier = Modifier
-                .offset(y = offsetY.dp)
-                .alpha(animAlpha)
+                .offset(y = offsetY.value.dp)
+                .alpha(animAlpha.value)
+                .scale(animScale.value)
         )
     }
 }
@@ -2293,7 +2787,8 @@ fun VideoRoomSettingsSheet(
                                     ) {
                                         val layouts = listOf(
                                             "1p" to "1P Solo",
-                                            "2p" to "2P PK Battle",
+                                            "2p" to "2P PK Top/Bottom",
+                                            "3p" to "3P Tri-Cast",
                                             "4p" to "4P Grid"
                                         )
                                         layouts.forEach { (key, label) ->
@@ -2309,7 +2804,7 @@ fun VideoRoomSettingsSheet(
                                                 Text(
                                                     text = label,
                                                     color = Color.White,
-                                                    fontSize = 11.sp,
+                                                    fontSize = 10.sp,
                                                     fontWeight = FontWeight.Bold,
                                                     textAlign = TextAlign.Center,
                                                     modifier = Modifier.padding(vertical = 10.dp)
