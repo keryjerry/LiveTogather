@@ -41,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.unit.dp
@@ -2473,7 +2474,13 @@ fun CoinStoreTopUpDialog(
                                             Text("🚀", fontSize = 22.sp)
                                             Spacer(modifier = Modifier.width(10.dp))
                                             Column {
-                                                Text("Activate Host Monetization • ₹599", color = BrandGold, fontSize = 12.5.sp, fontWeight = FontWeight.ExtraBold)
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text("Activate Host Monetization • ₹599", color = BrandGold, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text("₹1,499", color = Color.Gray, fontSize = 10.sp, textDecoration = TextDecoration.LineThrough)
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("60% OFF", color = Color(0xFFFF5252), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                                }
                                                 Text("Convert room gifts into direct cash income (INR)", color = Color.LightGray, fontSize = 10.sp)
                                             }
                                         }
@@ -2669,7 +2676,11 @@ fun CoinStoreTopUpDialog(
                                             modifier = Modifier.fillMaxWidth().height(46.dp)
                                         ) {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text("Activate Host Monetization • ₹599", color = BrandDark, fontSize = 13.5.sp, fontWeight = FontWeight.Black)
+                                                Text("Activate Host Monetization • ₹599", color = BrandDark, fontSize = 12.5.sp, fontWeight = FontWeight.Black)
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text("₹1,499", color = BrandDark.copy(alpha = 0.55f), fontSize = 11.sp, textDecoration = TextDecoration.LineThrough)
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text("60% OFF", color = Color(0xFFD50000), fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
                                                 Spacer(modifier = Modifier.width(6.dp))
                                                 Text("➔", color = BrandDark, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                                             }

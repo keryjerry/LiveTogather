@@ -346,12 +346,15 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                 wealthLevel = prefs.getInt("profile_wealth_level", 1),
                 wealthXp = prefs.getLong("profile_wealth_xp", 0L),
                 charmLevel = prefs.getInt("profile_charm_level", 1),
-                charmXp = prefs.getLong("profile_charm_xp", 0L)
+                charmXp = prefs.getLong("profile_charm_xp", 0L),
+                pkLevel = prefs.getInt("profile_pk_level", 1),
+                pkWins = prefs.getInt("profile_pk_wins", 0),
+                pkScore = prefs.getLong("profile_pk_score", 0L)
             )
         )
     }
 
-    // Real-time synchronization of Admin Role, 8-digit User ID, Wallet Coins/Diamonds, and Wealth/Charm Levels
+    // Real-time synchronization of Admin Role, 8-digit User ID, Wallet Coins/Diamonds, and Wealth/Charm/PK Levels
     LaunchedEffect(currentUserId) {
         if (currentUserId.isNotBlank()) {
             db.collection("users").document(currentUserId)
@@ -369,8 +372,15 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                         val updatedWealthLvl = snapshot.getLong("wealthLevel")?.toInt() ?: LevelBadgeSystem.calculateLevelFromXp(updatedWealthXp)
                         val updatedCharmXp = snapshot.getLong("charmXp") ?: currentUser.charmXp
                         val updatedCharmLvl = snapshot.getLong("charmLevel")?.toInt() ?: LevelBadgeSystem.calculateLevelFromXp(updatedCharmXp)
+                        val updatedPkWins = (snapshot.getLong("pkWins") ?: currentUser.pkWins.toLong()).toInt()
+                        val updatedPkScore = snapshot.getLong("pkScore") ?: currentUser.pkScore
+                        val rawPkLvl = snapshot.getLong("pkLevel")?.toInt()
+                        val updatedPkLvl = rawPkLvl?.takeIf { it > 1 } ?: LevelBadgeSystem.calculatePkLevel(updatedPkWins)
 
-                        if (currentUser.isAdmin != adminFlag || currentUser.coins != updatedCoins || currentUser.diamonds != updatedDiamonds || currentUser.userId != finalUserId || currentUser.wealthLevel != updatedWealthLvl || currentUser.wealthXp != updatedWealthXp || currentUser.charmLevel != updatedCharmLvl || currentUser.charmXp != updatedCharmXp) {
+                        if (currentUser.isAdmin != adminFlag || currentUser.coins != updatedCoins || currentUser.diamonds != updatedDiamonds ||
+                            currentUser.userId != finalUserId || currentUser.wealthLevel != updatedWealthLvl || currentUser.wealthXp != updatedWealthXp ||
+                            currentUser.charmLevel != updatedCharmLvl || currentUser.charmXp != updatedCharmXp ||
+                            currentUser.pkLevel != updatedPkLvl || currentUser.pkWins != updatedPkWins || currentUser.pkScore != updatedPkScore) {
                             currentUser = currentUser.copy(
                                 isAdmin = adminFlag,
                                 coins = updatedCoins,
@@ -379,7 +389,10 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                                 wealthLevel = updatedWealthLvl,
                                 wealthXp = updatedWealthXp,
                                 charmLevel = updatedCharmLvl,
-                                charmXp = updatedCharmXp
+                                charmXp = updatedCharmXp,
+                                pkLevel = updatedPkLvl,
+                                pkWins = updatedPkWins,
+                                pkScore = updatedPkScore
                             )
                             prefs.edit()
                                 .putBoolean("profile_is_admin", adminFlag)
@@ -390,6 +403,9 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                                 .putLong("profile_wealth_xp", updatedWealthXp)
                                 .putInt("profile_charm_level", updatedCharmLvl)
                                 .putLong("profile_charm_xp", updatedCharmXp)
+                                .putInt("profile_pk_level", updatedPkLvl)
+                                .putInt("profile_pk_wins", updatedPkWins)
+                                .putLong("profile_pk_score", updatedPkScore)
                                 .apply()
                         }
                     }
@@ -796,7 +812,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
             }
             if (snapshot != null) {
                 val list = snapshot.documents.mapNotNull { parseUserProfileFromDoc(it) }
-                    .filter { it.uid != currentUserId && !it.uid.startsWith("USER_") && !it.uid.startsWith("dummy_") && !currentUser.blockedUserIds.contains(it.uid) }
+                    .filter { it.uid.isNotBlank() && it.uid != currentUserId && !currentUser.blockedUserIds.contains(it.uid) }
                 discoverProfiles.clear()
                 discoverProfiles.addAll(list)
             }
@@ -917,10 +933,9 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
         }
     }
 
-    // Filtered Discover Profiles (Real-Time Proximity & Attribute Matching)
+    // Filtered Discover Profiles (Real-Time Proximity & Attribute Matching with Robust Fallback)
     val filteredProfiles = remember(discoverProfiles, selectedCategory, currentUser) {
-        discoverProfiles.filter { profile ->
-            if (!currentUser.enableDiscovery) return@filter false
+        val filtered = discoverProfiles.filter { profile ->
             val matchesCategory = selectedCategory == "all" || profile.activeIntent == selectedCategory
             val candLat = if (profile.latitude != 0.0) profile.latitude else (CITY_COORDINATES[profile.city]?.first ?: 22.5726)
             val candLon = if (profile.longitude != 0.0) profile.longitude else (CITY_COORDINATES[profile.city]?.second ?: 88.3639)
@@ -936,6 +951,8 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
             }
             matchesCategory && matchesDistance && matchesAge && matchesGender
         }
+        // Fallback: If strict filters yield 0 results, show discoverProfiles so registered users are always discoverable!
+        if (filtered.isNotEmpty()) filtered else discoverProfiles
     }
 
     val unreadNotificationsCount = remember(notifications) {
@@ -1638,11 +1655,8 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                                             currentUser = currentUser.copy(hostTrialStartDate = now)
                                             saveProfileToPrefs(prefs, currentUser)
                                             db.collection("users").document(currentUserId).update("hostTrialStartDate", now)
-                                        }
-
-                                        if (currentUser.isHostTrialActive()) {
                                             showHostTrialOfferDialog = true
-                                        } else if (currentUser.isVipOrPlatinum()) {
+                                        } else if (currentUser.isHostTrialActive() || currentUser.isVipOrPlatinum()) {
                                             showCreateRoomDialog = true
                                         } else {
                                             subscriptionPaywallNotice = "👑 Host Access Criteria: Minimum Platinum Membership Required!\nYour 7-day launch trial has ended. Upgrade to Platinum (₹249/mo) or VIP to create audio rooms and go live."
@@ -1887,67 +1901,85 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
             )
         }
 
-        // 0. Advanced Real-time Audio Hangout Room Dialog
+        // 0. Advanced Real-time Audio or Video Hangout Room Dialog
         if (activeAudioRoom != null) {
             val room = activeAudioRoom!!
-            AudioHangoutRoomDialog(
-                initialRoom = room,
-                currentUser = currentUser,
-                allProfiles = discoverProfiles,
-                db = db,
-                onDismiss = {
-                    isAudioRoomMinimized = false
-                    if (room.id.isNotBlank()) {
-                        // If leaving user is the room host, mark room offline (NEVER delete room document)
-                        val targetHost = room.hostUid.ifBlank { room.hostId }
-                        if (currentUserId.isNotBlank() && targetHost == currentUserId) {
-                            db.collection("rooms").document(room.id).update(
-                                mapOf(
-                                    "isHostLive" to false,
-                                    "statusMessage" to "Host Away • Open Hangout",
-                                    "isPlaying" to false
-                                )
+            val onRoomDismissAction = {
+                isAudioRoomMinimized = false
+                if (room.id.isNotBlank()) {
+                    // If leaving user is the room host, mark room offline (NEVER delete room document)
+                    val targetHost = room.hostUid.ifBlank { room.hostId }
+                    if (currentUserId.isNotBlank() && targetHost == currentUserId) {
+                        db.collection("rooms").document(room.id).update(
+                            mapOf(
+                                "isHostLive" to false,
+                                "statusMessage" to "Host Away • Open Hangout",
+                                "isPlaying" to false
                             )
-                            if (room.category.isNotBlank()) {
-                                db.collection("intent_categories").document(room.category)
-                                    .collection("rooms").document(room.id).update(
-                                        mapOf(
-                                            "isHostLive" to false,
-                                            "statusMessage" to "Host Away • Open Hangout",
-                                            "isPlaying" to false
-                                        )
+                        )
+                        if (room.category.isNotBlank()) {
+                            db.collection("intent_categories").document(room.category)
+                                .collection("rooms").document(room.id).update(
+                                    mapOf(
+                                        "isHostLive" to false,
+                                        "statusMessage" to "Host Away • Open Hangout",
+                                        "isPlaying" to false
                                     )
-                            }
+                                )
                         }
+                    }
 
-                        // Remove presence from rooms/{roomId}/members/{currentUserId}
-                        if (currentUserId.isNotBlank()) {
-                            db.collection("rooms").document(room.id)
+                    // Remove presence from rooms/{roomId}/members/{currentUserId}
+                    if (currentUserId.isNotBlank()) {
+                        db.collection("rooms").document(room.id)
+                            .collection("members").document(currentUserId)
+                            .delete()
+                        if (room.category.isNotBlank()) {
+                            db.collection("intent_categories").document(room.category)
+                                .collection("rooms").document(room.id)
                                 .collection("members").document(currentUserId)
                                 .delete()
-                            if (room.category.isNotBlank()) {
-                                db.collection("intent_categories").document(room.category)
-                                    .collection("rooms").document(room.id)
-                                    .collection("members").document(currentUserId)
-                                    .delete()
-                            }
                         }
                     }
-                    currentUser = currentUser.copy(current_room = "")
-                    saveProfileToPrefs(prefs, currentUser)
-                    if (currentUserId.isNotBlank()) {
-                        db.collection("users").document(currentUserId).update("current_room", "")
-                    }
-                    AudioPlayerManager.stop()
-                    activeAudioRoom = null
-                },
-                onDirectChat = { partner ->
-                    showDirectMessageDialog = partner
-                },
-                isMinimized = isAudioRoomMinimized,
-                onMinimize = { isAudioRoomMinimized = true },
-                onMaximize = { isAudioRoomMinimized = false }
-            )
+                }
+                currentUser = currentUser.copy(current_room = "")
+                saveProfileToPrefs(prefs, currentUser)
+                if (currentUserId.isNotBlank()) {
+                    db.collection("users").document(currentUserId).update("current_room", "")
+                }
+                AudioPlayerManager.stop()
+                activeAudioRoom = null
+            }
+
+            if (room.roomType == "video" || room.roomType == "video_pk" || room.isVideoRoom) {
+                VideoHangoutRoomDialog(
+                    initialRoom = room,
+                    currentUser = currentUser,
+                    allProfiles = discoverProfiles,
+                    db = db,
+                    onDismiss = onRoomDismissAction,
+                    onDirectChat = { partner ->
+                        showDirectMessageDialog = partner
+                    },
+                    isMinimized = isAudioRoomMinimized,
+                    onMinimize = { isAudioRoomMinimized = true },
+                    onMaximize = { isAudioRoomMinimized = false }
+                )
+            } else {
+                AudioHangoutRoomDialog(
+                    initialRoom = room,
+                    currentUser = currentUser,
+                    allProfiles = discoverProfiles,
+                    db = db,
+                    onDismiss = onRoomDismissAction,
+                    onDirectChat = { partner ->
+                        showDirectMessageDialog = partner
+                    },
+                    isMinimized = isAudioRoomMinimized,
+                    onMinimize = { isAudioRoomMinimized = true },
+                    onMaximize = { isAudioRoomMinimized = false }
+                )
+            }
         }
 
         // 0.05 Category Hub / Lobby Dialog (Category-Scoped Sub-Rooms Grid)
@@ -1977,11 +2009,8 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                         currentUser = currentUser.copy(hostTrialStartDate = now)
                         saveProfileToPrefs(prefs, currentUser)
                         db.collection("users").document(currentUserId).update("hostTrialStartDate", now)
-                    }
-
-                    if (currentUser.isHostTrialActive()) {
                         showHostTrialOfferDialog = true
-                    } else if (currentUser.isVipOrPlatinum()) {
+                    } else if (currentUser.isHostTrialActive() || currentUser.isVipOrPlatinum()) {
                         showCreateRoomDialog = true
                     } else {
                         subscriptionPaywallNotice = "👑 Host Access Criteria: Minimum Platinum Membership Required!\nYour 7-day launch trial has ended. Upgrade to Platinum (₹249/mo) or VIP to create audio rooms and go live."
@@ -2146,10 +2175,10 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                 currentUser = currentUser,
                 initialCategory = createRoomInitialCategory,
                 onDismiss = { showCreateRoomDialog = false },
-                onCreate = { title, categoryId, themeUrl ->
+                onCreate = { title, categoryId, themeUrl, roomType ->
                     val generatedRoomCode = (10000000..99999999).random().toString()
                     val roomId = generatedRoomCode
-                    val catEmoji = CATEGORY_LIST.find { it.id == categoryId }?.label?.take(2)?.trim() ?: "🎙️"
+                    val catEmoji = if (roomType == "video_pk") "⚔️" else if (roomType == "video") "📹" else (CATEGORY_LIST.find { it.id == categoryId }?.label?.take(2)?.trim() ?: "🎙️")
                     val finalBanner = if (themeUrl.isNotBlank()) themeUrl else getCategoryBanner(categoryId)
                     val newRoom = RoomItem(
                         id = roomId,
@@ -2159,6 +2188,8 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                         category = categoryId,
                         emoji = catEmoji,
                         banner_image_url = finalBanner,
+                        roomType = roomType,
+                        videoLayout = if (roomType == "video_pk") "2p" else "1p",
                         hostId = currentUserId,
                         hostUid = currentUserId,
                         hostName = currentUser.name,

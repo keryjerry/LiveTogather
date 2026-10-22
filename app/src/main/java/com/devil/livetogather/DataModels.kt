@@ -75,9 +75,13 @@ data class RoomItem(
     @get:PropertyName("pkStartTime") @set:PropertyName("pkStartTime") var pkStartTime: Long = 0L,
     @get:PropertyName("pkDurationSec") @set:PropertyName("pkDurationSec") var pkDurationSec: Int = 300,
     @get:PropertyName("pkStatus") @set:PropertyName("pkStatus") var pkStatus: String = "idle",
-    @get:PropertyName("pkWinnerUid") @set:PropertyName("pkWinnerUid") var pkWinnerUid: String = ""
+    @get:PropertyName("pkWinnerUid") @set:PropertyName("pkWinnerUid") var pkWinnerUid: String = "",
+    // Room Mode: "audio" (10-mic stage), "video" (1-4 people video streaming), "video_pk" (1v1 split video battle)
+    @get:PropertyName("roomType") @set:PropertyName("roomType") var roomType: String = "audio",
+    @get:PropertyName("videoLayout") @set:PropertyName("videoLayout") var videoLayout: String = "1p"
 ) {
     val isVipRoom: Boolean get() = privacy.equals("vip_only", ignoreCase = true)
+    val isVideoRoom: Boolean get() = roomType == "video" || roomType == "video_pk"
 }
 
 data class LiveEmojiReaction(
@@ -103,7 +107,9 @@ data class MicSeat(
 
 fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
     val id = doc.id.ifBlank { doc.getString("roomId") ?: doc.getString("id") ?: "" }
-    val title = doc.getString("roomName") ?: doc.getString("title") ?: "Live Hangout"
+    val titleField = doc.getString("title")
+    val roomNameField = doc.getString("roomName")
+    val title = if (!titleField.isNullOrBlank()) titleField else (if (!roomNameField.isNullOrBlank()) roomNameField else "Live Hangout")
     val emoji = doc.getString("emoji") ?: "🎙️"
     val bannerUrl = doc.getString("banner_image_url") ?: ""
     val activeCount = (doc.getLong("activeUserCount") ?: 0L).toInt()
@@ -159,6 +165,8 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
     val pkDurationSec = (doc.getLong("pkDurationSec") ?: 300L).toInt()
     val pkStatus = doc.getString("pkStatus") ?: "idle"
     val pkWinnerUid = doc.getString("pkWinnerUid") ?: ""
+    val roomType = doc.getString("roomType") ?: "audio"
+    val videoLayout = doc.getString("videoLayout") ?: "1p"
 
     return RoomItem(
         id = id,
@@ -205,7 +213,9 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
         pkStartTime = pkStartTime,
         pkDurationSec = pkDurationSec,
         pkStatus = pkStatus,
-        pkWinnerUid = pkWinnerUid
+        pkWinnerUid = pkWinnerUid,
+        roomType = roomType,
+        videoLayout = videoLayout
     )
 }
 
@@ -676,6 +686,23 @@ object LevelBadgeSystem {
             else -> 5.0         // 5% for Level < 50
         }
     }
+
+    fun calculatePkLevel(pkWins: Int): Int {
+        return when {
+            pkWins >= 1500 -> 100
+            pkWins >= 1000 -> 80
+            pkWins >= 700  -> 65
+            pkWins >= 450  -> 50
+            pkWins >= 250  -> 40
+            pkWins >= 100  -> 30
+            pkWins >= 50   -> 20
+            pkWins >= 30   -> 10
+            pkWins >= 12   -> 5
+            pkWins >= 5    -> 3
+            pkWins >= 1    -> 2
+            else           -> 1
+        }
+    }
 }
 
 data class UserProfile(
@@ -768,6 +795,11 @@ data class UserProfile(
     val charmLevel: Int = 1,
     val charmXp: Long = 0L,
 
+    // Real-Time PK Battle Swords Level & Progression
+    val pkLevel: Int = 1,
+    val pkWins: Int = 0,
+    val pkScore: Long = 0L,
+
     // Host Earning Wallet & Commission System (7% for Lv.50-70, 8% for Lv.70+)
     val earningsInr: Double = 0.0,
     val totalEarningsInr: Double = 0.0,
@@ -780,6 +812,7 @@ data class UserProfile(
     fun getEffectiveWealthXp(): Long = LevelBadgeSystem.getEffectiveWealthXp(this)
     fun getEffectiveCharmLevel(): Int = LevelBadgeSystem.getEffectiveCharmLevel(this)
     fun getEffectiveCharmXp(): Long = LevelBadgeSystem.getEffectiveCharmXp(this)
+    fun getEffectivePkLevel(): Int = LevelBadgeSystem.calculatePkLevel(pkWins)
     fun getWealthTierInfo(): LevelTierInfo = LevelBadgeSystem.getLevelTierInfo(getEffectiveWealthLevel())
     fun getCharmTierInfo(): LevelTierInfo = LevelBadgeSystem.getLevelTierInfo(getEffectiveCharmLevel())
 
@@ -948,6 +981,11 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
     val charmLevel = (doc.getLong("charmLevel") ?: 1L).toInt()
     val charmXp = doc.getLong("charmXp") ?: 0L
 
+    val pkWins = (doc.getLong("pkWins") ?: 0L).toInt()
+    val pkScore = doc.getLong("pkScore") ?: 0L
+    val rawPkLvl = doc.getLong("pkLevel")?.toInt()
+    val pkLevel = rawPkLvl?.takeIf { it > 1 } ?: LevelBadgeSystem.calculatePkLevel(pkWins)
+
     val earningsInr = doc.getDouble("earningsInr") ?: (doc.getLong("earningsInr")?.toDouble() ?: 0.0)
     val totalEarningsInr = doc.getDouble("totalEarningsInr") ?: (doc.getLong("totalEarningsInr")?.toDouble() ?: earningsInr)
     val withdrawnInr = doc.getDouble("withdrawnInr") ?: (doc.getLong("withdrawnInr")?.toDouble() ?: 0.0)
@@ -1024,6 +1062,9 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
         wealthXp = wealthXp,
         charmLevel = charmLevel,
         charmXp = charmXp,
+        pkLevel = pkLevel,
+        pkWins = pkWins,
+        pkScore = pkScore,
         earningsInr = earningsInr,
         totalEarningsInr = totalEarningsInr,
         withdrawnInr = withdrawnInr,
@@ -1080,6 +1121,9 @@ fun saveProfileToPrefs(prefs: SharedPreferences, user: UserProfile) {
         .putLong("profile_wealth_xp", user.wealthXp)
         .putInt("profile_charm_level", user.charmLevel)
         .putLong("profile_charm_xp", user.charmXp)
+        .putInt("profile_pk_level", user.pkLevel)
+        .putInt("profile_pk_wins", user.pkWins)
+        .putLong("profile_pk_score", user.pkScore)
         .putString("profile_earnings_inr", user.earningsInr.toString())
         .putString("profile_total_earnings_inr", user.totalEarningsInr.toString())
         .putString("profile_withdrawn_inr", user.withdrawnInr.toString())
