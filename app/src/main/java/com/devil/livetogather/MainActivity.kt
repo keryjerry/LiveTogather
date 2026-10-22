@@ -342,7 +342,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                 vipTrialExpiryDate = prefs.getLong("profile_vip_trial_expiry", 0L),
                 hasClaimedWelcomeBonus = prefs.getBoolean("profile_has_claimed_welcome_bonus", false),
                 signupIpAddress = prefs.getString("profile_signup_ip", "") ?: "",
-                isAdmin = prefs.getBoolean("profile_is_admin", false),
+                isAdmin = isUserWhitelistedAdmin(prefs.getString("profile_email", "") ?: ""),
                 wealthLevel = prefs.getInt("profile_wealth_level", 1),
                 wealthXp = prefs.getLong("profile_wealth_xp", 0L),
                 charmLevel = prefs.getInt("profile_charm_level", 1),
@@ -360,7 +360,9 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
             db.collection("users").document(currentUserId)
                 .addSnapshotListener { snapshot, _ ->
                     if (snapshot != null && snapshot.exists()) {
-                        val adminFlag = snapshot.getBoolean("isAdmin") ?: (prefs.getBoolean("profile_is_admin", false) || currentUser.name.contains("Devil", ignoreCase = true))
+                        val currentAuthEmail = auth.currentUser?.email?.trim() ?: currentUser.email.trim()
+                        val isWhitelisted = isUserWhitelistedAdmin(currentAuthEmail, currentUserId)
+                        val adminFlag = isWhitelisted
                         val updatedCoins = snapshot.getLong("coins") ?: snapshot.getLong("diamonds") ?: currentUser.coins
                         val updatedDiamonds = snapshot.getLong("diamonds") ?: currentUser.diamonds
                         val firestoreUserId = snapshot.getString("userId") ?: ""
@@ -1649,19 +1651,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                                     allUsers = discoverProfiles + currentUser,
                                     onCreateRoom = {
                                         createRoomInitialCategory = "free_tonight"
-                                        // 7 Days Free Trial For App Launch & Minimum Platinum Criteria
-                                        if (currentUser.hostTrialStartDate == 0L) {
-                                            val now = System.currentTimeMillis()
-                                            currentUser = currentUser.copy(hostTrialStartDate = now)
-                                            saveProfileToPrefs(prefs, currentUser)
-                                            db.collection("users").document(currentUserId).update("hostTrialStartDate", now)
-                                            showHostTrialOfferDialog = true
-                                        } else if (currentUser.isHostTrialActive() || currentUser.isVipOrPlatinum()) {
-                                            showCreateRoomDialog = true
-                                        } else {
-                                            subscriptionPaywallNotice = "👑 Host Access Criteria: Minimum Platinum Membership Required!\nYour 7-day launch trial has ended. Upgrade to Platinum (₹249/mo) or VIP to create audio rooms and go live."
-                                            showMainSubscriptionModal = true
-                                        }
+                                        showCreateRoomDialog = true
                                     },
                                     onOpenCategoryHub = { category ->
                                         if (category.id == "vip_room" && (!currentUser.isVipOrPlatinum() && currentUser.getVipLevel() < 1)) {
@@ -2002,20 +1992,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                     }
                     createRoomInitialCategory = cat.id
                     activeCategoryHub = null
-
-                    // 7 Days Free Trial For App Launch & Minimum Platinum Criteria
-                    if (currentUser.hostTrialStartDate == 0L) {
-                        val now = System.currentTimeMillis()
-                        currentUser = currentUser.copy(hostTrialStartDate = now)
-                        saveProfileToPrefs(prefs, currentUser)
-                        db.collection("users").document(currentUserId).update("hostTrialStartDate", now)
-                        showHostTrialOfferDialog = true
-                    } else if (currentUser.isHostTrialActive() || currentUser.isVipOrPlatinum()) {
-                        showCreateRoomDialog = true
-                    } else {
-                        subscriptionPaywallNotice = "👑 Host Access Criteria: Minimum Platinum Membership Required!\nYour 7-day launch trial has ended. Upgrade to Platinum (₹249/mo) or VIP to create audio rooms and go live."
-                        showMainSubscriptionModal = true
-                    }
+                    showCreateRoomDialog = true
                 },
                 onJoinRoom = { room ->
                     val isVipRoomCategory = room.category == "vip_room" || room.isVipRoom
@@ -2176,6 +2153,19 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                 initialCategory = createRoomInitialCategory,
                 onDismiss = { showCreateRoomDialog = false },
                 onCreate = { title, categoryId, themeUrl, roomType ->
+                    val existingActiveRoom = roomsList.firstOrNull { r ->
+                        val rHost = r.hostUid.ifBlank { r.hostId }
+                        rHost == currentUserId && r.category == categoryId && (r.isHostLive || r.isLive)
+                    }
+                    if (existingActiveRoom != null) {
+                        Toast.makeText(
+                            context,
+                            "⚠️ You already have an active room in this category! Each host can only create 1 room per category.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        return@CreateRoomDialog
+                    }
+
                     val generatedRoomCode = (10000000..99999999).random().toString()
                     val roomId = generatedRoomCode
                     val catEmoji = if (roomType == "video_pk") "⚔️" else if (roomType == "video") "📹" else (CATEGORY_LIST.find { it.id == categoryId }?.label?.take(2)?.trim() ?: "🎙️")
@@ -2353,8 +2343,10 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                         }
                 },
                 onOpenAdmin = { tab ->
-                    adminDashboardInitialTab = tab
-                    showAdminDashboardModal = true
+                    if (isUserWhitelistedAdmin(currentUser.email, currentUserId)) {
+                        adminDashboardInitialTab = tab
+                        showAdminDashboardModal = true
+                    }
                 },
                 onMarkAllRead = {
                     val toDelete = notifications.toList()
@@ -2369,9 +2361,9 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
             )
         }
 
-        if (showAdminDashboardModal) {
+        if (showAdminDashboardModal && isUserWhitelistedAdmin(currentUser.email, currentUserId)) {
             AdminApprovalDashboardModal(
-                adminUser = if (currentUser.isAdmin) currentUser else currentUser.copy(isAdmin = true),
+                adminUser = currentUser.copy(isAdmin = true),
                 initialTab = adminDashboardInitialTab,
                 onDismiss = { showAdminDashboardModal = false }
             )
@@ -4926,89 +4918,83 @@ fun ProfileScreenContent(
                             }
                     }
 
-                    val totalPending = pendingPayments + pendingReports
+                    val isOwnerAdmin = isUserWhitelistedAdmin(currentUser.email, currentUserId)
+                    if (isOwnerAdmin) {
+                        val totalPending = pendingPayments + pendingReports
 
-                    Surface(
-                        color = BrandCardSubtle,
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.2.dp, BrandGold),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                if (!currentUser.isAdmin) {
-                                    val updated = currentUser.copy(isAdmin = true)
-                                    onUpdateProfile(updated)
-                                    context.getSharedPreferences("user_prefs", android.content.Context.MODE_PRIVATE)
-                                        .edit().putBoolean("profile_is_admin", true).apply()
-                                    if (currentUserId.isNotBlank()) {
-                                        db.collection("users").document(currentUserId).update("isAdmin", true)
-                                    }
-                                }
-                                showAdminDashboardModal = true
-                            }
-                    ) {
-                        Row(
+                        Surface(
+                            color = BrandCardSubtle,
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.2.dp, BrandGold),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .clip(CircleShape)
-                                    .background(BrandGold.copy(alpha = 0.2f))
-                                    .border(1.2.dp, BrandGold, CircleShape),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text("🛡️", fontSize = 18.sp)
-                            }
-
-                            Spacer(modifier = Modifier.width(12.dp))
-
-                            Column(modifier = Modifier.weight(1f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = "Admin Approvals Dashboard",
-                                        color = BrandGold,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.ExtraBold
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Surface(
-                                        color = if (totalPending > 0) BrandCoral else BrandGold.copy(alpha = 0.2f),
-                                        shape = RoundedCornerShape(4.dp),
-                                        border = BorderStroke(0.6.dp, if (totalPending > 0) BrandCoral else BrandGold)
-                                    ) {
-                                        Text(
-                                            text = if (totalPending > 0) "$totalPending PENDING" else "ADMIN",
-                                            color = if (totalPending > 0) Color.White else BrandGold,
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                                        )
-                                    }
+                                .clickable {
+                                    showAdminDashboardModal = true
                                 }
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = if (totalPending > 0) {
-                                        "🚨 $pendingPayments payments & $pendingReports reports pending"
-                                    } else {
-                                        "Review & approve pending UPI top-up requests"
-                                    },
-                                    color = if (totalPending > 0) BrandCoral else Color.LightGray,
-                                    fontSize = 11.sp,
-                                    lineHeight = 15.sp,
-                                    fontWeight = if (totalPending > 0) FontWeight.SemiBold else FontWeight.Normal
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(CircleShape)
+                                        .background(BrandGold.copy(alpha = 0.2f))
+                                        .border(1.2.dp, BrandGold, CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("🛡️", fontSize = 18.sp)
+                                }
+
+                                Spacer(modifier = Modifier.width(12.dp))
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = "Admin Approvals Dashboard",
+                                            color = BrandGold,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.ExtraBold
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Surface(
+                                            color = if (totalPending > 0) BrandCoral else BrandGold.copy(alpha = 0.2f),
+                                            shape = RoundedCornerShape(4.dp),
+                                            border = BorderStroke(0.6.dp, if (totalPending > 0) BrandCoral else BrandGold)
+                                        ) {
+                                            Text(
+                                                text = if (totalPending > 0) "$totalPending PENDING" else "ADMIN",
+                                                color = if (totalPending > 0) Color.White else BrandGold,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = if (totalPending > 0) {
+                                            "🚨 $pendingPayments payments & $pendingReports reports pending"
+                                        } else {
+                                            "Review & approve pending UPI top-up requests"
+                                        },
+                                        color = if (totalPending > 0) BrandCoral else Color.LightGray,
+                                        fontSize = 11.sp,
+                                        lineHeight = 15.sp,
+                                        fontWeight = if (totalPending > 0) FontWeight.SemiBold else FontWeight.Normal
+                                    )
+                                }
+
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                    contentDescription = null,
+                                    tint = BrandGold,
+                                    modifier = Modifier.size(14.dp)
                                 )
                             }
-
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-                                contentDescription = null,
-                                tint = BrandGold,
-                                modifier = Modifier.size(14.dp)
-                            )
                         }
                     }
                 }
@@ -5351,9 +5337,9 @@ fun ProfileScreenContent(
         )
     }
 
-    if (showAdminDashboardModal) {
+    if (showAdminDashboardModal && isUserWhitelistedAdmin(currentUser.email, currentUserId)) {
         AdminApprovalDashboardModal(
-            adminUser = if (currentUser.isAdmin) currentUser else currentUser.copy(isAdmin = true),
+            adminUser = currentUser.copy(isAdmin = true),
             onDismiss = { showAdminDashboardModal = false }
         )
     }

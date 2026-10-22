@@ -949,7 +949,7 @@ fun CreateRoomDialog(
                 // Room Type Selector (Audio / Video / Video PK)
                 Text("Select Room Type", color = BrandCoral, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(6.dp))
-                val canHostPk = currentUser.getEffectiveWealthLevel() >= 30 || currentUser.pkLevel >= 30 || currentUser.isAdmin
+                val canHostPk = true
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -957,9 +957,9 @@ fun CreateRoomDialog(
                     val roomTypes = listOf(
                         Triple("audio", "🎙️ Audio Lounge", true),
                         Triple("video", "📹 Video Stream", true),
-                        Triple("video_pk", "⚔️ Video PK", canHostPk)
+                        Triple("video_pk", "⚔️ Video PK", true)
                     )
-                    roomTypes.forEach { (typeKey, typeLabel, isUnlocked) ->
+                    roomTypes.forEach { (typeKey, typeLabel, _) ->
                         val isSelected = selectedRoomType == typeKey
                         Box(
                             modifier = Modifier
@@ -974,20 +974,17 @@ fun CreateRoomDialog(
                                 )
                                 .border(
                                     1.dp,
-                                    if (isSelected) Color.Transparent
-                                    else if (!isUnlocked) Color(0xFFFF5252).copy(alpha = 0.4f)
-                                    else BrandBorder,
+                                    if (isSelected) Color.White.copy(alpha = 0.8f) else BrandBorder,
                                     RoundedCornerShape(12.dp)
                                 )
                                 .clickable {
-                                    if (!isUnlocked) {
-                                        Toast.makeText(
-                                            context,
-                                            "⚔️ Video PK Room requires Wealth Level 30+ or Swords Rank Lv.30+ to host!",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                    } else {
-                                        selectedRoomType = typeKey
+                                    selectedRoomType = typeKey
+                                    if (typeKey == "video" && selectedCategory !in listOf("video_stream", "video_pk")) {
+                                        selectedCategory = "video_stream"
+                                    } else if (typeKey == "video_pk") {
+                                        selectedCategory = "video_pk"
+                                    } else if (typeKey == "audio" && selectedCategory in listOf("video_stream", "video_pk")) {
+                                        selectedCategory = "free_tonight"
                                     }
                                 }
                                 .padding(vertical = 10.dp, horizontal = 4.dp),
@@ -996,15 +993,11 @@ fun CreateRoomDialog(
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(
                                     text = typeLabel,
-                                    color = if (isSelected) Color.White else if (!isUnlocked) Color.Gray else Color.White,
+                                    color = Color.White,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     textAlign = TextAlign.Center
                                 )
-                                if (!isUnlocked) {
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text("🔒 Lv.30+", color = Color(0xFFFF5252), fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
-                                }
                             }
                         }
                     }
@@ -1116,8 +1109,11 @@ fun CreateRoomDialog(
                             Toast.makeText(context, "👑 VIP Room requires VIP Level 1+ membership to create!", Toast.LENGTH_SHORT).show()
                             return@Button
                         }
+                        val finalCategory = if (selectedRoomType == "video_pk") "video_pk"
+                            else if (selectedRoomType == "video" && selectedCategory !in listOf("video_stream", "video_pk")) "video_stream"
+                            else selectedCategory
                         val finalTitle = roomTitle.trim().ifEmpty { "${currentUser.name}'s Hangout" }
-                        onCreate(finalTitle, selectedCategory, selectedTheme, selectedRoomType)
+                        onCreate(finalTitle, finalCategory, selectedTheme, selectedRoomType)
                     },
                     modifier = Modifier.fillMaxWidth().height(46.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
@@ -8306,7 +8302,6 @@ fun CategoryHubLobbyDialog(
     val liveCategoryRooms = remember { mutableStateListOf<RoomItem>() }
     LaunchedEffect(category.id) {
         db.collection("rooms")
-            .whereEqualTo("category", category.id)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     android.util.Log.w("CategoryHub", "Error listening to category rooms: ${error.message}")
@@ -8326,8 +8321,17 @@ fun CategoryHubLobbyDialog(
         category.id
     ) {
         val map = linkedMapOf<String, RoomItem>()
-        allRooms.filter { it.category == category.id && it.title.isNotBlank() }.forEach { map[it.id] = it }
-        liveCategoryRooms.filter { it.category == category.id && it.title.isNotBlank() }.forEach { map[it.id] = it }
+        fun matchesCategory(r: RoomItem): Boolean {
+            if (category.id == "video_stream") {
+                return r.category == "video_stream" || r.roomType == "video" || r.isVideoRoom
+            }
+            if (category.id == "video_pk") {
+                return r.category == "video_pk" || r.roomType == "video_pk"
+            }
+            return r.category == category.id
+        }
+        allRooms.filter { matchesCategory(it) && it.title.isNotBlank() }.forEach { map[it.id] = it }
+        liveCategoryRooms.filter { matchesCategory(it) && it.title.isNotBlank() }.forEach { map[it.id] = it }
         map.values.toList()
     }
 

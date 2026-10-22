@@ -2243,7 +2243,7 @@ fun CoinStoreTopUpDialog(
                         if (!savedUpi.isNullOrBlank()) {
                             liveUpiId = savedUpi
                         }
-                        val isMon = snap.getBoolean("isHostMonetized") ?: snap.getBoolean("profile_is_host_monetized") ?: (currentUser.isAdmin || currentUser.name.equals("Devil", true) || currentUser.isHostMonetized)
+                        val isMon = snap.getBoolean("isHostMonetized") ?: snap.getBoolean("profile_is_host_monetized") ?: (currentUser.isOfficialAdmin() || currentUser.isHostMonetized)
                         liveIsHostMonetized = isMon
                     }
                 }
@@ -2589,8 +2589,8 @@ fun CoinStoreTopUpDialog(
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Column(
-                                        modifier = Modifier.padding(15.dp),
-                                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                                        modifier = Modifier.padding(16.dp),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp)
                                     ) {
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
@@ -2598,17 +2598,17 @@ fun CoinStoreTopUpDialog(
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text("🚀", fontSize = 24.sp)
-                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text("🚀", fontSize = 26.sp)
+                                                Spacer(modifier = Modifier.width(10.dp))
                                                 Column {
                                                     Text(
-                                                        text = "Host Monetization",
+                                                        text = "To Start Monetization",
                                                         color = BrandGold,
-                                                        fontSize = 16.sp,
+                                                        fontSize = 17.sp,
                                                         fontWeight = FontWeight.Black
                                                     )
                                                     Text(
-                                                        text = "Start Earning Real Cash in Live Rooms",
+                                                        text = "Official Host Earning Subscription",
                                                         color = Color.LightGray,
                                                         fontSize = 11.sp
                                                     )
@@ -2629,8 +2629,63 @@ fun CoinStoreTopUpDialog(
                                             }
                                         }
 
+                                        // Pricing Banner with ₹1,499 struck through & Launch Offer ₹599
+                                        Surface(
+                                            color = Color(0xFF150F1E),
+                                            shape = RoundedCornerShape(14.dp),
+                                            border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.4f)),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Column {
+                                                    Text(
+                                                        text = "Regular Price: ₹1,499",
+                                                        color = Color.Gray,
+                                                        fontSize = 12.sp,
+                                                        textDecoration = TextDecoration.LineThrough,
+                                                        fontWeight = FontWeight.SemiBold
+                                                    )
+                                                    Spacer(modifier = Modifier.height(2.dp))
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        Text(
+                                                            text = "Launch Offer: ",
+                                                            color = Color.White,
+                                                            fontSize = 13.sp,
+                                                            fontWeight = FontWeight.Bold
+                                                        )
+                                                        Text(
+                                                            text = "₹599",
+                                                            color = Color(0xFF00E676),
+                                                            fontSize = 20.sp,
+                                                            fontWeight = FontWeight.ExtraBold
+                                                        )
+                                                    }
+                                                }
+
+                                                Surface(
+                                                    color = Color(0xFFFF5252).copy(alpha = 0.25f),
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    border = BorderStroke(1.dp, Color(0xFFFF5252))
+                                                ) {
+                                                    Text(
+                                                        text = "SAVE ₹900 (60% OFF)",
+                                                        color = Color(0xFFFF8A80),
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Black,
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+
                                         Text(
-                                            text = "Unlock live audio room monetization! When activated, diamonds gifted to you in live hangout rooms convert directly into real cash (INR) with instant UPI withdrawals to your bank.",
+                                            text = "Subscribe now to start monetizing your live audio and video streaming rooms! All diamond gifts sent by your audience convert to real cash (INR) with instant withdrawals to UPI.",
                                             color = Color(0xFFDDDDDD),
                                             fontSize = 11.5.sp,
                                             lineHeight = 16.sp
@@ -2651,7 +2706,7 @@ fun CoinStoreTopUpDialog(
                                             Row(verticalAlignment = Alignment.CenterVertically) {
                                                 Text("👑", fontSize = 13.sp)
                                                 Spacer(modifier = Modifier.width(6.dp))
-                                                Text("5% - 8% Host Commission on all audio room gifts", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                                Text("5% - 8% Host Commission on all room gifts", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                                             }
                                             Row(verticalAlignment = Alignment.CenterVertically) {
                                                 Text("⚡", fontSize = 13.sp)
@@ -2673,15 +2728,13 @@ fun CoinStoreTopUpDialog(
                                             },
                                             colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
                                             shape = RoundedCornerShape(12.dp),
-                                            modifier = Modifier.fillMaxWidth().height(46.dp)
+                                            modifier = Modifier.fillMaxWidth().height(48.dp)
                                         ) {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text("Activate Host Monetization • ₹599", color = BrandDark, fontSize = 12.5.sp, fontWeight = FontWeight.Black)
+                                                Text("Subscribe to Start Monetization • ₹599", color = BrandDark, fontSize = 13.sp, fontWeight = FontWeight.Black)
                                                 Spacer(modifier = Modifier.width(6.dp))
                                                 Text("₹1,499", color = BrandDark.copy(alpha = 0.55f), fontSize = 11.sp, textDecoration = TextDecoration.LineThrough)
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Text("60% OFF", color = Color(0xFFD50000), fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
-                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Spacer(modifier = Modifier.width(8.dp))
                                                 Text("➔", color = BrandDark, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                                             }
                                         }
@@ -2709,14 +2762,45 @@ fun CoinStoreTopUpDialog(
                             }
                         }
 
-                        // 1. Available Earnings Balance Card
-                        item {
-                            Surface(
-                                color = Color(0xFF1B142B),
-                                shape = RoundedCornerShape(16.dp),
-                                border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(BrandGold, Color(0xFFFFB74D)))),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
+                        if (!liveIsHostMonetized) {
+                            item {
+                                Surface(
+                                    color = Color(0xFF1B142B),
+                                    shape = RoundedCornerShape(16.dp),
+                                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(24.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Text("🔒", fontSize = 36.sp)
+                                        Text(
+                                            "Earning & Payment History Locked",
+                                            color = Color.White,
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            "Subscribe to Start Monetization above for ₹599 to unlock your cash balance, commission earnings, withdrawal requests, and real-time transaction history.",
+                                            color = Color.LightGray,
+                                            fontSize = 12.sp,
+                                            textAlign = TextAlign.Center,
+                                            lineHeight = 17.sp
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            // 1. Available Earnings Balance Card
+                            item {
+                                Surface(
+                                    color = Color(0xFF1B142B),
+                                    shape = RoundedCornerShape(16.dp),
+                                    border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(BrandGold, Color(0xFFFFB74D)))),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
                                 Column(modifier = Modifier.padding(14.dp)) {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
@@ -3100,6 +3184,7 @@ fun CoinStoreTopUpDialog(
             }
         }
     }
+}
 }
 
 /**

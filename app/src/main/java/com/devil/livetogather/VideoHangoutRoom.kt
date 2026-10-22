@@ -1,13 +1,19 @@
 @file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 package com.devil.livetogather
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.util.Log
 import android.view.SurfaceView
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import com.google.firebase.firestore.FieldValue
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
@@ -168,8 +174,42 @@ fun VideoHangoutRoomDialog(
         else "1p"
     }
 
+    var selectedMemberForProfile by remember { mutableStateOf<RoomMember?>(null) }
+
+    // Camera and Audio Permissions Launcher
+    var hasCameraPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    var hasAudioPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { perms ->
+        val cam = perms[Manifest.permission.CAMERA] ?: (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
+        val aud = perms[Manifest.permission.RECORD_AUDIO] ?: (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
+        hasCameraPermission = cam
+        hasAudioPermission = aud
+        if (cam && (isUserHost || isUserCoHost)) {
+            AgoraVideoManager.setBroadcasterRole(true)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        if (!hasCameraPermission || !hasAudioPermission) {
+            permissionLauncher.launch(
+                arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
+            )
+        }
+    }
+
     // 1. Initialize Agora Video RTC & Join Channel
-    DisposableEffect(displayRoomId) {
+    DisposableEffect(displayRoomId, hasCameraPermission) {
         val initialRoleBroadcaster = isUserHost || isUserCoHost
         AgoraVideoManager.setEventListener(object : AgoraVideoManager.VideoEventListener {
             override fun onUserJoined(uid: Int) {
@@ -568,7 +608,19 @@ fun VideoHangoutRoomDialog(
                         color = Color.Black.copy(alpha = 0.55f),
                         shape = RoundedCornerShape(50),
                         border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.6f)),
-                        modifier = Modifier.height(38.dp)
+                        modifier = Modifier
+                            .height(38.dp)
+                            .clickable {
+                                val targetHostUid = room.hostUid.ifBlank { room.hostId }
+                                val hostMember = activeMembers.find { it.uid == targetHostUid } ?: RoomMember(
+                                    uid = targetHostUid,
+                                    userId = room.hostId,
+                                    name = room.hostName,
+                                    photoUrl = room.hostPhotoUrl,
+                                    role = "host"
+                                )
+                                selectedMemberForProfile = hostMember
+                            }
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -726,7 +778,16 @@ fun VideoHangoutRoomDialog(
                         Surface(
                             color = Color.Black.copy(alpha = 0.45f),
                             shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(0.6.dp, Color.White.copy(alpha = 0.15f))
+                            border = BorderStroke(0.6.dp, Color.White.copy(alpha = 0.15f)),
+                            modifier = Modifier.clickable {
+                                val member = activeMembers.find { it.uid == comment.userId } ?: RoomMember(
+                                    uid = comment.userId,
+                                    name = comment.userName,
+                                    photoUrl = commenterProfile?.photo ?: "",
+                                    tier = comment.tier
+                                )
+                                selectedMemberForProfile = member
+                            }
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -1220,6 +1281,63 @@ fun VideoHangoutRoomDialog(
                     onStartPk = { startPkBattle() },
                     onEndPk = { endPkBattle() },
                     onDismiss = { showRoomSettingsDialog = false }
+                )
+            }
+
+            if (selectedMemberForProfile != null) {
+                val targetUid = selectedMemberForProfile!!.uid
+                val targetProfile = allProfiles.find { it.uid == targetUid } ?: (if (targetUid == currentUser.uid) currentUser else null)
+                RoomMemberProfileSheet(
+                    member = selectedMemberForProfile!!,
+                    userProfile = targetProfile,
+                    currentUser = currentUser,
+                    isHost = isUserHost,
+                    roomId = room.id,
+                    db = db,
+                    onDismiss = { selectedMemberForProfile = null },
+                    onLeaveRoom = {
+                        selectedMemberForProfile = null
+                        onDismiss()
+                    },
+                    onLike = {
+                        Toast.makeText(context, "Liked ${selectedMemberForProfile?.name}! ❤️", Toast.LENGTH_SHORT).show()
+                    },
+                    onDirectMessage = {
+                        val profile = targetProfile
+                        if (profile != null) {
+                            selectedMemberForProfile = null
+                            onDirectChat(profile)
+                        }
+                    },
+                    onRequestMessage = {
+                        val profile = targetProfile
+                        if (profile != null) {
+                            selectedMemberForProfile = null
+                            onDirectChat(profile)
+                        }
+                    },
+                    onKickOut = { m ->
+                        db.collection("rooms").document(room.id)
+                            .collection("members").document(m.uid).delete()
+                        selectedMemberForProfile = null
+                    },
+                    onBan = { m ->
+                        db.collection("rooms").document(room.id)
+                            .update("bannedUserIds", FieldValue.arrayUnion(m.uid))
+                        selectedMemberForProfile = null
+                    },
+                    onBlock = { m ->
+                        db.collection("users").document(currentUser.uid)
+                            .update("blockedUsers", FieldValue.arrayUnion(m.uid))
+                        selectedMemberForProfile = null
+                    },
+                    onTagMember = { name ->
+                        commentInputText = "@$name "
+                        showCommentInputDialog = true
+                        selectedMemberForProfile = null
+                    },
+                    roomAdminUserIds = room.adminUserIds,
+                    onToggleAdmin = null
                 )
             }
         }

@@ -194,6 +194,8 @@ object AgoraVideoManager {
         }
         engine.updateChannelMediaOptions(options)
         if (isBroadcaster) {
+            engine.enableVideo()
+            engine.enableLocalVideo(true)
             engine.startPreview()
         }
         Log.d(TAG, "Agora client role updated to: $role")
