@@ -185,13 +185,22 @@ fun VideoHangoutRoomDialog(
         devUid
     }
 
-    // Determine current video layout: "1p", "2p", or "4p" — REACTIVE to Firestore changes & Co-Host role
+    val coHosts = activeMembers.filter { m ->
+        val targetHostId = room.hostUid.ifBlank { room.hostId }
+        m.uid.isNotBlank() && m.uid != targetHostId && (m.role == "co_host" || m.role == "broadcaster")
+    }
+
+    // Determine current video layout: "1p", "2p", "3p", or "4p" — DYNAMIC to active co-hosts & PK battle
     val activeLayout by remember {
         derivedStateOf {
-            if (isUserCoHost || room.pkHost2Uid.isNotBlank() || room.videoLayout == "2p" || room.videoLayout == "pk") "2p"
-            else if (room.videoLayout.isNotBlank()) room.videoLayout
-            else if (room.roomType == "video_pk") "2p"
-            else "1p"
+            val isPkOrCoHostActive = room.isPkActive || isUserCoHost || coHosts.isNotEmpty() || (room.pkHost2Uid.isNotBlank() && room.pkHost2Uid != "guest_challenger")
+            if (isPkOrCoHostActive) {
+                if (coHosts.size >= 3) "4p"
+                else if (coHosts.size == 2) "3p"
+                else "2p"
+            } else {
+                "1p"
+            }
         }
     }
 

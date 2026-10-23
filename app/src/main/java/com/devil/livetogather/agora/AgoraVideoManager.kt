@@ -147,14 +147,35 @@ object AgoraVideoManager {
 
     fun setupLocalVideo(view: android.view.View) {
         try {
-            if (view is SurfaceView) {
-                view.setZOrderMediaOverlay(true)
-                view.setZOrderOnTop(false)
+            if (view is android.view.TextureView) {
+                if (view.isAvailable) {
+                    val canvas = VideoCanvas(view, VideoCanvas.RENDER_MODE_HIDDEN, 0)
+                    canvas.mirrorMode = Constants.VIDEO_MIRROR_MODE_AUTO
+                    rtcEngine?.setupLocalVideo(canvas)
+                    rtcEngine?.startPreview()
+                } else {
+                    view.surfaceTextureListener = object : android.view.TextureView.SurfaceTextureListener {
+                        override fun onSurfaceTextureAvailable(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {
+                            val canvas = VideoCanvas(view, VideoCanvas.RENDER_MODE_HIDDEN, 0)
+                            canvas.mirrorMode = Constants.VIDEO_MIRROR_MODE_AUTO
+                            rtcEngine?.setupLocalVideo(canvas)
+                            rtcEngine?.startPreview()
+                        }
+                        override fun onSurfaceTextureSizeChanged(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {}
+                        override fun onSurfaceTextureDestroyed(surface: android.graphics.SurfaceTexture): Boolean = true
+                        override fun onSurfaceTextureUpdated(surface: android.graphics.SurfaceTexture) {}
+                    }
+                }
+            } else {
+                if (view is SurfaceView) {
+                    view.setZOrderMediaOverlay(true)
+                    view.setZOrderOnTop(false)
+                }
+                val canvas = VideoCanvas(view, VideoCanvas.RENDER_MODE_HIDDEN, 0)
+                canvas.mirrorMode = Constants.VIDEO_MIRROR_MODE_AUTO
+                rtcEngine?.setupLocalVideo(canvas)
+                rtcEngine?.startPreview()
             }
-            val canvas = VideoCanvas(view, VideoCanvas.RENDER_MODE_HIDDEN, 0)
-            canvas.mirrorMode = Constants.VIDEO_MIRROR_MODE_AUTO
-            rtcEngine?.setupLocalVideo(canvas)
-            rtcEngine?.startPreview()
             Log.d(TAG, "Local video preview started on view: ${view.javaClass.simpleName}")
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up local video: ${e.message}")
@@ -163,13 +184,33 @@ object AgoraVideoManager {
 
     fun setupRemoteVideo(view: android.view.View, uid: Int) {
         try {
-            if (view is SurfaceView) {
-                view.setZOrderMediaOverlay(true)
-                view.setZOrderOnTop(false)
+            if (uid <= 0) return
+            if (view is android.view.TextureView) {
+                if (view.isAvailable) {
+                    val canvas = VideoCanvas(view, VideoCanvas.RENDER_MODE_HIDDEN, uid)
+                    canvas.mirrorMode = Constants.VIDEO_MIRROR_MODE_AUTO
+                    rtcEngine?.setupRemoteVideo(canvas)
+                } else {
+                    view.surfaceTextureListener = object : android.view.TextureView.SurfaceTextureListener {
+                        override fun onSurfaceTextureAvailable(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {
+                            val canvas = VideoCanvas(view, VideoCanvas.RENDER_MODE_HIDDEN, uid)
+                            canvas.mirrorMode = Constants.VIDEO_MIRROR_MODE_AUTO
+                            rtcEngine?.setupRemoteVideo(canvas)
+                        }
+                        override fun onSurfaceTextureSizeChanged(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {}
+                        override fun onSurfaceTextureDestroyed(surface: android.graphics.SurfaceTexture): Boolean = true
+                        override fun onSurfaceTextureUpdated(surface: android.graphics.SurfaceTexture) {}
+                    }
+                }
+            } else {
+                if (view is SurfaceView) {
+                    view.setZOrderMediaOverlay(true)
+                    view.setZOrderOnTop(false)
+                }
+                val canvas = VideoCanvas(view, VideoCanvas.RENDER_MODE_HIDDEN, uid)
+                canvas.mirrorMode = Constants.VIDEO_MIRROR_MODE_AUTO
+                rtcEngine?.setupRemoteVideo(canvas)
             }
-            val canvas = VideoCanvas(view, VideoCanvas.RENDER_MODE_HIDDEN, uid)
-            canvas.mirrorMode = Constants.VIDEO_MIRROR_MODE_AUTO
-            rtcEngine?.setupRemoteVideo(canvas)
             Log.d(TAG, "Remote video configured for uid $uid on view: ${view.javaClass.simpleName}")
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up remote video for uid $uid: ${e.message}")
