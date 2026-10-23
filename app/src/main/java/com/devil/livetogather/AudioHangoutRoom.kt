@@ -2415,6 +2415,7 @@ fun AllRoomViewersDialog(
     onKickOut: (RoomMember) -> Unit,
     onBan: (RoomMember) -> Unit,
     onInviteToVideo: ((RoomMember) -> Unit)? = null,
+    isVideoRoom: Boolean = false,
     onDismiss: () -> Unit
 ) {
     val isKeyboardOpen = WindowInsets.isImeVisible
@@ -2460,7 +2461,7 @@ fun AllRoomViewersDialog(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Real-time listeners in this audio room",
+                            text = if (isVideoRoom || onInviteToVideo != null) "Real-time participants in this video room" else "Real-time listeners in this audio room",
                             color = Color.Gray,
                             fontSize = 11.sp
                         )
@@ -2542,8 +2543,8 @@ fun AllRoomViewersDialog(
                                                 fontWeight = FontWeight.Bold
                                             )
                                             Text(
-                                                text = if (isVip) "★ VIP Member" else if (isPlat) "♦ Platinum" else "Listener",
-                                                color = if (isVip) BrandGold else if (isPlat) BrandCyan else Color.Gray,
+                                                text = if (member.role == "host") "👑 Host" else if (member.role == "co_host") "📹 Co-Host" else if (isVip) "★ VIP Member" else if (isPlat) "♦ Platinum" else if (isVideoRoom || onInviteToVideo != null) "Viewer" else "Listener",
+                                                color = if (member.role == "host" || isVip) BrandGold else if (member.role == "co_host" || isPlat) BrandCyan else Color.Gray,
                                                 fontSize = 10.sp
                                             )
                                         }
@@ -7097,6 +7098,7 @@ fun AudioHangoutRoomDialog(
                 viewers = activeMembers.filter { it.uid !in room.kickedUserIds && it.uid !in room.bannedUserIds },
                 currentUser = currentUser,
                 isHost = isUserHost,
+                isVideoRoom = room.isVideoRoom,
                 onSelectMember = { member ->
                     selectedMemberForSheet = member
                     showAllViewersDialog = false
@@ -8791,6 +8793,9 @@ fun CategoryHubLobbyDialog(
     ) {
         val map = linkedMapOf<String, RoomItem>()
         fun matchesCategory(r: RoomItem): Boolean {
+            if (!r.isLive || !r.isHostLive || r.statusMessage.equals("OFFLINE", ignoreCase = true)) {
+                return false
+            }
             if (category.id == "video_stream") {
                 return r.category == "video_stream" || r.roomType == "video" || r.isVideoRoom
             }

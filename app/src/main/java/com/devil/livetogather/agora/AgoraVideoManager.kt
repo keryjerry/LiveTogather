@@ -149,6 +149,7 @@ object AgoraVideoManager {
         try {
             if (view is SurfaceView) {
                 view.setZOrderMediaOverlay(true)
+                view.setZOrderOnTop(false)
             }
             val canvas = VideoCanvas(view, VideoCanvas.RENDER_MODE_HIDDEN, 0)
             canvas.mirrorMode = Constants.VIDEO_MIRROR_MODE_AUTO
@@ -164,6 +165,7 @@ object AgoraVideoManager {
         try {
             if (view is SurfaceView) {
                 view.setZOrderMediaOverlay(true)
+                view.setZOrderOnTop(false)
             }
             val canvas = VideoCanvas(view, VideoCanvas.RENDER_MODE_HIDDEN, uid)
             canvas.mirrorMode = Constants.VIDEO_MIRROR_MODE_AUTO

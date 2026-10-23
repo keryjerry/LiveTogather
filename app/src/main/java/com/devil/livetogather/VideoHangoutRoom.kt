@@ -7,12 +7,17 @@ import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.util.Log
 import android.view.SurfaceView
+import android.view.TextureView
 import android.view.WindowManager
 import android.widget.Toast
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.core.content.ContextCompat
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.SetOptions
@@ -169,16 +174,25 @@ fun VideoHangoutRoomDialog(
     val blueSupporters = remember { mutableStateListOf<PkSupporter>() }
     val redSupporters = remember { mutableStateListOf<PkSupporter>() }
 
-    // Agora UIDs
+    // Agora UIDs - Guaranteed Unique Per Device/Installation
     val localAgoraUid = remember(currentUser.userId, currentUser.uid) {
-        (currentUser.userId.toIntOrNull() ?: (currentUser.uid.hashCode() and 0x7FFFFFFF)).coerceAtLeast(1)
+        val prefs = context.getSharedPreferences("livetogather_agora_session", Context.MODE_PRIVATE)
+        var devUid = prefs.getInt("agora_device_uid", 0)
+        if (devUid <= 0) {
+            devUid = (1000000 + kotlin.random.Random.nextInt(8999999))
+            prefs.edit().putInt("agora_device_uid", devUid).apply()
+        }
+        devUid
     }
 
-    // Determine current video layout: "1p", "2p", or "4p"
-    val activeLayout = remember(room.videoLayout, room.roomType) {
-        if (room.videoLayout.isNotBlank()) room.videoLayout
-        else if (room.roomType == "video_pk") "2p"
-        else "1p"
+    // Determine current video layout: "1p", "2p", or "4p" — REACTIVE to Firestore changes & Co-Host role
+    val activeLayout by remember {
+        derivedStateOf {
+            if (isUserCoHost || room.pkHost2Uid.isNotBlank() || room.videoLayout == "2p" || room.videoLayout == "pk") "2p"
+            else if (room.videoLayout.isNotBlank()) room.videoLayout
+            else if (room.roomType == "video_pk") "2p"
+            else "1p"
+        }
     }
 
     var selectedMemberForProfile by remember { mutableStateOf<RoomMember?>(null) }
@@ -320,6 +334,13 @@ fun VideoHangoutRoomDialog(
             joinedAt = System.currentTimeMillis()
         )
         membersRef.document(currentUser.uid).set(myMember)
+        // Also store agoraUid for cross-device UID lookup
+        membersRef.document(currentUser.uid).update("agoraUid", localAgoraUid)
+
+        // If host, store hostAgoraUid in room document for remote video mapping
+        if (isUserHost) {
+            db.collection("rooms").document(room.id).update("hostAgoraUid", localAgoraUid)
+        }
 
         onDispose {
             membersRef.document(currentUser.uid).delete()
@@ -478,6 +499,11 @@ fun VideoHangoutRoomDialog(
         val curHostName = room.hostName.ifBlank { "Host" }
         val curHostPhoto = room.hostPhotoUrl
 
+        val existingChallenger = activeMembers.find { it.role == "co_host" || (it.uid.isNotBlank() && it.uid != curHostId) }
+        val finalChallengerUid = if (room.pkHost2Uid.isNotBlank() && room.pkHost2Uid != "guest_challenger") room.pkHost2Uid else (existingChallenger?.uid ?: "guest_challenger")
+        val finalChallengerName = if (room.pkHost2Name.isNotBlank() && room.pkHost2Name != "Challenger Star") room.pkHost2Name else (existingChallenger?.name ?: "Challenger Star")
+        val finalChallengerPhoto = if (room.pkHost2Photo.isNotBlank()) room.pkHost2Photo else (existingChallenger?.photoUrl ?: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d")
+
         val updates = mapOf<String, Any>(
             "isPkActive" to true,
             "videoLayout" to "2p",
@@ -485,9 +511,9 @@ fun VideoHangoutRoomDialog(
             "pkHost1Name" to curHostName,
             "pkHost1Photo" to curHostPhoto,
             "pkHost1Score" to 0L,
-            "pkHost2Uid" to "guest_challenger",
-            "pkHost2Name" to "Challenger Star",
-            "pkHost2Photo" to "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d",
+            "pkHost2Uid" to finalChallengerUid,
+            "pkHost2Name" to finalChallengerName,
+            "pkHost2Photo" to finalChallengerPhoto,
             "pkHost2Score" to 0L,
             "pkStartTime" to now,
             "pkDurationSec" to 300,
@@ -506,6 +532,7 @@ fun VideoHangoutRoomDialog(
         val updates = mapOf<String, Any>(
             "isPkActive" to false,
             "pkStatus" to "ended",
+            "pkStartTime" to 0L,
             "pkWinnerUid" to winnerUid
         )
         db.collection("rooms").document(room.id).update(updates)
@@ -544,6 +571,21 @@ fun VideoHangoutRoomDialog(
                 db.collection("intent_categories").document(room.category)
                     .collection("rooms").document(room.id).update(updates)
             }
+            // Permanently remove room from active list
+            db.collection("rooms").document(room.id).delete()
+        } else if (isUserCoHost) {
+            // Revert layout back to 1P when co-host leaves
+            db.collection("rooms").document(room.id).update(
+                mapOf(
+                    "videoLayout" to "1p",
+                    "pkHost2Uid" to "",
+                    "pkHost2Name" to "",
+                    "pkHost2Photo" to "",
+                    "coHostUid" to "",
+                    "coHostName" to "",
+                    "coHostPhoto" to ""
+                )
+            )
         }
         db.collection("rooms").document(room.id).collection("members").document(currentUser.uid).delete()
         AgoraVideoManager.leaveRoom()
@@ -584,6 +626,78 @@ fun VideoHangoutRoomDialog(
         }
         db.collection("rooms").document(room.id).update("videoLayout", newLayout)
         Toast.makeText(context, "Layout switched to $newLayout", Toast.LENGTH_SHORT).show()
+    }
+
+    // Minimized Floating PIP Mode for Video Room
+    if (isMinimized) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .wrapContentSize(Alignment.BottomEnd)
+                .padding(16.dp)
+        ) {
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF18101E).copy(alpha = 0.95f)),
+                border = BorderStroke(1.5.dp, Brush.sweepGradient(listOf(BrandCoral, BrandGold, BrandCoral))),
+                elevation = CardDefaults.cardElevation(defaultElevation = 14.dp),
+                modifier = Modifier
+                    .size(width = 150.dp, height = 150.dp)
+                    .clickable { onMaximize() }
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .background(Color.Red.copy(alpha = 0.85f), RoundedCornerShape(50))
+                                .padding(horizontal = 5.dp, vertical = 1.dp)
+                        ) {
+                            Box(modifier = Modifier.size(5.dp).clip(CircleShape).background(Color.White))
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("📹 LIVE", color = Color.White, fontSize = 7.sp, fontWeight = FontWeight.Black)
+                        }
+                        IconButton(
+                            onClick = {
+                                executeExit()
+                            },
+                            modifier = Modifier.size(20.dp)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Exit", tint = Color.Gray, modifier = Modifier.size(14.dp))
+                        }
+                    }
+                    Text(
+                        text = room.title.take(18),
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "👥 ${activeMembers.size} viewers",
+                        color = BrandGold,
+                        fontSize = 9.sp
+                    )
+                    Text(
+                        text = "Tap to expand",
+                        color = Color.Gray,
+                        fontSize = 8.sp
+                    )
+                }
+            }
+        }
+        return
     }
 
     // Full-screen Dialog
@@ -1829,6 +1943,7 @@ fun VideoHangoutRoomDialog(
                     viewers = activeMembers.filter { it.uid !in room.kickedUserIds && it.uid !in room.bannedUserIds },
                     currentUser = currentUser,
                     isHost = isUserHost,
+                    isVideoRoom = true,
                     onSelectMember = { member ->
                         selectedMemberForProfile = member
                         showAllViewersDialog = false
@@ -1885,7 +2000,24 @@ fun VideoHangoutRoomDialog(
                                 isUserCoHost = true
                                 AgoraVideoManager.setBroadcasterRole(true)
                                 db.collection("rooms").document(room.id)
-                                    .collection("members").document(currentUser.uid).update("role", "co_host")
+                                    .collection("members").document(currentUser.uid).update(
+                                        mapOf(
+                                            "role" to "co_host",
+                                            "agoraUid" to localAgoraUid
+                                        )
+                                    )
+                                db.collection("rooms").document(room.id).update(
+                                    mapOf(
+                                        "videoLayout" to "2p",
+                                        "coHostUid" to currentUser.uid,
+                                        "coHostName" to currentUser.name,
+                                        "coHostPhoto" to currentUser.photo,
+                                        "coHostAgoraUid" to localAgoraUid,
+                                        "pkHost2Uid" to currentUser.uid,
+                                        "pkHost2Name" to currentUser.name,
+                                        "pkHost2Photo" to currentUser.photo
+                                    )
+                                )
                                 db.collection("rooms").document(room.id)
                                     .collection("video_invites").document(currentUser.uid).delete()
                                 pendingVideoInvite = null
@@ -1927,8 +2059,8 @@ fun VideoLayout1P(
             // Local Host Video Preview Fullscreen
             AndroidView(
                 factory = { ctx ->
-                    SurfaceView(ctx).apply {
-                        AgoraVideoManager.setupLocalVideo(this)
+                    TextureView(ctx).also {
+                        AgoraVideoManager.setupLocalVideo(it)
                     }
                 },
                 modifier = Modifier.fillMaxSize()
@@ -1940,8 +2072,8 @@ fun VideoLayout1P(
                 key(targetUid) {
                     AndroidView(
                         factory = { ctx ->
-                            SurfaceView(ctx).apply {
-                                AgoraVideoManager.setupRemoteVideo(this, targetUid)
+                            TextureView(ctx).also {
+                                AgoraVideoManager.setupRemoteVideo(it, targetUid)
                             }
                         },
                         update = {
@@ -2024,9 +2156,37 @@ fun VideoLayout2P(
         }
     }
     val totalDurationMs = (room.pkDurationSec.coerceAtLeast(60)) * 1000L
-    val elapsedMs = (currentTimeMs - room.pkStartTime).coerceAtLeast(0L)
+    // When PK hasn't started (pkStartTime == 0), show full timer duration instead of 00:00
+    val isPkTimerActive = room.pkStartTime > 0L && room.isPkActive
+    val elapsedMs = if (isPkTimerActive) (currentTimeMs - room.pkStartTime).coerceAtLeast(0L) else 0L
     val remainingSec = ((totalDurationMs - elapsedMs) / 1000L).coerceAtLeast(0L)
     val timerFormatted = String.format("%02d:%02d", remainingSec / 60, remainingSec % 60)
+
+    val hostMember = activeMembers.find { it.role == "host" || it.uid == room.hostUid || it.uid == room.hostId }
+    val hostAgoraUid = hostMember?.agoraUid ?: 0
+
+    val challengerMember = activeMembers.find { it.role == "co_host" || it.uid == room.pkHost2Uid || (it.uid.isNotBlank() && it.uid != room.hostUid) }
+    val challengerAgoraUid = challengerMember?.agoraUid ?: 0
+
+    // Resolve Blue (Host) Remote UID (if current user is not host)
+    val blueUid = if (isUserHost) 0 else {
+        if (hostAgoraUid > 0 && remoteUids.contains(hostAgoraUid)) {
+            hostAgoraUid
+        } else {
+            remoteUids.firstOrNull() ?: 0
+        }
+    }
+
+    // Resolve Red (Challenger) Remote UID (if current user is not co-host)
+    val redUid = if (isUserCoHost) 0 else {
+        if (challengerAgoraUid > 0 && remoteUids.contains(challengerAgoraUid)) {
+            challengerAgoraUid
+        } else if (isUserHost) {
+            remoteUids.firstOrNull() ?: 0
+        } else {
+            remoteUids.find { it != blueUid } ?: 0
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         // TOP & BOTTOM 50/50 Horizontal Split
@@ -2042,8 +2202,8 @@ fun VideoLayout2P(
                     key("local_host_video") {
                         AndroidView(
                             factory = { ctx ->
-                                SurfaceView(ctx).apply {
-                                    AgoraVideoManager.setupLocalVideo(this)
+                                TextureView(ctx).also {
+                                    AgoraVideoManager.setupLocalVideo(it)
                                 }
                             },
                             update = {
@@ -2053,13 +2213,12 @@ fun VideoLayout2P(
                         )
                     }
                 } else {
-                    val blueUid = remoteUids.firstOrNull() ?: 0
                     if (blueUid != 0) {
                         key(blueUid) {
                             AndroidView(
                                 factory = { ctx ->
-                                    SurfaceView(ctx).apply {
-                                        AgoraVideoManager.setupRemoteVideo(this, blueUid)
+                                    TextureView(ctx).also {
+                                        AgoraVideoManager.setupRemoteVideo(it, blueUid)
                                     }
                                 },
                                 update = {
@@ -2128,8 +2287,8 @@ fun VideoLayout2P(
                     key("local_challenger_video") {
                         AndroidView(
                             factory = { ctx ->
-                                SurfaceView(ctx).apply {
-                                    AgoraVideoManager.setupLocalVideo(this)
+                                TextureView(ctx).also {
+                                    AgoraVideoManager.setupLocalVideo(it)
                                 }
                             },
                             update = {
@@ -2139,18 +2298,12 @@ fun VideoLayout2P(
                         )
                     }
                 } else {
-                    val redUid = if (isUserHost) {
-                        remoteUids.firstOrNull() ?: 0
-                    } else {
-                        remoteUids.getOrNull(1) ?: 0
-                    }
-
                     if (redUid != 0) {
                         key(redUid) {
                             AndroidView(
                                 factory = { ctx ->
-                                    SurfaceView(ctx).apply {
-                                        AgoraVideoManager.setupRemoteVideo(this, redUid)
+                                    TextureView(ctx).also {
+                                        AgoraVideoManager.setupRemoteVideo(it, redUid)
                                     }
                                 },
                                 update = {

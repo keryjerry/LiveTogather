@@ -1357,7 +1357,8 @@ data class RoomMember(
     val photoUrl: String = "",
     val joinedAt: Long = System.currentTimeMillis(),
     val role: String = "listener", // "host" or "listener"
-    val tier: String = "Standard" // "VIP", "Platinum", "Standard"
+    val tier: String = "Standard", // "VIP", "Platinum", "Standard"
+    @get:PropertyName("agoraUid") @set:PropertyName("agoraUid") var agoraUid: Int = 0
 )
 
 data class ReportTicket(
