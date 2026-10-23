@@ -243,10 +243,22 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         initialDeepLinkRoomId = extractRoomId(intent)
         val imageLoader = ImageLoader.Builder(this)
+            .memoryCache {
+                coil.memory.MemoryCache.Builder(this)
+                    .maxSizePercent(0.25)
+                    .build()
+            }
+            .diskCache {
+                coil.disk.DiskCache.Builder()
+                    .directory(this.cacheDir.resolve("image_cache"))
+                    .maxSizePercent(0.02)
+                    .build()
+            }
             .components {
                 add(DataUriFetcher.Factory(this@MainActivity))
                 add(DataUriFetcher.StringFactory(this@MainActivity))
             }
+            .crossfade(true)
             .build()
         Coil.setImageLoader(imageLoader)
         setContent {
@@ -750,10 +762,10 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
         }
 
 
-        // Initialize Rooms & Real-Time Firestore Snapshot Listener
+        // Initialize Rooms & Real-Time Firestore Snapshot Listener (Paginated limit for instant app launch)
         roomsList.clear()
 
-        db.collection("rooms").addSnapshotListener { snapshot, error ->
+        db.collection("rooms").limit(50).addSnapshotListener { snapshot, error ->
             if (error != null) {
                 Log.w("Firestore", "Rooms snapshot error: ${error.message}")
                 return@addSnapshotListener
@@ -828,8 +840,8 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
             }
         }
 
-        // 2. Discover Profiles Listener (Real-Time Real Users)
-        db.collection("users").addSnapshotListener { snapshot, error ->
+        // 2. Discover Profiles Listener (Real-Time Real Users - Paginated for instant app opening)
+        db.collection("users").limit(50).addSnapshotListener { snapshot, error ->
             if (error != null) {
                 Log.w("Firestore", "Discover profiles error: ${error.message}")
                 return@addSnapshotListener
@@ -917,8 +929,8 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                 }
             }
 
-        // 6. Moments Feed Listener (Real-Time Moments)
-        db.collection("moments").addSnapshotListener { snapshot, error ->
+        // 6. Moments Feed Listener (Real-Time Moments - Paginated for instant app opening)
+        db.collection("moments").orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING).limit(30).addSnapshotListener { snapshot, error ->
             if (error != null) {
                 Log.w("Firestore", "Moments listener error: ${error.message}")
                 return@addSnapshotListener

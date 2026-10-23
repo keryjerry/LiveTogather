@@ -270,32 +270,46 @@ fun VideoHangoutRoomDialog(
         val roomRef = db.collection("rooms").document(room.id)
         val roomListener = roomRef.addSnapshotListener { snapshot, error ->
             if (error != null) return@addSnapshotListener
-            if (snapshot != null && snapshot.exists()) {
-                val updated = parseRoomFromDoc(snapshot)
-                room = updated
-
-                // Real-Time Global Music Synchronizer across all devices
-                if (updated.isPlaying && updated.nowPlayingUrl.isNotBlank()) {
-                    val trackStartedAt = snapshot.getLong("trackStartedAt") ?: updated.trackStartedAt
-                    val elapsedMs = if (trackStartedAt > 0L) {
-                        (System.currentTimeMillis() - trackStartedAt).toInt().coerceAtLeast(0)
-                    } else {
-                        updated.playbackPosition.toInt().coerceAtLeast(0)
-                    }
-
-                    if (AudioPlayerManager.currentTrackUrlState.value != updated.nowPlayingUrl || !AudioPlayerManager.isPlayingState.value) {
-                        AudioPlayerManager.play(context, updated.nowPlayingUrl, updated.nowPlayingTitle, updated.nowPlayingArtworkUrl, initialSeekMs = elapsedMs)
-                    } else {
-                        val currentLocalPos = AudioPlayerManager.currentPositionMsState.value
-                        val dur = AudioPlayerManager.durationMsState.value
-                        val targetPos = if (dur > 0) (elapsedMs % dur) else elapsedMs
-                        if (kotlin.math.abs(currentLocalPos - targetPos) > 4000) {
-                            AudioPlayerManager.seekTo(targetPos)
-                        }
-                    }
-                } else if (!updated.isPlaying && AudioPlayerManager.isPlayingState.value) {
-                    AudioPlayerManager.pause()
+            if (snapshot == null || !snapshot.exists()) {
+                if (!isUserHost) {
+                    Toast.makeText(context, "🔴 The host has closed this live room.", Toast.LENGTH_LONG).show()
+                    AgoraVideoManager.leaveRoom()
+                    onDismiss()
                 }
+                return@addSnapshotListener
+            }
+            val updated = parseRoomFromDoc(snapshot)
+            if (!updated.isLive || !updated.isHostLive || updated.statusMessage.equals("OFFLINE", ignoreCase = true)) {
+                if (!isUserHost) {
+                    Toast.makeText(context, "🔴 The host has closed this live room.", Toast.LENGTH_LONG).show()
+                    AgoraVideoManager.leaveRoom()
+                    onDismiss()
+                }
+                return@addSnapshotListener
+            }
+            room = updated
+
+            // Real-Time Global Music Synchronizer across all devices
+            if (updated.isPlaying && updated.nowPlayingUrl.isNotBlank()) {
+                val trackStartedAt = snapshot.getLong("trackStartedAt") ?: updated.trackStartedAt
+                val elapsedMs = if (trackStartedAt > 0L) {
+                    (System.currentTimeMillis() - trackStartedAt).toInt().coerceAtLeast(0)
+                } else {
+                    updated.playbackPosition.toInt().coerceAtLeast(0)
+                }
+
+                if (AudioPlayerManager.currentTrackUrlState.value != updated.nowPlayingUrl || !AudioPlayerManager.isPlayingState.value) {
+                    AudioPlayerManager.play(context, updated.nowPlayingUrl, updated.nowPlayingTitle, updated.nowPlayingArtworkUrl, initialSeekMs = elapsedMs)
+                } else {
+                    val currentLocalPos = AudioPlayerManager.currentPositionMsState.value
+                    val dur = AudioPlayerManager.durationMsState.value
+                    val targetPos = if (dur > 0) (elapsedMs % dur) else elapsedMs
+                    if (kotlin.math.abs(currentLocalPos - targetPos) > 4000) {
+                        AudioPlayerManager.seekTo(targetPos)
+                    }
+                }
+            } else if (!updated.isPlaying && AudioPlayerManager.isPlayingState.value) {
+                AudioPlayerManager.pause()
             }
         }
         onDispose {
@@ -1864,21 +1878,66 @@ fun VideoHangoutRoomDialog(
             }
 
             if (showRoomSettingsDialog) {
-                VideoRoomSettingsSheet(
-                    room = room,
-                    isHost = isUserHost,
-                    currentUser = currentUser,
-                    activeMembers = activeMembers,
-                    db = db,
-                    currentLayout = activeLayout,
-                    onSwitchLayout = { switchLayout(it) },
-                    onStartPk = { startPkBattle() },
-                    onEndPk = { endPkBattle() },
-                    onUpdateTheme = { newTheme ->
-                        room = room.copy(banner_image_url = newTheme)
-                    },
-                    onDismiss = { showRoomSettingsDialog = false }
-                )
+                if (isUserHost) {
+                    VideoRoomSettingsSheet(
+                        room = room,
+                        isHost = true,
+                        currentUser = currentUser,
+                        activeMembers = activeMembers,
+                        db = db,
+                        currentLayout = activeLayout,
+                        onSwitchLayout = { switchLayout(it) },
+                        onStartPk = { startPkBattle() },
+                        onEndPk = { endPkBattle() },
+                        onUpdateTheme = { newTheme ->
+                            room = room.copy(banner_image_url = newTheme)
+                        },
+                        onDismiss = { showRoomSettingsDialog = false }
+                    )
+                } else {
+                    ViewerRoomMenuDialog(
+                        room = room,
+                        currentUser = currentUser,
+                        onRequestJoinStage = {
+                            db.collection("rooms").document(room.id)
+                                .collection("stage_requests").document(currentUser.uid)
+                                .set(
+                                    mapOf(
+                                        "uid" to currentUser.uid,
+                                        "name" to currentUser.name,
+                                        "photo" to currentUser.photo,
+                                        "status" to "pending",
+                                        "timestamp" to System.currentTimeMillis()
+                                    )
+                                )
+                            Toast.makeText(context, "✋ Request to join stage sent to Host!", Toast.LENGTH_SHORT).show()
+                            showRoomSettingsDialog = false
+                        },
+                        onReportRoom = {
+                            val report = ReportTicket(
+                                reportId = UUID.randomUUID().toString(),
+                                reportedUid = room.hostUid.ifBlank { room.hostId },
+                                reportedUserId = room.hostId,
+                                reportedName = room.hostName,
+                                reportedPhoto = room.hostPhotoUrl,
+                                reporterUid = currentUser.uid,
+                                reporterUserId = currentUser.userId,
+                                reporterName = currentUser.name,
+                                reason = "Inappropriate content in live stream",
+                                details = "Reported from live room ${room.id}",
+                                timestamp = System.currentTimeMillis()
+                            )
+                            db.collection("reports").document(report.reportId).set(report)
+                            Toast.makeText(context, "🚩 Report submitted. Moderation team notified.", Toast.LENGTH_SHORT).show()
+                            showRoomSettingsDialog = false
+                        },
+                        onLeaveRoom = {
+                            showRoomSettingsDialog = false
+                            showExitOrKeepDialog = true
+                        },
+                        onDismiss = { showRoomSettingsDialog = false }
+                    )
+                }
             }
 
             if (selectedMemberForProfile != null) {
@@ -2257,21 +2316,23 @@ fun VideoLayout2P(
                     }
                 }
 
-                // Team Blue Badge
-                Surface(
-                    color = Color(0xFF0D47A1).copy(alpha = 0.85f),
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, Color(0xFF00E5FF)),
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(8.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                // Team Blue Badge (Only shown during active PK Battle)
+                if (room.isPkActive) {
+                    Surface(
+                        color = Color(0xFF0D47A1).copy(alpha = 0.85f),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, Color(0xFF00E5FF)),
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(8.dp)
                     ) {
-                        Text("👑 BLUE: ", color = Color(0xFF00E5FF), fontSize = 10.sp, fontWeight = FontWeight.Black)
-                        Text("${room.pkHost1Score}", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("👑 BLUE: ", color = Color(0xFF00E5FF), fontSize = 10.sp, fontWeight = FontWeight.Black)
+                            Text("${room.pkHost1Score}", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -2389,95 +2450,99 @@ fun VideoLayout2P(
                     }
                 }
 
-                // Team Red Badge
-                Surface(
-                    color = Color(0xFFB71C1C).copy(alpha = 0.85f),
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, Color(0xFFFF5252)),
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(8.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                // Team Red Badge (Only shown during active PK Battle)
+                if (room.isPkActive) {
+                    Surface(
+                        color = Color(0xFFB71C1C).copy(alpha = 0.85f),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, Color(0xFFFF5252)),
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(8.dp)
                     ) {
-                        Text("${room.pkHost2Score} ", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                        Text("🔥 RED", color = Color(0xFFFF5252), fontSize = 10.sp, fontWeight = FontWeight.Black)
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("${room.pkHost2Score} ", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            Text("🔥 RED", color = Color(0xFFFF5252), fontSize = 10.sp, fontWeight = FontWeight.Black)
+                        }
                     }
                 }
             }
         }
 
-        // CENTER OVERLAY: PK BATTLE STATUS & TUG-OF-WAR BAR (Across Horizontal Dividing Line)
-        Column(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .fillMaxWidth(0.92f),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Surface(
-                color = Color.Black.copy(alpha = 0.85f),
-                shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(Color(0xFF00E5FF), Color(0xFFFF1744))))
+        // CENTER OVERLAY: PK BATTLE STATUS & TUG-OF-WAR BAR (Only shown when PK Battle is manually started)
+        if (room.isPkActive) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .fillMaxWidth(0.92f),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                Surface(
+                    color = Color.Black.copy(alpha = 0.85f),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(Color(0xFF00E5FF), Color(0xFFFF1744))))
                 ) {
-                    // Header Timer
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    Column(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text("⚔️ LIVE PK BATTLE", color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Black)
-                        Surface(
-                            color = Color(0xFFFF1744).copy(alpha = 0.3f),
-                            shape = RoundedCornerShape(50),
-                            border = BorderStroke(0.8.dp, Color(0xFFFF1744))
+                        // Header Timer
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
+                            Text("⚔️ LIVE PK BATTLE", color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                            Surface(
+                                color = Color(0xFFFF1744).copy(alpha = 0.3f),
+                                shape = RoundedCornerShape(50),
+                                border = BorderStroke(0.8.dp, Color(0xFFFF1744))
+                            ) {
+                                Text(
+                                    text = "⏱️ $timerFormatted",
+                                    color = Color.White,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        // Tug-of-War Score Bar
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(14.dp)
+                                .clip(RoundedCornerShape(50))
+                                .background(Color.DarkGray)
+                        ) {
+                            Row(modifier = Modifier.fillMaxSize()) {
+                                Box(
+                                    modifier = Modifier
+                                        .weight(animatedBlueRatio)
+                                        .fillMaxHeight()
+                                        .background(Brush.horizontalGradient(listOf(Color(0xFF0D47A1), Color(0xFF00E5FF))))
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f - animatedBlueRatio)
+                                        .fillMaxHeight()
+                                        .background(Brush.horizontalGradient(listOf(Color(0xFFFF1744), Color(0xFFB71C1C))))
+                                )
+                            }
                             Text(
-                                text = "⏱️ $timerFormatted",
+                                text = "⚡ VS ⚡",
                                 color = Color.White,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Black,
+                                modifier = Modifier.align(Alignment.Center)
                             )
                         }
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    // Tug-of-War Score Bar
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(14.dp)
-                            .clip(RoundedCornerShape(50))
-                            .background(Color.DarkGray)
-                    ) {
-                        Row(modifier = Modifier.fillMaxSize()) {
-                            Box(
-                                modifier = Modifier
-                                    .weight(animatedBlueRatio)
-                                    .fillMaxHeight()
-                                    .background(Brush.horizontalGradient(listOf(Color(0xFF0D47A1), Color(0xFF00E5FF))))
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f - animatedBlueRatio)
-                                    .fillMaxHeight()
-                                    .background(Brush.horizontalGradient(listOf(Color(0xFFFF1744), Color(0xFFB71C1C))))
-                            )
-                        }
-                        Text(
-                            text = "⚡ VS ⚡",
-                            color = Color.White,
-                            fontSize = 8.sp,
-                            fontWeight = FontWeight.Black,
-                            modifier = Modifier.align(Alignment.Center)
-                        )
                     }
                 }
             }
@@ -2846,6 +2911,181 @@ fun FloatingReactionEmoji(
 }
 
 // -------------------------------------------------------------
+// VIEWER ROOM OPTIONS DIALOG
+// -------------------------------------------------------------
+@Composable
+fun ViewerRoomMenuDialog(
+    room: RoomItem,
+    currentUser: UserProfile,
+    onRequestJoinStage: () -> Unit,
+    onReportRoom: () -> Unit,
+    onLeaveRoom: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true
+        )
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = BrandCard),
+            shape = RoundedCornerShape(22.dp),
+            border = BorderStroke(1.2.dp, BrandBorder),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "📹 Viewer Options",
+                        color = Color.White,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray, modifier = Modifier.size(18.dp))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // 1. Request to Join Broadcast
+                Surface(
+                    color = BrandCardSubtle,
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, BrandCoral.copy(alpha = 0.5f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onRequestJoinStage() }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = BrandCoral.copy(alpha = 0.2f),
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.Videocam, contentDescription = null, tint = BrandCoral, modifier = Modifier.size(20.dp))
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Request to Join Broadcast 📹",
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Send live request to host to join video stage",
+                                color = Color.Gray,
+                                fontSize = 10.sp
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // 2. Report Stream
+                Surface(
+                    color = BrandCardSubtle,
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, BrandBorder),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onReportRoom() }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = Color.Red.copy(alpha = 0.18f),
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.Flag, contentDescription = null, tint = Color.Red, modifier = Modifier.size(20.dp))
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Report Stream / Room 🚩",
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Notify moderation team of inappropriate content",
+                                color = Color.Gray,
+                                fontSize = 10.sp
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // 3. Leave Room
+                Surface(
+                    color = BrandCardSubtle,
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, BrandBorder),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onLeaveRoom() }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = Color.Gray.copy(alpha = 0.2f),
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.ExitToApp, contentDescription = null, tint = Color.LightGray, modifier = Modifier.size(20.dp))
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Leave Live Room 🚪",
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Exit or minimize player",
+                                color = Color.Gray,
+                                fontSize = 10.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
 // VIDEO ROOM SETTINGS BOTTOM SHEET
 // -------------------------------------------------------------
 @Composable
@@ -2932,41 +3172,8 @@ fun VideoRoomSettingsSheet(
                                 shape = RoundedCornerShape(14.dp)
                             ) {
                                 Column(modifier = Modifier.padding(12.dp)) {
-                                    Text("📹 Video Layout Switcher", color = BrandCoral, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    Text("⚔️ Live Room PK Battle Controls", color = BrandCoral, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                     Spacer(modifier = Modifier.height(8.dp))
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        val layouts = listOf(
-                                            "1p" to "1P Solo",
-                                            "2p" to "2P PK Top/Bottom",
-                                            "3p" to "3P Tri-Cast",
-                                            "4p" to "4P Grid"
-                                        )
-                                        layouts.forEach { (key, label) ->
-                                            val isSelected = currentLayout == key
-                                            Surface(
-                                                color = if (isSelected) BrandCoral else BrandDark,
-                                                shape = RoundedCornerShape(10.dp),
-                                                border = BorderStroke(1.dp, if (isSelected) BrandCoral else BrandBorder),
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .clickable { onSwitchLayout(key) }
-                                            ) {
-                                                Text(
-                                                    text = label,
-                                                    color = Color.White,
-                                                    fontSize = 10.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    textAlign = TextAlign.Center,
-                                                    modifier = Modifier.padding(vertical = 10.dp)
-                                                )
-                                            }
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.height(12.dp))
 
                                     if (!room.isPkActive) {
                                         Button(

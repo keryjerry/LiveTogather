@@ -238,8 +238,12 @@ object AgoraVideoManager {
         val role = if (isBroadcaster) Constants.CLIENT_ROLE_BROADCASTER else Constants.CLIENT_ROLE_AUDIENCE
         engine.setClientRole(role)
         val options = ChannelMediaOptions().apply {
+            channelProfile = Constants.CHANNEL_PROFILE_LIVE_BROADCASTING
+            clientRoleType = role
             publishCameraTrack = isBroadcaster && !isCameraOff
             publishMicrophoneTrack = isBroadcaster && !isMuted
+            autoSubscribeAudio = true
+            autoSubscribeVideo = true
         }
         engine.updateChannelMediaOptions(options)
         if (isBroadcaster) {
