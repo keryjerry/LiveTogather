@@ -821,7 +821,7 @@ fun CreateRoomDialog(
 ) {
     var roomTitle by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf(if (initialCategory.isNotBlank()) initialCategory else CATEGORY_LIST.getOrNull(1)?.id ?: "free_tonight") }
-    var selectedRoomType by remember { mutableStateOf("audio") }
+    var selectedRoomType by remember { mutableStateOf(if (initialCategory == "video_stream") "video" else "audio") }
     var selectedTheme by remember { mutableStateOf(ROOM_THEME_PRESETS[0].imageUrl) }
     var showVideoSafetyGuidelinesModal by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -1033,6 +1033,11 @@ fun CreateRoomDialog(
                                         Toast.makeText(context, "👑 VIP Room can only be created by VIP Level 1+ members!", Toast.LENGTH_SHORT).show()
                                     } else {
                                         selectedCategory = cat.id
+                                        if (cat.id == "video_stream") {
+                                            selectedRoomType = "video"
+                                        } else if (selectedRoomType == "video") {
+                                            selectedRoomType = "audio"
+                                        }
                                     }
                                 }
                                 .padding(horizontal = 10.dp, vertical = 6.dp)
@@ -1573,68 +1578,73 @@ fun RoomDeleteConfirmationDialog(
 // 2. DENSE RGB ANIMATED EQUALIZER (35 bars, multi-color spectrum, bottom-aligned)
 // -------------------------------------------------------------
 @Composable
-fun MusicVisualizerWave(isPlaying: Boolean, modifier: Modifier = Modifier) {
+fun MusicVisualizerWave(isPlaying: Boolean, modifier: Modifier = Modifier, barCount: Int = 18) {
     val infiniteTransition = rememberInfiniteTransition(label = "dense_eq_wave")
 
-    val h1 by infiniteTransition.animateFloat(
-        initialValue = 6f,
-        targetValue = if (isPlaying) 20f else 6f,
-        animationSpec = infiniteRepeatable(tween(380, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "eq1"
+    val phase1 by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = (2 * Math.PI).toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(1350, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "phase1"
     )
-    val h2 by infiniteTransition.animateFloat(
-        initialValue = 18f,
-        targetValue = if (isPlaying) 8f else 6f,
-        animationSpec = infiniteRepeatable(tween(460, easing = LinearEasing), RepeatMode.Reverse),
-        label = "eq2"
+    val phase2 by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = (2 * Math.PI).toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(1950, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "phase2"
     )
-    val h3 by infiniteTransition.animateFloat(
-        initialValue = 10f,
-        targetValue = if (isPlaying) 22f else 6f,
-        animationSpec = infiniteRepeatable(tween(320, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "eq3"
-    )
-    val h4 by infiniteTransition.animateFloat(
-        initialValue = 20f,
-        targetValue = if (isPlaying) 7f else 6f,
-        animationSpec = infiniteRepeatable(tween(510, easing = LinearEasing), RepeatMode.Reverse),
-        label = "eq4"
-    )
-    val h5 by infiniteTransition.animateFloat(
-        initialValue = 12f,
-        targetValue = if (isPlaying) 19f else 6f,
-        animationSpec = infiniteRepeatable(tween(420, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "eq5"
-    )
-    val h6 by infiniteTransition.animateFloat(
-        initialValue = 16f,
-        targetValue = if (isPlaying) 9f else 6f,
-        animationSpec = infiniteRepeatable(tween(360, easing = LinearEasing), RepeatMode.Reverse),
-        label = "eq6"
+    val pulseGlow by infiniteTransition.animateFloat(
+        initialValue = 0.55f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(700, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulseGlow"
     )
 
-    val barHeights = listOf(h1, h2, h3, h4, h5, h6)
-    val eqColors = listOf(
-        Color(0xFFFF5E62), // coral
-        Color(0xFFFF9966), // orange
-        Color(0xFFFFD700), // gold
-        Color(0xFF00E5FF), // cyan
-        Color(0xFF00E676), // green
-        Color(0xFFE040FB)  // purple
-    )
+    val spectrumColors = remember {
+        listOf(
+            Color(0xFFFF2A6D), // Hot pink
+            Color(0xFFFF5E62), // Coral
+            Color(0xFFFF9966), // Orange
+            Color(0xFFFFD700), // Gold
+            Color(0xFF00E676), // Green
+            Color(0xFF00E5FF), // Cyan
+            Color(0xFF00B0FF), // Deep Sky Blue
+            Color(0xFF7C4DFF), // Violet
+            Color(0xFFE040FB)  // Magenta
+        )
+    }
 
     Row(
-        modifier = modifier.height(24.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(1.2.dp),
         verticalAlignment = Alignment.Bottom
     ) {
-        barHeights.forEachIndexed { idx, h ->
+        for (i in 0 until barCount) {
+            val freqWeight = 0.75f + (i.toFloat() / barCount.toFloat()) * 0.95f
+            val s1 = kotlin.math.sin(phase1 * freqWeight + i * 0.42f)
+            val s2 = kotlin.math.cos(phase2 * 1.25f + i * 0.68f)
+            val normalized = ((s1 + s2 + 2f) / 4f).coerceIn(0.12f, 1.0f)
+
+            val minH = 2.5f
+            val maxH = 20f
+            val barHeightDp = if (isPlaying) (minH + normalized * (maxH - minH)) else minH
+            val barColor = spectrumColors[i % spectrumColors.size]
+
             Box(
                 modifier = Modifier
-                    .weight(1f)
-                    .height(h.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(eqColors[idx % eqColors.size])
+                    .width(1.8.dp)
+                    .height(barHeightDp.dp)
+                    .clip(RoundedCornerShape(1.dp))
+                    .background(barColor.copy(alpha = if (isPlaying) pulseGlow else 0.35f))
             )
         }
     }
@@ -8719,162 +8729,194 @@ fun InRoomInboxDialog(
 }
 
 // -------------------------------------------------------------
-// 7. CATEGORY SUB-ROOM CARD
-// -------------------------------------------------------------
-// 7. CATEGORY SUB-ROOM CARD (SLENDER COMPACT 2-COLUMN GRID)
+// 7. CATEGORY SUB-ROOM CARD (SLEEK SLENDER HORIZONTAL ROW - IMAGE 1 STYLE)
 // -------------------------------------------------------------
 @Composable
 fun CategorySubRoomCard(
     room: RoomItem,
     activeCount: Int,
+    hostUser: UserProfile? = null,
     currentUser: UserProfile = UserProfile(),
     onJoin: () -> Unit
 ) {
     val isUserHostOfThisRoom = currentUser.uid.isNotBlank() && (currentUser.uid == room.hostUid || currentUser.uid == room.hostId)
     val cardPhoto = room.hostPhotoUrl.ifEmpty { room.banner_image_url.ifEmpty { "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3" } }
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(178.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(16.dp))
-            .clickable { onJoin() }
-    ) {
-        // Host Cover Image
-        AsyncImage(
-            model = cardPhoto,
-            contentDescription = room.title,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop
-        )
+    val infiniteTransition = rememberInfiniteTransition(label = "sub_room_card_anim")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 0.98f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(850, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "card_pulse"
+    )
 
-        // Refined Dark Gradient Overlay
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color.Black.copy(alpha = 0.55f),
-                            Color.Transparent,
-                            Color.Black.copy(alpha = 0.92f)
-                        )
+    Surface(
+        color = Color(0xFF141722),
+        shape = RoundedCornerShape(16.dp),
+        border = if (room.isHostLive) {
+            BorderStroke(
+                1.2.dp,
+                Brush.horizontalGradient(
+                    listOf(
+                        Color(0xFFFF2A6D).copy(alpha = pulseAlpha),
+                        Color(0xFF00E5FF).copy(alpha = pulseAlpha),
+                        Color(0xFFFFD700).copy(alpha = pulseAlpha * 0.75f)
                     )
                 )
-        )
-
-        Column(
+            )
+        } else {
+            BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f))
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onJoin() }
+    ) {
+        Row(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(8.dp),
-            verticalArrangement = Arrangement.SpaceBetween
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // Top Row: Live Status Pill with Equalizer + Real-time Live Viewers Chip
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            // 0. BLINKING VERTICAL ACCENT LINE (Pulsing live indicator bar)
+            if (room.isHostLive) {
+                Box(
+                    modifier = Modifier
+                        .width(3.2.dp)
+                        .height(46.dp)
+                        .clip(RoundedCornerShape(1.6.dp))
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    Color(0xFFFF2A6D).copy(alpha = pulseAlpha),
+                                    Color(0xFF00E5FF).copy(alpha = pulseAlpha)
+                                )
+                            )
+                        )
+                )
+                Spacer(modifier = Modifier.width(7.dp))
+            }
+
+            // 1. LEFT: Square Cover Image with rounded corners & subtle LIVE tag
+            Box(
+                modifier = Modifier
+                    .size(60.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .border(
+                        1.dp,
+                        if (room.isHostLive) Color(0xFFFF1744).copy(alpha = pulseAlpha) else Color.White.copy(alpha = 0.12f),
+                        RoundedCornerShape(12.dp)
+                    )
             ) {
+                AsyncImage(
+                    model = cardPhoto,
+                    contentDescription = room.title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+
                 if (room.isHostLive) {
-                    Row(
+                    Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(50))
-                            .background(Color(0xFFE91E63).copy(alpha = 0.92f))
-                            .border(0.6.dp, Color.White.copy(alpha = 0.5f), RoundedCornerShape(50))
-                            .padding(horizontal = 6.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        MusicVisualizerWave(isPlaying = true, modifier = Modifier.height(10.dp))
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text("LIVE", color = Color.White, fontSize = 8.5.sp, fontWeight = FontWeight.Black)
-                    }
-                } else {
-                    Row(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(50))
-                            .background(Color.Black.copy(alpha = 0.72f))
-                            .border(0.6.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(50))
-                            .padding(horizontal = 6.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .background(Color(0xFFE91E63).copy(alpha = 0.88f * pulseAlpha))
+                            .padding(vertical = 1.dp),
+                        contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = if (room.scheduledTime.isNotBlank()) "⏳ ${room.scheduledTime.take(9)}" else "⏳ OFFLINE",
-                            color = BrandGold,
-                            fontSize = 8.sp,
-                            fontWeight = FontWeight.Bold
+                            text = "LIVE",
+                            color = Color.White,
+                            fontSize = 7.5.sp,
+                            fontWeight = FontWeight.Black
                         )
                     }
-                }
-
-                // Real-time Viewers Count Chip
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(Color.Black.copy(alpha = 0.72f))
-                        .border(0.6.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(50))
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("🔥", fontSize = 8.5.sp)
-                    Spacer(modifier = Modifier.width(2.dp))
-                    Text("$activeCount", color = Color.White, fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
                 }
             }
 
-            // Bottom Section: Host Crown, Room Title, and Quick Join Action
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = if (isUserHostOfThisRoom) "👑 You (Host)" else "👑 ${room.hostName.ifBlank { "Host" }}",
-                        color = BrandGold,
-                        fontSize = 8.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
+            Spacer(modifier = Modifier.width(10.dp))
 
-                Spacer(modifier = Modifier.height(2.dp))
-
+            // 2. MIDDLE: Room Title, Host Crown + Real Badges, Status/Music
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.Center
+            ) {
+                // Room Title
                 Text(
                     text = "${room.title.ifBlank { room.roomName }} ${room.emoji}",
                     color = Color.White,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 12.sp,
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(3.dp))
 
-                val buttonText = when {
-                    isUserHostOfThisRoom && room.isHostLive -> "Enter Room 👑"
-                    isUserHostOfThisRoom && !room.isHostLive -> "Go Live 🔴"
-                    room.isHostLive -> "Join Room 🎙️"
-                    else -> "Host Offline ⏳"
-                }
-                val buttonBg = when {
-                    room.isHostLive -> Color(0xFF262C3E)
-                    else -> Color(0xFF1E212B)
-                }
-                val buttonBorder = when {
-                    room.isHostLive -> Color(0xFF4A5578)
-                    else -> Color(0xFF2D3243)
-                }
-
-                Surface(
-                    color = buttonBg,
-                    shape = RoundedCornerShape(50),
-                    border = BorderStroke(0.8.dp, buttonBorder),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(26.dp)
-                        .clickable { onJoin() }
+                // Real Badges & Host Crown Row (Matching Reference Image 1)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(buttonText, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                    }
+                    Text(
+                        text = if (isUserHostOfThisRoom) "👑 You" else "👑 ${room.hostName.ifBlank { "Host" }.take(8)}",
+                        color = BrandGold,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+
+                    val pkLevel = hostUser?.pkLevel ?: 1
+                    SilverSwordsRankBadge(rank = pkLevel, modifier = Modifier.scale(0.72f).offset(x = (-3).dp))
+
+                    val wealthLvl = hostUser?.wealthLevel ?: 1
+                    BlueLevelBadgePill(level = wealthLvl, modifier = Modifier.scale(0.75f).offset(x = (-6).dp))
+
+                    val charmLvl = hostUser?.charmLevel ?: 1
+                    SapphireCharmBadgePill(level = charmLvl, modifier = Modifier.scale(0.75f).offset(x = (-9).dp))
+                }
+
+                Spacer(modifier = Modifier.height(3.dp))
+
+                // Live status or now playing track
+                Text(
+                    text = if (room.isPlaying && room.nowPlayingTitle.isNotBlank()) "🎶 ${room.nowPlayingTitle.take(22)}" else if (room.isHostLive) "🔴 Live Broadcast" else "⏳ Host will be live soon",
+                    color = if (room.isHostLive) Color(0xFF34D399) else Color.White.copy(alpha = 0.5f),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            // 3. RIGHT: 18-20 Line Slender Equalizer Wave + Live Viewers Count (Matching Reference Image 1)
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.Center
+            ) {
+                MusicVisualizerWave(
+                    isPlaying = room.isHostLive,
+                    modifier = Modifier.height(20.dp),
+                    barCount = 18
+                )
+
+                Spacer(modifier = Modifier.height(5.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Text("📶", fontSize = 8.5.sp)
+                    Text(
+                        text = "$activeCount",
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
@@ -8882,7 +8924,7 @@ fun CategorySubRoomCard(
 }
 
 // -------------------------------------------------------------
-// 8. CATEGORY HUB / LOBBY DIALOG (TOP CAROUSEL + SLENDER REAL-TIME GRIDS)
+// 8. CATEGORY HUB / LOBBY DIALOG (COMPACT SLIM HEADER + TOP PROMINENT HOSTS + SLENDER LIST)
 // -------------------------------------------------------------
 @Composable
 fun CategoryHubLobbyDialog(
@@ -8915,20 +8957,32 @@ fun CategoryHubLobbyDialog(
     }
 
     val categoryRooms = remember(
-        liveCategoryRooms.map { "${it.id}_${it.title}_${it.roomName}_${it.isHostLive}_${it.isLive}_${it.activeUserCount}" },
-        allRooms.map { "${it.id}_${it.title}_${it.roomName}_${it.isHostLive}_${it.isLive}_${it.activeUserCount}" },
-        category.id
+        liveCategoryRooms.map { "${it.id}_${it.title}_${it.roomName}_${it.isHostLive}_${it.isLive}_${it.activeUserCount}_${it.roomType}" },
+        allRooms.map { "${it.id}_${it.title}_${it.roomName}_${it.isHostLive}_${it.isLive}_${it.activeUserCount}_${it.roomType}" },
+        category.id,
+        currentUser.uid
     ) {
         val map = linkedMapOf<String, RoomItem>()
         fun matchesCategory(r: RoomItem): Boolean {
             if (r.id.isBlank() || r.title.isBlank()) return false
-            if (r.statusMessage.equals("DELETED", ignoreCase = true)) {
+            if (r.statusMessage.equals("DELETED", ignoreCase = true) || r.statusMessage.equals("CLOSED", ignoreCase = true)) {
                 return false
             }
-            if (category.id == "video_stream") {
-                return r.category == "video_stream" || r.category == "video_pk" || r.roomType == "video" || r.roomType == "video_pk" || r.isVideoRoom
+            // Strict Available/Live Filter (Offline rooms of other hosts are not listed)
+            val isHostOfThisRoom = currentUser.uid.isNotBlank() && (r.hostUid == currentUser.uid || r.hostId == currentUser.uid)
+            val isRoomAvailable = r.isHostLive || r.isLive || isHostOfThisRoom
+            if (!isRoomAvailable) {
+                return false
             }
-            return r.category == category.id
+
+            if (category.id == "video_stream") {
+                // In Video Stream: ONLY real video rooms!
+                val isVideo = (r.category == "video_stream" || r.roomType == "video" || r.roomType == "video_pk" || r.isVideoRoom) && r.roomType != "audio"
+                return isVideo
+            } else {
+                // In Audio categories: ONLY rooms of this category in audio mode!
+                return r.category == category.id && r.roomType != "video" && r.roomType != "video_pk"
+            }
         }
         allRooms.filter { matchesCategory(it) }.forEach { map[it.id] = it }
         liveCategoryRooms.filter { matchesCategory(it) }.forEach { map[it.id] = it }
@@ -8936,7 +8990,7 @@ fun CategoryHubLobbyDialog(
     }
 
     // Dynamic Multi-Tier Real-Time Auto-Ranking Comparator (NO DUMMY DATA)
-    // 1. Live status (Live on top, offline below)
+    // 1. Live status (Live on top)
     // 2. Active viewers volume (Real-time Firestore user count)
     // 3. Host wealth & charm level
     // 4. Creation / update timestamp
@@ -8999,314 +9053,288 @@ fun CategoryHubLobbyDialog(
         Scaffold(
             containerColor = Color(0xFF10121A),
             topBar = {
-                Box(
+                // Compact Slim Single-Line Top Bar (NO huge banner wasting vertical space)
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(130.dp)
+                        .statusBarsPadding()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    AsyncImage(
-                        model = categoryBannerUrl.ifEmpty { "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3" },
-                        contentDescription = category.label,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(Color.Black.copy(alpha = 0.45f), Color(0xFF10121A))
-                                )
-                            )
-                    )
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(
-                                onClick = onDismiss,
-                                modifier = Modifier.background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-                            }
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Column {
-                                Text(
-                                    text = category.label,
-                                    color = Color.White,
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.Black
-                                )
-                                Text(
-                                    text = "🟢 $activeCategoryCount Active in Category Lobby",
-                                    color = Color(0xFF34D399),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-
-                        // "+ Create Room" Button inside Lobby
-                        Button(
-                            onClick = onCreateRoom,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF262C3E)),
-                            border = BorderStroke(1.dp, Color(0xFF3F4B6B)),
-                            shape = RoundedCornerShape(50),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick = onDismiss,
+                            modifier = Modifier
+                                .size(36.dp)
+                                .background(Color.White.copy(alpha = 0.08f), CircleShape)
                         ) {
-                            Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Create Room", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White, modifier = Modifier.size(18.dp))
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = category.label,
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "🟢 $activeCategoryCount Online",
+                                color = Color(0xFF34D399),
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+
+                    // Compact, Stylish "+ Create" Pill Button
+                    Surface(
+                        color = Color(0xFF262C3E),
+                        shape = RoundedCornerShape(50),
+                        border = BorderStroke(1.dp, Color(0xFF3F4B6B)),
+                        modifier = Modifier
+                            .height(32.dp)
+                            .clickable { onCreateRoom() }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
+                            Text("Create", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
             }
         ) { paddingValues ->
-            Column(
+            LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                    .padding(horizontal = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(9.dp)
             ) {
-                if (sortedCategoryRooms.isEmpty()) {
-                    // Clean Empty State
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1F2C)),
-                        shape = RoundedCornerShape(20.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 16.dp)
-                            .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(20.dp))
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(24.dp),
-                            verticalArrangement = Arrangement.Center,
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(text = "🎙️", fontSize = 42.sp)
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Text(
-                                text = "No Live Rooms Yet",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
-                                textAlign = TextAlign.Center
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = "Be the first to host a hangout in ${category.label}! Stream music, talk on stage, and invite friends to join.",
-                                color = Color.White.copy(alpha = 0.6f),
-                                fontSize = 12.sp,
-                                textAlign = TextAlign.Center,
-                                lineHeight = 18.sp
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Button(
-                                onClick = onCreateRoom,
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF262C3E)),
-                                border = BorderStroke(1.dp, Color(0xFF3F4B6B)),
-                                shape = RoundedCornerShape(50),
-                                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
-                            ) {
-                                Icon(Icons.Default.AddCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Create Room Now 🎙️", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            }
-                        }
-                    }
-                } else {
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(2),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        // 1. TOP POPULAR STAR HOSTS HORIZONTAL CAROUSEL (SPAN 2)
-                        if (topPopularHosts.isNotEmpty()) {
-                            item(span = { GridItemSpan(2) }) {
-                                Column(modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 4.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = "🌟 Top Star Hosts",
-                                            color = Color.White,
-                                            fontSize = 13.5.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Text(
-                                            text = "${topPopularHosts.size} Hosts",
-                                            color = BrandGold,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                    }
-                                    LazyRow(
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                        contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp)
-                                    ) {
-                                        items(topPopularHosts) { (hostUser, hostRoom) ->
-                                            Column(
-                                                horizontalAlignment = Alignment.CenterHorizontally,
-                                                modifier = Modifier
-                                                    .width(66.dp)
-                                                    .clickable { onJoinRoom(hostRoom) }
-                                            ) {
-                                                // Real User Avatar Frame lookup (NO dummy frames!)
-                                                val frameRes = if (hostUser.activeFrame.isNotBlank()) {
-                                                    AVATAR_FRAMES_CATALOG.find { it.id == hostUser.activeFrame }?.drawableRes
-                                                } else null
-
-                                                Box(
-                                                    modifier = Modifier.size(62.dp),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    AsyncImage(
-                                                        model = hostUser.photo.ifEmpty { hostRoom.hostPhotoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" } },
-                                                        contentDescription = hostUser.name,
-                                                        modifier = Modifier
-                                                            .size(46.dp)
-                                                            .clip(CircleShape)
-                                                            .border(
-                                                                1.5.dp,
-                                                                if (hostRoom.isHostLive) Color(0xFFFF1744) else Color.White.copy(alpha = 0.2f),
-                                                                CircleShape
-                                                            ),
-                                                        contentScale = ContentScale.Crop
-                                                    )
-
-                                                    // Overlay REAL frame ONLY if equipped in Firestore
-                                                    if (frameRes != null) {
-                                                        Image(
-                                                            painter = painterResource(id = frameRes),
-                                                            contentDescription = "Avatar Frame",
-                                                            modifier = Modifier.size(62.dp),
-                                                            contentScale = ContentScale.Fit
-                                                        )
-                                                    }
-
-                                                    // Live Dot Badge
-                                                    if (hostRoom.isHostLive) {
-                                                        Surface(
-                                                            color = Color(0xFFFF1744),
-                                                            shape = CircleShape,
-                                                            border = BorderStroke(1.dp, Color.White),
-                                                            modifier = Modifier
-                                                                .size(11.dp)
-                                                                .align(Alignment.BottomEnd)
-                                                                .padding(bottom = 2.dp, end = 3.dp)
-                                                        ) {}
-                                                    }
-                                                }
-
-                                                Spacer(modifier = Modifier.height(3.dp))
-
-                                                Text(
-                                                    text = hostUser.name.ifBlank { hostRoom.hostName.ifBlank { "Host" } },
-                                                    color = Color.White,
-                                                    fontSize = 10.5.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    textAlign = TextAlign.Center
-                                                )
-
-                                                Text(
-                                                    text = if (hostRoom.isHostLive) "🔴 LIVE" else hostRoom.title.take(10),
-                                                    color = if (hostRoom.isHostLive) Color(0xFF34D399) else Color.White.copy(alpha = 0.5f),
-                                                    fontSize = 9.sp,
-                                                    fontWeight = FontWeight.Medium,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    textAlign = TextAlign.Center
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // 2. ACTIVE SUB-ROOMS SECTION HEADER (SPAN 2)
-                        item(span = { GridItemSpan(2) }) {
+                // 1. TOP POPULAR STAR HOSTS HORIZONTAL CAROUSEL (PROMINENT LARGE AVATARS)
+                if (topPopularHosts.isNotEmpty()) {
+                    item {
+                        Column(modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 4.dp)) {
                             Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 4.dp, bottom = 4.dp),
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 2.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "🎙️ Live & Active Rooms (${sortedCategoryRooms.size})",
+                                    text = "🌟 Top Star Hosts",
                                     color = Color.White,
-                                    fontSize = 13.5.sp,
+                                    fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "Auto-ranked",
-                                    color = Color.White.copy(alpha = 0.45f),
-                                    fontSize = 10.sp
+                                    text = "${topPopularHosts.size} Hosts",
+                                    color = BrandGold,
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.SemiBold
                                 )
                             }
-                        }
-
-                        // 3. SLENDER 2-COLUMN GRIDS
-                        items(sortedCategoryRooms) { room ->
-                            val activeCount = allUsers.count { it.current_room == room.id }.coerceAtLeast(room.activeUserCount)
-                            CategorySubRoomCard(
-                                room = room,
-                                activeCount = activeCount,
-                                currentUser = currentUser,
-                                onJoin = { onJoinRoom(room) }
-                            )
-                        }
-
-                        // 4. CREATE SUB-ROOM COMPACT CARD
-                        item {
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1F2C)),
-                                shape = RoundedCornerShape(16.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(178.dp)
-                                    .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(16.dp))
-                                    .clickable { onCreateRoom() }
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                                contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp)
                             ) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(12.dp),
-                                    verticalArrangement = Arrangement.Center,
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    Icon(Icons.Default.Add, contentDescription = null, tint = BrandGold, modifier = Modifier.size(28.dp))
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    Text(
-                                        text = "+ Create Sub-Room",
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 11.5.sp,
-                                        textAlign = TextAlign.Center
-                                    )
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = "Host another lounge",
-                                        color = Color.White.copy(alpha = 0.5f),
-                                        fontSize = 9.5.sp,
-                                        textAlign = TextAlign.Center
-                                    )
+                                items(topPopularHosts) { (hostUser, hostRoom) ->
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier
+                                            .width(76.dp)
+                                            .clickable { onJoinRoom(hostRoom) }
+                                    ) {
+                                        // Real User Avatar Frame lookup (NO dummy frames!)
+                                        val frameRes = if (hostUser.activeFrame.isNotBlank()) {
+                                            AVATAR_FRAMES_CATALOG.find { it.id == hostUser.activeFrame }?.drawableRes
+                                        } else null
+
+                                        Box(
+                                            modifier = Modifier.size(76.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            AsyncImage(
+                                                model = hostUser.photo.ifEmpty { hostRoom.hostPhotoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" } },
+                                                contentDescription = hostUser.name,
+                                                modifier = Modifier
+                                                    .size(60.dp)
+                                                    .clip(CircleShape)
+                                                    .border(
+                                                        2.dp,
+                                                        if (hostRoom.isHostLive) Color(0xFFFF1744) else Color.White.copy(alpha = 0.2f),
+                                                        CircleShape
+                                                    ),
+                                                contentScale = ContentScale.Crop
+                                            )
+
+                                            // Overlay REAL frame ONLY if equipped in Firestore
+                                            if (frameRes != null) {
+                                                Image(
+                                                    painter = painterResource(id = frameRes),
+                                                    contentDescription = "Avatar Frame",
+                                                    modifier = Modifier.size(76.dp),
+                                                    contentScale = ContentScale.Fit
+                                                )
+                                            }
+
+                                            // Live Dot Badge
+                                            if (hostRoom.isHostLive) {
+                                                Surface(
+                                                    color = Color(0xFFFF1744),
+                                                    shape = CircleShape,
+                                                    border = BorderStroke(1.dp, Color.White),
+                                                    modifier = Modifier
+                                                        .size(12.dp)
+                                                        .align(Alignment.BottomEnd)
+                                                        .padding(bottom = 3.dp, end = 5.dp)
+                                                ) {}
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.height(3.dp))
+
+                                        Text(
+                                            text = hostUser.name.ifBlank { hostRoom.hostName.ifBlank { "Host" } },
+                                            color = Color.White,
+                                            fontSize = 10.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            textAlign = TextAlign.Center
+                                        )
+
+                                        Text(
+                                            text = if (hostRoom.isHostLive) "🔴 LIVE" else hostRoom.title.take(12),
+                                            color = if (hostRoom.isHostLive) Color(0xFF34D399) else Color.White.copy(alpha = 0.5f),
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
                                 }
                             }
                         }
+                    }
+                }
+
+                // 2. ACTIVE ROOMS SECTION HEADER
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 2.dp, bottom = 2.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "🎙️ Live & Active Rooms (${sortedCategoryRooms.size})",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Auto-ranked",
+                            color = Color.White.copy(alpha = 0.45f),
+                            fontSize = 9.5.sp
+                        )
+                    }
+                }
+
+                // 3. SLENDER HORIZONTAL ROOM ROWS (Reference Image 1 Style)
+                if (sortedCategoryRooms.isEmpty()) {
+                    item {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF141722)),
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 12.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(24.dp),
+                                verticalArrangement = Arrangement.Center,
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(text = "🎙️", fontSize = 38.sp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "No Live Rooms Active",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Be the first to host a hangout in ${category.label}!",
+                                    color = Color.White.copy(alpha = 0.55f),
+                                    fontSize = 11.5.sp,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(14.dp))
+                                Button(
+                                    onClick = onCreateRoom,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF262C3E)),
+                                    border = BorderStroke(1.dp, Color(0xFF3F4B6B)),
+                                    shape = RoundedCornerShape(50),
+                                    contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp)
+                                ) {
+                                    Icon(Icons.Default.AddCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Create Room Now 🎙️", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    items(sortedCategoryRooms) { room ->
+                        val activeCount = allUsers.count { it.current_room == room.id }.coerceAtLeast(room.activeUserCount)
+                        val hostUser = allUsers.find { it.uid == room.hostUid || it.uid == room.hostId }
+                        CategorySubRoomCard(
+                            room = room,
+                            activeCount = activeCount,
+                            hostUser = hostUser,
+                            currentUser = currentUser,
+                            onJoin = { onJoinRoom(room) }
+                        )
+                    }
+
+                    // 4. Sleek bottom button: "+ Host Another Lounge"
+                    item {
+                        Surface(
+                            color = Color(0xFF141722),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onCreateRoom() }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(vertical = 12.dp, horizontal = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, tint = BrandGold, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "+ Host Another Lounge in ${category.label}",
+                                    color = Color.White,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(14.dp))
                     }
                 }
             }

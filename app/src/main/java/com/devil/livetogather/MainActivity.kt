@@ -2135,7 +2135,9 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                         .update("current_room", room.id)
 
                     activeCategoryHub = null
-                    activeAudioRoom = room
+                    val isVideo = cat.id == "video_stream" || room.category == "video_stream" || room.roomType == "video" || room.roomType == "video_pk" || room.isVideoRoom
+                    val targetRoom = if (isVideo) room.copy(roomType = "video") else room.copy(roomType = "audio")
+                    activeAudioRoom = targetRoom
                 }
             )
         }
@@ -2235,7 +2237,8 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                     }
                     val generatedRoomCode = (10000000..99999999).random().toString()
                     val roomId = existingHostRoom?.id?.ifBlank { null } ?: generatedRoomCode
-                    val catEmoji = if (roomType == "video_pk") "⚔️" else if (roomType == "video") "📹" else (CATEGORY_LIST.find { it.id == categoryId }?.label?.take(2)?.trim() ?: "🎙️")
+                    val actualRoomType = if (categoryId == "video_stream") "video" else roomType
+                    val catEmoji = if (actualRoomType == "video_pk") "⚔️" else if (actualRoomType == "video") "📹" else (CATEGORY_LIST.find { it.id == categoryId }?.label?.take(2)?.trim() ?: "🎙️")
                     val finalBanner = if (themeUrl.isNotBlank()) themeUrl else getCategoryBanner(categoryId)
                     val newRoom = RoomItem(
                         id = roomId,
@@ -2245,7 +2248,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                         category = categoryId,
                         emoji = catEmoji,
                         banner_image_url = finalBanner,
-                        roomType = roomType,
+                        roomType = actualRoomType,
                         videoLayout = if (roomType == "video_pk") "2p" else "1p",
                         hostId = currentUserId,
                         hostUid = currentUserId,
