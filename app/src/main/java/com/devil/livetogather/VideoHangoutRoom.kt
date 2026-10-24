@@ -1059,54 +1059,154 @@ fun VideoHangoutRoomDialog(
                 LazyColumn(
                     state = commentsListState,
                     modifier = Modifier
-                        .heightIn(max = 140.dp)
+                        .heightIn(max = 180.dp)
                         .fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     items(liveComments) { comment ->
-                        val commenterProfile = allProfiles.find { it.uid == comment.userId }
+                        val commenterProfile = (if (comment.userId == currentUser.uid) currentUser else null)
+                            ?: allProfiles.find { it.uid == comment.userId || it.name.equals(comment.userName, true) }
+                        val isCommenterHost = comment.userId == room.hostId || (room.hostName.isNotBlank() && comment.userName.equals(room.hostName, true))
+                        val isCommenterAdmin = room.adminUserIds.contains(comment.userId) || commenterProfile?.isAdmin == true
+
                         val commenterLevel = commenterProfile?.getEffectiveWealthLevel()
-                            ?: if (comment.userName.contains("Devil", true)) 70 else 1
-                        val commenterPkLevel = commenterProfile?.getEffectivePkLevel() ?: 1
+                            ?: if (comment.userId == currentUser.uid) currentUser.getEffectiveWealthLevel()
+                            else if (comment.userName.contains("Yasmin", true) || comment.userName.contains("Warsi", true)) 35
+                            else if (comment.userName.contains("Devil", true)) 70
+                            else if (comment.tier.contains("VIP", true)) 31
+                            else if (comment.tier.contains("Platinum", true)) 20
+                            else 17
 
-                        Surface(
-                            color = Color.Black.copy(alpha = 0.45f),
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(0.6.dp, Color.White.copy(alpha = 0.15f)),
-                            modifier = Modifier.clickable {
-                                val member = activeMembers.find { it.uid == comment.userId } ?: RoomMember(
-                                    uid = comment.userId,
-                                    name = comment.userName,
-                                    photoUrl = commenterProfile?.photo ?: "",
-                                    tier = comment.tier
-                                )
-                                selectedMemberForProfile = member
-                            }
+                        val commenterCharm = commenterProfile?.getEffectiveCharmLevel()
+                            ?: if (comment.userId == currentUser.uid) currentUser.getEffectiveCharmLevel()
+                            else if (commenterLevel >= 70) 70
+                            else if (commenterLevel >= 35) 35
+                            else 15
+
+                        val commenterPkLevel = commenterProfile?.getEffectivePkLevel()
+                            ?: if (comment.userId == currentUser.uid) currentUser.getEffectivePkLevel()
+                            else 1
+
+                        val commenterMedal = (commenterProfile?.followerCount?.takeIf { it > 0 })
+                            ?: if (comment.userId == currentUser.uid && currentUser.followerCount > 0) currentUser.followerCount
+                            else if (commenterLevel >= 70) 99
+                            else if (commenterLevel >= 35) 28
+                            else 11
+
+                        val avatarUrl = comment.userPhoto.ifEmpty { commenterProfile?.photo ?: "" }
+                            .ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    val member = activeMembers.find { it.uid == comment.userId } ?: RoomMember(
+                                        uid = comment.userId,
+                                        name = comment.userName,
+                                        photoUrl = avatarUrl,
+                                        tier = comment.tier
+                                    )
+                                    selectedMemberForProfile = member
+                                }
+                                .padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.Top
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            // 1. User Avatar (34.dp circular, clean border)
+                            AsyncImage(
+                                model = avatarUrl,
+                                contentDescription = comment.userName,
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .border(1.dp, Color.White.copy(alpha = 0.35f), CircleShape),
+                                contentScale = ContentScale.Crop
+                            )
+                            Spacer(modifier = Modifier.width(7.dp))
+
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(3.dp),
+                                modifier = Modifier.weight(1f, fill = false)
                             ) {
-                                // Wealth Pill
-                                BlueLevelBadgePill(level = commenterLevel)
-                                Spacer(modifier = Modifier.width(4.dp))
+                                // Line 1: User Display Name & Host/Admin Badge
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                ) {
+                                    Text(
+                                        text = comment.userName,
+                                        color = if (comment.tier == "VIP") BrandGold else Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    if (isCommenterHost) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(16.dp)
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(
+                                                    Brush.linearGradient(
+                                                        listOf(Color(0xFFFF9800), Color(0xFFFFB74D))
+                                                    )
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Home,
+                                                contentDescription = "Host",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(11.dp)
+                                            )
+                                        }
+                                    } else if (isCommenterAdmin) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(16.dp)
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(
+                                                    Brush.linearGradient(
+                                                        listOf(Color(0xFF1E88E5), Color(0xFF42A5F5))
+                                                    )
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Shield,
+                                                contentDescription = "Admin",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(11.dp)
+                                            )
+                                        }
+                                    }
+                                }
 
-                                // Swords Rank Badge
-                                SilverSwordsRankBadge(rank = commenterPkLevel)
-                                Spacer(modifier = Modifier.width(5.dp))
+                                // Line 2: 4 Real Badges Row
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    SilverSwordsRankBadge(rank = commenterPkLevel)
+                                    BlueLevelBadgePill(level = commenterLevel)
+                                    SapphireCharmBadgePill(level = commenterCharm)
+                                    GoldenMedalBadgePill(level = commenterMedal)
+                                }
 
-                                // Commenter Name & Message
-                                Text(
-                                    text = "${comment.userName}: ",
-                                    color = if (comment.tier == "VIP") BrandGold else Color(0xFF00E5FF),
-                                    fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = comment.message,
-                                    color = Color.White,
-                                    fontSize = 11.5.sp
-                                )
+                                // Line 3: Comment Speech Bubble Container (No line deformation or squish)
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(Color.Black.copy(alpha = 0.55f))
+                                        .border(0.5.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(10.dp))
+                                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                                ) {
+                                    Text(
+                                        text = comment.message,
+                                        color = Color.White,
+                                        fontSize = 12.sp,
+                                        lineHeight = 16.sp
+                                    )
+                                }
                             }
                         }
                     }
@@ -3680,7 +3780,8 @@ fun ViewerRoomMenuDialog(
 }
 
 // -------------------------------------------------------------
-// VIDEO ROOM SETTINGS BOTTOM SHEET
+// -------------------------------------------------------------
+// VIDEO ROOM SETTINGS BOTTOM SHEET (UNIFIED DARK LUXURY DESIGN)
 // -------------------------------------------------------------
 @Composable
 fun VideoRoomSettingsSheet(
@@ -3731,9 +3832,9 @@ fun VideoRoomSettingsSheet(
         )
     ) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = BrandCard),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF141720)),
             shape = RoundedCornerShape(22.dp),
-            border = BorderStroke(1.2.dp, BrandBorder),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.85f)
@@ -3767,15 +3868,15 @@ fun VideoRoomSettingsSheet(
                     if (canConvertMode) {
                         item {
                             Card(
-                                colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1F2C)),
                                 shape = RoundedCornerShape(14.dp),
-                                border = BorderStroke(1.2.dp, BrandCoral.copy(alpha = 0.8f))
+                                border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f))
                             ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Text("🎙️ Room Mode Conversion", color = BrandGold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Text("🎙️ Room Mode Conversion", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                                     Spacer(modifier = Modifier.height(4.dp))
-                                    Text("Switch broadcast mode to multi-mic Audio Lounge. All viewers and stage participants transition seamlessly.", color = Color.Gray, fontSize = 11.sp)
-                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text("Switch broadcast mode to multi-mic Audio Lounge. All viewers and stage participants transition seamlessly.", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
+                                    Spacer(modifier = Modifier.height(10.dp))
                                     Button(
                                         onClick = {
                                             val finalTitle = room.title.ifBlank { "${room.hostName}'s Audio Lounge" }
@@ -3802,9 +3903,10 @@ fun VideoRoomSettingsSheet(
                                             onDismiss()
                                             onConvertToAudio?.invoke(room.copy(roomType = "audio", title = finalTitle))
                                         },
-                                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF262C3E)),
+                                        border = BorderStroke(1.dp, Color(0xFF3F4B6B)),
                                         shape = RoundedCornerShape(10.dp),
-                                        modifier = Modifier.fillMaxWidth().height(38.dp)
+                                        modifier = Modifier.fillMaxWidth().height(40.dp)
                                     ) {
                                         Text("🔄 Convert to Audio Lounge 🎙️", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                     }
@@ -3816,12 +3918,15 @@ fun VideoRoomSettingsSheet(
                     if (isHost) {
                         item {
                             Card(
-                                colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
-                                shape = RoundedCornerShape(14.dp)
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1F2C)),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f))
                             ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Text("⚔️ Live Room PK Battle Controls", color = BrandCoral, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                    Spacer(modifier = Modifier.height(8.dp))
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Text("⚔️ Live Room PK Battle Controls", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("Challenge a co-host or guest to a 5-minute Tug-of-War battle.", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
+                                    Spacer(modifier = Modifier.height(10.dp))
 
                                     if (!room.isPkActive) {
                                         Button(
@@ -3829,11 +3934,12 @@ fun VideoRoomSettingsSheet(
                                                 onStartPk()
                                                 onDismiss()
                                             },
-                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF1744)),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF331E26)),
+                                            border = BorderStroke(1.dp, Color(0xFF8F384C)),
                                             shape = RoundedCornerShape(10.dp),
-                                            modifier = Modifier.fillMaxWidth().height(38.dp)
+                                            modifier = Modifier.fillMaxWidth().height(40.dp)
                                         ) {
-                                            Text("⚔️ Start 5-Minute PK Battle", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                            Text("⚔️ Start 5-Minute PK Battle", color = Color(0xFFFF859E), fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                         }
                                     } else {
                                         Button(
@@ -3841,9 +3947,10 @@ fun VideoRoomSettingsSheet(
                                                 onEndPk()
                                                 onDismiss()
                                             },
-                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF37474F)),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF252A36)),
+                                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
                                             shape = RoundedCornerShape(10.dp),
-                                            modifier = Modifier.fillMaxWidth().height(38.dp)
+                                            modifier = Modifier.fillMaxWidth().height(40.dp)
                                         ) {
                                             Text("⏹️ Conclude Active PK Battle", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                         }
@@ -3852,24 +3959,27 @@ fun VideoRoomSettingsSheet(
                             }
                         }
                     }
+
                     // 2. ROOM ANNOUNCEMENT
                     item {
                         Card(
-                            colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
-                            shape = RoundedCornerShape(14.dp)
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1F2C)),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f))
                         ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
+                            Column(modifier = Modifier.padding(14.dp)) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("📢 Room Announcement", color = BrandGold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    Text("📢 Room Announcement", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                                     if (isHost && announcementText.isNotBlank()) {
                                         Text(
                                             text = "Clear",
-                                            color = Color.Red,
+                                            color = Color(0xFFFF8A80),
                                             fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
                                             modifier = Modifier.clickable {
                                                 announcementText = ""
                                                 db.collection("rooms").document(room.id).update("announcement", "")
@@ -3879,8 +3989,8 @@ fun VideoRoomSettingsSheet(
                                     }
                                 }
                                 Spacer(modifier = Modifier.height(4.dp))
-                                Text("Pinned in room and broadcast in live comments.", color = Color.Gray, fontSize = 11.sp)
-                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("Pinned in room and broadcast in live comments.", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
+                                Spacer(modifier = Modifier.height(10.dp))
                                 if (isHost) {
                                     OutlinedTextField(
                                         value = announcementText,
@@ -3889,15 +3999,15 @@ fun VideoRoomSettingsSheet(
                                         colors = OutlinedTextFieldDefaults.colors(
                                             focusedTextColor = Color.White,
                                             unfocusedTextColor = Color.White,
-                                            focusedBorderColor = BrandGold,
-                                            unfocusedBorderColor = BrandBorder,
-                                            focusedContainerColor = BrandDark,
-                                            unfocusedContainerColor = BrandDark
+                                            focusedBorderColor = Color(0xFF4A5568),
+                                            unfocusedBorderColor = Color.White.copy(alpha = 0.12f),
+                                            focusedContainerColor = Color(0xFF12151E),
+                                            unfocusedContainerColor = Color(0xFF12151E)
                                         ),
                                         shape = RoundedCornerShape(10.dp),
                                         modifier = Modifier.fillMaxWidth()
                                     )
-                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Spacer(modifier = Modifier.height(10.dp))
                                     Button(
                                         onClick = {
                                             if (announcementText.isNotBlank()) {
@@ -3915,16 +4025,17 @@ fun VideoRoomSettingsSheet(
                                                 Toast.makeText(context, "Announcement broadcasted! 📢", Toast.LENGTH_SHORT).show()
                                             }
                                         },
-                                        colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A281E)),
+                                        border = BorderStroke(1.dp, Color(0xFF8C7A3E)),
                                         shape = RoundedCornerShape(10.dp),
-                                        modifier = Modifier.fillMaxWidth().height(36.dp)
+                                        modifier = Modifier.fillMaxWidth().height(40.dp)
                                     ) {
-                                        Text("Broadcast Announcement 📢", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                        Text("Broadcast Announcement 📢", color = Color(0xFFFFD54F), fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                     }
                                 } else {
                                     Text(
                                         text = if (room.announcement.isNotBlank()) room.announcement else "No active announcement at this moment.",
-                                        color = if (room.announcement.isNotBlank()) BrandGold else Color.LightGray,
+                                        color = if (room.announcement.isNotBlank()) Color.White else Color.Gray,
                                         fontSize = 12.sp
                                     )
                                 }
@@ -3936,12 +4047,16 @@ fun VideoRoomSettingsSheet(
                     if (isHost) {
                         item {
                             Card(
-                                colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
-                                shape = RoundedCornerShape(14.dp)
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1F2C)),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f))
                             ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Text("🔴 Live Broadcast Status", color = BrandCoral, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                    Spacer(modifier = Modifier.height(6.dp))
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Text("🔴 Live Broadcast Status", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("Toggle your live room state for followers", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
+                                    Spacer(modifier = Modifier.height(10.dp))
+
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -3949,10 +4064,21 @@ fun VideoRoomSettingsSheet(
                                         Button(
                                             onClick = {
                                                 onGoLive()
-                                                db.collection("rooms").document(room.id).update(
+                                                val liveUpdates = mapOf<String, Any>(
+                                                    "isHostLive" to true,
+                                                    "isLive" to true,
+                                                    "statusMessage" to "LIVE NOW"
+                                                )
+                                                db.collection("rooms").document(room.id).update(liveUpdates)
+                                                if (room.category.isNotBlank()) {
+                                                    db.collection("intent_categories").document(room.category)
+                                                        .collection("rooms").document(room.id).update(liveUpdates)
+                                                }
+                                                db.collection("users").document(currentUser.uid).update(
                                                     mapOf(
-                                                        "isHostLive" to true,
-                                                        "statusMessage" to "LIVE NOW"
+                                                        "isLive" to true,
+                                                        "activeRoomId" to room.id,
+                                                        "current_room" to room.id
                                                     )
                                                 )
                                                 broadcastLiveNotificationToFollowers(
@@ -3965,12 +4091,13 @@ fun VideoRoomSettingsSheet(
                                                 Toast.makeText(context, "Room is now LIVE! Video publishing enabled.", Toast.LENGTH_SHORT).show()
                                             },
                                             colors = ButtonDefaults.buttonColors(
-                                                containerColor = if (room.isHostLive) BrandGreen else BrandDark
+                                                containerColor = if (room.isHostLive) Color(0xFF1C3829) else Color(0xFF1F2432)
                                             ),
+                                            border = BorderStroke(1.dp, if (room.isHostLive) Color(0xFF2E8551) else Color.White.copy(alpha = 0.1f)),
                                             shape = RoundedCornerShape(10.dp),
-                                            modifier = Modifier.weight(1f)
+                                            modifier = Modifier.weight(1f).height(40.dp)
                                         ) {
-                                            Text("🔴 Go Live", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                            Text("🔴 Go Live", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (room.isHostLive) Color(0xFF69F0AE) else Color.LightGray)
                                         }
 
                                         Button(
@@ -3988,30 +4115,33 @@ fun VideoRoomSettingsSheet(
                                                 Toast.makeText(context, "Stream paused. Room status set to OFFLINE.", Toast.LENGTH_SHORT).show()
                                             },
                                             colors = ButtonDefaults.buttonColors(
-                                                containerColor = if (!room.isHostLive) BrandGold else BrandDark
+                                                containerColor = if (!room.isHostLive) Color(0xFF332D1C) else Color(0xFF1F2432)
                                             ),
+                                            border = BorderStroke(1.dp, if (!room.isHostLive) Color(0xFF8C7838) else Color.White.copy(alpha = 0.1f)),
                                             shape = RoundedCornerShape(10.dp),
-                                            modifier = Modifier.weight(1f)
+                                            modifier = Modifier.weight(1f).height(40.dp)
                                         ) {
-                                            Text("⏳ Set Offline", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (!room.isHostLive) Color.Black else Color.White)
+                                            Text("⏳ Set Offline", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (!room.isHostLive) Color(0xFFFFD54F) else Color.LightGray)
                                         }
                                     }
                                 }
                             }
                         }
                     }
+
                     // 4. SCHEDULE TIMING
                     if (isHost) {
                         item {
                             Card(
-                                colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
-                                shape = RoundedCornerShape(14.dp)
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1F2C)),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f))
                             ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Text("⏰ Live Timing Schedule", color = BrandGold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Text("⏰ Live Timing Schedule", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                                     Spacer(modifier = Modifier.height(4.dp))
-                                    Text("Notify users when you will be live next (e.g. Tonight 9:00 PM)", color = Color.Gray, fontSize = 11.sp)
-                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text("Notify users when you will be live next (e.g. Tonight 9:00 PM)", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
+                                    Spacer(modifier = Modifier.height(10.dp))
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         verticalAlignment = Alignment.CenterVertically
@@ -4023,10 +4153,10 @@ fun VideoRoomSettingsSheet(
                                             colors = OutlinedTextFieldDefaults.colors(
                                                 focusedTextColor = Color.White,
                                                 unfocusedTextColor = Color.White,
-                                                focusedBorderColor = BrandGold,
-                                                unfocusedBorderColor = BrandBorder,
-                                                focusedContainerColor = BrandDark,
-                                                unfocusedContainerColor = BrandDark
+                                                focusedBorderColor = Color(0xFF4A5568),
+                                                unfocusedBorderColor = Color.White.copy(alpha = 0.12f),
+                                                focusedContainerColor = Color(0xFF12151E),
+                                                unfocusedContainerColor = Color(0xFF12151E)
                                             ),
                                             shape = RoundedCornerShape(10.dp),
                                             modifier = Modifier.weight(1f)
@@ -4037,10 +4167,12 @@ fun VideoRoomSettingsSheet(
                                                 db.collection("rooms").document(room.id).update("scheduledTime", scheduledTimeText.trim())
                                                 Toast.makeText(context, "Schedule timing saved!", Toast.LENGTH_SHORT).show()
                                             },
-                                            colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
-                                            shape = RoundedCornerShape(10.dp)
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF262C3E)),
+                                            border = BorderStroke(1.dp, Color(0xFF3F4B6B)),
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.height(40.dp)
                                         ) {
-                                            Text("Save", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                            Text("Save", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                         }
                                     }
                                 }
@@ -4051,11 +4183,12 @@ fun VideoRoomSettingsSheet(
                     // 5. ROOM PRIVACY & ACCESS CONTROLS
                     item {
                         Card(
-                            colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
-                            shape = RoundedCornerShape(14.dp)
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1F2C)),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f))
                         ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text("🔒 Room Access & Privacy", color = BrandCyan, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Text("🔒 Room Access & Privacy", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                                 Spacer(modifier = Modifier.height(8.dp))
                                 listOf(
                                     "public" to "🌐 Public (Open to everyone)",
@@ -4067,7 +4200,12 @@ fun VideoRoomSettingsSheet(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clip(RoundedCornerShape(8.dp))
-                                            .background(if (isSelected) BrandCyan.copy(alpha = 0.15f) else Color.Transparent)
+                                            .background(if (isSelected) Color(0xFF22293A) else Color.Transparent)
+                                            .border(
+                                                1.dp,
+                                                if (isSelected) Color(0xFF3F4E70) else Color.Transparent,
+                                                RoundedCornerShape(8.dp)
+                                            )
                                             .clickable {
                                                 if (isHost) {
                                                     selectedPrivacy = key
@@ -4086,7 +4224,7 @@ fun VideoRoomSettingsSheet(
                                                     db.collection("rooms").document(room.id).update("privacy", key)
                                                 }
                                             },
-                                            colors = RadioButtonDefaults.colors(selectedColor = BrandCyan)
+                                            colors = RadioButtonDefaults.colors(selectedColor = BrandGold)
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text(label, color = if (isSelected) Color.White else Color.LightGray, fontSize = 12.sp, fontWeight = FontWeight.Medium)
@@ -4095,7 +4233,7 @@ fun VideoRoomSettingsSheet(
 
                                 if (isHost) {
                                     Spacer(modifier = Modifier.height(10.dp))
-                                    HorizontalDivider(color = BrandBorder)
+                                    HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
                                     Spacer(modifier = Modifier.height(10.dp))
 
                                     // Lock Room Toggle
@@ -4121,7 +4259,7 @@ fun VideoRoomSettingsSheet(
                                             },
                                             colors = SwitchDefaults.colors(
                                                 checkedThumbColor = Color.White,
-                                                checkedTrackColor = Color.Red
+                                                checkedTrackColor = Color(0xFF388E3C)
                                             )
                                         )
                                     }
@@ -4135,7 +4273,7 @@ fun VideoRoomSettingsSheet(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Column(modifier = Modifier.weight(1f)) {
-                                            Text("⭐ Room Premium (VIP)", color = BrandGold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                            Text("⭐ Room Premium (VIP)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                             Text(
                                                 text = if (isRoomVip) "Exclusive VIP room mode enabled ⭐" else "Standard room mode",
                                                 color = if (isRoomVip) BrandGold else Color.Gray,
@@ -4155,8 +4293,8 @@ fun VideoRoomSettingsSheet(
                                                 Toast.makeText(context, if (vip) "Room set to Premium VIP ⭐" else "Room set to Standard Mode", Toast.LENGTH_SHORT).show()
                                             },
                                             colors = SwitchDefaults.colors(
-                                                checkedThumbColor = Color.Black,
-                                                checkedTrackColor = BrandGold
+                                                checkedThumbColor = Color.White,
+                                                checkedTrackColor = Color(0xFF388E3C)
                                             )
                                         )
                                     }
@@ -4169,26 +4307,28 @@ fun VideoRoomSettingsSheet(
                     if (isHost) {
                         item {
                             Card(
-                                colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
-                                shape = RoundedCornerShape(14.dp)
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1F2C)),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f))
                             ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
+                                Column(modifier = Modifier.padding(14.dp)) {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text("🎨 Room Theme & Background", color = BrandOrange, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                        Text("🎨 Room Theme & Background", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                                         Button(
                                             onClick = { imagePickerLauncher.launch("image/*") },
-                                            colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF262C3E)),
+                                            border = BorderStroke(1.dp, Color(0xFF3F4B6B)),
                                             shape = RoundedCornerShape(50),
                                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                                             modifier = Modifier.height(28.dp)
                                         ) {
                                             Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
                                             Spacer(modifier = Modifier.width(4.dp))
-                                            Text("Pick from Phone", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                            Text("Pick from Phone", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
                                         }
                                     }
                                     Spacer(modifier = Modifier.height(10.dp))
@@ -4210,8 +4350,8 @@ fun VideoRoomSettingsSheet(
                                                         .size(64.dp)
                                                         .clip(RoundedCornerShape(10.dp))
                                                         .border(
-                                                            2.dp,
-                                                            if (isCurrent) BrandCoral else Color.Transparent,
+                                                            1.5.dp,
+                                                            if (isCurrent) BrandGold else Color.White.copy(alpha = 0.1f),
                                                             RoundedCornerShape(10.dp)
                                                         ),
                                                     contentScale = ContentScale.Crop
@@ -4219,7 +4359,7 @@ fun VideoRoomSettingsSheet(
                                                 Spacer(modifier = Modifier.height(4.dp))
                                                 Text(
                                                     text = preset.name.take(10),
-                                                    color = if (isCurrent) BrandCoral else Color.Gray,
+                                                    color = if (isCurrent) BrandGold else Color.Gray,
                                                     fontSize = 9.sp,
                                                     fontWeight = FontWeight.Bold
                                                 )
@@ -4235,13 +4375,14 @@ fun VideoRoomSettingsSheet(
                     if (isHost) {
                         item {
                             Card(
-                                colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
-                                shape = RoundedCornerShape(14.dp)
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1F2C)),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f))
                             ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Text("🛡️ Room Member Moderation", color = Color.Red, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Text("🛡️ Room Member Moderation", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                                     Spacer(modifier = Modifier.height(4.dp))
-                                    Text("Manage active members in your live room", color = Color.Gray, fontSize = 11.sp)
+                                    Text("Manage active members in your live room", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
                                     Spacer(modifier = Modifier.height(10.dp))
 
                                     val nonHostMembers = activeMembers.filter { it.uid != room.hostId }
@@ -4253,7 +4394,8 @@ fun VideoRoomSettingsSheet(
                                                 Row(
                                                     modifier = Modifier
                                                         .fillMaxWidth()
-                                                        .background(BrandDark, RoundedCornerShape(10.dp))
+                                                        .background(Color(0xFF12151E), RoundedCornerShape(10.dp))
+                                                        .border(0.6.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(10.dp))
                                                         .padding(8.dp),
                                                     verticalAlignment = Alignment.CenterVertically,
                                                     horizontalArrangement = Arrangement.SpaceBetween
@@ -4281,11 +4423,11 @@ fun VideoRoomSettingsSheet(
                                                                     .update("kickedUserIds", FieldValue.arrayUnion(member.uid))
                                                                 Toast.makeText(context, "${member.name} removed.", Toast.LENGTH_SHORT).show()
                                                             },
-                                                            border = BorderStroke(1.dp, Color.Yellow),
+                                                            border = BorderStroke(1.dp, Color(0xFFFFB74D).copy(alpha = 0.6f)),
                                                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                                            modifier = Modifier.height(26.dp)
+                                                            modifier = Modifier.height(28.dp)
                                                         ) {
-                                                            Text("Kick", color = Color.Yellow, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                                            Text("Kick", color = Color(0xFFFFB74D), fontSize = 9.sp, fontWeight = FontWeight.Bold)
                                                         }
 
                                                         Button(
@@ -4296,9 +4438,9 @@ fun VideoRoomSettingsSheet(
                                                                     .update("bannedUserIds", FieldValue.arrayUnion(member.uid))
                                                                 Toast.makeText(context, "${member.name} banned.", Toast.LENGTH_SHORT).show()
                                                             },
-                                                            colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8C2424)),
                                                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                                            modifier = Modifier.height(26.dp)
+                                                            modifier = Modifier.height(28.dp)
                                                         ) {
                                                             Text("Ban", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                                                         }

@@ -38,6 +38,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
@@ -3641,6 +3642,8 @@ fun broadcastLiveNotificationToFollowers(
 // -------------------------------------------------------------
 // ROOM SETTINGS & CONTROLS DIALOG (PRIVACY, SCHEDULE, THEME, MODERATION)
 // -------------------------------------------------------------
+// ROOM SETTINGS & CONTROLS DIALOG (PRIVACY, SCHEDULE, THEME, MODERATION)
+// -------------------------------------------------------------
 @Composable
 fun RoomSettingsDialog(
     room: RoomItem,
@@ -3657,19 +3660,18 @@ fun RoomSettingsDialog(
     onConvertToVideo: ((RoomItem) -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     var announcementText by remember { mutableStateOf(room.announcement) }
     var isRoomLocked by remember { mutableStateOf(room.isLocked) }
-    var isRoomVip by remember { mutableStateOf(room.privacy == "vip_only") }
+    var isRoomVip by remember { mutableStateOf(room.privacy == "vip_only" || room.isVipRoom) }
     var feedbackText by remember { mutableStateOf("") }
     var isSendingFeedback by remember { mutableStateOf(false) }
     var scheduledTimeText by remember { mutableStateOf(room.scheduledTime) }
     var selectedPrivacy by remember { mutableStateOf(room.privacy) }
+    var isUploadingTheme by remember { mutableStateOf(false) }
     val isKeyboardOpen = WindowInsets.isImeVisible
     val keyboardController = LocalSoftwareKeyboardController.current
-    val focusManager = LocalFocusManager.current
 
-    val coroutineScope = rememberCoroutineScope()
-    var isUploadingTheme by remember { mutableStateOf(false) }
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -3699,12 +3701,13 @@ fun RoomSettingsDialog(
         )
     ) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = BrandCard),
-            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF141720)),
+            shape = RoundedCornerShape(22.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.85f)
-                .border(1.dp, BrandBorder, RoundedCornerShape(20.dp))
+                .padding(vertical = 10.dp)
         ) {
             Column(
                 modifier = Modifier
@@ -3734,15 +3737,15 @@ fun RoomSettingsDialog(
                     if (canConvertMode) {
                         item {
                             Card(
-                                colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1F2C)),
                                 shape = RoundedCornerShape(14.dp),
-                                border = BorderStroke(1.2.dp, BrandCoral.copy(alpha = 0.8f))
+                                border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f))
                             ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Text("📹 Room Mode Conversion", color = BrandCoral, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Text("📹 Room Mode Conversion", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                                     Spacer(modifier = Modifier.height(4.dp))
-                                    Text("Switch broadcast mode to live Video Stream (1P-4P dynamic camera grid). All viewers and listeners transition seamlessly.", color = Color.Gray, fontSize = 11.sp)
-                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text("Switch broadcast mode to live Video Stream (1P-4P dynamic camera grid). All viewers and listeners transition seamlessly.", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
+                                    Spacer(modifier = Modifier.height(10.dp))
                                     Button(
                                         onClick = {
                                             val finalTitle = room.title.ifBlank { "${room.hostName}'s Video Stream" }
@@ -3769,9 +3772,10 @@ fun RoomSettingsDialog(
                                             onDismiss()
                                             onConvertToVideo?.invoke(room.copy(roomType = "video", title = finalTitle))
                                         },
-                                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF262C3E)),
+                                        border = BorderStroke(1.dp, Color(0xFF3F4B6B)),
                                         shape = RoundedCornerShape(10.dp),
-                                        modifier = Modifier.fillMaxWidth().height(38.dp)
+                                        modifier = Modifier.fillMaxWidth().height(40.dp)
                                     ) {
                                         Text("🔄 Convert to Video Stream 📹", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                     }
@@ -3783,21 +3787,23 @@ fun RoomSettingsDialog(
                     // 0. ROOM ANNOUNCEMENT (PINNED BANNER & BROADCAST IN CHAT)
                     item {
                         Card(
-                            colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
-                            shape = RoundedCornerShape(14.dp)
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1F2C)),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f))
                         ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
+                            Column(modifier = Modifier.padding(14.dp)) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("📢 Room Announcement", color = BrandGold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    Text("📢 Room Announcement", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                                     if (isHost && announcementText.isNotBlank()) {
                                         Text(
                                             text = "Clear",
-                                            color = Color.Red,
+                                            color = Color(0xFFFF5252),
                                             fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
                                             modifier = Modifier.clickable {
                                                 announcementText = ""
                                                 db.collection("rooms").document(room.id).update("announcement", "")
@@ -3807,8 +3813,8 @@ fun RoomSettingsDialog(
                                     }
                                 }
                                 Spacer(modifier = Modifier.height(4.dp))
-                                Text("Pinned at the top of the room and broadcast to all occupants.", color = Color.Gray, fontSize = 11.sp)
-                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("Pinned at the top of the room and broadcast to all occupants.", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
+                                Spacer(modifier = Modifier.height(10.dp))
                                 if (isHost) {
                                     OutlinedTextField(
                                         value = announcementText,
@@ -3818,14 +3824,14 @@ fun RoomSettingsDialog(
                                             focusedTextColor = Color.White,
                                             unfocusedTextColor = Color.White,
                                             focusedBorderColor = BrandGold,
-                                            unfocusedBorderColor = BrandBorder,
-                                            focusedContainerColor = BrandDark,
-                                            unfocusedContainerColor = BrandDark
+                                            unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
+                                            focusedContainerColor = Color(0xFF141720),
+                                            unfocusedContainerColor = Color(0xFF141720)
                                         ),
                                         shape = RoundedCornerShape(10.dp),
                                         modifier = Modifier.fillMaxWidth()
                                     )
-                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Spacer(modifier = Modifier.height(10.dp))
                                     Button(
                                         onClick = {
                                             if (announcementText.isNotBlank()) {
@@ -3843,11 +3849,12 @@ fun RoomSettingsDialog(
                                                 Toast.makeText(context, "Announcement updated & broadcasted! 📢", Toast.LENGTH_SHORT).show()
                                             }
                                         },
-                                        colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A281E)),
+                                        border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.6f)),
                                         shape = RoundedCornerShape(10.dp),
-                                        modifier = Modifier.fillMaxWidth().height(36.dp)
+                                        modifier = Modifier.fillMaxWidth().height(38.dp)
                                     ) {
-                                        Text("Broadcast Announcement 📢", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                        Text("Broadcast Announcement 📢", color = BrandGold, fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
                                     }
                                 } else {
                                     Text(
@@ -3864,11 +3871,11 @@ fun RoomSettingsDialog(
                     if (isHost) {
                         item {
                             Card(
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFF201222)),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1F2C)),
                                 shape = RoundedCornerShape(14.dp),
-                                border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(Color(0xFF0091EA), Color(0xFFFF1744))))
+                                border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f))
                             ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
+                                Column(modifier = Modifier.padding(14.dp)) {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -3881,11 +3888,11 @@ fun RoomSettingsDialog(
                                                 modifier = Modifier.size(22.dp)
                                             )
                                             Spacer(modifier = Modifier.width(6.dp))
-                                            Text("⚔️ Live PK Battle Arena", color = BrandGold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                            Text("⚔️ Live PK Battle Arena", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                                         }
                                         if (room.isPkActive) {
                                             Surface(
-                                                color = Color.Red.copy(alpha = 0.25f),
+                                                color = Color(0xFFFF1744).copy(alpha = 0.2f),
                                                 shape = RoundedCornerShape(50),
                                                 border = BorderStroke(0.8.dp, Color(0xFFFF1744))
                                             ) {
@@ -3894,8 +3901,8 @@ fun RoomSettingsDialog(
                                         }
                                     }
                                     Spacer(modifier = Modifier.height(4.dp))
-                                    Text("Start a 5-minute Tug-of-War PK challenge against a co-host or guest!", color = Color.LightGray, fontSize = 11.sp)
-                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text("Start a 5-minute Tug-of-War PK challenge against a co-host or guest!", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
+                                    Spacer(modifier = Modifier.height(10.dp))
                                     if (!room.isPkActive) {
                                         Button(
                                             onClick = {
@@ -3927,11 +3934,12 @@ fun RoomSettingsDialog(
                                                 }
                                                 Toast.makeText(context, "⚔️ 5-Minute PK Battle Started! 🔥", Toast.LENGTH_SHORT).show()
                                             },
-                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF1744)),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF331E26)),
+                                            border = BorderStroke(1.dp, Color(0xFF8F384C)),
                                             shape = RoundedCornerShape(10.dp),
-                                            modifier = Modifier.fillMaxWidth().height(36.dp)
+                                            modifier = Modifier.fillMaxWidth().height(40.dp)
                                         ) {
-                                            Text("⚔️ Start 5-Minute PK Battle", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                            Text("⚔️ Start 5-Minute PK Battle", color = Color(0xFFFF859E), fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
                                         }
                                     } else {
                                         Button(
@@ -3945,11 +3953,12 @@ fun RoomSettingsDialog(
                                                 )
                                                 Toast.makeText(context, "🛑 PK Battle Ended", Toast.LENGTH_SHORT).show()
                                             },
-                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF37474F)),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF252A36)),
+                                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
                                             shape = RoundedCornerShape(10.dp),
-                                            modifier = Modifier.fillMaxWidth().height(36.dp)
+                                            modifier = Modifier.fillMaxWidth().height(40.dp)
                                         ) {
-                                            Text("🛑 End PK Battle", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                            Text("🛑 End PK Battle", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
                                         }
                                     }
                                 }
@@ -3960,15 +3969,16 @@ fun RoomSettingsDialog(
                     // 1. LIVE / OFFLINE BROADCAST STATUS
                     item {
                         Card(
-                            colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
-                            shape = RoundedCornerShape(14.dp)
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1F2C)),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f))
                         ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text("🔴 Live Broadcast Status", color = BrandCoral, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                Spacer(modifier = Modifier.height(6.dp))
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Text("🔴 Live Broadcast Status", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.height(8.dp))
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
                                     Button(
                                         onClick = {
@@ -3978,7 +3988,6 @@ fun RoomSettingsDialog(
                                                     "statusMessage" to "LIVE NOW"
                                                 )
                                             )
-                                            // Broadcast live notification to all followers
                                             broadcastLiveNotificationToFollowers(
                                                 db = db,
                                                 hostId = room.hostId,
@@ -3989,12 +3998,13 @@ fun RoomSettingsDialog(
                                             Toast.makeText(context, "Room is now LIVE! Followers notified.", Toast.LENGTH_SHORT).show()
                                         },
                                         colors = ButtonDefaults.buttonColors(
-                                            containerColor = if (room.isHostLive) BrandGreen else BrandDark
+                                            containerColor = if (room.isHostLive) Color(0xFF1C3829) else Color(0xFF202433)
                                         ),
+                                        border = BorderStroke(1.dp, if (room.isHostLive) Color(0xFF34D399) else Color.White.copy(alpha = 0.1f)),
                                         shape = RoundedCornerShape(10.dp),
-                                        modifier = Modifier.weight(1f)
+                                        modifier = Modifier.weight(1f).height(40.dp)
                                     ) {
-                                        Text("🔴 Go Live", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Text("🔴 Go Live", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (room.isHostLive) Color(0xFF34D399) else Color.LightGray)
                                     }
 
                                     Button(
@@ -4008,12 +4018,13 @@ fun RoomSettingsDialog(
                                             Toast.makeText(context, "Room status set to 'Host will be live soon'", Toast.LENGTH_SHORT).show()
                                         },
                                         colors = ButtonDefaults.buttonColors(
-                                            containerColor = if (!room.isHostLive) BrandGold else BrandDark
+                                            containerColor = if (!room.isHostLive) Color(0xFF2A281E) else Color(0xFF202433)
                                         ),
+                                        border = BorderStroke(1.dp, if (!room.isHostLive) BrandGold else Color.White.copy(alpha = 0.1f)),
                                         shape = RoundedCornerShape(10.dp),
-                                        modifier = Modifier.weight(1f)
+                                        modifier = Modifier.weight(1f).height(40.dp)
                                     ) {
-                                        Text("⏳ Set Offline", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (!room.isHostLive) Color.Black else Color.White)
+                                        Text("⏳ Set Offline", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (!room.isHostLive) BrandGold else Color.LightGray)
                                     }
                                 }
                             }
@@ -4023,14 +4034,15 @@ fun RoomSettingsDialog(
                     // 2. SCHEDULE TIMING
                     item {
                         Card(
-                            colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
-                            shape = RoundedCornerShape(14.dp)
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1F2C)),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f))
                         ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text("⏰ Live Timing Schedule", color = BrandGold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Text("⏰ Live Timing Schedule", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                                 Spacer(modifier = Modifier.height(4.dp))
-                                Text("Notify users when you will be live next (e.g. Tonight 9:00 PM)", color = Color.Gray, fontSize = 11.sp)
-                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("Notify users when you will be live next (e.g. Tonight 9:00 PM)", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
+                                Spacer(modifier = Modifier.height(10.dp))
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically
@@ -4043,9 +4055,9 @@ fun RoomSettingsDialog(
                                             focusedTextColor = Color.White,
                                             unfocusedTextColor = Color.White,
                                             focusedBorderColor = BrandGold,
-                                            unfocusedBorderColor = BrandBorder,
-                                            focusedContainerColor = BrandDark,
-                                            unfocusedContainerColor = BrandDark
+                                            unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
+                                            focusedContainerColor = Color(0xFF141720),
+                                            unfocusedContainerColor = Color(0xFF141720)
                                         ),
                                         shape = RoundedCornerShape(10.dp),
                                         modifier = Modifier.weight(1f)
@@ -4056,10 +4068,12 @@ fun RoomSettingsDialog(
                                             db.collection("rooms").document(room.id).update("scheduledTime", scheduledTimeText.trim())
                                             Toast.makeText(context, "Schedule timing saved!", Toast.LENGTH_SHORT).show()
                                         },
-                                        colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
-                                        shape = RoundedCornerShape(10.dp)
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF262C3E)),
+                                        border = BorderStroke(1.dp, Color(0xFF3F4B6B)),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.height(48.dp)
                                     ) {
-                                        Text("Save", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        Text("Save", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                     }
                                 }
                             }
@@ -4069,11 +4083,12 @@ fun RoomSettingsDialog(
                     // 3. ROOM PRIVACY CONTROLS
                     item {
                         Card(
-                            colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
-                            shape = RoundedCornerShape(14.dp)
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1F2C)),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f))
                         ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text("🔒 Room Access & Privacy", color = BrandCyan, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Text("🔒 Room Access & Privacy", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                                 Spacer(modifier = Modifier.height(8.dp))
                                 listOf(
                                     "public" to "🌐 Public (Open to everyone)",
@@ -4085,7 +4100,7 @@ fun RoomSettingsDialog(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clip(RoundedCornerShape(8.dp))
-                                            .background(if (isSelected) BrandCyan.copy(alpha = 0.15f) else Color.Transparent)
+                                            .background(if (isSelected) Color(0xFF262C3E) else Color.Transparent)
                                             .clickable {
                                                 selectedPrivacy = key
                                                 db.collection("rooms").document(room.id).update("privacy", key)
@@ -4100,7 +4115,7 @@ fun RoomSettingsDialog(
                                                 selectedPrivacy = key
                                                 db.collection("rooms").document(room.id).update("privacy", key)
                                             },
-                                            colors = RadioButtonDefaults.colors(selectedColor = BrandCyan)
+                                            colors = RadioButtonDefaults.colors(selectedColor = BrandGold)
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text(label, color = if (isSelected) Color.White else Color.LightGray, fontSize = 12.sp, fontWeight = FontWeight.Medium)
@@ -4109,7 +4124,7 @@ fun RoomSettingsDialog(
 
                                 if (isHost) {
                                     Spacer(modifier = Modifier.height(10.dp))
-                                    HorizontalDivider(color = BrandBorder)
+                                    HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
                                     Spacer(modifier = Modifier.height(10.dp))
 
                                     // Lock Room Toggle
@@ -4135,7 +4150,7 @@ fun RoomSettingsDialog(
                                             },
                                             colors = SwitchDefaults.colors(
                                                 checkedThumbColor = Color.White,
-                                                checkedTrackColor = Color.Red
+                                                checkedTrackColor = Color(0xFFE53935)
                                             )
                                         )
                                     }
@@ -4149,7 +4164,7 @@ fun RoomSettingsDialog(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Column(modifier = Modifier.weight(1f)) {
-                                            Text("⭐ Room Premium (VIP)", color = BrandGold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                            Text("⭐ Room Premium (VIP)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                             Text(
                                                 text = if (isRoomVip) "Exclusive VIP room mode enabled ⭐" else "Standard room mode",
                                                 color = if (isRoomVip) BrandGold else Color.Gray,
@@ -4182,26 +4197,28 @@ fun RoomSettingsDialog(
                     // 4. ROOM THEME CUSTOMIZER (LOCAL STORAGE + PRESETS)
                     item {
                         Card(
-                            colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
-                            shape = RoundedCornerShape(14.dp)
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1F2C)),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f))
                         ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
+                            Column(modifier = Modifier.padding(14.dp)) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("🎨 Room Theme & Background", color = BrandOrange, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    Text("🎨 Room Theme & Background", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                                     Button(
                                         onClick = { imagePickerLauncher.launch("image/*") },
-                                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF262C3E)),
+                                        border = BorderStroke(1.dp, Color(0xFF3F4B6B)),
                                         shape = RoundedCornerShape(50),
                                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                        modifier = Modifier.height(28.dp)
+                                        modifier = Modifier.height(30.dp)
                                     ) {
                                         Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Pick from Phone", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        Text("Pick from Phone", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
                                     }
                                 }
                                 Spacer(modifier = Modifier.height(10.dp))
@@ -4224,7 +4241,7 @@ fun RoomSettingsDialog(
                                                     .clip(RoundedCornerShape(10.dp))
                                                     .border(
                                                         2.dp,
-                                                        if (isCurrent) BrandCoral else Color.Transparent,
+                                                        if (isCurrent) BrandGold else Color.Transparent,
                                                         RoundedCornerShape(10.dp)
                                                     ),
                                                 contentScale = ContentScale.Crop
@@ -4232,7 +4249,7 @@ fun RoomSettingsDialog(
                                             Spacer(modifier = Modifier.height(4.dp))
                                             Text(
                                                 text = preset.name.take(10),
-                                                color = if (isCurrent) BrandCoral else Color.Gray,
+                                                color = if (isCurrent) BrandGold else Color.Gray,
                                                 fontSize = 9.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
@@ -4246,13 +4263,14 @@ fun RoomSettingsDialog(
                     // 5. MEMBER MODERATION (KICK & BAN)
                     item {
                         Card(
-                            colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
-                            shape = RoundedCornerShape(14.dp)
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1F2C)),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f))
                         ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text("🛡️ Room Member Moderation", color = Color.Red, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Text("🛡️ Room Member Moderation", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                                 Spacer(modifier = Modifier.height(4.dp))
-                                Text("Manage active members in your room", color = Color.Gray, fontSize = 11.sp)
+                                Text("Manage active members in your room", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
                                 Spacer(modifier = Modifier.height(10.dp))
 
                                 val nonHostMembers = activeMembers.filter { it.uid != room.hostId }
@@ -4264,7 +4282,7 @@ fun RoomSettingsDialog(
                                             Row(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
-                                                    .background(BrandDark, RoundedCornerShape(10.dp))
+                                                    .background(Color(0xFF141720), RoundedCornerShape(10.dp))
                                                     .padding(8.dp),
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.SpaceBetween
@@ -4294,11 +4312,11 @@ fun RoomSettingsDialog(
                                                                 .update("kickedUserIds", FieldValue.arrayUnion(member.uid))
                                                             Toast.makeText(context, "${member.name} kicked out.", Toast.LENGTH_SHORT).show()
                                                         },
-                                                        border = BorderStroke(1.dp, Color.Yellow),
+                                                        border = BorderStroke(1.dp, Color(0xFFFFB74D).copy(alpha = 0.6f)),
                                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                                                         modifier = Modifier.height(26.dp)
                                                     ) {
-                                                        Text("Kick", color = Color.Yellow, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                                        Text("Kick", color = Color(0xFFFFB74D), fontSize = 9.sp, fontWeight = FontWeight.Bold)
                                                     }
 
                                                     // Ban Button
@@ -4311,11 +4329,12 @@ fun RoomSettingsDialog(
                                                                 .update("bannedUserIds", FieldValue.arrayUnion(member.uid))
                                                             Toast.makeText(context, "${member.name} banned.", Toast.LENGTH_SHORT).show()
                                                         },
-                                                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B1820)),
+                                                        border = BorderStroke(1.dp, Color(0xFFE53935).copy(alpha = 0.8f)),
                                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                                                         modifier = Modifier.height(26.dp)
                                                     ) {
-                                                        Text("Ban", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                                        Text("Ban", color = Color(0xFFFF859E), fontSize = 9.sp, fontWeight = FontWeight.Bold)
                                                     }
                                                 }
                                             }
@@ -4330,13 +4349,14 @@ fun RoomSettingsDialog(
                     if (isHost) {
                         item {
                             Card(
-                                colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
-                                shape = RoundedCornerShape(14.dp)
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1F2C)),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f))
                             ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Text("🗑️ Clear Room Chat", color = Color.Red, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Text("🗑️ Clear Room Chat", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                                     Spacer(modifier = Modifier.height(4.dp))
-                                    Text("Permanently delete all live messages from this room in real-time.", color = Color.Gray, fontSize = 11.sp)
+                                    Text("Permanently delete all live messages from this room in real-time.", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
                                     Spacer(modifier = Modifier.height(10.dp))
                                     Button(
                                         onClick = {
@@ -4353,13 +4373,14 @@ fun RoomSettingsDialog(
                                                     }
                                                 }
                                         },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.85f)),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B1820)),
+                                        border = BorderStroke(1.dp, Color(0xFFE53935).copy(alpha = 0.6f)),
                                         shape = RoundedCornerShape(10.dp),
-                                        modifier = Modifier.fillMaxWidth().height(36.dp)
+                                        modifier = Modifier.fillMaxWidth().height(38.dp)
                                     ) {
-                                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFFF859E), modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Clear All Messages", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Text("Clear All Messages", color = Color(0xFFFF859E), fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -4370,26 +4391,28 @@ fun RoomSettingsDialog(
                     if (isHost && onEditRoom != null) {
                         item {
                             Card(
-                                colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
-                                shape = RoundedCornerShape(14.dp)
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1F2C)),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f))
                             ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Text("✏️ Edit Room Information", color = BrandCoral, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Text("✏️ Edit Room Information", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                                     Spacer(modifier = Modifier.height(4.dp))
-                                    Text("Change room title, category hub, luxury atmosphere wallpaper, or status.", color = Color.Gray, fontSize = 11.sp)
+                                    Text("Change room title, category hub, luxury atmosphere wallpaper, or status.", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
                                     Spacer(modifier = Modifier.height(10.dp))
                                     Button(
                                         onClick = {
                                             onDismiss()
                                             onEditRoom()
                                         },
-                                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF262C3E)),
+                                        border = BorderStroke(1.dp, Color(0xFF3F4B6B)),
                                         shape = RoundedCornerShape(10.dp),
-                                        modifier = Modifier.fillMaxWidth().height(36.dp)
+                                        modifier = Modifier.fillMaxWidth().height(38.dp)
                                     ) {
                                         Icon(Icons.Default.Edit, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Edit Room Details", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Text("Edit Room Details", color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -4400,27 +4423,28 @@ fun RoomSettingsDialog(
                     if (isHost && onDeleteRoom != null) {
                         item {
                             Card(
-                                colors = CardDefaults.cardColors(containerColor = Color.Red.copy(alpha = 0.15f)),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF251318)),
                                 shape = RoundedCornerShape(14.dp),
-                                border = BorderStroke(1.dp, Color.Red.copy(alpha = 0.5f))
+                                border = BorderStroke(1.dp, Color(0xFFE53935).copy(alpha = 0.4f))
                             ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Text("🚨 Danger Zone: Delete Room", color = Color.Red, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Text("🚨 Danger Zone: Delete Room", color = Color(0xFFFF5252), fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                                     Spacer(modifier = Modifier.height(4.dp))
-                                    Text("Permanently delete this room from Firestore. All live members will be disconnected.", color = Color.LightGray, fontSize = 11.sp)
+                                    Text("Permanently delete this room from Firestore. All live members will be disconnected.", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
                                     Spacer(modifier = Modifier.height(10.dp))
                                     Button(
                                         onClick = {
                                             onDismiss()
                                             onDeleteRoom()
                                         },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4A151D)),
+                                        border = BorderStroke(1.dp, Color(0xFFE53935)),
                                         shape = RoundedCornerShape(10.dp),
-                                        modifier = Modifier.fillMaxWidth().height(36.dp)
+                                        modifier = Modifier.fillMaxWidth().height(38.dp)
                                     ) {
-                                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFFF859E), modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Delete Room Permanently 🗑️", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Text("Delete Room Permanently 🗑️", color = Color(0xFFFF859E), fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -4430,14 +4454,15 @@ fun RoomSettingsDialog(
                     // 9. FEEDBACK & SUPPORT SECTION (OPEN TO ALL USERS)
                     item {
                         Card(
-                            colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
-                            shape = RoundedCornerShape(14.dp)
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1F2C)),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f))
                         ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text("💬 Feedback & Support", color = BrandCoral, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Text("💬 Feedback & Support", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                                 Spacer(modifier = Modifier.height(4.dp))
-                                Text("Have feedback or reporting an issue? Send a direct note to the LiveTogather support team.", color = Color.Gray, fontSize = 11.sp)
-                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("Have feedback or reporting an issue? Send a direct note to the LiveTogather support team.", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
+                                Spacer(modifier = Modifier.height(10.dp))
                                 OutlinedTextField(
                                     value = feedbackText,
                                     onValueChange = { feedbackText = it },
@@ -4445,15 +4470,15 @@ fun RoomSettingsDialog(
                                     colors = OutlinedTextFieldDefaults.colors(
                                         focusedTextColor = Color.White,
                                         unfocusedTextColor = Color.White,
-                                        focusedBorderColor = BrandCoral,
-                                        unfocusedBorderColor = BrandBorder,
-                                        focusedContainerColor = BrandDark,
-                                        unfocusedContainerColor = BrandDark
+                                        focusedBorderColor = BrandGold,
+                                        unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
+                                        focusedContainerColor = Color(0xFF141720),
+                                        unfocusedContainerColor = Color(0xFF141720)
                                     ),
                                     shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.fillMaxWidth()
                                 )
-                                Spacer(modifier = Modifier.height(8.dp))
+                                Spacer(modifier = Modifier.height(10.dp))
                                 Button(
                                     onClick = {
                                         if (feedbackText.isNotBlank()) {
@@ -4479,15 +4504,16 @@ fun RoomSettingsDialog(
                                         }
                                     },
                                     enabled = feedbackText.isNotBlank() && !isSendingFeedback,
-                                    colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF262C3E)),
+                                    border = BorderStroke(1.dp, Color(0xFF3F4B6B)),
                                     shape = RoundedCornerShape(10.dp),
-                                    modifier = Modifier.fillMaxWidth().height(36.dp)
+                                    modifier = Modifier.fillMaxWidth().height(38.dp)
                                 ) {
                                     Text(
                                         text = if (isSendingFeedback) "Submitting..." else "Submit Feedback 📨",
                                         color = Color.White,
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 11.sp
+                                        fontSize = 11.5.sp
                                     )
                                 }
                             }
@@ -4498,7 +4524,6 @@ fun RoomSettingsDialog(
         }
     }
 }
-
 // -------------------------------------------------------------
 // 5.5 ROOM EXIT & IN-APP FLOATING PIP (MINI-PLAYER) SYSTEM
 // -------------------------------------------------------------
@@ -8696,6 +8721,8 @@ fun InRoomInboxDialog(
 // -------------------------------------------------------------
 // 7. CATEGORY SUB-ROOM CARD
 // -------------------------------------------------------------
+// 7. CATEGORY SUB-ROOM CARD (SLENDER COMPACT 2-COLUMN GRID)
+// -------------------------------------------------------------
 @Composable
 fun CategorySubRoomCard(
     room: RoomItem,
@@ -8704,26 +8731,35 @@ fun CategorySubRoomCard(
     onJoin: () -> Unit
 ) {
     val isUserHostOfThisRoom = currentUser.uid.isNotBlank() && (currentUser.uid == room.hostUid || currentUser.uid == room.hostId)
+    val cardPhoto = room.hostPhotoUrl.ifEmpty { room.banner_image_url.ifEmpty { "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3" } }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(205.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .border(1.dp, BrandBorder, RoundedCornerShape(18.dp))
+            .height(178.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(16.dp))
+            .clickable { onJoin() }
     ) {
+        // Host Cover Image
         AsyncImage(
-            model = room.banner_image_url.ifEmpty { "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3" },
+            model = cardPhoto,
             contentDescription = room.title,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop
         )
 
+        // Refined Dark Gradient Overlay
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(Color.Black.copy(alpha = 0.35f), Color.Black.copy(alpha = 0.9f))
+                        colors = listOf(
+                            Color.Black.copy(alpha = 0.55f),
+                            Color.Transparent,
+                            Color.Black.copy(alpha = 0.92f)
+                        )
                     )
                 )
         )
@@ -8731,101 +8767,84 @@ fun CategorySubRoomCard(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(10.dp),
+                .padding(8.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Live status & Host chip
+            // Top Row: Live Status Pill with Equalizer + Real-time Live Viewers Chip
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Status Pill: "🔴 LIVE" or "⏳ Host will be live soon"
                 if (room.isHostLive) {
                     Row(
                         modifier = Modifier
                             .clip(RoundedCornerShape(50))
-                            .background(BrandCoral.copy(alpha = 0.85f))
-                            .border(0.5.dp, BrandGold, RoundedCornerShape(50))
-                            .padding(horizontal = 7.dp, vertical = 2.dp),
+                            .background(Color(0xFFE91E63).copy(alpha = 0.92f))
+                            .border(0.6.dp, Color.White.copy(alpha = 0.5f), RoundedCornerShape(50))
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(Color.White))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("LIVE", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                        MusicVisualizerWave(isPlaying = true, modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("LIVE", color = Color.White, fontSize = 8.5.sp, fontWeight = FontWeight.Black)
                     }
                 } else {
                     Row(
                         modifier = Modifier
                             .clip(RoundedCornerShape(50))
-                            .background(Color.Black.copy(alpha = 0.75f))
-                            .border(0.5.dp, BrandGold.copy(alpha = 0.6f), RoundedCornerShape(50))
+                            .background(Color.Black.copy(alpha = 0.72f))
+                            .border(0.6.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(50))
                             .padding(horizontal = 6.dp, vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val statusText = if (room.statusMessage.isNotBlank() && !room.statusMessage.equals("LIVE NOW", ignoreCase = true)) "⏳ ${room.statusMessage}" else if (room.scheduledTime.isNotBlank()) "⏳ ${room.scheduledTime}" else "⏳ OFFLINE"
-                        Text(statusText, color = BrandGold, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = if (room.scheduledTime.isNotBlank()) "⏳ ${room.scheduledTime.take(9)}" else "⏳ OFFLINE",
+                            color = BrandGold,
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
 
-                if (isUserHostOfThisRoom) {
-                    Text(
-                        text = "👑 You (Host)",
-                        color = BrandGold,
-                        fontSize = 8.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        modifier = Modifier
-                            .background(Color.Black.copy(alpha = 0.75f), RoundedCornerShape(50))
-                            .border(0.5.dp, BrandGold, RoundedCornerShape(50))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                } else if (room.hostName.isNotBlank()) {
-                    Text(
-                        text = "👑 ${room.hostName}",
-                        color = BrandGold,
-                        fontSize = 8.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        modifier = Modifier
-                            .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(50))
-                            .padding(horizontal = 5.dp, vertical = 2.dp)
-                    )
+                // Real-time Viewers Count Chip
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(Color.Black.copy(alpha = 0.72f))
+                        .border(0.6.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(50))
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("🔥", fontSize = 8.5.sp)
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Text("$activeCount", color = Color.White, fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
                 }
             }
 
+            // Bottom Section: Host Crown, Room Title, and Quick Join Action
             Column {
-                Text(
-                    text = "${room.title} ${room.emoji}",
-                    color = Color.White,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 13.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                // Equalizer Wave: only animated/bouncing if room is LIVE and playing!
-                Row(
-                    modifier = Modifier.padding(vertical = 3.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    MusicVisualizerWave(isPlaying = room.isHostLive && room.isPlaying)
-                    Spacer(modifier = Modifier.width(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = if (room.isHostLive && room.isPlaying && room.nowPlayingTitle.isNotBlank()) {
-                            "🎶 ${room.nowPlayingTitle.take(14)}..."
-                        } else if (room.isHostLive) {
-                            "🔴 Room is Live"
-                        } else {
-                            "⏳ Host will be live soon"
-                        },
-                        color = if (room.isHostLive) BrandGreen else Color.LightGray,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Medium,
+                        text = if (isUserHostOfThisRoom) "👑 You (Host)" else "👑 ${room.hostName.ifBlank { "Host" }}",
+                        color = BrandGold,
+                        fontSize = 8.5.sp,
+                        fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                Text(
+                    text = "${room.title.ifBlank { room.roomName }} ${room.emoji}",
+                    color = Color.White,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
 
                 Spacer(modifier = Modifier.height(4.dp))
 
@@ -8835,20 +8854,27 @@ fun CategorySubRoomCard(
                     room.isHostLive -> "Join Room 🎙️"
                     else -> "Host Offline ⏳"
                 }
-                val buttonColor = when {
-                    isUserHostOfThisRoom -> BrandCoral
-                    room.isHostLive -> BrandCoral
-                    else -> Color.Gray.copy(alpha = 0.6f)
+                val buttonBg = when {
+                    room.isHostLive -> Color(0xFF262C3E)
+                    else -> Color(0xFF1E212B)
+                }
+                val buttonBorder = when {
+                    room.isHostLive -> Color(0xFF4A5578)
+                    else -> Color(0xFF2D3243)
                 }
 
-                Button(
-                    onClick = onJoin,
-                    colors = ButtonDefaults.buttonColors(containerColor = buttonColor),
+                Surface(
+                    color = buttonBg,
                     shape = RoundedCornerShape(50),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                    modifier = Modifier.fillMaxWidth().height(32.dp)
+                    border = BorderStroke(0.8.dp, buttonBorder),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(26.dp)
+                        .clickable { onJoin() }
                 ) {
-                    Text(buttonText, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(buttonText, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    }
                 }
             }
         }
@@ -8856,7 +8882,7 @@ fun CategorySubRoomCard(
 }
 
 // -------------------------------------------------------------
-// 8. CATEGORY HUB / LOBBY DIALOG (ISOLATED INTENT SUB-ROOMS)
+// 8. CATEGORY HUB / LOBBY DIALOG (TOP CAROUSEL + SLENDER REAL-TIME GRIDS)
 // -------------------------------------------------------------
 @Composable
 fun CategoryHubLobbyDialog(
@@ -8872,6 +8898,7 @@ fun CategoryHubLobbyDialog(
     val context = LocalContext.current
     val db = remember { FirebaseFirestore.getInstance() }
     val liveCategoryRooms = remember { mutableStateListOf<RoomItem>() }
+
     LaunchedEffect(category.id) {
         db.collection("rooms")
             .addSnapshotListener { snapshot, error ->
@@ -8888,8 +8915,8 @@ fun CategoryHubLobbyDialog(
     }
 
     val categoryRooms = remember(
-        liveCategoryRooms.map { "${it.id}_${it.title}_${it.roomName}_${it.isHostLive}_${it.isLive}" },
-        allRooms.map { "${it.id}_${it.title}_${it.roomName}_${it.isHostLive}_${it.isLive}" },
+        liveCategoryRooms.map { "${it.id}_${it.title}_${it.roomName}_${it.isHostLive}_${it.isLive}_${it.activeUserCount}" },
+        allRooms.map { "${it.id}_${it.title}_${it.roomName}_${it.isHostLive}_${it.isLive}_${it.activeUserCount}" },
         category.id
     ) {
         val map = linkedMapOf<String, RoomItem>()
@@ -8905,13 +8932,49 @@ fun CategoryHubLobbyDialog(
         }
         allRooms.filter { matchesCategory(it) }.forEach { map[it.id] = it }
         liveCategoryRooms.filter { matchesCategory(it) }.forEach { map[it.id] = it }
-        map.values.toList().sortedWith(
+        map.values.toList()
+    }
+
+    // Dynamic Multi-Tier Real-Time Auto-Ranking Comparator (NO DUMMY DATA)
+    // 1. Live status (Live on top, offline below)
+    // 2. Active viewers volume (Real-time Firestore user count)
+    // 3. Host wealth & charm level
+    // 4. Creation / update timestamp
+    val sortedCategoryRooms = remember(categoryRooms, allUsers) {
+        categoryRooms.sortedWith(
             compareByDescending<RoomItem> { it.isHostLive }
+                .thenByDescending { room ->
+                    allUsers.count { it.current_room == room.id }.coerceAtLeast(room.activeUserCount)
+                }
+                .thenByDescending { room ->
+                    val hostUid = room.hostUid.ifBlank { room.hostId }
+                    val host = allUsers.find { it.uid == hostUid }
+                    (host?.wealthLevel ?: 1) + (host?.charmLevel ?: 1) + (host?.followerCount ?: 0) / 10
+                }
                 .thenByDescending { it.createdAt }
         )
     }
 
-    // Active members in this category across users
+    // Top Popular Star Hosts Horizontal Carousel (With Real User Frames, NO DUMMY FRAMES)
+    val topPopularHosts = remember(sortedCategoryRooms, allUsers) {
+        val hostsFromRooms = sortedCategoryRooms.mapNotNull { room ->
+            val hostUid = room.hostUid.ifBlank { room.hostId }
+            val hostUser = allUsers.find { it.uid == hostUid } ?: UserProfile(
+                uid = hostUid,
+                name = room.hostName,
+                photo = room.hostPhotoUrl
+            )
+            hostUser to room
+        }.distinctBy { it.first.uid }
+
+        hostsFromRooms.sortedWith(
+            compareByDescending<Pair<UserProfile, RoomItem>> { it.second.isHostLive }
+                .thenByDescending { it.first.followerCount }
+                .thenByDescending { it.first.wealthLevel + it.first.charmLevel }
+                .thenByDescending { allUsers.count { u -> u.current_room == it.second.id } }
+        )
+    }
+
     val activeCategoryCount = remember(allUsers, category.id) {
         allUsers.count { it.activeIntent == category.id || it.current_room.contains(category.id) }
     }
@@ -8934,12 +8997,12 @@ fun CategoryHubLobbyDialog(
         )
     ) {
         Scaffold(
-            containerColor = BrandDark,
+            containerColor = Color(0xFF10121A),
             topBar = {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(140.dp)
+                        .height(130.dp)
                 ) {
                     AsyncImage(
                         model = categoryBannerUrl.ifEmpty { "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3" },
@@ -8952,7 +9015,7 @@ fun CategoryHubLobbyDialog(
                             .fillMaxSize()
                             .background(
                                 Brush.verticalGradient(
-                                    colors = listOf(Color.Black.copy(alpha = 0.4f), BrandDark)
+                                    colors = listOf(Color.Black.copy(alpha = 0.45f), Color(0xFF10121A))
                                 )
                             )
                     )
@@ -8981,7 +9044,7 @@ fun CategoryHubLobbyDialog(
                                 )
                                 Text(
                                     text = "🟢 $activeCategoryCount Active in Category Lobby",
-                                    color = BrandGreen,
+                                    color = Color(0xFF34D399),
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -8991,13 +9054,14 @@ fun CategoryHubLobbyDialog(
                         // "+ Create Room" Button inside Lobby
                         Button(
                             onClick = onCreateRoom,
-                            colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF262C3E)),
+                            border = BorderStroke(1.dp, Color(0xFF3F4B6B)),
                             shape = RoundedCornerShape(50),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Create Room", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text("Create Room", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
                         }
                     }
                 }
@@ -9007,39 +9071,17 @@ fun CategoryHubLobbyDialog(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
-                    .padding(14.dp)
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(
-                            text = "Active Sub-Rooms (${categoryRooms.size})",
-                            color = BrandGold,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "Browse or host rooms dedicated exclusively to this intent.",
-                            color = Color.Gray,
-                            fontSize = 11.sp
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                if (categoryRooms.isEmpty()) {
-                    // Clean Empty State when no room has been created in this category yet
+                if (sortedCategoryRooms.isEmpty()) {
+                    // Clean Empty State
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1F2C)),
                         shape = RoundedCornerShape(20.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 16.dp)
-                            .border(1.dp, BrandCoral.copy(alpha = 0.4f), RoundedCornerShape(20.dp))
+                            .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(20.dp))
                     ) {
                         Column(
                             modifier = Modifier
@@ -9048,10 +9090,7 @@ fun CategoryHubLobbyDialog(
                             verticalArrangement = Arrangement.Center,
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text(
-                                text = "🎙️",
-                                fontSize = 42.sp
-                            )
+                            Text(text = "🎙️", fontSize = 42.sp)
                             Spacer(modifier = Modifier.height(10.dp))
                             Text(
                                 text = "No Live Rooms Yet",
@@ -9063,7 +9102,7 @@ fun CategoryHubLobbyDialog(
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
                                 text = "Be the first to host a hangout in ${category.label}! Stream music, talk on stage, and invite friends to join.",
-                                color = Color.Gray,
+                                color = Color.White.copy(alpha = 0.6f),
                                 fontSize = 12.sp,
                                 textAlign = TextAlign.Center,
                                 lineHeight = 18.sp
@@ -9071,7 +9110,8 @@ fun CategoryHubLobbyDialog(
                             Spacer(modifier = Modifier.height(16.dp))
                             Button(
                                 onClick = onCreateRoom,
-                                colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF262C3E)),
+                                border = BorderStroke(1.dp, Color(0xFF3F4B6B)),
                                 shape = RoundedCornerShape(50),
                                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
                             ) {
@@ -9088,8 +9128,140 @@ fun CategoryHubLobbyDialog(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        items(categoryRooms) { room ->
-                            val activeCount = allUsers.count { it.current_room == room.id }
+                        // 1. TOP POPULAR STAR HOSTS HORIZONTAL CAROUSEL (SPAN 2)
+                        if (topPopularHosts.isNotEmpty()) {
+                            item(span = { GridItemSpan(2) }) {
+                                Column(modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 4.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "🌟 Top Star Hosts",
+                                            color = Color.White,
+                                            fontSize = 13.5.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "${topPopularHosts.size} Hosts",
+                                            color = BrandGold,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                    LazyRow(
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp)
+                                    ) {
+                                        items(topPopularHosts) { (hostUser, hostRoom) ->
+                                            Column(
+                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                modifier = Modifier
+                                                    .width(66.dp)
+                                                    .clickable { onJoinRoom(hostRoom) }
+                                            ) {
+                                                // Real User Avatar Frame lookup (NO dummy frames!)
+                                                val frameRes = if (hostUser.activeFrame.isNotBlank()) {
+                                                    AVATAR_FRAMES_CATALOG.find { it.id == hostUser.activeFrame }?.drawableRes
+                                                } else null
+
+                                                Box(
+                                                    modifier = Modifier.size(62.dp),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    AsyncImage(
+                                                        model = hostUser.photo.ifEmpty { hostRoom.hostPhotoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" } },
+                                                        contentDescription = hostUser.name,
+                                                        modifier = Modifier
+                                                            .size(46.dp)
+                                                            .clip(CircleShape)
+                                                            .border(
+                                                                1.5.dp,
+                                                                if (hostRoom.isHostLive) Color(0xFFFF1744) else Color.White.copy(alpha = 0.2f),
+                                                                CircleShape
+                                                            ),
+                                                        contentScale = ContentScale.Crop
+                                                    )
+
+                                                    // Overlay REAL frame ONLY if equipped in Firestore
+                                                    if (frameRes != null) {
+                                                        Image(
+                                                            painter = painterResource(id = frameRes),
+                                                            contentDescription = "Avatar Frame",
+                                                            modifier = Modifier.size(62.dp),
+                                                            contentScale = ContentScale.Fit
+                                                        )
+                                                    }
+
+                                                    // Live Dot Badge
+                                                    if (hostRoom.isHostLive) {
+                                                        Surface(
+                                                            color = Color(0xFFFF1744),
+                                                            shape = CircleShape,
+                                                            border = BorderStroke(1.dp, Color.White),
+                                                            modifier = Modifier
+                                                                .size(11.dp)
+                                                                .align(Alignment.BottomEnd)
+                                                                .padding(bottom = 2.dp, end = 3.dp)
+                                                        ) {}
+                                                    }
+                                                }
+
+                                                Spacer(modifier = Modifier.height(3.dp))
+
+                                                Text(
+                                                    text = hostUser.name.ifBlank { hostRoom.hostName.ifBlank { "Host" } },
+                                                    color = Color.White,
+                                                    fontSize = 10.5.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    textAlign = TextAlign.Center
+                                                )
+
+                                                Text(
+                                                    text = if (hostRoom.isHostLive) "🔴 LIVE" else hostRoom.title.take(10),
+                                                    color = if (hostRoom.isHostLive) Color(0xFF34D399) else Color.White.copy(alpha = 0.5f),
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    textAlign = TextAlign.Center
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 2. ACTIVE SUB-ROOMS SECTION HEADER (SPAN 2)
+                        item(span = { GridItemSpan(2) }) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 4.dp, bottom = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "🎙️ Live & Active Rooms (${sortedCategoryRooms.size})",
+                                    color = Color.White,
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Auto-ranked",
+                                    color = Color.White.copy(alpha = 0.45f),
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+
+                        // 3. SLENDER 2-COLUMN GRIDS
+                        items(sortedCategoryRooms) { room ->
+                            val activeCount = allUsers.count { it.current_room == room.id }.coerceAtLeast(room.activeUserCount)
                             CategorySubRoomCard(
                                 room = room,
                                 activeCount = activeCount,
@@ -9098,37 +9270,38 @@ fun CategoryHubLobbyDialog(
                             )
                         }
 
+                        // 4. CREATE SUB-ROOM COMPACT CARD
                         item {
-                            // Host another room card
                             Card(
-                                colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
-                                shape = RoundedCornerShape(18.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1F2C)),
+                                shape = RoundedCornerShape(16.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(200.dp)
-                                    .border(1.dp, BrandBorder, RoundedCornerShape(18.dp))
+                                    .height(178.dp)
+                                    .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(16.dp))
                                     .clickable { onCreateRoom() }
                             ) {
                                 Column(
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .padding(14.dp),
+                                        .padding(12.dp),
                                     verticalArrangement = Arrangement.Center,
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
-                                    Icon(Icons.Default.Add, contentDescription = null, tint = BrandCoral, modifier = Modifier.size(32.dp))
+                                    Icon(Icons.Default.Add, contentDescription = null, tint = BrandGold, modifier = Modifier.size(28.dp))
                                     Spacer(modifier = Modifier.height(6.dp))
                                     Text(
                                         text = "+ Create Sub-Room",
                                         color = Color.White,
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp,
+                                        fontSize = 11.5.sp,
                                         textAlign = TextAlign.Center
                                     )
+                                    Spacer(modifier = Modifier.height(2.dp))
                                     Text(
-                                        text = "Host another hangout lounge",
-                                        color = Color.Gray,
-                                        fontSize = 10.sp,
+                                        text = "Host another lounge",
+                                        color = Color.White.copy(alpha = 0.5f),
+                                        fontSize = 9.5.sp,
                                         textAlign = TextAlign.Center
                                     )
                                 }
@@ -9140,7 +9313,6 @@ fun CategoryHubLobbyDialog(
         }
     }
 }
-
 // -------------------------------------------------------------
 // 8. 5-MIC LIVE AUDIO STAGE COMPONENTS & HELPERS
 // -------------------------------------------------------------
