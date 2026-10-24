@@ -1569,8 +1569,9 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                                                 .clickable { discoverTab = "rooms" }
                                                 .padding(horizontal = 16.dp, vertical = 6.dp)
                                         ) {
+                                            val intentCategoriesCount = remember { CATEGORY_LIST.filter { it.id != "all" }.size }
                                             Text(
-                                                "🏛️ Intent Rooms (13)",
+                                                "🏛️ Intent Rooms ($intentCategoriesCount)",
                                                 color = Color.White,
                                                 fontSize = 12.sp,
                                                 fontWeight = FontWeight.Bold
@@ -1987,6 +1988,22 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                 }
                 AudioPlayerManager.stop()
                 activeAudioRoom = null
+            }
+
+            // Real-time listener for current active room to support instant mode conversion (Audio <-> Video)
+            DisposableEffect(room.id) {
+                val reg = db.collection("rooms").document(room.id)
+                    .addSnapshotListener { snap, err ->
+                        if (err == null && snap != null && snap.exists()) {
+                            val updated = parseRoomFromDoc(snap)
+                            if (updated != null && (updated.roomType != room.roomType || updated.isVideoRoom != room.isVideoRoom || updated.title != room.title)) {
+                                activeAudioRoom = updated
+                            }
+                        }
+                    }
+                onDispose {
+                    reg.remove()
+                }
             }
 
             if (room.roomType == "video" || room.roomType == "video_pk" || room.isVideoRoom) {
@@ -3038,7 +3055,7 @@ fun IntentRoomsGrid(
                     letterSpacing = 0.5.sp
                 )
                 Text(
-                    text = "Explore 14 curated category hubs to meet active members and join live rooms.",
+                    text = "Explore ${categories.size} curated category hubs to meet active members and join live rooms.",
                     color = Color.Gray,
                     fontSize = 11.sp
                 )
@@ -3074,15 +3091,16 @@ fun IntentRoomsGrid(
                 // Sub-rooms created under this category
                 val categoryRooms = rooms.filter {
                     if (category.id == "video_stream") {
-                        it.category == "video_stream" || it.roomType == "video" || it.isVideoRoom
-                    } else if (category.id == "video_pk") {
-                        it.category == "video_pk" || it.roomType == "video_pk"
+                        it.category == "video_stream" || it.roomType == "video" || it.roomType == "video_pk" || it.isVideoRoom
                     } else {
                         it.category == category.id
                     }
                 }
                 val subRoomsCount = categoryRooms.size
-                val isAnyRoomLive = categoryRooms.any { it.isHostLive }
+                val activeRoomsCount = categoryRooms.count { it.isHostLive }
+                val isAnyRoomLive = activeRoomsCount > 0
+                val totalRoomViewers = categoryRooms.filter { it.isHostLive }.sumOf { maxOf(1, it.activeUserCount) }
+                val totalOnlineUsers = maxOf(activeCount, totalRoomViewers)
                 val isAnyAudioPlaying = categoryRooms.any { it.isHostLive && it.isPlaying }
 
                 Box(
@@ -3132,64 +3150,44 @@ fun IntentRoomsGrid(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            if (isAnyRoomLive) {
-                                Row(
+                            // Room Live / Sub-rooms status
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .background(if (isAnyRoomLive) Color(0xFFFF1744).copy(alpha = 0.90f) else Color.Black.copy(alpha = 0.70f))
+                                    .border(0.8.dp, if (isAnyRoomLive) BrandGold else Color.White.copy(alpha = 0.2f), RoundedCornerShape(50))
+                                    .padding(horizontal = 7.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
                                     modifier = Modifier
-                                        .clip(RoundedCornerShape(50))
-                                        .background(BrandCoral.copy(alpha = 0.85f))
-                                        .border(0.5.dp, BrandGold, RoundedCornerShape(50))
-                                        .padding(horizontal = 8.dp, vertical = 3.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(Color.White))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("LIVE", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Black)
-                                }
-                            } else {
-                                Row(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(50))
-                                        .background(Color.Black.copy(alpha = 0.65f))
-                                        .border(0.5.dp, BrandGreen.copy(alpha = 0.5f), RoundedCornerShape(50))
-                                        .padding(horizontal = 8.dp, vertical = 3.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(6.dp)
-                                            .clip(CircleShape)
-                                            .background(BrandGreen)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "$activeCount Active",
-                                        color = Color.White,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isAnyRoomLive) Color.White else BrandGreen)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = if (isAnyRoomLive) "🔴 $activeRoomsCount Live" else if (subRoomsCount > 0) "🎙️ $subRoomsCount Rooms" else "✨ Lounge",
+                                    color = Color.White,
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
 
-                            if (isVipCategory) {
+                            // Real-time online active members & viewers
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .background(Color.Black.copy(alpha = 0.75f))
+                                    .border(0.8.dp, if (isVipCategory) BrandGold else BrandGreen.copy(alpha = 0.6f), RoundedCornerShape(50))
+                                    .padding(horizontal = 7.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Text(
-                                    text = "👑 VIP 1+",
-                                    color = BrandGold,
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier
-                                        .background(Color(0xFF281802).copy(alpha = 0.85f), RoundedCornerShape(50))
-                                        .border(0.8.dp, BrandGold.copy(alpha = 0.6f), RoundedCornerShape(50))
-                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            } else if (subRoomsCount > 0) {
-                                Text(
-                                    text = "🔥 $subRoomsCount Rooms",
-                                    color = BrandGold,
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier
-                                        .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(50))
-                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    text = if (isVipCategory) "👑 VIP 1+" else "👥 $totalOnlineUsers Online",
+                                    color = if (isVipCategory) BrandGold else Color.White,
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
                         }
@@ -3223,15 +3221,16 @@ fun IntentRoomsGrid(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = if (isAnyRoomLive) "🔴 LIVE NOW" else "✨ Audio Lounge",
+                                    text = if (isAnyRoomLive) "🔴 $activeRoomsCount Live Stream${if (activeRoomsCount > 1) "s" else ""}" else if (subRoomsCount > 0) "🎙️ $subRoomsCount Created" else "✨ Open Lounge",
                                     color = if (isAnyRoomLive) BrandGreen else BrandGold,
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = if (subRoomsCount > 0) "$subRoomsCount Rooms" else "Active Hub",
+                                    text = "🔥 $totalOnlineUsers Active",
                                     color = Color.LightGray,
-                                    fontSize = 9.sp
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.SemiBold
                                 )
                             }
 

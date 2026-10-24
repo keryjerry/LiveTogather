@@ -957,8 +957,7 @@ fun CreateRoomDialog(
                 ) {
                     val roomTypes = listOf(
                         Triple("audio", "🎙️ Audio Lounge", true),
-                        Triple("video", "📹 Video Stream", true),
-                        Triple("video_pk", "⚔️ Video PK", true)
+                        Triple("video", "📹 Video Stream", true)
                     )
                     roomTypes.forEach { (typeKey, typeLabel, _) ->
                         val isSelected = selectedRoomType == typeKey
@@ -968,8 +967,7 @@ fun CreateRoomDialog(
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(
                                     if (isSelected) {
-                                        if (typeKey == "video_pk") Brush.horizontalGradient(listOf(Color(0xFFFF1744), Color(0xFFFF9100)))
-                                        else if (typeKey == "video") Brush.horizontalGradient(listOf(Color(0xFF00C853), Color(0xFF00E5FF)))
+                                        if (typeKey == "video") Brush.horizontalGradient(listOf(Color(0xFF00C853), Color(0xFF00E5FF)))
                                         else Brush.horizontalGradient(listOf(BrandCoral, BrandOrange))
                                     } else Brush.linearGradient(listOf(BrandDark, BrandDark))
                                 )
@@ -980,11 +978,9 @@ fun CreateRoomDialog(
                                 )
                                 .clickable {
                                     selectedRoomType = typeKey
-                                    if (typeKey == "video" && selectedCategory !in listOf("video_stream", "video_pk")) {
+                                    if (typeKey == "video" && selectedCategory != "video_stream") {
                                         selectedCategory = "video_stream"
-                                    } else if (typeKey == "video_pk") {
-                                        selectedCategory = "video_pk"
-                                    } else if (typeKey == "audio" && selectedCategory in listOf("video_stream", "video_pk")) {
+                                    } else if (typeKey == "audio" && selectedCategory == "video_stream") {
                                         selectedCategory = "free_tonight"
                                     }
                                 }
@@ -1189,9 +1185,7 @@ fun CreateRoomDialog(
                     Button(
                         onClick = {
                             showVideoSafetyGuidelinesModal = false
-                            val finalCategory = if (selectedRoomType == "video_pk") "video_pk"
-                                else if (selectedRoomType == "video" && selectedCategory !in listOf("video_stream", "video_pk")) "video_stream"
-                                else selectedCategory
+                            val finalCategory = if (selectedRoomType == "video") "video_stream" else selectedCategory
                             val finalTitle = roomTitle.trim().ifEmpty { "${currentUser.name}'s Hangout" }
                             onCreate(finalTitle, finalCategory, selectedTheme, selectedRoomType)
                         },
@@ -3734,6 +3728,56 @@ fun RoomSettingsDialog(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
+                    // 00. ROOM MODE CONVERSION: AUDIO LOUNGE -> VIDEO STREAM (HOST & ADMIN)
+                    val canConvertMode = isHost || currentUser.isAdmin || currentUser.isOfficialAdmin(currentUser.uid) || currentUser.uid in room.adminUserIds
+                    if (canConvertMode) {
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.2.dp, BrandCoral.copy(alpha = 0.8f))
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text("📹 Room Mode Conversion", color = BrandCoral, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("Switch broadcast mode to live Video Stream (1P-4P dynamic camera grid). All viewers and listeners transition seamlessly.", color = Color.Gray, fontSize = 11.sp)
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Button(
+                                        onClick = {
+                                            val finalTitle = room.title.ifBlank { "${room.hostName}'s Video Stream" }
+                                            val updates = mapOf<String, Any>(
+                                                "roomType" to "video",
+                                                "isVideoRoom" to true,
+                                                "title" to finalTitle
+                                            )
+                                            db.collection("rooms").document(room.id).update(updates)
+                                            if (room.category.isNotBlank()) {
+                                                db.collection("intent_categories").document(room.category)
+                                                    .collection("rooms").document(room.id).update(updates)
+                                            }
+                                            val sysComment = LiveRoomComment(
+                                                id = UUID.randomUUID().toString(),
+                                                roomId = room.id,
+                                                userId = currentUser.uid,
+                                                userName = "🔄 SYSTEM",
+                                                message = "Room mode converted to Video Stream by ${currentUser.name}",
+                                                timestamp = System.currentTimeMillis()
+                                            )
+                                            db.collection("rooms").document(room.id).collection("live_comments").document(sysComment.id).set(sysComment)
+                                            Toast.makeText(context, "📹 Converting room to Video Stream...", Toast.LENGTH_SHORT).show()
+                                            onDismiss()
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.fillMaxWidth().height(38.dp)
+                                    ) {
+                                        Text("🔄 Convert to Video Stream 📹", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // 0. ROOM ANNOUNCEMENT (PINNED BANNER & BROADCAST IN CHAT)
                     item {
                         Card(
@@ -8842,10 +8886,7 @@ fun CategoryHubLobbyDialog(
                 return false
             }
             if (category.id == "video_stream") {
-                return r.category == "video_stream" || r.roomType == "video" || r.isVideoRoom
-            }
-            if (category.id == "video_pk") {
-                return r.category == "video_pk" || r.roomType == "video_pk"
+                return r.category == "video_stream" || r.category == "video_pk" || r.roomType == "video" || r.roomType == "video_pk" || r.isVideoRoom
             }
             return r.category == category.id
         }
@@ -11056,7 +11097,8 @@ private fun VideoGiftsSection(
 @Composable
 fun FullScreenGiftAnimationOverlay(
     giftEvent: GiftEvent,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    isVideoRoom: Boolean = false
 ) {
     val isVideo = giftEvent.animationType == "video_mp4"
     val activeDuration = if (isVideo) 10000L else 3800L
@@ -11166,7 +11208,8 @@ fun FullScreenGiftAnimationOverlay(
                 "micro_gift", "firecracker_burst" -> {
                     MicroGiftFlightAndBurstOverlay(
                         giftEvent = giftEvent,
-                        onFinished = onDismiss
+                        onFinished = onDismiss,
+                        isVideoRoom = isVideoRoom
                     )
                 }
                 "video_mp4" -> {

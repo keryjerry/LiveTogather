@@ -26,7 +26,6 @@ fun isUserWhitelistedAdmin(email: String?, uid: String? = null): Boolean {
 val CATEGORY_LIST = listOf(
     IntentCategory("all", "🔥 All Profiles"),
     IntentCategory("video_stream", "📹 Video Stream"),
-    IntentCategory("video_pk", "⚔️ Video PK"),
     IntentCategory("vip_room", "👑 VIP Room"),
     IntentCategory("free_tonight", "🍷 Free Tonight"),
     IntentCategory("free_tomorrow", "🌙 Free Tomorrow"),
@@ -235,7 +234,6 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
 
 val CATEGORY_BANNERS = mapOf(
     "video_stream" to "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1200&q=80",
-    "video_pk" to "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=1200&q=80",
     "vip_room" to "https://images.unsplash.com/photo-1578683010236-d716f9a3f461?auto=format&fit=crop&w=1200&q=80",
     "free_tonight" to "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?auto=format&fit=crop&w=800&q=80",
     "free_tomorrow" to "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=800&q=80",

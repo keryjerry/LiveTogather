@@ -683,7 +683,8 @@ private fun BottomGiftActionBar(
 @Composable
 fun MicroGiftFlightAndBurstOverlay(
     giftEvent: GiftEvent,
-    onFinished: () -> Unit
+    onFinished: () -> Unit,
+    isVideoRoom: Boolean = false
 ) {
     // Slower, dramatic, highly visible flight & celebration duration (4.2 seconds)
     val duration = 4200L
@@ -728,9 +729,12 @@ fun MicroGiftFlightAndBurstOverlay(
             ?: R.drawable.gift_single_rose
     }
 
-    // Target positions: If "All Mics" (-1), fan out to all 8 seats; if single mic, target that seat
-    val targetCoordinates = remember(giftEvent.targetMicSeatIndex) {
-        if (giftEvent.targetMicSeatIndex == -1) {
+    // Target positions: In Video Room (no mic seats), target EXACT middle of the screen!
+    val isCenterVideoTarget = isVideoRoom || giftEvent.targetMicSeatIndex == -99
+    val targetCoordinates = remember(giftEvent.targetMicSeatIndex, isVideoRoom) {
+        if (isCenterVideoTarget) {
+            listOf(Pair(0f, 0f)) // Center of screen
+        } else if (giftEvent.targetMicSeatIndex == -1) {
             listOf(
                 Pair(-115f, -240f), // Mic 0 (Host)
                 Pair(-38f, -240f),  // Mic 1
@@ -751,7 +755,7 @@ fun MicroGiftFlightAndBurstOverlay(
                 5 -> Pair(-38f, -140f)
                 6 -> Pair(38f, -140f)
                 7 -> Pair(115f, -140f)
-                else -> Pair(0f, -200f)
+                else -> Pair(0f, 0f)
             }
             listOf(single)
         }
@@ -824,12 +828,12 @@ fun MicroGiftFlightAndBurstOverlay(
 
         if (!isBurstPhase) {
             val flightP = (progress / 0.45f).coerceIn(0f, 1f)
-            val startX = 260f
-            val startY = 560f
+            val startX = if (isCenterVideoTarget) 0f else 260f
+            val startY = if (isCenterVideoTarget) 320f else 560f
 
             targetCoordinates.forEach { (targetX, targetY) ->
-                val ctrlX = (startX + targetX) / 2f + 40f
-                val ctrlY = 80f
+                val ctrlX = if (isCenterVideoTarget) 0f else ((startX + targetX) / 2f + 40f)
+                val ctrlY = if (isCenterVideoTarget) 120f else 80f
                 val currentX = (1 - flightP) * (1 - flightP) * startX + 2 * (1 - flightP) * flightP * ctrlX + flightP * flightP * targetX
                 val currentY = (1 - flightP) * (1 - flightP) * startY + 2 * (1 - flightP) * flightP * ctrlY + flightP * flightP * targetY
 
@@ -837,21 +841,21 @@ fun MicroGiftFlightAndBurstOverlay(
                     modifier = Modifier
                         .offset(x = currentX.dp, y = currentY.dp)
                         .graphicsLayer(
-                            rotationZ = (flightP * 20f),
-                            scaleX = (0.65f + flightP * 0.45f),
-                            scaleY = (0.65f + flightP * 0.45f)
+                            rotationZ = (flightP * (if (isCenterVideoTarget) 12f else 20f)),
+                            scaleX = (0.75f + flightP * (if (isCenterVideoTarget) 0.65f else 0.45f)),
+                            scaleY = (0.75f + flightP * (if (isCenterVideoTarget) 0.65f else 0.45f))
                         )
                 ) {
                     Image(
                         painter = painterResource(id = drawableId),
                         contentDescription = giftEvent.giftName,
-                        modifier = Modifier.size(if (targetCoordinates.size > 1) 60.dp else 90.dp),
+                        modifier = Modifier.size(if (isCenterVideoTarget) 110.dp else if (targetCoordinates.size > 1) 60.dp else 90.dp),
                         contentScale = ContentScale.Fit
                     )
                 }
             }
         } else {
-            // Burst Phase: Firecracker explosion over EACH target user profile seat!
+            // Burst Phase: Firecracker explosion over center of screen (or over seats in audio room)
             val burstP = ((progress - 0.45f) / 0.55f).coerceIn(0f, 1f)
             val burstAlpha = (1f - (burstP * burstP)).coerceIn(0f, 1f)
 
@@ -865,25 +869,28 @@ fun MicroGiftFlightAndBurstOverlay(
                     // Expanding Firecracker Sparkler Rays
                     Box(
                         modifier = Modifier
-                            .size(if (targetCoordinates.size > 1) 120.dp else 190.dp)
+                            .size(if (isCenterVideoTarget) 260.dp else if (targetCoordinates.size > 1) 120.dp else 190.dp)
                             .graphicsLayer(rotationZ = burstRotation, scaleX = burstPulse, scaleY = burstPulse)
                             .border(
-                                2.dp,
+                                if (isCenterVideoTarget) 3.dp else 2.dp,
                                 Brush.sweepGradient(listOf(BrandGold, Color(0xFFFF4081), Color(0xFFFF9800), BrandGold)),
                                 CircleShape
                             )
                     )
 
                     // Sparkler Starburst Emojis
-                    Text("💥 ✨", fontSize = if (targetCoordinates.size > 1) 22.sp else 34.sp)
+                    Text(
+                        if (isCenterVideoTarget) "💥 🎆 ✨ 🎆 💥" else "💥 ✨",
+                        fontSize = if (isCenterVideoTarget) 36.sp else if (targetCoordinates.size > 1) 22.sp else 34.sp
+                    )
 
                     // Central 3D Gift Scaled Up During Blast
                     Image(
                         painter = painterResource(id = drawableId),
                         contentDescription = giftEvent.giftName,
                         modifier = Modifier
-                            .size(if (targetCoordinates.size > 1) 64.dp else 100.dp)
-                            .graphicsLayer(scaleX = (1.0f + burstP * 0.35f), scaleY = (1.0f + burstP * 0.35f)),
+                            .size(if (isCenterVideoTarget) 140.dp else if (targetCoordinates.size > 1) 64.dp else 100.dp)
+                            .graphicsLayer(scaleX = (1.0f + burstP * 0.4f), scaleY = (1.0f + burstP * 0.4f)),
                         contentScale = ContentScale.Fit
                     )
                 }

@@ -860,21 +860,32 @@ fun VideoHangoutRoomDialog(
                                 )
                             }
                             Spacer(modifier = Modifier.width(6.dp))
-                            Column {
+                            Column(modifier = Modifier.widthIn(max = 135.dp)) {
                                 Text(
-                                    text = room.hostName.ifBlank { "Host" },
+                                    text = room.title.ifBlank { "${room.hostName}'s Stream" },
                                     color = Color.White,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.ExtraBold,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                Text(
-                                    text = "ID: $displayRoomId",
-                                    color = BrandGold,
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "👑 ${room.hostName.ifBlank { "Host" }}",
+                                        color = Color.LightGray,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f, fill = false)
+                                    )
+                                    Text(
+                                        text = " • ID: $displayRoomId",
+                                        color = BrandGold,
+                                        fontSize = 8.5.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
                             }
 
                             if (!isUserHost) {
@@ -1041,7 +1052,7 @@ fun VideoHangoutRoomDialog(
                 LazyColumn(
                     state = commentsListState,
                     modifier = Modifier
-                        .heightIn(max = 220.dp)
+                        .heightIn(max = 140.dp)
                         .fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
@@ -1260,7 +1271,7 @@ fun VideoHangoutRoomDialog(
                         // 6. HOST: Inbox / Gifting Overview
                         Box(
                             modifier = Modifier
-                                .size(40.dp)
+                                .size(38.dp)
                                 .clip(CircleShape)
                                 .background(Color.White.copy(alpha = 0.12f))
                                 .border(1.dp, BrandGold.copy(alpha = 0.6f), CircleShape)
@@ -1268,6 +1279,28 @@ fun VideoHangoutRoomDialog(
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(Icons.Default.Mail, contentDescription = "Inbox", tint = BrandGold, modifier = Modifier.size(19.dp))
+                        }
+
+                        // 7. HOST: Luxury Gift Store Button (Host can gift co-hosts & viewers)
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    Brush.sweepGradient(
+                                        listOf(
+                                            Color(0xFFFF1744),
+                                            Color(0xFFFFB300),
+                                            Color(0xFFFF4081),
+                                            Color(0xFFFF1744)
+                                        )
+                                    )
+                                )
+                                .border(1.5.dp, BrandGold, CircleShape)
+                                .clickable { showGiftStoreDialog = true },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("🎁", fontSize = 19.sp)
                         }
                     } else {
                         // 4. VIEWER: Floating Hearts / Like Reaction Button
@@ -1455,7 +1488,8 @@ fun VideoHangoutRoomDialog(
             activeGiftEvent?.let { giftEvent ->
                 FullScreenGiftAnimationOverlay(
                     giftEvent = giftEvent,
-                    onDismiss = { activeGiftEvent = null }
+                    onDismiss = { activeGiftEvent = null },
+                    isVideoRoom = true
                 )
             }
 
@@ -3715,6 +3749,56 @@ fun VideoRoomSettingsSheet(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
+
+                    // 00. ROOM MODE CONVERSION: VIDEO STREAM -> AUDIO LOUNGE (HOST & ADMIN)
+                    val canConvertMode = isHost || currentUser.isAdmin || currentUser.isOfficialAdmin(currentUser.uid) || currentUser.uid in room.adminUserIds
+                    if (canConvertMode) {
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = BrandCardSubtle),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.2.dp, BrandCoral.copy(alpha = 0.8f))
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text("🎙️ Room Mode Conversion", color = BrandGold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("Switch broadcast mode to multi-mic Audio Lounge. All viewers and stage participants transition seamlessly.", color = Color.Gray, fontSize = 11.sp)
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Button(
+                                        onClick = {
+                                            val finalTitle = room.title.ifBlank { "${room.hostName}'s Audio Lounge" }
+                                            val updates = mapOf<String, Any>(
+                                                "roomType" to "audio",
+                                                "isVideoRoom" to false,
+                                                "title" to finalTitle
+                                            )
+                                            db.collection("rooms").document(room.id).update(updates)
+                                            if (room.category.isNotBlank()) {
+                                                db.collection("intent_categories").document(room.category)
+                                                    .collection("rooms").document(room.id).update(updates)
+                                            }
+                                            val sysComment = LiveRoomComment(
+                                                id = UUID.randomUUID().toString(),
+                                                roomId = room.id,
+                                                userId = currentUser.uid,
+                                                userName = "🔄 SYSTEM",
+                                                message = "Room mode converted to Audio Lounge by ${currentUser.name}",
+                                                timestamp = System.currentTimeMillis()
+                                            )
+                                            db.collection("rooms").document(room.id).collection("live_comments").document(sysComment.id).set(sysComment)
+                                            Toast.makeText(context, "🎙️ Converting room to Audio Lounge...", Toast.LENGTH_SHORT).show()
+                                            onDismiss()
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.fillMaxWidth().height(38.dp)
+                                    ) {
+                                        Text("🔄 Convert to Audio Lounge 🎙️", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     if (isHost) {
                         item {
