@@ -2018,7 +2018,10 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                     },
                     isMinimized = isAudioRoomMinimized,
                     onMinimize = { isAudioRoomMinimized = true },
-                    onMaximize = { isAudioRoomMinimized = false }
+                    onMaximize = { isAudioRoomMinimized = false },
+                    onConvertToAudio = { converted ->
+                        activeAudioRoom = converted
+                    }
                 )
             } else {
                 AudioHangoutRoomDialog(
@@ -2032,7 +2035,10 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                     },
                     isMinimized = isAudioRoomMinimized,
                     onMinimize = { isAudioRoomMinimized = true },
-                    onMaximize = { isAudioRoomMinimized = false }
+                    onMaximize = { isAudioRoomMinimized = false },
+                    onConvertToVideo = { converted ->
+                        activeAudioRoom = converted
+                    }
                 )
             }
         }

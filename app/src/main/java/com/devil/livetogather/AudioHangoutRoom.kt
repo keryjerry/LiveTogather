@@ -3653,7 +3653,8 @@ fun RoomSettingsDialog(
     onKickMember: ((RoomMember) -> Unit)? = null,
     onBanMember: ((RoomMember) -> Unit)? = null,
     onEditRoom: (() -> Unit)? = null,
-    onDeleteRoom: (() -> Unit)? = null
+    onDeleteRoom: (() -> Unit)? = null,
+    onConvertToVideo: ((RoomItem) -> Unit)? = null
 ) {
     val context = LocalContext.current
     var announcementText by remember { mutableStateOf(room.announcement) }
@@ -3766,6 +3767,7 @@ fun RoomSettingsDialog(
                                             db.collection("rooms").document(room.id).collection("live_comments").document(sysComment.id).set(sysComment)
                                             Toast.makeText(context, "📹 Converting room to Video Stream...", Toast.LENGTH_SHORT).show()
                                             onDismiss()
+                                            onConvertToVideo?.invoke(room.copy(roomType = "video", title = finalTitle))
                                         },
                                         colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
                                         shape = RoundedCornerShape(10.dp),
@@ -4780,7 +4782,8 @@ fun AudioHangoutRoomDialog(
     onDirectChat: (UserProfile) -> Unit,
     isMinimized: Boolean = false,
     onMinimize: () -> Unit = {},
-    onMaximize: () -> Unit = {}
+    onMaximize: () -> Unit = {},
+    onConvertToVideo: ((RoomItem) -> Unit)? = null
 ) {
     val context = LocalContext.current
 
@@ -5342,6 +5345,12 @@ fun AudioHangoutRoomDialog(
                 if (error != null) return@addSnapshotListener
                 if (snapshot != null && snapshot.exists()) {
                     val updated = parseRoomFromDoc(snapshot)
+                    // Real-Time Mode Conversion Check (Audio -> Video)
+                    if (updated.roomType == "video" || updated.roomType == "video_pk" || updated.isVideoRoom) {
+                        com.devil.livetogather.agora.AgoraVoiceManager.leaveRoom()
+                        onConvertToVideo?.invoke(updated)
+                        return@addSnapshotListener
+                    }
                     val isLive = snapshot.getBoolean("isLive") ?: (snapshot.getBoolean("isHostLive") ?: updated.isLive)
                     val isEnded = snapshot.getBoolean("isEnded") ?: false
                     val endedAt = snapshot.getLong("endedAt") ?: 0L
@@ -7115,7 +7124,11 @@ fun AudioHangoutRoomDialog(
                     room = room.copy(bannedUserIds = room.bannedUserIds + banned.uid)
                 },
                 onEditRoom = { showEditRoomDialog = true },
-                onDeleteRoom = { showDeleteConfirmation = true }
+                onDeleteRoom = { showDeleteConfirmation = true },
+                onConvertToVideo = {
+                    com.devil.livetogather.agora.AgoraVoiceManager.leaveRoom()
+                    onConvertToVideo?.invoke(it)
+                }
             )
         }
 

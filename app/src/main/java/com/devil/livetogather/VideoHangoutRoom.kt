@@ -105,7 +105,8 @@ fun VideoHangoutRoomDialog(
     onDirectChat: (UserProfile) -> Unit = {},
     isMinimized: Boolean = false,
     onMinimize: () -> Unit = {},
-    onMaximize: () -> Unit = {}
+    onMaximize: () -> Unit = {},
+    onConvertToAudio: ((RoomItem) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -294,6 +295,12 @@ fun VideoHangoutRoomDialog(
                 return@addSnapshotListener
             }
             val updated = parseRoomFromDoc(snapshot)
+            // Real-Time Mode Conversion Check (Video -> Audio)
+            if (updated.roomType == "audio" || (!updated.isVideoRoom && updated.roomType != "video" && updated.roomType != "video_pk")) {
+                AgoraVideoManager.leaveRoom()
+                onConvertToAudio?.invoke(updated)
+                return@addSnapshotListener
+            }
             // Real-Time Room Close Check: When host goes OFFLINE or exits, dismiss viewers from the live stage
             if (!updated.isLive || updated.statusMessage.equals("CLOSED", ignoreCase = true) || updated.statusMessage.equals("ENDED", ignoreCase = true) || (!updated.isHostLive && !isUserHost)) {
                 if (!isUserHost) {
@@ -2046,6 +2053,10 @@ fun VideoHangoutRoomDialog(
                         onUpdateTheme = { newTheme ->
                             room = room.copy(banner_image_url = newTheme)
                         },
+                        onConvertToAudio = {
+                            AgoraVideoManager.leaveRoom()
+                            onConvertToAudio?.invoke(it)
+                        },
                         onDismiss = { showRoomSettingsDialog = false }
                     )
                 } else {
@@ -3685,6 +3696,7 @@ fun VideoRoomSettingsSheet(
     onGoLive: () -> Unit = {},
     onSetOffline: () -> Unit = {},
     onUpdateTheme: (String) -> Unit = {},
+    onConvertToAudio: ((RoomItem) -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -3788,6 +3800,7 @@ fun VideoRoomSettingsSheet(
                                             db.collection("rooms").document(room.id).collection("live_comments").document(sysComment.id).set(sysComment)
                                             Toast.makeText(context, "🎙️ Converting room to Audio Lounge...", Toast.LENGTH_SHORT).show()
                                             onDismiss()
+                                            onConvertToAudio?.invoke(room.copy(roomType = "audio", title = finalTitle))
                                         },
                                         colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
                                         shape = RoundedCornerShape(10.dp),
