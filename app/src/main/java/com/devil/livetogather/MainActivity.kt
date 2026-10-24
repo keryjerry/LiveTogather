@@ -4403,6 +4403,7 @@ fun ProfileScreenContent(
     var showAdminDashboardModal by remember { mutableStateOf(false) }
     var helpDeskPrefilledPackage by remember { mutableStateOf<CoinPackageItem?>(null) }
     var isUploadingPhoto by remember { mutableStateOf(false) }
+    var showLuxuryStoreModal by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
@@ -4449,573 +4450,764 @@ fun ProfileScreenContent(
         }
     }
 
-    LazyColumn(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .imePadding()
-            .navigationBarsPadding()
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null
-            ) {
-                keyboardController?.hide()
-                focusManager.clearFocus()
-            }
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color(0xFFF7F4FD),
+                        Color(0xFFECE5F8),
+                        Color(0xFFE2DAF2)
+                    )
+                )
+            )
     ) {
-        // 1. Top Bar: Handle & Diamond Wallet Balance (Directly below top bar gear box)
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "@${(name.ifBlank { "member" }).lowercase().replace(" ", "_")}",
-                        color = Color.White,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.ExtraBold
-                    )
-                }
-
-                // Real-time Diamond Wallet Balance Badge directly below the gear box
-                Surface(
-                    color = Color(0xFF1E142B),
-                    shape = RoundedCornerShape(20.dp),
-                    border = BorderStroke(1.2.dp, BrandGold.copy(alpha = 0.8f)),
-                    modifier = Modifier.clickable { showCoinStoreModal = true }
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding()
+                .navigationBarsPadding()
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("💎", fontSize = 13.sp)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = String.format("%,d", currentUser.diamonds),
-                            color = BrandGold,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                    }
+                    keyboardController?.hide()
+                    focusManager.clearFocus()
                 }
-            }
-        }
-
-
-        // 2. Avatar & Instagram Stats Row
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Flowing Animated Avatar Frame (Outer outline fit & uncropped HD avatar)
-                Box(contentAlignment = Alignment.Center) {
-                    FlowingAvatarFrame(
-                        photoUrl = photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80" },
-                        frameId = currentUser.activeFrame,
-                        avatarSize = 66.dp,
-                        frameSize = 118.dp,
-                        vipLevel = currentUser.getVipLevel(),
-                        onClick = { imagePickerLauncher.launch("image/*") }
-                    )
-
-                    if (isUploadingPhoto) {
-                        Box(
-                            modifier = Modifier
-                                .size(66.dp)
-                                .clip(CircleShape)
-                                .background(Color.Black.copy(alpha = 0.55f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(
-                                color = BrandCoral,
-                                modifier = Modifier.size(28.dp),
-                                strokeWidth = 2.dp
-                            )
-                        }
-                    }
-
-                    // Online Green Dot
-                    Box(
-                        modifier = Modifier
-                            .size(13.dp)
-                            .clip(CircleShape)
-                            .background(BrandGreen)
-                            .border(2.dp, BrandDark, CircleShape)
-                            .align(Alignment.TopEnd)
-                            .offset(x = (-8).dp, y = 8.dp)
-                    )
-
-                    // Photo Change Camera Button
-                    IconButton(
-                        onClick = { if (!isUploadingPhoto) imagePickerLauncher.launch("image/*") },
-                        enabled = !isUploadingPhoto,
-                        modifier = Modifier
-                            .size(26.dp)
-                            .align(Alignment.BottomEnd)
-                            .background(BrandCoral, CircleShape)
-                            .border(1.5.dp, BrandDark, CircleShape)
-                    ) {
-                        Icon(
-                            Icons.Default.CameraAlt,
-                            contentDescription = "Upload Photo",
-                            tint = Color.White,
-                            modifier = Modifier.size(13.dp)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.width(16.dp))
-
-                // Instagram Stats
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            // 1. TOP STATUS & WALLET BAR (Handle, Diamonds, Coins & Settings)
+            item {
                 Row(
-                    modifier = Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.SpaceAround,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    ProfileStatItem(count = "${userMoments.size}", label = "Moments")
-                    ProfileStatItem(count = "${currentUser.followerCount}", label = "Followers")
-                    ProfileStatItem(count = "${currentUser.followingCount}", label = "Following")
-                    ProfileStatItem(
-                        count = "Lv.${currentUser.getEffectiveWealthLevel()}",
-                        label = "Level",
-                        highlightColor = BrandGold
+                    Text(
+                        text = "@${(name.ifBlank { "member" }).lowercase().replace(" ", "_")}",
+                        color = Color(0xFF1B1433),
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Black
                     )
-                }
-            }
-        }
 
-        // 3. User Identity (Name & Location & Age & 3D Prestige Badge)
-        item {
-            val effWealthLvl = currentUser.getEffectiveWealthLevel()
-            val wealthTier = currentUser.getWealthTierInfo()
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = name,
-                            color = Color.White,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                        Spacer(modifier = Modifier.width(5.dp))
-                        Surface(
-                            color = BrandGold.copy(alpha = 0.2f),
-                            shape = CircleShape
-                        ) {
-                            Icon(
-                                Icons.Default.Check,
-                                contentDescription = "Verified",
-                                tint = BrandGold,
-                                modifier = Modifier.size(14.dp).padding(2.dp)
-                            )
-                        }
-
-                        val userVipLevel = currentUser.getVipLevel()
-                        if (userVipLevel > 0) {
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Surface(
-                                color = BrandGold.copy(alpha = 0.2f),
-                                shape = RoundedCornerShape(12.dp),
-                                border = BorderStroke(1.dp, BrandGold),
-                                modifier = Modifier.clickable { showVipStatusDialog = true }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text("👑", fontSize = 10.sp)
-                                    Spacer(modifier = Modifier.width(2.dp))
-                                    Text("VIP $userVipLevel", color = BrandGold, fontSize = 10.sp, fontWeight = FontWeight.Black)
-                                }
-                            }
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(2.dp))
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable { onOpenLocationSetup() }
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(
-                            text = "📍 ${currentUser.locationName.ifBlank { city }} • $age yrs • $gender",
-                            color = Color.LightGray,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("✏️", fontSize = 11.sp)
-                    }
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    // 8-digit User ID Chip with Click-to-Copy
-                    val displayProfileUserId = remember(currentUser.userId, currentUser.uid) {
-                        val uidVal = currentUser.uid.ifBlank { currentUserId }
-                        if (currentUser.userId.isNotBlank() && currentUser.userId.length == 8 && currentUser.userId.all { it.isDigit() }) {
-                            currentUser.userId
-                        } else {
-                            (10000000 + kotlin.math.abs(uidVal.hashCode()) % 90000000).toString()
-                        }
-                    }
-                    Surface(
-                        color = Color.White.copy(alpha = 0.08f),
-                        shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
-                        modifier = Modifier.clickable {
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                            val clip = android.content.ClipData.newPlainText("User ID", displayProfileUserId)
-                            clipboard.setPrimaryClip(clip)
-                            Toast.makeText(context, "User ID $displayProfileUserId copied! 📋", Toast.LENGTH_SHORT).show()
-                        }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "User ID: $displayProfileUserId",
-                                color = BrandGold,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.width(5.dp))
-                            Icon(
-                                Icons.Default.ContentCopy,
-                                contentDescription = "Copy User ID",
-                                tint = BrandGold,
-                                modifier = Modifier.size(12.dp)
-                            )
-                        }
-                    }
-
-                    // Registered Email & Privacy Setting
-                    val authEmail = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.email?.takeIf { it.isNotBlank() } ?: currentUser.email
-                    if (authEmail.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(6.dp))
+                        // Diamonds Wallet Pill
                         Surface(
-                            color = Color(0xFF1E1728),
-                            shape = RoundedCornerShape(10.dp),
-                            border = BorderStroke(1.dp, BrandBorder),
-                            modifier = Modifier.fillMaxWidth()
+                            color = Color.White,
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.2.dp, Color(0xFFE2D6F6)),
+                            shadowElevation = 1.dp,
+                            modifier = Modifier.clickable { showCoinStoreModal = true }
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("💎", fontSize = 12.sp)
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = String.format("%,d", currentUser.diamonds),
+                                    color = Color(0xFF7E22CE),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Black
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("+", color = Color(0xFF9333EA), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        // Coins Wallet Pill
+                        Surface(
+                            color = Color.White,
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.2.dp, Color(0xFFE2D6F6)),
+                            shadowElevation = 1.dp,
+                            modifier = Modifier.clickable { showCoinStoreModal = true }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("🪙", fontSize = 12.sp)
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = String.format("%,d", currentUser.coins),
+                                    color = Color(0xFFB45309),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Black
+                                )
+                            }
+                        }
+
+                        // Settings Hexagon Button
+                        IconButton(
+                            onClick = onOpenSettings,
+                            modifier = Modifier
+                                .size(32.dp)
+                                .background(Color.White, CircleShape)
+                                .border(1.dp, Color(0xFFE2D6F6), CircleShape)
+                        ) {
+                            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color(0xFF1B1433), modifier = Modifier.size(17.dp))
+                        }
+                    }
+                }
+            }
+
+            // 2. SOULMATE / COUPLE DUAL-AVATAR HEADER & VOICE INTRO (MATCHING REFERENCE IMAGES)
+            item {
+                val hasSoulmate = currentUser.bestFriends.isNotEmpty()
+                val partnerUid = currentUser.bestFriends.firstOrNull() ?: ""
+
+                Surface(
+                    color = Color.White,
+                    shape = RoundedCornerShape(24.dp),
+                    border = BorderStroke(1.dp, Color(0xFFE8DEF8)),
+                    shadowElevation = 2.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        // Top Badges Row (Love Zone & Intimacy)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Voice Intro Waveform Pill
+                            Surface(
+                                color = Color(0xFFF5EEFD),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(0.8.dp, Color(0xFFE2D6F6)),
+                                modifier = Modifier.clickable {
+                                    Toast.makeText(context, "Playing voice intro (20s) 🎶", Toast.LENGTH_SHORT).show()
+                                }
                             ) {
                                 Row(
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("📧", fontSize = 13.sp)
+                                    Box(
+                                        modifier = Modifier
+                                            .size(18.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF7E22CE)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text("▶", fontSize = 9.sp, color = Color.White)
+                                    }
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Column {
-                                        Text(
-                                            text = authEmail,
-                                            color = Color.White,
-                                            fontSize = 11.5.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = if (currentUser.emailPrivacy == "public") "Visibility: Public 🌐" else "Visibility: Only Me 🔒",
-                                            color = if (currentUser.emailPrivacy == "public") BrandCyan else BrandGold,
-                                            fontSize = 9.sp
-                                        )
+                                    Text("||||||||||", fontSize = 10.sp, color = Color(0xFF7E22CE), fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("20s", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF5D4E75))
+                                }
+                            }
+
+                            // Intimacy & Love Zone Badges
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Surface(
+                                    color = Color(0xFFFDF2F8),
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(0.8.dp, Color(0xFFFBCFE8))
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("❤️", fontSize = 10.sp)
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text("Intimacy ${(currentUser.diamonds / 10).coerceAtLeast(0)}", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFFBE185D))
                                     }
                                 }
 
                                 Surface(
-                                    color = if (currentUser.emailPrivacy == "public") BrandCyan.copy(alpha = 0.2f) else BrandGold.copy(alpha = 0.2f),
-                                    shape = RoundedCornerShape(8.dp),
-                                    border = BorderStroke(1.dp, if (currentUser.emailPrivacy == "public") BrandCyan else BrandGold),
-                                    modifier = Modifier.clickable {
-                                        val newPrivacy = if (currentUser.emailPrivacy == "public") "only_me" else "public"
-                                        val updated = currentUser.copy(email = authEmail, emailPrivacy = newPrivacy)
-                                        onUpdateProfile(updated)
-                                        db.collection("users").document(currentUserId)
-                                            .update(mapOf("email" to authEmail, "emailPrivacy" to newPrivacy))
-                                        val prefs = context.getSharedPreferences("livetogather_user_prefs", Context.MODE_PRIVATE)
-                                        prefs.edit()
-                                            .putString("profile_email", authEmail)
-                                            .putString("profile_email_privacy", newPrivacy)
-                                            .apply()
-                                        Toast.makeText(context, if (newPrivacy == "public") "Email visibility: Public 🌐" else "Email visibility: Only Me 🔒", Toast.LENGTH_SHORT).show()
-                                    }
+                                    color = Color(0xFFFEF3C7),
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(0.8.dp, Color(0xFFFDE68A))
                                 ) {
-                                    Text(
-                                        text = if (currentUser.emailPrivacy == "public") "Public 🌐" else "Only Me 🔒",
-                                        color = if (currentUser.emailPrivacy == "public") BrandCyan else BrandGold,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("🏰", fontSize = 10.sp)
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text("Love Zone Lv.${currentUser.getEffectiveWealthLevel()}", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFFB45309))
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // Avatar Display: Dual Avatars with 3D Interlocking Ring if Partner, or Single Luxury Centered
+                        if (hasSoulmate) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // User Avatar
+                                Box(contentAlignment = Alignment.Center) {
+                                    FlowingAvatarFrame(
+                                        photoUrl = photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80" },
+                                        frameId = currentUser.activeFrame,
+                                        avatarSize = 58.dp,
+                                        frameSize = 104.dp,
+                                        vipLevel = currentUser.getVipLevel(),
+                                        onClick = { imagePickerLauncher.launch("image/*") }
+                                    )
+                                    // Camera edit pill
+                                    IconButton(
+                                        onClick = { if (!isUploadingPhoto) imagePickerLauncher.launch("image/*") },
+                                        modifier = Modifier
+                                            .size(22.dp)
+                                            .align(Alignment.BottomEnd)
+                                            .background(Color(0xFF7E22CE), CircleShape)
+                                            .border(1.dp, Color.White, CircleShape)
+                                    ) {
+                                        Icon(Icons.Default.CameraAlt, contentDescription = "Change photo", tint = Color.White, modifier = Modifier.size(11.dp))
+                                    }
+                                }
+
+                                // 3D Interlocking Wedding Rings Connector (Animated pulse)
+                                Box(
+                                    modifier = Modifier
+                                        .offset(y = (-4).dp)
+                                        .padding(horizontal = 4.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Surface(
+                                        color = Color(0xFFFEF3C7),
+                                        shape = CircleShape,
+                                        border = BorderStroke(1.5.dp, Color(0xFFF59E0B)),
+                                        shadowElevation = 3.dp,
+                                        modifier = Modifier.size(34.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text("💍", fontSize = 18.sp)
+                                        }
+                                    }
+                                }
+
+                                // Connected Partner Avatar (Real best friend from Firestore)
+                                Box(contentAlignment = Alignment.Center) {
+                                    FlowingAvatarFrame(
+                                        photoUrl = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80",
+                                        frameId = "frame_golden_lion",
+                                        avatarSize = 58.dp,
+                                        frameSize = 104.dp,
+                                        vipLevel = 1,
+                                        onClick = {
+                                            Toast.makeText(context, "Partner Profile ($partnerUid)", Toast.LENGTH_SHORT).show()
+                                        }
+                                    )
+                                    Surface(
+                                        color = Color(0xFF10B981),
+                                        shape = CircleShape,
+                                        border = BorderStroke(1.5.dp, Color.White),
+                                        modifier = Modifier
+                                            .size(12.dp)
+                                            .align(Alignment.TopEnd)
+                                            .offset(x = (-4).dp, y = 4.dp)
+                                    ) {}
+                                }
+                            }
+                        } else {
+                            // Single Luxury Centered Avatar
+                            Box(contentAlignment = Alignment.Center) {
+                                FlowingAvatarFrame(
+                                    photoUrl = photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80" },
+                                    frameId = currentUser.activeFrame,
+                                    avatarSize = 72.dp,
+                                    frameSize = 128.dp,
+                                    vipLevel = currentUser.getVipLevel(),
+                                    onClick = { imagePickerLauncher.launch("image/*") }
+                                )
+
+                                if (isUploadingPhoto) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(72.dp)
+                                            .clip(CircleShape)
+                                            .background(Color.Black.copy(alpha = 0.55f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        CircularProgressIndicator(
+                                            color = Color(0xFF7E22CE),
+                                            modifier = Modifier.size(28.dp),
+                                            strokeWidth = 2.dp
+                                        )
+                                    }
+                                }
+
+                                // Online Green Dot
+                                Box(
+                                    modifier = Modifier
+                                        .size(13.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF10B981))
+                                        .border(2.dp, Color.White, CircleShape)
+                                        .align(Alignment.TopEnd)
+                                        .offset(x = (-8).dp, y = 8.dp)
+                                )
+
+                                // Photo Change Camera Button
+                                IconButton(
+                                    onClick = { if (!isUploadingPhoto) imagePickerLauncher.launch("image/*") },
+                                    enabled = !isUploadingPhoto,
+                                    modifier = Modifier
+                                        .size(26.dp)
+                                        .align(Alignment.BottomEnd)
+                                        .background(Color(0xFF7E22CE), CircleShape)
+                                        .border(1.5.dp, Color.White, CircleShape)
+                                ) {
+                                    Icon(
+                                        Icons.Default.CameraAlt,
+                                        contentDescription = "Upload Photo",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(13.dp)
                                     )
                                 }
                             }
                         }
-                    }
 
-                    if (currentUser.isVipTrialActive()) {
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // User Name & Verification Checkmark
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = name,
+                                color = Color(0xFF1B1433),
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Surface(
+                                color = Color(0xFFFEF3C7),
+                                shape = CircleShape
+                            ) {
+                                Icon(
+                                    Icons.Default.Check,
+                                    contentDescription = "Verified",
+                                    tint = Color(0xFFD97706),
+                                    modifier = Modifier.size(15.dp).padding(2.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                            // Gender & Age Pill
+                            Surface(
+                                color = if (gender.contains("woman", ignoreCase = true) || gender.contains("female", ignoreCase = true)) Color(0xFFFCE7F3) else Color(0xFFE0F2FE),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(
+                                    text = "${if (gender.contains("woman", ignoreCase = true)) "♀" else "♂"} $age",
+                                    color = if (gender.contains("woman", ignoreCase = true)) Color(0xFFDB2777) else Color(0xFF0284C7),
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        // 8-digit User ID Chip with Click-to-Copy
+                        val displayProfileUserId = remember(currentUser.userId, currentUser.uid) {
+                            val uidVal = currentUser.uid.ifBlank { currentUserId }
+                            if (currentUser.userId.isNotBlank() && currentUser.userId.length == 8 && currentUser.userId.all { it.isDigit() }) {
+                                currentUser.userId
+                            } else {
+                                (10000000 + kotlin.math.abs(uidVal.hashCode()) % 90000000).toString()
+                            }
+                        }
+
                         Surface(
-                            color = Color(0xFF22162E),
+                            color = Color(0xFFF3E8FF),
                             shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.8f)),
-                            modifier = Modifier.clickable { showVipStatusDialog = true }
+                            border = BorderStroke(0.8.dp, Color(0xFFD8B4FE)),
+                            modifier = Modifier.clickable {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                val clip = android.content.ClipData.newPlainText("User ID", displayProfileUserId)
+                                clipboard.setPrimaryClip(clip)
+                                Toast.makeText(context, "User ID $displayProfileUserId copied! 📋", Toast.LENGTH_SHORT).show()
+                            }
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("⏳", fontSize = 11.sp)
-                                Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "VIP 1 Trial: ${currentUser.getVipTrialDaysLeft()}d left • Manage ➔",
-                                    color = BrandGold,
+                                    text = "ID: $displayProfileUserId",
+                                    color = Color(0xFF6B21A8),
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
                                 )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(
+                                    Icons.Default.ContentCopy,
+                                    contentDescription = "Copy User ID",
+                                    tint = Color(0xFF6B21A8),
+                                    modifier = Modifier.size(11.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Noblesse, Silver Swords & Level Medals Row
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            // Amber Noblesse Pill
+                            val effLvl = currentUser.getEffectiveWealthLevel()
+                            val nobleTitle = when {
+                                effLvl >= 70 -> "👑 Sovereign"
+                                effLvl >= 40 -> "🛡️ Baron"
+                                effLvl >= 20 -> "🔮 Amber"
+                                else -> "🛡️ Knight"
+                            }
+                            Surface(
+                                color = Color(0xFF7E22CE),
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = nobleTitle,
+                                    color = Color.White,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Black,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+
+                            // Silver Swords Rank Badge
+                            val pkLvl = currentUser.getEffectivePkLevel()
+                            Surface(
+                                color = Color(0xFF1E293B),
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = "⚔️ $pkLvl",
+                                    color = Color(0xFFFDE68A),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Black,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+
+                            // Level Medals
+                            Surface(
+                                color = Color(0xFFEDE9FE),
+                                shape = RoundedCornerShape(50),
+                                border = BorderStroke(0.8.dp, Color(0xFFC4B5FD))
+                            ) {
+                                Text(
+                                    text = "Lv.$effLvl",
+                                    color = Color(0xFF5B21B6),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Black,
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Stats Counters (Following, Followers, Moments, Visitors)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFFF9F6FE), RoundedCornerShape(16.dp))
+                                .padding(vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceAround,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(text = "${currentUser.followingCount}", color = Color(0xFF1B1433), fontSize = 14.sp, fontWeight = FontWeight.Black)
+                                Text(text = "Following", color = Color(0xFF7C6D93), fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                            }
+                            Box(modifier = Modifier.width(1.dp).height(20.dp).background(Color(0xFFE2D6F6)))
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(text = "${currentUser.followerCount}", color = Color(0xFF1B1433), fontSize = 14.sp, fontWeight = FontWeight.Black)
+                                Text(text = "Followers", color = Color(0xFF7C6D93), fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                            }
+                            Box(modifier = Modifier.width(1.dp).height(20.dp).background(Color(0xFFE2D6F6)))
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(text = "${userMoments.size}", color = Color(0xFF1B1433), fontSize = 14.sp, fontWeight = FontWeight.Black)
+                                Text(text = "Moments", color = Color(0xFF7C6D93), fontSize = 10.sp, fontWeight = FontWeight.Medium)
                             }
                         }
                     }
                 }
+            }
 
-                // High-Definition 3D Digital Badge (Lv.10+) exactly like Mockup
-                if (effWealthLvl >= 10) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.padding(start = 8.dp)
-                    ) {
-                        Image(
-                            painter = painterResource(id = wealthTier.badgeDrawableRes),
-                            contentDescription = wealthTier.tierName,
-                            modifier = Modifier.size(74.dp)
+            // 3. 3D METALLIC HONOR TITLE BANNERS GRID (MATCHING REFERENCE IMAGES)
+            item {
+                Surface(
+                    color = Color.White,
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, Color(0xFFE8DEF8)),
+                    shadowElevation = 1.5.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "🎖️ Honor Medals & Titles",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color(0xFF1B1433)
                         )
-                        Surface(
-                            color = Color(0xFF1E171C),
-                            shape = RoundedCornerShape(50),
-                            border = BorderStroke(1.dp, Brush.horizontalGradient(wealthTier.gradientColors)),
-                            modifier = Modifier.offset(y = (-6).dp)
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // 3-column metallic ribbon badges
+                        val earnedBadges = remember(currentUser.wealthLevel) {
+                            HonorBadgesCatalog.badges.take((currentUser.getEffectiveWealthLevel() / 10 + 2).coerceIn(2, 6))
+                        }
+
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(3),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(68.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            items(earnedBadges) { badge ->
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    shadowElevation = 1.dp
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(Brush.horizontalGradient(badge.gradientColors))
+                                            .padding(vertical = 5.dp, horizontal = 4.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "${badge.iconEmoji} ${badge.title}",
+                                            color = Color.White,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Black,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 4. CLOSE FRIENDS SECTION (1/4 to 6/9 GRID)
+            item {
+                Surface(
+                    color = Color.White,
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, Color(0xFFE8DEF8)),
+                    shadowElevation = 1.5.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "LV.$effWealthLvl",
-                                color = Color.White,
-                                fontSize = 10.sp,
+                                text = "👥 Close Friends (${currentUser.bestFriends.size}/4)",
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.Black,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 1.dp)
+                                color = Color(0xFF1B1433)
+                            )
+                            Text(
+                                text = "View all ❯",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF7E22CE)
                             )
                         }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        if (currentUser.bestFriends.isEmpty()) {
+                            Surface(
+                                color = Color(0xFFF9F6FE),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(0.8.dp, Color(0xFFE2D6F6)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        Toast.makeText(context, "Connect with friends in live lounges to add Besties!", Toast.LENGTH_SHORT).show()
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("🌼", fontSize = 24.sp)
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text("No close friends added yet", color = Color(0xFF1B1433), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Text("Chat & hangout together to forge Bestie & Soulmate bonds!", color = Color(0xFF7C6D93), fontSize = 10.sp)
+                                    }
+                                }
+                            }
+                        } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                currentUser.bestFriends.take(3).forEachIndexed { idx, friendId ->
+                                    val icon = if (idx == 0) "🌼" else if (idx == 1) "🪐" else "⏳"
+                                    val tag = if (idx == 0) "Bestie" else "Soulmate"
+                                    Surface(
+                                        color = Color(0xFFF9F6FE),
+                                        shape = RoundedCornerShape(14.dp),
+                                        border = BorderStroke(1.dp, Color(0xFFE2D6F6)),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable {
+                                                Toast.makeText(context, "Best Friend: $friendId", Toast.LENGTH_SHORT).show()
+                                            }
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(8.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            Text(icon, fontSize = 22.sp)
+                                            Spacer(modifier = Modifier.height(3.dp))
+                                            Text(friendId.take(7), fontSize = 10.sp, fontWeight = FontWeight.Black, color = Color(0xFF1B1433), maxLines = 1)
+                                            Surface(
+                                                color = if (tag == "Bestie") Color(0xFF0D9488) else Color(0xFFD97706),
+                                                shape = RoundedCornerShape(4.dp),
+                                                modifier = Modifier.padding(top = 2.dp)
+                                            ) {
+                                                Text(tag, fontSize = 8.sp, color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
-        }
 
-        // 3B. User Level Cards (Wealth Level & Charm Level)
-        item {
-            val effWealthLvl = currentUser.getEffectiveWealthLevel()
-            val effWealthXp = currentUser.getEffectiveWealthXp()
-            val wealthTier = currentUser.getWealthTierInfo()
-            val (minWealthXp, maxWealthXp) = LevelBadgeSystem.getXpThresholds(effWealthLvl)
-            val wealthProgress = if (maxWealthXp > minWealthXp) {
-                ((effWealthXp - minWealthXp).toFloat() / (maxWealthXp - minWealthXp).toFloat()).coerceIn(0f, 1f)
-            } else 1f
-
-            val effCharmLvl = currentUser.getEffectiveCharmLevel()
-            val effCharmXp = currentUser.getEffectiveCharmXp()
-            val charmTier = currentUser.getCharmTierInfo()
-            val (minCharmXp, maxCharmXp) = LevelBadgeSystem.getXpThresholds(effCharmLvl)
-            val charmProgress = if (maxCharmXp > minCharmXp) {
-                ((effCharmXp - minCharmXp).toFloat() / (maxCharmXp - minCharmXp).toFloat()).coerceIn(0f, 1f)
-            } else 1f
-
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                // Wealth Level Card
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E171C)),
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.2.dp, Brush.horizontalGradient(wealthTier.gradientColors)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                if (effWealthLvl >= 10) {
-                                    Image(
-                                        painter = painterResource(id = R.drawable.ic_wealth_shield_3d),
-                                        contentDescription = "Wealth Shield",
-                                        modifier = Modifier.size(36.dp)
-                                    )
-                                } else {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(32.dp)
-                                            .clip(CircleShape)
-                                            .background(Brush.linearGradient(wealthTier.gradientColors)),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(wealthTier.badgeIcon, fontSize = 16.sp)
-                                    }
-                                }
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Column {
-                                    Text(
-                                        text = "Wealth Level • Lv.$effWealthLvl",
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp
-                                    )
-                                    Text(
-                                        text = wealthTier.tierName,
-                                        color = BrandGold,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "%,d / %,d XP".format(effWealthXp, maxWealthXp),
-                                    color = Color.LightGray,
-                                    fontSize = 11.sp
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Icon(
-                                    Icons.Default.ChevronRight,
-                                    contentDescription = "Details",
-                                    tint = Color.Gray,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        LinearProgressIndicator(
-                            progress = { wealthProgress },
-                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
-                            color = wealthTier.gradientColors.first(),
-                            trackColor = Color.White.copy(alpha = 0.1f)
-                        )
-                    }
-                }
-
-                // Charm Level Card
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF181528)),
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.2.dp, Brush.horizontalGradient(charmTier.gradientColors)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                if (effCharmLvl >= 10) {
-                                    Image(
-                                        painter = painterResource(id = R.drawable.ic_charm_heart_3d),
-                                        contentDescription = "Charm Heart",
-                                        modifier = Modifier.size(36.dp)
-                                    )
-                                } else {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(32.dp)
-                                            .clip(CircleShape)
-                                            .background(Brush.linearGradient(charmTier.gradientColors)),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text("💖", fontSize = 16.sp)
-                                    }
-                                }
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Column {
-                                    Text(
-                                        text = "Charm Level • Lv.$effCharmLvl",
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp
-                                    )
-                                    Text(
-                                        text = charmTier.tierName,
-                                        color = Color(0xFFFF80AB),
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "%,d / %,d XP".format(effCharmXp, maxCharmXp),
-                                    color = Color.LightGray,
-                                    fontSize = 11.sp
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Icon(
-                                    Icons.Default.ChevronRight,
-                                    contentDescription = "Details",
-                                    tint = Color.Gray,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        LinearProgressIndicator(
-                            progress = { charmProgress },
-                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
-                            color = charmTier.gradientColors.first(),
-                            trackColor = Color.White.copy(alpha = 0.1f)
-                        )
-                    }
-                }
-            }
-        }
-
-        // 4. Bio Quote Card
-        if (bio.isNotBlank()) {
+            // 5. MENU & SERVICES GRID (FEATURING THE DEDICATED STORE!)
             item {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = BrandCard.copy(alpha = 0.85f)),
-                    shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, BrandBorder),
+                Surface(
+                    color = Color.White,
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, Color(0xFFE8DEF8)),
+                    shadowElevation = 1.5.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.Top
-                    ) {
-                        Text("“", color = BrandGold, fontSize = 24.sp, fontWeight = FontWeight.Black, lineHeight = 20.sp)
-                        Spacer(modifier = Modifier.width(6.dp))
+                    Column(modifier = Modifier.padding(14.dp)) {
                         Text(
-                            text = bio,
-                            color = Color.White,
+                            text = "⚡ Menu & Services",
                             fontSize = 12.sp,
-                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                            lineHeight = 17.sp,
-                            modifier = Modifier.weight(1f)
+                            fontWeight = FontWeight.Black,
+                            color = Color(0xFF1B1433)
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("”", color = BrandGold, fontSize = 24.sp, fontWeight = FontWeight.Black, lineHeight = 20.sp)
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            // STORE BUTTON (PROMINENTLY HIGHLIGHTED WITH GOLD TRIM)
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(Color(0xFFFEF3C7))
+                                    .border(1.5.dp, Color(0xFFF59E0B), RoundedCornerShape(14.dp))
+                                    .clickable { showLuxuryStoreModal = true }
+                                    .padding(vertical = 10.dp)
+                            ) {
+                                Text("🏪", fontSize = 22.sp)
+                                Spacer(modifier = Modifier.height(3.dp))
+                                Text("Store", fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color(0xFFB45309))
+                            }
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            // WALLET & TOP-UP BUTTON
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(Color(0xFFF3E8FF))
+                                    .border(1.dp, Color(0xFFD8B4FE), RoundedCornerShape(14.dp))
+                                    .clickable { showCoinStoreModal = true }
+                                    .padding(vertical = 10.dp)
+                            ) {
+                                Text("💼", fontSize = 22.sp)
+                                Spacer(modifier = Modifier.height(3.dp))
+                                Text("Wallet", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF6B21A8))
+                            }
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            // VIP STATUS BUTTON
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(Color(0xFFFDF2F8))
+                                    .border(1.dp, Color(0xFFFBCFE8), RoundedCornerShape(14.dp))
+                                    .clickable { showVipStatusDialog = true }
+                                    .padding(vertical = 10.dp)
+                            ) {
+                                Text("👑", fontSize = 22.sp)
+                                Spacer(modifier = Modifier.height(3.dp))
+                                Text("VIP Club", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFBE185D))
+                            }
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            // REWARDS BUTTON
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(Color(0xFFF0FDF4))
+                                    .border(1.dp, Color(0xFFBBF7D0), RoundedCornerShape(14.dp))
+                                    .clickable {
+                                        Toast.makeText(context, "🎁 Daily Rewards active! Keep chatting to earn diamonds.", Toast.LENGTH_SHORT).show()
+                                    }
+                                    .padding(vertical = 10.dp)
+                            ) {
+                                Text("🎁", fontSize = 22.sp)
+                                Spacer(modifier = Modifier.height(3.dp))
+                                Text("Rewards", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF15803D))
+                            }
+                        }
                     }
                 }
             }
-        }
 
         // 5. Action Buttons (Instagram Style: Edit Profile, Share Profile, VIP Club)
         item {
@@ -5760,6 +5952,7 @@ fun ProfileScreenContent(
             }
         }
     }
+    }
 
     if (showDeleteConfirmDialog) {
         AlertDialog(
@@ -5809,6 +6002,16 @@ fun ProfileScreenContent(
                 onSelectPlan(plan)
                 showSubscriptionModal = false
             }
+        )
+    }
+
+    if (showLuxuryStoreModal) {
+        LuxuryStoreDialog(
+            currentUser = currentUser,
+            db = db,
+            onDismiss = { showLuxuryStoreModal = false },
+            onOpenTopUp = { showCoinStoreModal = true },
+            onProfileUpdated = { updated -> onUpdateProfile(updated) }
         )
     }
 
