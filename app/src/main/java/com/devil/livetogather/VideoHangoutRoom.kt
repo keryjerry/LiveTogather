@@ -3,6 +3,7 @@ package com.devil.livetogather
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.util.Log
@@ -190,16 +191,21 @@ fun VideoHangoutRoomDialog(
         m.uid.isNotBlank() && m.uid != targetHostId && (m.role == "co_host" || m.role == "broadcaster")
     }
 
-    // Determine current video layout: "1p", "2p", "3p", or "4p" — DYNAMIC to active co-hosts & PK battle
+    // Determine active layout dynamically:
+    // If room.isPkActive == true -> "pk_battle" (2P Split with timer & tug-of-war bar)
+    // Else dynamic multi-guest based on total broadcasters (Host + coHosts): 1P, 2P, 3P, 4P
     val activeLayout by remember {
         derivedStateOf {
-            val isPkOrCoHostActive = room.isPkActive || isUserCoHost || coHosts.isNotEmpty() || (room.pkHost2Uid.isNotBlank() && room.pkHost2Uid != "guest_challenger")
-            if (isPkOrCoHostActive) {
-                if (coHosts.size >= 3) "4p"
-                else if (coHosts.size == 2) "3p"
-                else "2p"
+            if (room.isPkActive) {
+                "pk_battle"
             } else {
-                "1p"
+                val guestCount = coHosts.size
+                when {
+                    guestCount >= 3 -> "4p" // Host on top, 3 guests below
+                    guestCount == 2 -> "3p" // Host on top, 2 guests below
+                    guestCount == 1 -> "2p" // Host on top, 1 guest below
+                    else -> "1p" // Solo Host fullscreen
+                }
             }
         }
     }
@@ -288,9 +294,10 @@ fun VideoHangoutRoomDialog(
                 return@addSnapshotListener
             }
             val updated = parseRoomFromDoc(snapshot)
-            if (!updated.isLive || !updated.isHostLive || updated.statusMessage.equals("OFFLINE", ignoreCase = true)) {
+            // Real-Time Room Close Check: Only exit when host actually ENDS or CLOSES the room (NOT when temporarily OFFLINE)
+            if (!updated.isLive || updated.statusMessage.equals("CLOSED", ignoreCase = true) || updated.statusMessage.equals("ENDED", ignoreCase = true)) {
                 if (!isUserHost) {
-                    Toast.makeText(context, "🔴 The host has closed this live room.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "🔴 The host has ended this live broadcast.", Toast.LENGTH_LONG).show()
                     AgoraVideoManager.leaveRoom()
                     onDismiss()
                 }
@@ -337,12 +344,17 @@ fun VideoHangoutRoomDialog(
                 val list = snapshot.documents.mapNotNull { it.toObject(RoomMember::class.java) }
                 activeMembers.clear()
                 activeMembers.addAll(list)
-                // Check if user is registered as co-host
+                // Check if user is registered as co-host (Host is NEVER co-host)
                 val myMember = list.find { it.uid == currentUserId }
-                val isCoHostRole = myMember?.role == "co_host" || myMember?.role == "host"
+                val isCoHostRole = (myMember?.role == "co_host") && !isUserHost
                 if (isCoHostRole != isUserCoHost) {
                     isUserCoHost = isCoHostRole
                     AgoraVideoManager.setBroadcasterRole(isUserHost || isCoHostRole)
+                    if (!isUserHost && !isCoHostRole) {
+                        AgoraVideoManager.setCameraOff(true)
+                    } else if (isCoHostRole) {
+                        AgoraVideoManager.setCameraOff(false)
+                    }
                 }
             }
         }
@@ -587,28 +599,20 @@ fun VideoHangoutRoomDialog(
             val updates = mapOf<String, Any>(
                 "isHostLive" to false,
                 "isLive" to false,
-                "statusMessage" to "OFFLINE"
+                "statusMessage" to "CLOSED",
+                "isEnded" to true,
+                "endedAt" to System.currentTimeMillis()
             )
             db.collection("rooms").document(room.id).update(updates)
             if (room.category.isNotBlank()) {
                 db.collection("intent_categories").document(room.category)
                     .collection("rooms").document(room.id).update(updates)
             }
-            // Permanently remove room from active list
-            db.collection("rooms").document(room.id).delete()
+            // Room is permanently preserved in Firestore (NEVER deleted)
         } else if (isUserCoHost) {
-            // Revert layout back to 1P when co-host leaves
-            db.collection("rooms").document(room.id).update(
-                mapOf(
-                    "videoLayout" to "1p",
-                    "pkHost2Uid" to "",
-                    "pkHost2Name" to "",
-                    "pkHost2Photo" to "",
-                    "coHostUid" to "",
-                    "coHostName" to "",
-                    "coHostPhoto" to ""
-                )
-            )
+            // Revert co-host role in members back to viewer
+            db.collection("rooms").document(room.id)
+                .collection("members").document(currentUser.uid).update("role", "viewer")
         }
         db.collection("rooms").document(room.id).collection("members").document(currentUser.uid).delete()
         AgoraVideoManager.leaveRoom()
@@ -752,87 +756,53 @@ fun VideoHangoutRoomDialog(
                 .background(Color.Black)
         ) {
             // -------------------------------------------------------------
-            // LAYER 1: VIDEO STREAMS (1P, 2P, or 4P)
+            // LAYER 1: VIDEO STREAMS (PK Battle Mode vs Automatic Dynamic Multi-Guest 1P/2P/3P/4P)
             // -------------------------------------------------------------
-            when (activeLayout) {
-                "2p" -> {
-                    VideoLayout2P(
-                        room = room,
-                        isUserHost = isUserHost,
-                        isUserCoHost = isUserCoHost,
-                        remoteUids = remoteVideoUids,
-                        activeMembers = activeMembers,
-                        blueSupporters = blueSupporters,
-                        redSupporters = redSupporters,
-                        onRequestJoinPk = {
-                            if (!isUserHost && !isUserCoHost) {
-                                isUserCoHost = true
-                                AgoraVideoManager.setBroadcasterRole(true)
-                                db.collection("rooms").document(room.id)
-                                    .collection("members").document(currentUserId)
-                                    .update("role", "co_host")
-                                db.collection("rooms").document(room.id).update(
-                                    mapOf(
-                                        "pkHost2Uid" to currentUserId,
-                                        "pkHost2Name" to currentUser.name,
-                                        "pkHost2Photo" to currentUser.photo
-                                    )
+            if (activeLayout == "pk_battle") {
+                VideoLayout2P(
+                    room = room,
+                    isUserHost = isUserHost,
+                    isUserCoHost = isUserCoHost,
+                    remoteUids = remoteVideoUids,
+                    activeMembers = activeMembers,
+                    blueSupporters = blueSupporters,
+                    redSupporters = redSupporters,
+                    onRequestJoinPk = {
+                        if (!isUserHost && !isUserCoHost) {
+                            isUserCoHost = true
+                            AgoraVideoManager.setBroadcasterRole(true)
+                            db.collection("rooms").document(room.id)
+                                .collection("members").document(currentUserId)
+                                .update("role", "co_host")
+                            db.collection("rooms").document(room.id).update(
+                                mapOf(
+                                    "pkHost2Uid" to currentUserId,
+                                    "pkHost2Name" to currentUser.name,
+                                    "pkHost2Photo" to currentUser.photo
                                 )
-                                Toast.makeText(context, "⚔️ Joined PK Battle Stage!", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        onStartPk = { startPkBattle() },
-                        onEndPk = { endPkBattle() }
-                    )
-                }
-                "3p" -> {
-                    VideoLayout3P(
-                        room = room,
-                        isUserHost = isUserHost,
-                        isUserCoHost = isUserCoHost,
-                        currentUserId = currentUserId,
-                        remoteUids = remoteVideoUids,
-                        activeMembers = activeMembers,
-                        onRequestJoin = {
-                            if (!isUserHost && !isUserCoHost) {
-                                isUserCoHost = true
-                                AgoraVideoManager.setBroadcasterRole(true)
-                                db.collection("rooms").document(room.id)
-                                    .collection("members").document(currentUserId)
-                                    .update("role", "co_host")
-                                Toast.makeText(context, "📹 Joined Video Stage as Co-Host!", Toast.LENGTH_SHORT).show()
-                            }
+                            )
+                            Toast.makeText(context, "⚔️ Joined PK Battle Stage!", Toast.LENGTH_SHORT).show()
                         }
-                    )
-                }
-                "4p" -> {
-                    VideoLayout4P(
-                        room = room,
-                        isUserHost = isUserHost,
-                        isUserCoHost = isUserCoHost,
-                        currentUserId = currentUserId,
-                        remoteUids = remoteVideoUids,
-                        activeMembers = activeMembers,
-                        onRequestJoin = {
-                            if (!isUserHost && !isUserCoHost) {
-                                isUserCoHost = true
-                                AgoraVideoManager.setBroadcasterRole(true)
-                                db.collection("rooms").document(room.id)
-                                    .collection("members").document(currentUserId)
-                                    .update("role", "co_host")
-                                Toast.makeText(context, "📹 Joined Video Co-Host Stage!", Toast.LENGTH_SHORT).show()
-                            }
+                    },
+                    onStartPk = { startPkBattle() },
+                    onEndPk = { endPkBattle() }
+                )
+            } else {
+                DynamicMultiGuestVideoLayout(
+                    room = room,
+                    isUserHost = isUserHost,
+                    currentUserId = currentUserId,
+                    remoteVideoUids = remoteVideoUids,
+                    activeMembers = activeMembers,
+                    onRemoveGuest = { guest ->
+                        if (isUserHost) {
+                            db.collection("rooms").document(room.id)
+                                .collection("members").document(guest.uid)
+                                .update("role", "viewer")
+                            Toast.makeText(context, "📹 ${guest.name} removed from video stage", Toast.LENGTH_SHORT).show()
                         }
-                    )
-                }
-                else -> {
-                    // Default 1P (Solo Fullscreen)
-                    VideoLayout1P(
-                        room = room,
-                        isUserHost = isUserHost,
-                        remoteUids = remoteVideoUids
-                    )
-                }
+                    }
+                )
             }
 
             // -------------------------------------------------------------
@@ -914,23 +884,49 @@ fun VideoHangoutRoomDialog(
                                     modifier = Modifier.clickable { toggleFollowHost() }
                                 ) {
                                     Text(
-                                        text = if (isFollowingHost) "✓" else "+Follow",
+                                        text = if (isFollowingHost) "✓ Following" else "+ Follow",
                                         color = Color.White,
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.ExtraBold,
                                         modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
                                     )
                                 }
+                            } else {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(
+                                    color = Color(0xFFFF1744).copy(alpha = 0.25f),
+                                    shape = RoundedCornerShape(50),
+                                    border = BorderStroke(0.8.dp, Color(0xFFFF1744))
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(6.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(0xFFFF1744))
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "LIVE",
+                                            color = Color.White,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.ExtraBold
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
 
-                    // Top-Right: Viewers, Camera Switch, 3-Dots, Power Exit
+                    // Top-Right: Viewers, Controls (Strictly separated for Host vs Viewer)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // Viewer Count Badge
+                        // 1. Viewer Count Badge (Tap opens list)
                         Surface(
                             color = Color.Black.copy(alpha = 0.55f),
                             shape = RoundedCornerShape(50),
@@ -957,8 +953,9 @@ fun VideoHangoutRoomDialog(
                             }
                         }
 
-                        // Camera Flip Button (for Host / Co-Host)
-                        if (isUserHost || isUserCoHost) {
+                        if (isUserHost) {
+                            // HOST CONTROLS:
+                            // A. Camera Flip Button (Front / Back)
                             IconButton(
                                 onClick = { AgoraVideoManager.switchCamera() },
                                 modifier = Modifier.size(34.dp)
@@ -970,32 +967,62 @@ fun VideoHangoutRoomDialog(
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
-                        }
 
-                        // 3-Dots Settings Menu
-                        IconButton(
-                            onClick = { showRoomSettingsDialog = true },
-                            modifier = Modifier.size(34.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.MoreVert,
-                                contentDescription = "Settings",
-                                tint = Color.White,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
+                            // B. Host 3-Dots Settings Menu
+                            IconButton(
+                                onClick = { showRoomSettingsDialog = true },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "Host Settings",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
 
-                        // Clean Power Exit Button
-                        IconButton(
-                            onClick = { showExitOrKeepDialog = true },
-                            modifier = Modifier.size(34.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.PowerSettingsNew,
-                                contentDescription = "Exit Room",
-                                tint = Color.White,
-                                modifier = Modifier.size(22.dp)
-                            )
+                            // C. Host Power Exit Button (Confirms Live End)
+                            IconButton(
+                                onClick = { showExitOrKeepDialog = true },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PowerSettingsNew,
+                                    contentDescription = "End Live Stream",
+                                    tint = Color(0xFFFF5252),
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        } else {
+                            // VIEWER CONTROLS:
+                            // A. Viewer 3-Dots Options (Leave Stage if on stage, Report, Share, Info)
+                            IconButton(
+                                onClick = { showRoomSettingsDialog = true },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "Stream Options",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+
+                            // B. Clean Leave Stream Button (Close 'X')
+                            IconButton(
+                                onClick = {
+                                    AgoraVideoManager.leaveRoom()
+                                    onDismiss()
+                                },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Leave Stream",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -1102,8 +1129,53 @@ fun VideoHangoutRoomDialog(
                         )
                     }
 
-                    // 2. Mic Mute / Unmute Button OR Viewer "Join Stage" Button
-                    if (!isUserHost && !isUserCoHost) {
+                    // 2. Stage Mic / Request Button
+                    if (isUserHost) {
+                        // Host Mic Toggle
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(if (isMuted) Color(0xFFFF1744).copy(alpha = 0.25f) else Color.White.copy(alpha = 0.12f))
+                                .border(1.dp, if (isMuted) Color(0xFFFF1744) else Color.White.copy(alpha = 0.25f), CircleShape)
+                                .clickable {
+                                    isMuted = !isMuted
+                                    AgoraVideoManager.setMuted(isMuted)
+                                    Toast.makeText(context, if (isMuted) "Microphone Muted" else "Microphone Live", Toast.LENGTH_SHORT).show()
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic,
+                                contentDescription = "Mic",
+                                tint = if (isMuted) Color(0xFFFF5252) else Color.White,
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
+                    } else if (isUserCoHost) {
+                        // Co-Host (Guest on Stage) Mic Toggle
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(if (isMuted) Color(0xFFFF1744).copy(alpha = 0.25f) else Color.White.copy(alpha = 0.12f))
+                                .border(1.dp, if (isMuted) Color(0xFFFF1744) else Color.White.copy(alpha = 0.25f), CircleShape)
+                                .clickable {
+                                    isMuted = !isMuted
+                                    AgoraVideoManager.setMuted(isMuted)
+                                    Toast.makeText(context, if (isMuted) "Microphone Muted" else "Microphone Live", Toast.LENGTH_SHORT).show()
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic,
+                                contentDescription = "Mic",
+                                tint = if (isMuted) Color(0xFFFF5252) else Color.White,
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
+                    } else {
+                        // Audience Viewer: "✋ Request Stage" Button
                         Box(
                             modifier = Modifier
                                 .size(38.dp)
@@ -1128,30 +1200,9 @@ fun VideoHangoutRoomDialog(
                         ) {
                             Text("✋", fontSize = 17.sp)
                         }
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .size(38.dp)
-                                .clip(CircleShape)
-                                .background(if (isMuted) Color(0xFFFF1744).copy(alpha = 0.25f) else Color.White.copy(alpha = 0.12f))
-                                .border(1.dp, if (isMuted) Color(0xFFFF1744) else Color.White.copy(alpha = 0.25f), CircleShape)
-                                .clickable {
-                                    isMuted = !isMuted
-                                    AgoraVideoManager.setMuted(isMuted)
-                                    Toast.makeText(context, if (isMuted) "Microphone Muted" else "Microphone Live", Toast.LENGTH_SHORT).show()
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic,
-                                contentDescription = "Mic",
-                                tint = if (isMuted) Color(0xFFFF5252) else Color.White,
-                                modifier = Modifier.size(19.dp)
-                            )
-                        }
                     }
 
-                    // 3. Audio Speaker Button
+                    // 3. Audio Speaker Button (Both)
                     Box(
                         modifier = Modifier
                             .size(38.dp)
@@ -1172,57 +1223,108 @@ fun VideoHangoutRoomDialog(
                         )
                     }
 
-                    // 4. In-Room Inbox Button
-                    Box(
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.12f))
-                            .border(1.dp, BrandGold.copy(alpha = 0.6f), CircleShape)
-                            .clickable { showInRoomInboxDialog = true },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Mail,
-                            contentDescription = "Inbox",
-                            tint = BrandGold,
-                            modifier = Modifier.size(19.dp)
-                        )
-                    }
+                    if (isUserHost) {
+                        // 4. HOST: PK Battle Quick Control
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(if (room.isPkActive) Color(0xFFFF1744).copy(alpha = 0.35f) else Color.White.copy(alpha = 0.12f))
+                                .border(1.dp, if (room.isPkActive) Color(0xFFFF1744) else BrandGold.copy(alpha = 0.6f), CircleShape)
+                                .clickable {
+                                    if (room.isPkActive) {
+                                        endPkBattle()
+                                    } else {
+                                        startPkBattle()
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("⚔️", fontSize = 17.sp)
+                        }
 
-                    // 5. Reaction Emojis Button
-                    Box(
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(if (showEmojiTray) BrandGold.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.12f))
-                            .border(1.dp, if (showEmojiTray) BrandGold else Color.White.copy(alpha = 0.25f), CircleShape)
-                            .clickable { showEmojiTray = !showEmojiTray },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("😊", fontSize = 17.sp)
-                    }
+                        // 5. HOST: Room Settings Sheet
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.12f))
+                                .border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape)
+                                .clickable { showRoomSettingsDialog = true },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White, modifier = Modifier.size(19.dp))
+                        }
 
-                    // 6. Luxury Gift Store Button
-                    Box(
-                        modifier = Modifier
-                            .size(42.dp)
-                            .clip(CircleShape)
-                            .background(
-                                Brush.sweepGradient(
-                                    listOf(
-                                        Color(0xFFFF1744),
-                                        Color(0xFFFFB300),
-                                        Color(0xFFFF4081),
-                                        Color(0xFFFF1744)
+                        // 6. HOST: Inbox / Gifting Overview
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.12f))
+                                .border(1.dp, BrandGold.copy(alpha = 0.6f), CircleShape)
+                                .clickable { showInRoomInboxDialog = true },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Mail, contentDescription = "Inbox", tint = BrandGold, modifier = Modifier.size(19.dp))
+                        }
+                    } else {
+                        // 4. VIEWER: Floating Hearts / Like Reaction Button
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFFF1744).copy(alpha = 0.15f))
+                                .border(1.dp, Color(0xFFFF1744).copy(alpha = 0.5f), CircleShape)
+                                .clickable {
+                                    floatingEmojis.add(Pair("❤️", System.currentTimeMillis()))
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("❤️", fontSize = 17.sp)
+                        }
+
+                        // 5. VIEWER: Share Stream Button
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.12f))
+                                .border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape)
+                                .clickable {
+                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_SUBJECT, "Join Live Stream on LiveTogather!")
+                                        putExtra(Intent.EXTRA_TEXT, "Watch ${room.hostName}'s live broadcast on LiveTogather! Room ID: $displayRoomId")
+                                    }
+                                    context.startActivity(Intent.createChooser(shareIntent, "Share Live Stream"))
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = "Share", tint = Color.White, modifier = Modifier.size(18.dp))
+                        }
+
+                        // 6. VIEWER: Luxury Gift Store Button
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    Brush.sweepGradient(
+                                        listOf(
+                                            Color(0xFFFF1744),
+                                            Color(0xFFFFB300),
+                                            Color(0xFFFF4081),
+                                            Color(0xFFFF1744)
+                                        )
                                     )
                                 )
-                            )
-                            .border(1.2.dp, BrandGold, CircleShape)
-                            .clickable { showGiftStoreDialog = true },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("🎁", fontSize = 19.sp)
+                                .border(1.5.dp, BrandGold, CircleShape)
+                                .clickable { showGiftStoreDialog = true },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("🎁", fontSize = 20.sp)
+                        }
                     }
                 }
             }
@@ -1898,6 +2000,14 @@ fun VideoHangoutRoomDialog(
                         onSwitchLayout = { switchLayout(it) },
                         onStartPk = { startPkBattle() },
                         onEndPk = { endPkBattle() },
+                        onGoLive = {
+                            AgoraVideoManager.setCameraOff(false)
+                            AgoraVideoManager.setMuted(false)
+                        },
+                        onSetOffline = {
+                            AgoraVideoManager.setCameraOff(true)
+                            AgoraVideoManager.setMuted(true)
+                        },
                         onUpdateTheme = { newTheme ->
                             room = room.copy(banner_image_url = newTheme)
                         },
@@ -1907,6 +2017,7 @@ fun VideoHangoutRoomDialog(
                     ViewerRoomMenuDialog(
                         room = room,
                         currentUser = currentUser,
+                        isCoHost = isUserCoHost,
                         onRequestJoinStage = {
                             db.collection("rooms").document(room.id)
                                 .collection("stage_requests").document(currentUser.uid)
@@ -1920,6 +2031,25 @@ fun VideoHangoutRoomDialog(
                                     )
                                 )
                             Toast.makeText(context, "✋ Request to join stage sent to Host!", Toast.LENGTH_SHORT).show()
+                            showRoomSettingsDialog = false
+                        },
+                        onLeaveStage = {
+                            isUserCoHost = false
+                            AgoraVideoManager.setCameraOff(true)
+                            AgoraVideoManager.setBroadcasterRole(false)
+                            db.collection("rooms").document(room.id)
+                                .collection("members").document(currentUser.uid)
+                                .update("role", "viewer")
+                            Toast.makeText(context, "📹 You stepped down from the video stage", Toast.LENGTH_SHORT).show()
+                            showRoomSettingsDialog = false
+                        },
+                        onShareRoom = {
+                            val sendIntent = android.content.Intent().apply {
+                                action = android.content.Intent.ACTION_SEND
+                                putExtra(android.content.Intent.EXTRA_TEXT, "Watch ${room.hostName}'s live stream on LiveTogather! Join here: https://livetogather.app/room/${room.id}")
+                                type = "text/plain"
+                            }
+                            context.startActivity(android.content.Intent.createChooser(sendIntent, "Share Live Stream"))
                             showRoomSettingsDialog = false
                         },
                         onReportRoom = {
@@ -2002,7 +2132,21 @@ fun VideoHangoutRoomDialog(
                         selectedMemberForProfile = null
                     },
                     roomAdminUserIds = room.adminUserIds,
-                    onToggleAdmin = null
+                    onToggleAdmin = null,
+                    onInviteToVideo = { target ->
+                        db.collection("rooms").document(room.id)
+                            .collection("video_invites").document(target.uid)
+                            .set(
+                                mapOf(
+                                    "inviteeUid" to target.uid,
+                                    "inviterUid" to currentUser.uid,
+                                    "inviterName" to currentUser.name,
+                                    "status" to "pending",
+                                    "timestamp" to System.currentTimeMillis()
+                                )
+                            )
+                        Toast.makeText(context, "📹 Invitation sent to ${target.name}!", Toast.LENGTH_SHORT).show()
+                    }
                 )
             }
 
@@ -2076,14 +2220,10 @@ fun VideoHangoutRoomDialog(
                                     )
                                 db.collection("rooms").document(room.id).update(
                                     mapOf(
-                                        "videoLayout" to "2p",
                                         "coHostUid" to currentUser.uid,
                                         "coHostName" to currentUser.name,
                                         "coHostPhoto" to currentUser.photo,
-                                        "coHostAgoraUid" to localAgoraUid,
-                                        "pkHost2Uid" to currentUser.uid,
-                                        "pkHost2Name" to currentUser.name,
-                                        "pkHost2Photo" to currentUser.photo
+                                        "coHostAgoraUid" to localAgoraUid
                                     )
                                 )
                                 db.collection("rooms").document(room.id)
@@ -2108,6 +2248,320 @@ fun VideoHangoutRoomDialog(
                         }
                     }
                 )
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// DYNAMIC MULTI-GUEST VIDEO LAYOUT (1P, 2P, 3P, 4P AUTOMATIC)
+// -------------------------------------------------------------
+@Composable
+fun VideoStreamCell(
+    member: RoomMember,
+    isHostSlot: Boolean,
+    isLocalUser: Boolean,
+    remoteUids: List<Int>,
+    isOffline: Boolean = false,
+    onRemove: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    Box(modifier = modifier.background(Color(0xFF0F172A))) {
+        if (isOffline && isHostSlot) {
+            // Clean Offline / Paused Standby Card
+            Box(
+                modifier = Modifier.fillMaxSize().background(Color(0xFF0A0E1A)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(16.dp)) {
+                    AsyncImage(
+                        model = member.photoUrl.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                        contentDescription = null,
+                        modifier = Modifier
+                            .size(70.dp)
+                            .clip(CircleShape)
+                            .border(1.5.dp, BrandGold, CircleShape),
+                        contentScale = ContentScale.Crop
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "⏳ Stream Paused",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Host is currently offline. Stay tuned!",
+                        color = Color.Gray,
+                        fontSize = 11.sp
+                    )
+                }
+            }
+        } else if (isLocalUser) {
+            // Local Broadcaster Camera View
+            AndroidView(
+                factory = { ctx ->
+                    TextureView(ctx).also {
+                        AgoraVideoManager.setupLocalVideo(it)
+                    }
+                },
+                update = {
+                    AgoraVideoManager.setupLocalVideo(it)
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            // Remote Video View
+            val targetUid = if (member.agoraUid > 0 && remoteUids.contains(member.agoraUid)) {
+                member.agoraUid
+            } else {
+                remoteUids.find { it == member.agoraUid } ?: remoteUids.firstOrNull() ?: 0
+            }
+
+            if (targetUid > 0) {
+                key(targetUid) {
+                    AndroidView(
+                        factory = { ctx ->
+                            TextureView(ctx).also {
+                                AgoraVideoManager.setupRemoteVideo(it, targetUid)
+                            }
+                        },
+                        update = {
+                            AgoraVideoManager.setupRemoteVideo(it, targetUid)
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            } else {
+                // Connecting / Avatar Placeholder (NEVER a black dead box)
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    AsyncImage(
+                        model = member.photoUrl.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.55f))
+                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(color = BrandCoral, modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = if (isHostSlot) "Connecting host stream..." else "Connecting video...",
+                            color = Color.White.copy(alpha = 0.85f),
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+            }
+        }
+
+        // Bottom label: Name & Host/Guest badge
+        Surface(
+            color = Color.Black.copy(alpha = 0.65f),
+            shape = RoundedCornerShape(4.dp),
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(6.dp)
+        ) {
+            Text(
+                text = if (isHostSlot) "👑 ${member.name}" else "📹 ${member.name}",
+                color = if (isHostSlot) BrandGold else Color.White,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+            )
+        }
+
+        // Host control: Remove guest from stage button
+        if (onRemove != null) {
+            Surface(
+                color = Color.Black.copy(alpha = 0.75f),
+                shape = CircleShape,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp)
+                    .clickable { onRemove() }
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Remove Guest",
+                    tint = Color.White,
+                    modifier = Modifier
+                        .size(20.dp)
+                        .padding(3.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun DynamicMultiGuestVideoLayout(
+    room: RoomItem,
+    isUserHost: Boolean,
+    currentUserId: String,
+    remoteVideoUids: List<Int>,
+    activeMembers: List<RoomMember>,
+    onRemoveGuest: ((RoomMember) -> Unit)? = null
+) {
+    val targetHostId = room.hostUid.ifBlank { room.hostId }
+    val hostMember = activeMembers.find { it.uid == targetHostId } ?: RoomMember(
+        uid = targetHostId,
+        name = room.hostName.ifBlank { "Host" },
+        photoUrl = room.hostPhotoUrl,
+        role = "host",
+        agoraUid = 0
+    )
+    val guestMembers = activeMembers.filter { m ->
+        val mUid = m.uid.ifBlank { m.userId }
+        mUid.isNotBlank() && mUid != targetHostId && (m.role == "co_host" || m.role == "broadcaster")
+    }.take(3)
+
+    val isOffline = !room.isHostLive || room.statusMessage.equals("OFFLINE", ignoreCase = true)
+
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        when (guestMembers.size) {
+            0 -> {
+                // 1P: Solo Host Fullscreen
+                VideoStreamCell(
+                    member = hostMember,
+                    isHostSlot = true,
+                    isLocalUser = isUserHost,
+                    remoteUids = remoteVideoUids,
+                    isOffline = isOffline,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            1 -> {
+                // 2P: Top 50% Host, Bottom 50% Guest 1
+                Column(modifier = Modifier.fillMaxSize()) {
+                    VideoStreamCell(
+                        member = hostMember,
+                        isHostSlot = true,
+                        isLocalUser = isUserHost,
+                        remoteUids = remoteVideoUids,
+                        isOffline = isOffline,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .border(0.5.dp, Color(0xFF1E293B))
+                    )
+                    VideoStreamCell(
+                        member = guestMembers[0],
+                        isHostSlot = false,
+                        isLocalUser = guestMembers[0].uid == currentUserId,
+                        remoteUids = remoteVideoUids,
+                        onRemove = if (isUserHost) { { onRemoveGuest?.invoke(guestMembers[0]) } } else null,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .border(0.5.dp, Color(0xFF1E293B))
+                    )
+                }
+            }
+            2 -> {
+                // 3P: Top 50% Host, Bottom 50% split 2 columns (Guest 1 & Guest 2)
+                Column(modifier = Modifier.fillMaxSize()) {
+                    VideoStreamCell(
+                        member = hostMember,
+                        isHostSlot = true,
+                        isLocalUser = isUserHost,
+                        remoteUids = remoteVideoUids,
+                        isOffline = isOffline,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .border(0.5.dp, Color(0xFF1E293B))
+                    )
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                    ) {
+                        VideoStreamCell(
+                            member = guestMembers[0],
+                            isHostSlot = false,
+                            isLocalUser = guestMembers[0].uid == currentUserId,
+                            remoteUids = remoteVideoUids,
+                            onRemove = if (isUserHost) { { onRemoveGuest?.invoke(guestMembers[0]) } } else null,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .border(0.5.dp, Color(0xFF1E293B))
+                        )
+                        VideoStreamCell(
+                            member = guestMembers[1],
+                            isHostSlot = false,
+                            isLocalUser = guestMembers[1].uid == currentUserId,
+                            remoteUids = remoteVideoUids,
+                            onRemove = if (isUserHost) { { onRemoveGuest?.invoke(guestMembers[1]) } } else null,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .border(0.5.dp, Color(0xFF1E293B))
+                        )
+                    }
+                }
+            }
+            else -> {
+                // 4P: Top 50% Host, Bottom 50% split 3 columns (Guest 1, Guest 2, Guest 3)
+                Column(modifier = Modifier.fillMaxSize()) {
+                    VideoStreamCell(
+                        member = hostMember,
+                        isHostSlot = true,
+                        isLocalUser = isUserHost,
+                        remoteUids = remoteVideoUids,
+                        isOffline = isOffline,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .border(0.5.dp, Color(0xFF1E293B))
+                    )
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                    ) {
+                        VideoStreamCell(
+                            member = guestMembers[0],
+                            isHostSlot = false,
+                            isLocalUser = guestMembers[0].uid == currentUserId,
+                            remoteUids = remoteVideoUids,
+                            onRemove = if (isUserHost) { { onRemoveGuest?.invoke(guestMembers[0]) } } else null,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .border(0.5.dp, Color(0xFF1E293B))
+                        )
+                        VideoStreamCell(
+                            member = guestMembers[1],
+                            isHostSlot = false,
+                            isLocalUser = guestMembers[1].uid == currentUserId,
+                            remoteUids = remoteVideoUids,
+                            onRemove = if (isUserHost) { { onRemoveGuest?.invoke(guestMembers[1]) } } else null,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .border(0.5.dp, Color(0xFF1E293B))
+                        )
+                        VideoStreamCell(
+                            member = guestMembers[2],
+                            isHostSlot = false,
+                            isLocalUser = guestMembers[2].uid == currentUserId,
+                            remoteUids = remoteVideoUids,
+                            onRemove = if (isUserHost) { { onRemoveGuest?.invoke(guestMembers[2]) } } else null,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .border(0.5.dp, Color(0xFF1E293B))
+                        )
+                    }
+                }
             }
         }
     }
@@ -2926,7 +3380,10 @@ fun FloatingReactionEmoji(
 fun ViewerRoomMenuDialog(
     room: RoomItem,
     currentUser: UserProfile,
+    isCoHost: Boolean = false,
     onRequestJoinStage: () -> Unit,
+    onLeaveStage: () -> Unit = {},
+    onShareRoom: () -> Unit = {},
     onReportRoom: () -> Unit,
     onLeaveRoom: () -> Unit,
     onDismiss: () -> Unit
@@ -2969,14 +3426,96 @@ fun ViewerRoomMenuDialog(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // 1. Request to Join Broadcast
+                if (isCoHost) {
+                    // Option for Guest currently on stage: Step Down
+                    Surface(
+                        color = Color(0xFF2E1515),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, Color(0xFFFF5252).copy(alpha = 0.7f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onLeaveStage() }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(
+                                shape = CircleShape,
+                                color = Color(0xFFFF5252).copy(alpha = 0.2f),
+                                modifier = Modifier.size(38.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Default.Close, contentDescription = null, tint = Color(0xFFFF5252), modifier = Modifier.size(20.dp))
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = "Leave Video Stage 📹",
+                                    color = Color(0xFFFF8A80),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Step down from video call and return to audience",
+                                    color = Color.LightGray,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    // Option for Audience Viewer: Request to Join Stage
+                    Surface(
+                        color = BrandCardSubtle,
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, BrandCoral.copy(alpha = 0.5f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onRequestJoinStage() }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(
+                                shape = CircleShape,
+                                color = BrandCoral.copy(alpha = 0.2f),
+                                modifier = Modifier.size(38.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Default.Videocam, contentDescription = null, tint = BrandCoral, modifier = Modifier.size(20.dp))
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = "Request to Join Broadcast 📹",
+                                    color = Color.White,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Send live request to host to join video stage",
+                                    color = Color.Gray,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Share Stream Option
                 Surface(
                     color = BrandCardSubtle,
                     shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, BrandCoral.copy(alpha = 0.5f)),
+                    border = BorderStroke(1.dp, BrandBorder),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onRequestJoinStage() }
+                        .clickable { onShareRoom() }
                 ) {
                     Row(
                         modifier = Modifier.padding(14.dp),
@@ -2984,23 +3523,23 @@ fun ViewerRoomMenuDialog(
                     ) {
                         Surface(
                             shape = CircleShape,
-                            color = BrandCoral.copy(alpha = 0.2f),
+                            color = BrandCyan.copy(alpha = 0.2f),
                             modifier = Modifier.size(38.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                Icon(Icons.Default.Videocam, contentDescription = null, tint = BrandCoral, modifier = Modifier.size(20.dp))
+                                Icon(Icons.Default.Share, contentDescription = null, tint = BrandCyan, modifier = Modifier.size(20.dp))
                             }
                         }
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = "Request to Join Broadcast 📹",
+                                text = "Share Live Stream 🔗",
                                 color = Color.White,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "Send live request to host to join video stage",
+                                text = "Invite friends to watch this live broadcast",
                                 color = Color.Gray,
                                 fontSize = 10.sp
                             )
@@ -3108,6 +3647,8 @@ fun VideoRoomSettingsSheet(
     onSwitchLayout: (String) -> Unit,
     onStartPk: () -> Unit,
     onEndPk: () -> Unit,
+    onGoLive: () -> Unit = {},
+    onSetOffline: () -> Unit = {},
     onUpdateTheme: (String) -> Unit = {},
     onDismiss: () -> Unit
 ) {
@@ -3309,6 +3850,7 @@ fun VideoRoomSettingsSheet(
                                     ) {
                                         Button(
                                             onClick = {
+                                                onGoLive()
                                                 db.collection("rooms").document(room.id).update(
                                                     mapOf(
                                                         "isHostLive" to true,
@@ -3322,7 +3864,7 @@ fun VideoRoomSettingsSheet(
                                                     hostPhoto = room.hostPhotoUrl,
                                                     room = room
                                                 )
-                                                Toast.makeText(context, "Room is now LIVE! Followers notified.", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, "Room is now LIVE! Video publishing enabled.", Toast.LENGTH_SHORT).show()
                                             },
                                             colors = ButtonDefaults.buttonColors(
                                                 containerColor = if (room.isHostLive) BrandGreen else BrandDark
@@ -3335,13 +3877,14 @@ fun VideoRoomSettingsSheet(
 
                                         Button(
                                             onClick = {
+                                                onSetOffline()
                                                 db.collection("rooms").document(room.id).update(
                                                     mapOf(
                                                         "isHostLive" to false,
-                                                        "statusMessage" to "Host will be live soon"
+                                                        "statusMessage" to "OFFLINE"
                                                     )
                                                 )
-                                                Toast.makeText(context, "Room status set to 'Host will be live soon'", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, "Stream paused. Room status set to OFFLINE.", Toast.LENGTH_SHORT).show()
                                             },
                                             colors = ButtonDefaults.buttonColors(
                                                 containerColor = if (!room.isHostLive) BrandGold else BrandDark

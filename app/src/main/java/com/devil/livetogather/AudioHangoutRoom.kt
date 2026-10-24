@@ -2625,7 +2625,8 @@ fun RoomMemberProfileSheet(
     onBlock: (RoomMember) -> Unit,
     onTagMember: (String) -> Unit,
     roomAdminUserIds: List<String> = emptyList(),
-    onToggleAdmin: ((RoomMember) -> Unit)? = null
+    onToggleAdmin: ((RoomMember) -> Unit)? = null,
+    onInviteToVideo: ((RoomMember) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val isVipOrPlatinum = currentUser.isVipOrPlatinum()
@@ -3387,6 +3388,23 @@ fun RoomMemberProfileSheet(
                     }
 
                     Spacer(modifier = Modifier.height(6.dp))
+
+                    if (isHost && !isSelf && onInviteToVideo != null && member.role != "host" && member.role != "co_host") {
+                        Button(
+                            onClick = {
+                                onInviteToVideo(member)
+                                onDismiss()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                            shape = RoundedCornerShape(50),
+                            modifier = Modifier.fillMaxWidth().height(36.dp)
+                        ) {
+                            Icon(Icons.Default.Videocam, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("📹 Invite to Video Stage", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                    }
 
                     if (isCurrentAdmin && !isSelf) {
                         val isTargetHost = member.role == "host"
@@ -8793,7 +8811,7 @@ fun CategoryHubLobbyDialog(
     ) {
         val map = linkedMapOf<String, RoomItem>()
         fun matchesCategory(r: RoomItem): Boolean {
-            if (!r.isLive || !r.isHostLive || r.statusMessage.equals("OFFLINE", ignoreCase = true)) {
+            if (!r.isLive || r.statusMessage.equals("CLOSED", ignoreCase = true) || r.statusMessage.equals("ENDED", ignoreCase = true)) {
                 return false
             }
             if (category.id == "video_stream") {

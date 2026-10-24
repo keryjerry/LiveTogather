@@ -1938,22 +1938,27 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                     // If leaving user is the room host, mark room offline (NEVER delete room document)
                     val targetHost = room.hostUid.ifBlank { room.hostId }
                     if (currentUserId.isNotBlank() && targetHost == currentUserId) {
-                        db.collection("rooms").document(room.id).update(
+                        val isVideoType = room.isVideoRoom || room.roomType == "video" || room.roomType == "video_pk" || room.category == "video_stream" || room.category == "video_pk"
+                        val updateMap: Map<String, Any> = if (isVideoType) {
+                            mapOf(
+                                "isHostLive" to false,
+                                "isLive" to false,
+                                "statusMessage" to "CLOSED",
+                                "isPlaying" to false,
+                                "isEnded" to true,
+                                "endedAt" to System.currentTimeMillis()
+                            )
+                        } else {
                             mapOf(
                                 "isHostLive" to false,
                                 "statusMessage" to "Host Away • Open Hangout",
                                 "isPlaying" to false
                             )
-                        )
+                        }
+                        db.collection("rooms").document(room.id).update(updateMap)
                         if (room.category.isNotBlank()) {
                             db.collection("intent_categories").document(room.category)
-                                .collection("rooms").document(room.id).update(
-                                    mapOf(
-                                        "isHostLive" to false,
-                                        "statusMessage" to "Host Away • Open Hangout",
-                                        "isPlaying" to false
-                                    )
-                                )
+                                .collection("rooms").document(room.id).update(updateMap)
                         }
                     }
 
