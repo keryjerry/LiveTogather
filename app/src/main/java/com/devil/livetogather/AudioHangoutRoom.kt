@@ -8643,8 +8643,10 @@ fun InRoomInboxDialog(
 fun CategorySubRoomCard(
     room: RoomItem,
     activeCount: Int,
+    currentUser: UserProfile = UserProfile(),
     onJoin: () -> Unit
 ) {
+    val isUserHostOfThisRoom = currentUser.uid.isNotBlank() && (currentUser.uid == room.hostUid || currentUser.uid == room.hostId)
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -8704,12 +8706,24 @@ fun CategorySubRoomCard(
                             .padding(horizontal = 6.dp, vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val statusText = if (room.scheduledTime.isNotBlank()) "⏳ ${room.scheduledTime}" else "⏳ Live soon"
+                        val statusText = if (room.statusMessage.isNotBlank() && !room.statusMessage.equals("LIVE NOW", ignoreCase = true)) "⏳ ${room.statusMessage}" else if (room.scheduledTime.isNotBlank()) "⏳ ${room.scheduledTime}" else "⏳ OFFLINE"
                         Text(statusText, color = BrandGold, fontSize = 8.sp, fontWeight = FontWeight.Bold)
                     }
                 }
 
-                if (room.hostName.isNotBlank()) {
+                if (isUserHostOfThisRoom) {
+                    Text(
+                        text = "👑 You (Host)",
+                        color = BrandGold,
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        modifier = Modifier
+                            .background(Color.Black.copy(alpha = 0.75f), RoundedCornerShape(50))
+                            .border(0.5.dp, BrandGold, RoundedCornerShape(50))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                } else if (room.hostName.isNotBlank()) {
                     Text(
                         text = "👑 ${room.hostName}",
                         color = BrandGold,
@@ -8758,14 +8772,26 @@ fun CategorySubRoomCard(
 
                 Spacer(modifier = Modifier.height(4.dp))
 
+                val buttonText = when {
+                    isUserHostOfThisRoom && room.isHostLive -> "Enter Room 👑"
+                    isUserHostOfThisRoom && !room.isHostLive -> "Go Live 🔴"
+                    room.isHostLive -> "Join Room 🎙️"
+                    else -> "Host Offline ⏳"
+                }
+                val buttonColor = when {
+                    isUserHostOfThisRoom -> BrandCoral
+                    room.isHostLive -> BrandCoral
+                    else -> Color.Gray.copy(alpha = 0.6f)
+                }
+
                 Button(
                     onClick = onJoin,
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                    colors = ButtonDefaults.buttonColors(containerColor = buttonColor),
                     shape = RoundedCornerShape(50),
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
                     modifier = Modifier.fillMaxWidth().height(32.dp)
                 ) {
-                    Text("Join Room 🎙️", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(buttonText, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 }
             }
         }
@@ -8811,7 +8837,8 @@ fun CategoryHubLobbyDialog(
     ) {
         val map = linkedMapOf<String, RoomItem>()
         fun matchesCategory(r: RoomItem): Boolean {
-            if (!r.isLive || r.statusMessage.equals("CLOSED", ignoreCase = true) || r.statusMessage.equals("ENDED", ignoreCase = true)) {
+            if (r.id.isBlank() || r.title.isBlank()) return false
+            if (r.statusMessage.equals("DELETED", ignoreCase = true)) {
                 return false
             }
             if (category.id == "video_stream") {
@@ -8822,9 +8849,12 @@ fun CategoryHubLobbyDialog(
             }
             return r.category == category.id
         }
-        allRooms.filter { matchesCategory(it) && it.title.isNotBlank() }.forEach { map[it.id] = it }
-        liveCategoryRooms.filter { matchesCategory(it) && it.title.isNotBlank() }.forEach { map[it.id] = it }
-        map.values.toList()
+        allRooms.filter { matchesCategory(it) }.forEach { map[it.id] = it }
+        liveCategoryRooms.filter { matchesCategory(it) }.forEach { map[it.id] = it }
+        map.values.toList().sortedWith(
+            compareByDescending<RoomItem> { it.isHostLive }
+                .thenByDescending { it.createdAt }
+        )
     }
 
     // Active members in this category across users
@@ -9009,6 +9039,7 @@ fun CategoryHubLobbyDialog(
                             CategorySubRoomCard(
                                 room = room,
                                 activeCount = activeCount,
+                                currentUser = currentUser,
                                 onJoin = { onJoinRoom(room) }
                             )
                         }

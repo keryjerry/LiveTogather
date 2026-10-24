@@ -1703,10 +1703,15 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                                             Toast.makeText(context, "👑 VIP Access Only: This room is reserved for VIP Level 1+ members!", Toast.LENGTH_LONG).show()
                                             return@IntentRoomsGrid
                                         }
-                                        // 1. Register presence in rooms/{roomId}/members/{userId}
                                         val targetHost = room.hostUid.ifBlank { room.hostId }
                                         val isHostCandidate = currentUserId.isNotBlank() && currentUserId == targetHost
                                         val canActuallyHost = !isHostCandidate || currentUser.canHostRoom()
+
+                                        if (!isHostCandidate && (!room.isHostLive || room.statusMessage.equals("OFFLINE", ignoreCase = true) || room.statusMessage.equals("CLOSED", ignoreCase = true))) {
+                                            Toast.makeText(context, "⏳ The host (${room.hostName.ifBlank { "Host" }}) is currently offline. They will be live soon!", Toast.LENGTH_SHORT).show()
+                                            return@IntentRoomsGrid
+                                        }
+                                        // 1. Register presence in rooms/{roomId}/members/{userId}
 
                                         if (isHostCandidate && !canActuallyHost) {
                                             subscriptionPaywallNotice = "👑 Host Access Criteria: Minimum Platinum Membership Required!\nYour 7-day launch trial has ended. Upgrade to Platinum (₹249/mo) or VIP to host."
@@ -1942,11 +1947,11 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                         val updateMap: Map<String, Any> = if (isVideoType) {
                             mapOf(
                                 "isHostLive" to false,
-                                "isLive" to false,
-                                "statusMessage" to "CLOSED",
+                                "isLive" to true,
+                                "statusMessage" to "OFFLINE",
                                 "isPlaying" to false,
-                                "isEnded" to true,
-                                "endedAt" to System.currentTimeMillis()
+                                "isEnded" to false,
+                                "endedAt" to 0L
                             )
                         } else {
                             mapOf(
@@ -2047,6 +2052,11 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                     val targetHost = room.hostUid.ifBlank { room.hostId }
                     val isHostCandidate = currentUserId.isNotBlank() && currentUserId == targetHost
                     val canActuallyHost = !isHostCandidate || currentUser.canHostRoom()
+
+                    if (!isHostCandidate && (!room.isHostLive || room.statusMessage.equals("OFFLINE", ignoreCase = true) || room.statusMessage.equals("CLOSED", ignoreCase = true))) {
+                        Toast.makeText(context, "⏳ The host (${room.hostName.ifBlank { "Host" }}) is currently offline. They will be live soon!", Toast.LENGTH_SHORT).show()
+                        return@CategoryHubLobbyDialog
+                    }
 
                     if (isHostCandidate && !canActuallyHost) {
                         subscriptionPaywallNotice = "👑 Host Access Criteria: Minimum Platinum Membership Required!\nYour 7-day launch trial has ended. Upgrade to Platinum (₹249/mo) or VIP to host."
@@ -2196,21 +2206,12 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                 initialCategory = createRoomInitialCategory,
                 onDismiss = { showCreateRoomDialog = false },
                 onCreate = { title, categoryId, themeUrl, roomType ->
-                    val existingActiveRoom = roomsList.firstOrNull { r ->
+                    val existingHostRoom = roomsList.firstOrNull { r ->
                         val rHost = r.hostUid.ifBlank { r.hostId }
-                        rHost == currentUserId && r.category == categoryId && (r.isHostLive || r.isLive)
+                        rHost == currentUserId && (r.category == categoryId || (categoryId == "video_stream" && (r.category == "video_stream" || r.roomType == "video" || r.isVideoRoom)))
                     }
-                    if (existingActiveRoom != null) {
-                        Toast.makeText(
-                            context,
-                            "⚠️ You already have an active room in this category! Each host can only create 1 room per category.",
-                            Toast.LENGTH_LONG
-                        ).show()
-                        return@CreateRoomDialog
-                    }
-
                     val generatedRoomCode = (10000000..99999999).random().toString()
-                    val roomId = generatedRoomCode
+                    val roomId = existingHostRoom?.id?.ifBlank { null } ?: generatedRoomCode
                     val catEmoji = if (roomType == "video_pk") "⚔️" else if (roomType == "video") "📹" else (CATEGORY_LIST.find { it.id == categoryId }?.label?.take(2)?.trim() ?: "🎙️")
                     val finalBanner = if (themeUrl.isNotBlank()) themeUrl else getCategoryBanner(categoryId)
                     val newRoom = RoomItem(
@@ -3071,7 +3072,15 @@ fun IntentRoomsGrid(
                 }
 
                 // Sub-rooms created under this category
-                val categoryRooms = rooms.filter { it.category == category.id }
+                val categoryRooms = rooms.filter {
+                    if (category.id == "video_stream") {
+                        it.category == "video_stream" || it.roomType == "video" || it.isVideoRoom
+                    } else if (category.id == "video_pk") {
+                        it.category == "video_pk" || it.roomType == "video_pk"
+                    } else {
+                        it.category == category.id
+                    }
+                }
                 val subRoomsCount = categoryRooms.size
                 val isAnyRoomLive = categoryRooms.any { it.isHostLive }
                 val isAnyAudioPlaying = categoryRooms.any { it.isHostLive && it.isPlaying }

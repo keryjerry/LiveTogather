@@ -294,8 +294,8 @@ fun VideoHangoutRoomDialog(
                 return@addSnapshotListener
             }
             val updated = parseRoomFromDoc(snapshot)
-            // Real-Time Room Close Check: Only exit when host actually ENDS or CLOSES the room (NOT when temporarily OFFLINE)
-            if (!updated.isLive || updated.statusMessage.equals("CLOSED", ignoreCase = true) || updated.statusMessage.equals("ENDED", ignoreCase = true)) {
+            // Real-Time Room Close Check: When host goes OFFLINE or exits, dismiss viewers from the live stage
+            if (!updated.isLive || updated.statusMessage.equals("CLOSED", ignoreCase = true) || updated.statusMessage.equals("ENDED", ignoreCase = true) || (!updated.isHostLive && !isUserHost)) {
                 if (!isUserHost) {
                     Toast.makeText(context, "🔴 The host has ended this live broadcast.", Toast.LENGTH_LONG).show()
                     AgoraVideoManager.leaveRoom()
@@ -598,10 +598,11 @@ fun VideoHangoutRoomDialog(
         if (isUserHost || (currentUserId.isNotBlank() && targetHost == currentUserId)) {
             val updates = mapOf<String, Any>(
                 "isHostLive" to false,
-                "isLive" to false,
-                "statusMessage" to "CLOSED",
-                "isEnded" to true,
-                "endedAt" to System.currentTimeMillis()
+                "isLive" to true,
+                "statusMessage" to "OFFLINE",
+                "isEnded" to false,
+                "endedAt" to 0L,
+                "isPlaying" to false
             )
             db.collection("rooms").document(room.id).update(updates)
             if (room.category.isNotBlank()) {
@@ -3878,12 +3879,15 @@ fun VideoRoomSettingsSheet(
                                         Button(
                                             onClick = {
                                                 onSetOffline()
-                                                db.collection("rooms").document(room.id).update(
-                                                    mapOf(
-                                                        "isHostLive" to false,
-                                                        "statusMessage" to "OFFLINE"
-                                                    )
+                                                val offlineUpdates = mapOf<String, Any>(
+                                                    "isHostLive" to false,
+                                                    "statusMessage" to "OFFLINE"
                                                 )
+                                                db.collection("rooms").document(room.id).update(offlineUpdates)
+                                                if (room.category.isNotBlank()) {
+                                                    db.collection("intent_categories").document(room.category)
+                                                        .collection("rooms").document(room.id).update(offlineUpdates)
+                                                }
                                                 Toast.makeText(context, "Stream paused. Room status set to OFFLINE.", Toast.LENGTH_SHORT).show()
                                             },
                                             colors = ButtonDefaults.buttonColors(

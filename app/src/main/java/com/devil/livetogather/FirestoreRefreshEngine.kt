@@ -108,7 +108,7 @@ class FirestoreRefreshEngine(
                 } catch (_: Exception) {
                     db.collection("rooms").get().await()
                 }
-                val freshRooms = roomsSnap.documents.mapNotNull { it.toObject(RoomItem::class.java) }
+                val freshRooms = roomsSnap.documents.mapNotNull { parseRoomFromDoc(it) }
                 if (freshRooms.isNotEmpty()) {
                     roomCount = freshRooms.size
                     withContext(Dispatchers.Main) {
