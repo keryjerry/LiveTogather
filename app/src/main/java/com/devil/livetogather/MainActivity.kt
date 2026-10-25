@@ -340,6 +340,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                 latitude = prefs.getString("profile_latitude", "22.5726")?.toDoubleOrNull() ?: 22.5726,
                 longitude = prefs.getString("profile_longitude", "88.3639")?.toDoubleOrNull() ?: 88.3639,
                 isLocationSet = prefs.getBoolean("profile_is_location_set", false),
+                locationPrivacy = prefs.getString("profile_location_privacy", "public") ?: "public",
                 maxDistanceKm = prefs.getInt("profile_max_distance", 53),
                 showFurtherAway = prefs.getBoolean("profile_show_further", true),
                 interestedIn = prefs.getString("profile_interested_in", "Women") ?: "Women",
@@ -399,6 +400,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                         val updatedEmail = auth.currentUser?.email?.takeIf { it.isNotBlank() } ?: snapshot.getString("email") ?: currentUser.email
                         val updatedEmailPrivacy = snapshot.getString("emailPrivacy") ?: currentUser.emailPrivacy
                         val updatedHasPasswordSet = snapshot.getBoolean("hasPasswordSet") ?: currentUser.hasPasswordSet
+                        val updatedActiveFrame = snapshot.getString("activeFrame") ?: currentUser.activeFrame
 
                         if (isWhitelisted && snapshot.getBoolean("isAdmin") != true) {
                             db.collection("users").document(currentUserId).update("isAdmin", true)
@@ -410,7 +412,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                             currentUser.userId != finalUserId || currentUser.wealthLevel != updatedWealthLvl || currentUser.wealthXp != updatedWealthXp ||
                             currentUser.charmLevel != updatedCharmLvl || currentUser.charmXp != updatedCharmXp ||
                             currentUser.pkLevel != updatedPkLvl || currentUser.pkWins != updatedPkWins || currentUser.pkScore != updatedPkScore ||
-                            currentUser.email != updatedEmail || currentUser.emailPrivacy != updatedEmailPrivacy || currentUser.hasPasswordSet != updatedHasPasswordSet) {
+                            currentUser.email != updatedEmail || currentUser.emailPrivacy != updatedEmailPrivacy || currentUser.hasPasswordSet != updatedHasPasswordSet || currentUser.activeFrame != updatedActiveFrame) {
                             currentUser = currentUser.copy(
                                 isAdmin = adminFlag,
                                 coins = updatedCoins,
@@ -425,9 +427,11 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                                 pkScore = updatedPkScore,
                                 email = updatedEmail,
                                 emailPrivacy = updatedEmailPrivacy,
-                                hasPasswordSet = updatedHasPasswordSet
+                                hasPasswordSet = updatedHasPasswordSet,
+                                activeFrame = updatedActiveFrame
                             )
                             prefs.edit()
+                                .putString("profile_active_frame", updatedActiveFrame)
                                 .putBoolean("profile_is_admin", adminFlag)
                                 .putLong("profile_coins", updatedCoins)
                                 .putLong("profile_diamonds", updatedDiamonds)
@@ -4404,6 +4408,7 @@ fun ProfileScreenContent(
     var helpDeskPrefilledPackage by remember { mutableStateOf<CoinPackageItem?>(null) }
     var isUploadingPhoto by remember { mutableStateOf(false) }
     var showLuxuryStoreModal by remember { mutableStateOf(false) }
+    var showVoiceVerificationModal by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
@@ -4594,11 +4599,7 @@ fun ProfileScreenContent(
                                 shape = RoundedCornerShape(14.dp),
                                 border = BorderStroke(1.dp, if (isVoiceVerified) Color(0xFFD8B4FE) else Color(0xFFFECACA)),
                                 modifier = Modifier.clickable {
-                                    if (isVoiceVerified) {
-                                        Toast.makeText(context, "Playing Verified Voice Intro (20s) 🎶", Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        Toast.makeText(context, "Voice Verification required: Record 20s prompt to activate profile 🎙️", Toast.LENGTH_LONG).show()
-                                    }
+                                    showVoiceVerificationModal = true
                                 }
                             ) {
                                 Row(
@@ -4680,6 +4681,7 @@ fun ProfileScreenContent(
                                         avatarSize = 58.dp,
                                         frameSize = 104.dp,
                                         vipLevel = currentUser.getVipLevel(),
+                                        showMicEffect = true,
                                         onClick = { imagePickerLauncher.launch("image/*") }
                                     )
                                     // Camera edit pill
@@ -4747,6 +4749,7 @@ fun ProfileScreenContent(
                                     avatarSize = 72.dp,
                                     frameSize = 128.dp,
                                     vipLevel = currentUser.getVipLevel(),
+                                    showMicEffect = true,
                                     onClick = { imagePickerLauncher.launch("image/*") }
                                 )
 
@@ -4799,7 +4802,7 @@ fun ProfileScreenContent(
 
                         Spacer(modifier = Modifier.height(10.dp))
 
-                        // User Name & Verification Checkmark
+                        // User Name & Verification Checkmark (Real Verified Shield)
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.Center
@@ -4811,16 +4814,40 @@ fun ProfileScreenContent(
                                 fontWeight = FontWeight.Black
                             )
                             Spacer(modifier = Modifier.width(5.dp))
-                            Surface(
-                                color = Color(0xFFFEF3C7),
-                                shape = CircleShape
-                            ) {
-                                Icon(
-                                    Icons.Default.Check,
-                                    contentDescription = "Verified",
-                                    tint = Color(0xFFD97706),
-                                    modifier = Modifier.size(15.dp).padding(2.dp)
-                                )
+                            if (isVoiceVerified) {
+                                // Real Gold Shield Verified Badge (Matching reference image)
+                                Surface(
+                                    color = Color(0xFFFEF3C7),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.dp, Color(0xFFF59E0B)),
+                                    shadowElevation = 1.dp
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("🛡️", fontSize = 10.sp)
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                        Text(
+                                            text = "Verified",
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Black,
+                                            color = Color(0xFFB45309)
+                                        )
+                                    }
+                                }
+                            } else {
+                                Surface(
+                                    color = Color(0xFFF3F4F6),
+                                    shape = CircleShape
+                                ) {
+                                    Icon(
+                                        Icons.Default.Check,
+                                        contentDescription = "Standard",
+                                        tint = Color.Gray,
+                                        modifier = Modifier.size(14.dp).padding(2.dp)
+                                    )
+                                }
                             }
                             Spacer(modifier = Modifier.width(6.dp))
                             // Gender & Age Pill
@@ -4883,60 +4910,131 @@ fun ProfileScreenContent(
 
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        // Noblesse, Silver Swords & Level Medals Row
+                        // REALISTIC 3D METALLIC LEVEL BADGES (ZERO CARTOONS)
+                        val effWealthLvlVal = currentUser.getEffectiveWealthLevel()
+                        val effCharmLvlVal = currentUser.getEffectiveCharmLevel()
+                        val pkLvlVal = currentUser.getEffectivePkLevel()
+                        val vipLvlVal = currentUser.getVipLevel()
+
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            // Amber Noblesse Pill
-                            val effLvl = currentUser.getEffectiveWealthLevel()
-                            val nobleTitle = when {
-                                effLvl >= 70 -> "👑 Sovereign"
-                                effLvl >= 40 -> "🛡️ Baron"
-                                effLvl >= 20 -> "🔮 Amber"
-                                else -> "🛡️ Knight"
-                            }
+                            // 1. 3D Wealth Level Badge (Metallic Purple & Gold Trim)
                             Surface(
-                                color = Color(0xFF7E22CE),
-                                shape = RoundedCornerShape(6.dp)
+                                color = Color.Transparent,
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(Color(0xFFFFD700), Color(0xFFFFA000)))),
+                                shadowElevation = 2.dp,
+                                modifier = Modifier.clip(RoundedCornerShape(8.dp))
                             ) {
-                                Text(
-                                    text = nobleTitle,
-                                    color = Color.White,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Black,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-
-                            // Silver Swords Rank Badge
-                            val pkLvl = currentUser.getEffectivePkLevel()
-                            Surface(
-                                color = Color(0xFF1E293B),
-                                shape = RoundedCornerShape(6.dp)
-                            ) {
-                                Text(
-                                    text = "⚔️ $pkLvl",
-                                    color = Color(0xFFFDE68A),
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Black,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
+                                Row(
+                                    modifier = Modifier
+                                        .background(Brush.horizontalGradient(listOf(Color(0xFF7C3AED), Color(0xFF5B21B6))))
+                                        .padding(horizontal = 6.dp, vertical = 3.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Image(
+                                        painter = painterResource(id = R.drawable.ic_wealth_shield_3d),
+                                        contentDescription = "Wealth Level",
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Lv.$effWealthLvlVal",
+                                        color = Color(0xFFFFD700),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Black,
+                                        letterSpacing = 0.5.sp
+                                    )
+                                }
                             }
 
-                            // Level Medals
+                            // 2. 3D Charm Level Badge (Metallic Rose Gold & Ruby)
                             Surface(
-                                color = Color(0xFFEDE9FE),
-                                shape = RoundedCornerShape(50),
-                                border = BorderStroke(0.8.dp, Color(0xFFC4B5FD))
+                                color = Color.Transparent,
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(Color(0xFFF472B6), Color(0xFFEC4899)))),
+                                shadowElevation = 2.dp,
+                                modifier = Modifier.clip(RoundedCornerShape(8.dp))
                             ) {
-                                Text(
-                                    text = "Lv.$effLvl",
-                                    color = Color(0xFF5B21B6),
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Black,
-                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
-                                )
+                                Row(
+                                    modifier = Modifier
+                                        .background(Brush.horizontalGradient(listOf(Color(0xFFDB2777), Color(0xFF9D174D))))
+                                        .padding(horizontal = 6.dp, vertical = 3.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Image(
+                                        painter = painterResource(id = R.drawable.ic_charm_heart_3d),
+                                        contentDescription = "Charm Level",
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Lv.$effCharmLvlVal",
+                                        color = Color.White,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Black,
+                                        letterSpacing = 0.5.sp
+                                    )
+                                }
+                            }
+
+                            // 3. 3D PK Swords Rank Badge (Metallic Obsidian & Amber Flames)
+                            Surface(
+                                color = Color.Transparent,
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(Color(0xFFF59E0B), Color(0xFFD97706)))),
+                                shadowElevation = 2.dp,
+                                modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .background(Brush.horizontalGradient(listOf(Color(0xFF1E293B), Color(0xFF0F172A))))
+                                        .padding(horizontal = 6.dp, vertical = 3.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Image(
+                                        painter = painterResource(id = R.drawable.ic_pk_flame_vs),
+                                        contentDescription = "PK Rank",
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Lv.$pkLvlVal",
+                                        color = Color(0xFFFDE68A),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Black,
+                                        letterSpacing = 0.5.sp
+                                    )
+                                }
+                            }
+
+                            // 4. VIP Imperial Crown Badge (Gold & Imperial Maroon)
+                            if (vipLvlVal > 0) {
+                                Surface(
+                                    color = Color.Transparent,
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.2.dp, Color(0xFFFFD700)),
+                                    shadowElevation = 2.dp,
+                                    modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .background(Brush.horizontalGradient(listOf(Color(0xFFB45309), Color(0xFF78350F))))
+                                            .padding(horizontal = 6.dp, vertical = 3.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("👑", fontSize = 10.sp)
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text(
+                                            text = "VIP $vipLvlVal",
+                                            color = Color(0xFFFFD700),
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Black
+                                        )
+                                    }
+                                }
                             }
                         }
 
@@ -5382,6 +5480,16 @@ fun ProfileScreenContent(
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("👑 ABOUT & LIFESTYLE", color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
 
+                    val locPrivacyLabel = when (currentUser.locationPrivacy) {
+                        "only_me" -> "🔒 Only Me"
+                        "friends" -> "👥 Friends"
+                        else -> "🌐 Public"
+                    }
+                    ProfileAttributeRow(
+                        icon = "📍",
+                        label = "Location",
+                        value = "${currentUser.city.ifBlank { "Kolkata" }} ($locPrivacyLabel)"
+                    )
                     ProfileAttributeRow(icon = "💼", label = "Profession", value = profession.ifBlank { "Not specified" })
                     ProfileAttributeRow(icon = "🎓", label = "Education", value = education.ifBlank { "Graduate" })
                     ProfileAttributeRow(icon = "💬", label = "Looking for", value = interestedIn.ifBlank { "Everyone" })
@@ -6102,6 +6210,17 @@ fun ProfileScreenContent(
             onDismiss = { showLuxuryStoreModal = false },
             onOpenTopUp = { showCoinStoreModal = true },
             onProfileUpdated = { updated -> onUpdateProfile(updated) }
+        )
+    }
+
+    if (showVoiceVerificationModal) {
+        VoiceVerificationDialog(
+            currentUser = currentUser,
+            db = db,
+            onDismiss = { showVoiceVerificationModal = false },
+            onVerified = { updated ->
+                onUpdateProfile(updated)
+            }
         )
     }
 
@@ -7293,6 +7412,7 @@ fun LocationSetupDialog(
     var currentLat by remember { mutableDoubleStateOf(currentUser.latitude) }
     var currentLon by remember { mutableDoubleStateOf(currentUser.longitude) }
     var isDetectingLocation by remember { mutableStateOf(false) }
+    var locationPrivacy by remember { mutableStateOf(currentUser.locationPrivacy.ifBlank { "public" }) }
 
     val context = LocalContext.current
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -7577,6 +7697,49 @@ fun LocationSetupDialog(
                             }
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Location Privacy Selector (Public, Friends, Only Me)
+                    Text("🔒 Location Privacy", color = BrandGold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val privacyOptions = listOf(
+                            Triple("public", "🌐 Public", "Everyone"),
+                            Triple("friends", "👥 Friends", "Only friends"),
+                            Triple("only_me", "🔒 Only Me", "Private")
+                        )
+                        privacyOptions.forEach { (key, label, desc) ->
+                            val isSel = locationPrivacy == key
+                            Surface(
+                                color = if (isSel) Color(0xFF7E22CE) else BrandCardSubtle,
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, if (isSel) BrandGold else BrandBorder),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { locationPrivacy = key }
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = label,
+                                        color = if (isSel) Color.White else Color.LightGray,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = desc,
+                                        color = if (isSel) Color(0xFFFDE68A) else Color.Gray,
+                                        fontSize = 8.5.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -7591,7 +7754,8 @@ fun LocationSetupDialog(
                             locationName = locationArea.trim().ifBlank { selectedCity },
                             latitude = if (currentLat != 0.0) currentLat else (CITY_COORDINATES[selectedCity]?.first ?: 22.5726),
                             longitude = if (currentLon != 0.0) currentLon else (CITY_COORDINATES[selectedCity]?.second ?: 88.3639),
-                            isLocationSet = true
+                            isLocationSet = true,
+                            locationPrivacy = locationPrivacy
                         )
                         onSaveLocation(updated)
                         onDismiss()
@@ -7632,6 +7796,7 @@ fun SettingsDialog(
     var enableDiscovery by remember { mutableStateOf(user.enableDiscovery) }
     var myMove by remember { mutableStateOf(user.myMove) }
     var photoVerifiedChat by remember { mutableStateOf(user.photoVerifiedChat) }
+    var locationPrivacy by remember { mutableStateOf(user.locationPrivacy.ifBlank { "public" }) }
 
     var interests by remember { mutableStateOf(user.interests.ifBlank { "Travel, Cafe, Night Drives" }) }
     var lookingFor by remember { mutableStateOf(user.lookingFor) }
@@ -7725,7 +7890,8 @@ fun SettingsDialog(
                                 drinking = drinking,
                                 smoking = smoking,
                                 workout = workout,
-                                socialMedia = socialMedia
+                                socialMedia = socialMedia,
+                                locationPrivacy = locationPrivacy
                             )
                             onSave(updated)
                         },
@@ -7801,6 +7967,44 @@ fun SettingsDialog(
                                     Text("Tap to change real GPS location & area.", color = Color.Gray, fontSize = 11.sp)
                                 }
                                 Text("📍 $locationName ✏️", color = BrandCoral, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // Location Privacy Controls (Public / Friends / Only Me)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Location Privacy", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                    Text("Who can see your location", color = Color.Gray, fontSize = 10.sp)
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    listOf(
+                                        "public" to "🌐 Public",
+                                        "friends" to "👥 Friends",
+                                        "only_me" to "🔒 Only Me"
+                                    ).forEach { (key, lbl) ->
+                                        val isSel = locationPrivacy == key
+                                        Surface(
+                                            color = if (isSel) Color(0xFF7E22CE) else Color(0xFFF3F4F6),
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.clickable { locationPrivacy = key }
+                                        ) {
+                                            Text(
+                                                text = lbl,
+                                                color = if (isSel) Color.White else Color(0xFF4B5563),
+                                                fontSize = 10.sp,
+                                                fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp)
+                                            )
+                                        }
+                                    }
+                                }
                             }
 
                             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color(0xFFEEEEEE))

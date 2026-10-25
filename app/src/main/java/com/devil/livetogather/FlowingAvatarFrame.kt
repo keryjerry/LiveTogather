@@ -59,6 +59,7 @@ fun FlowingAvatarFrame(
     vipLevel: Int = 0,
     showAnimation: Boolean = true,
     showVipBadge: Boolean = true,
+    showMicEffect: Boolean = false,
     onClick: (() -> Unit)? = null
 ) {
     val frameItem = AVATAR_FRAMES_CATALOG.find { it.id == frameId }
@@ -120,7 +121,13 @@ fun FlowingAvatarFrame(
     )
 
     // Calibrated Golden Ratio: Ensures the inner hole (53.52% of frame) always clears the avatar completely
-    val effectiveFrameSize = if (frameSize >= avatarSize * 1.95f) frameSize else (avatarSize * 1.95f)
+    val effectiveFrameSize = if (frameId.isNotBlank()) {
+        if (frameSize >= avatarSize * 1.95f) frameSize else (avatarSize * 1.95f)
+    } else if (showMicEffect) {
+        avatarSize + 18.dp
+    } else {
+        avatarSize
+    }
 
     Box(
         modifier = modifier
@@ -128,14 +135,23 @@ fun FlowingAvatarFrame(
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
         contentAlignment = Alignment.Center
     ) {
-        // Speech Pulsing Wave
-        if (isSpeaking) {
+        // Speech Pulsing Wave (used if not showing the full 360 mic effect)
+        if (isSpeaking && !(showMicEffect && frameId.isBlank())) {
             Box(
                 modifier = Modifier
                     .size(avatarSize + 12.dp)
                     .clip(CircleShape)
                     .background(BrandGreen.copy(alpha = 0.3f))
                     .border(1.5.dp, BrandGreen, CircleShape)
+            )
+        }
+
+        // 360° Rotating Cosmic Galaxy Vortex Mic Effect (Clean Circular Avatars WITHOUT VIP Frames)
+        if (showMicEffect && frameId.isBlank()) {
+            CosmicGalaxyVortexEffect(
+                avatarSize = avatarSize,
+                size = effectiveFrameSize,
+                isSpeaking = isSpeaking
             )
         }
 
@@ -162,7 +178,13 @@ fun FlowingAvatarFrame(
                 .background(Color.Black.copy(alpha = 0.2f))
                 .border(
                     width = 1.5.dp,
-                    color = if (isSpeaking) BrandGreen else if (frameId.isNotBlank()) auraColorList.first().copy(alpha = 0.8f) else BrandBorder,
+                    color = if (isSpeaking) {
+                        if (frameId.isBlank()) Color(0xFF00E5FF) else BrandGreen
+                    } else if (frameId.isNotBlank()) {
+                        auraColorList.first().copy(alpha = 0.8f)
+                    } else {
+                        Color(0x5500E5FF)
+                    },
                     shape = CircleShape
                 )
         ) {

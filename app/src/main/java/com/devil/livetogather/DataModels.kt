@@ -823,6 +823,7 @@ data class UserProfile(
     val isHostMonetized: Boolean = false,
     val hostMonetizationDate: Long = 0L,
     val emailPrivacy: String = "only_me",
+    val locationPrivacy: String = "public", // "public", "friends", "only_me"
     val hasPasswordSet: Boolean = false,
 
     // Real-Time 20s Voice Verification & Voice Intro System
@@ -851,11 +852,28 @@ data class UserProfile(
     }
 
     fun getDisplayLocation(viewerUser: UserProfile?): String {
-        if (viewerUser != null && (viewerUser.uid == this.uid || isMutualBestFriend(viewerUser))) {
-            val loc = locationName.ifBlank { city }.ifBlank { "LiveTogether Lounge" }
-            return "📍 $loc"
+        if (viewerUser != null && viewerUser.uid == this.uid) {
+            val loc = locationName.ifBlank { city }.ifBlank { "LiveTogather" }
+            val privTag = when (locationPrivacy) {
+                "only_me" -> "(Only Me 🔒)"
+                "friends" -> "(Friends 👥)"
+                else -> "(Public 🌐)"
+            }
+            return "📍 $loc $privTag"
         }
-        return "📍 Location Hidden 🔒 (Best Friends Only)"
+        return when (locationPrivacy) {
+            "only_me" -> "📍 Private 🔒"
+            "friends" -> if (viewerUser != null && isMutualBestFriend(viewerUser)) {
+                val loc = locationName.ifBlank { city }.ifBlank { "LiveTogather" }
+                "📍 $loc"
+            } else {
+                "📍 Friends Only 🔒"
+            }
+            else -> {
+                val loc = locationName.ifBlank { city }.ifBlank { "LiveTogather" }
+                "📍 $loc"
+            }
+        }
     }
 
     fun isPaidSubscriber(): Boolean {
@@ -1021,6 +1039,7 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
     val isHostMonetized = doc.getBoolean("isHostMonetized") ?: (isAdmin || name.contains("Devil", ignoreCase = true))
     val hostMonetizationDate = doc.getLong("hostMonetizationDate") ?: 0L
     val emailPrivacy = doc.getString("emailPrivacy") ?: "only_me"
+    val locationPrivacy = doc.getString("locationPrivacy") ?: "public"
     val hasPasswordSet = doc.getBoolean("hasPasswordSet") ?: false
 
     return UserProfile(
@@ -1102,7 +1121,8 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
         isHostMonetized = isHostMonetized,
         hostMonetizationDate = hostMonetizationDate,
         emailPrivacy = emailPrivacy,
-        hasPasswordSet = hasPasswordSet
+        hasPasswordSet = hasPasswordSet,
+        locationPrivacy = locationPrivacy
     )
 }
 
@@ -1116,6 +1136,7 @@ fun saveProfileToPrefs(prefs: SharedPreferences, user: UserProfile) {
         .putInt("profile_age", user.age)
         .putString("profile_gender", user.gender)
         .putString("profile_city", user.city)
+        .putString("profile_location_privacy", user.locationPrivacy)
         .putString("profile_photo", user.photo)
         .putString("profile_active_intent", user.activeIntent)
         .putString("profile_bio", user.bio)

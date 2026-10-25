@@ -25,6 +25,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.google.firebase.firestore.FieldValue
@@ -341,6 +343,35 @@ fun LuxuryStoreDialog(
                             item = item,
                             currentUser = currentUser,
                             isPurchasing = isPurchasing,
+                            onEquipToggle = { targetItem ->
+                                if (isPurchasing) return@StoreItemCard
+                                isPurchasing = true
+                                coroutineScope.launch(Dispatchers.IO) {
+                                    try {
+                                        val targetFrame = if (currentUser.activeFrame == targetItem.id) "" else targetItem.id
+                                        db.collection("users").document(currentUser.uid).update("activeFrame", targetFrame)
+                                        val prefs = context.getSharedPreferences("livetogather_user_prefs", android.content.Context.MODE_PRIVATE)
+                                        prefs.edit().putString("profile_active_frame", targetFrame).apply()
+                                        withContext(Dispatchers.Main) {
+                                            val updatedUser = currentUser.copy(activeFrame = targetFrame)
+                                            onProfileUpdated(updatedUser)
+                                            Toast.makeText(
+                                                context,
+                                                if (targetFrame.isNotBlank()) "👑 Equipped ${targetItem.name}!" else "Frame removed",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    } catch (e: Exception) {
+                                        withContext(Dispatchers.Main) {
+                                            Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } finally {
+                                        withContext(Dispatchers.Main) {
+                                            isPurchasing = false
+                                        }
+                                    }
+                                }
+                            },
                             onPurchase = { targetItem ->
                                 if (isPurchasing) return@StoreItemCard
 
@@ -372,10 +403,18 @@ fun LuxuryStoreDialog(
                                         db.collection("users").document(currentUser.uid)
                                             .update(updates)
 
+                                        val newActive = if (targetItem.category == "avatar_frame") targetItem.id else currentUser.activeFrame
+                                        val prefs = context.getSharedPreferences("livetogather_user_prefs", android.content.Context.MODE_PRIVATE)
+                                        prefs.edit()
+                                            .putLong("profile_diamonds", newDiamonds)
+                                            .putStringSet("profile_owned_frames", (currentUser.ownedFrames + targetItem.id).toSet())
+                                            .putString("profile_active_frame", newActive)
+                                            .apply()
+
                                         withContext(Dispatchers.Main) {
                                             val updatedUser = currentUser.copy(
                                                 diamonds = newDiamonds,
-                                                activeFrame = if (targetItem.category == "avatar_frame") targetItem.id else currentUser.activeFrame,
+                                                activeFrame = newActive,
                                                 ownedFrames = currentUser.ownedFrames + targetItem.id
                                             )
                                             onProfileUpdated(updatedUser)
@@ -423,6 +462,7 @@ fun StoreItemCard(
     item: StoreItem,
     currentUser: UserProfile,
     isPurchasing: Boolean,
+    onEquipToggle: (StoreItem) -> Unit = {},
     onPurchase: (StoreItem) -> Unit
 ) {
     val isOwned = currentUser.ownedFrames.contains(item.id) || currentUser.activeFrame == item.id
@@ -495,11 +535,37 @@ fun StoreItemCard(
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = item.iconEmoji,
-                    fontSize = 28.sp,
-                    modifier = Modifier.animateContentSize()
-                )
+                when (item.category) {
+                    "avatar_frame" -> {
+                        Image(
+                            painter = painterResource(id = getAvatarFrameDrawable(item.id)),
+                            contentDescription = item.name,
+                            modifier = Modifier.size(52.dp),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
+                    "mic_link" -> {
+                        MicLinkPreviewVisual(
+                            item = item,
+                            size = 52.dp
+                        )
+                    }
+                    "ring" -> {
+                        Image(
+                            painter = painterResource(id = R.drawable.gift_diamond_ring),
+                            contentDescription = item.name,
+                            modifier = Modifier.size(44.dp),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
+                    else -> {
+                        Text(
+                            text = item.iconEmoji,
+                            fontSize = 26.sp,
+                            modifier = Modifier.animateContentSize()
+                        )
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(6.dp))
@@ -548,13 +614,33 @@ fun StoreItemCard(
                         color = Color(0xFFEDE2FC),
                         shape = RoundedCornerShape(12.dp),
                         border = BorderStroke(1.dp, Color(0xFF9333EA)),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = !isPurchasing) { onEquipToggle(item) }
                     ) {
                         Text(
-                            text = "Equipped",
-                            fontSize = 9.5.sp,
+                            text = "Equipped (Tap to Remove)",
+                            fontSize = 8.sp,
                             fontWeight = FontWeight.Black,
                             color = Color(0xFF7E22CE),
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        )
+                    }
+                }
+                isOwned -> {
+                    Surface(
+                        color = Color(0xFF7C4DFF),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = !isPurchasing) { onEquipToggle(item) }
+                    ) {
+                        Text(
+                            text = "Equip",
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color.White,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.padding(vertical = 4.dp)
                         )
@@ -620,8 +706,8 @@ fun StoreItemCard(
                             .clickable(enabled = !isPurchasing) { onPurchase(item) }
                     ) {
                         Text(
-                            text = "Purchase",
-                            fontSize = 9.5.sp,
+                            text = "Buy 💎 ${item.diamondPrice}",
+                            fontSize = 9.sp,
                             fontWeight = FontWeight.Black,
                             color = Color.White,
                             textAlign = TextAlign.Center,

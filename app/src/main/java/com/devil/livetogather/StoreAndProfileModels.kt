@@ -31,7 +31,8 @@ data class StoreItem(
     val isIntimacyBondOnly: Boolean = false,
     val primaryColor: Long = 0xFFFFD700,
     val secondaryColor: Long = 0xFF00E5FF,
-    val description: String = ""
+    val description: String = "",
+    val drawableRes: Int = 0
 )
 
 // ---------------------------------------------------------------------
@@ -125,233 +126,108 @@ object LuxuryStoreCatalog {
         )
     )
 
-    // --- B. MIC LINKS (INTIMACY CONNECTORS BETWEEN LIVE MIC SEATS) ---
+    // --- B. MIC LINKS (PHOTOREALISTIC 3D CGI JEWELS & FRACTAL ELECTRIC PLASMA CONNECTORS) ---
     val micLinks = listOf(
         StoreItem(
-            id = "link_druid_witch",
-            name = "Druid Witch",
+            id = "mic_link_ruby_crown",
+            name = "Royal Imperial Ruby Crown",
             category = "mic_link",
-            subCategory = "Mic Link",
-            diamondPrice = 99999L,
-            rankTier = "E",
-            durationDays = 1,
-            iconEmoji = "🌸",
+            subCategory = "Couple Bond",
+            diamondPrice = 45000L,
+            rankTier = "S",
+            durationDays = 30, // 30 Days (Monthly Luxury Bond)
+            iconEmoji = "👑",
             isIntimacyBondOnly = true,
-            primaryColor = 0xFF81C784,
-            secondaryColor = 0xFFFFD54F,
-            description = "Enchanted blooming lily connector wave."
+            primaryColor = 0xFFFF1744,
+            secondaryColor = 0xFFFFD700,
+            description = "Photorealistic 3D Faceted Ruby Heart & 24K Gold Diamond Imperial Crown with Crackling Plasma.",
+            drawableRes = R.drawable.photoreal_link_ruby_crown
         ),
         StoreItem(
-            id = "link_jazz_couple",
-            name = "Jazz Couple",
+            id = "mic_link_twin_besties",
+            name = "Twin Besties Crystal",
             category = "mic_link",
-            subCategory = "Mic Link",
-            diamondPrice = 99999L,
-            rankTier = "D",
-            durationDays = 1,
-            iconEmoji = "🎸",
+            subCategory = "Bestie Bond",
+            diamondPrice = 25000L,
+            rankTier = "S",
+            durationDays = 30, // 30 Days (Monthly Bestie Bond)
+            iconEmoji = "💙",
             isIntimacyBondOnly = true,
-            primaryColor = 0xFFFFB74D,
-            secondaryColor = 0xFFFF7043,
-            description = "Acoustic guitar melodic equalizer connector."
+            primaryColor = 0xFF00E5FF,
+            secondaryColor = 0xFFFF4081,
+            description = "Interlocking 3D Aquamarine & Rose Quartz Hearts with Platinum Filigree & Dual Plasma.",
+            drawableRes = R.drawable.photoreal_link_twin_besties
         ),
         StoreItem(
-            id = "link_adventurer",
-            name = "Adventurer",
+            id = "mic_link_cyberpunk_reactor",
+            name = "Cyberpunk Plasma Reactor",
             category = "mic_link",
-            subCategory = "Mic Link",
-            diamondPrice = 99999L,
-            rankTier = "D",
-            durationDays = 1,
-            iconEmoji = "🧭",
+            subCategory = "Cyber Electro",
+            diamondPrice = 35000L,
+            rankTier = "S",
+            durationDays = 30, // 30 Days (Monthly Cyber Electro)
+            iconEmoji = "⚡",
             isIntimacyBondOnly = true,
-            primaryColor = 0xFF4FC3F7,
-            secondaryColor = 0xFF0288D1,
-            description = "Nautical compass oceanic wave connector."
+            primaryColor = 0xFF00F5FF,
+            secondaryColor = 0xFFA855F7,
+            description = "3D Amethyst Plasma Core in Brushed Titanium Exoskeleton & High-Voltage Electric Discharge.",
+            drawableRes = R.drawable.photoreal_link_cyberpunk_reactor
         ),
         StoreItem(
-            id = "link_gangster_love",
-            name = "Gangster Love",
+            id = "mic_link_celestial_wings",
+            name = "Celestial Angel Wings",
             category = "mic_link",
-            subCategory = "Mic Link",
-            diamondPrice = 99999L,
-            rankTier = "D",
-            durationDays = 1,
-            iconEmoji = "💵",
+            subCategory = "Soulmate Bond",
+            diamondPrice = 49999L,
+            rankTier = "S",
+            durationDays = 30, // 30 Days (Monthly Soulmate Bond)
+            iconEmoji = "✨",
             isIntimacyBondOnly = true,
-            primaryColor = 0xFF00E676,
-            secondaryColor = 0xFFB9F6CA,
-            description = "Cash currency bundles with neon green pulse beam."
+            primaryColor = 0xFFFFD700,
+            secondaryColor = 0xFFE0F7FA,
+            description = "3D Prismatic Cut Diamond Heart with Majestic 24K Gold Feathered Angel Wings & Solar Beams.",
+            drawableRes = R.drawable.photoreal_link_celestial_wings
         ),
         StoreItem(
-            id = "link_vampire_love",
-            name = "Vampire Love",
+            id = "mic_link_emerald_infinity",
+            name = "Emerald Infinity Sovereign",
             category = "mic_link",
-            subCategory = "Mic Link",
-            diamondPrice = 99999L,
-            rankTier = "D",
-            durationDays = 1,
-            iconEmoji = "🌹",
-            isIntimacyBondOnly = true,
-            primaryColor = 0xFFFF2A6D,
-            secondaryColor = 0xFF9C27B0,
-            description = "Crimson enchanted rose with magenta frequency wave."
-        ),
-        StoreItem(
-            id = "link_cyberpunk",
-            name = "Cyberpunk",
-            category = "mic_link",
-            subCategory = "Mic Link",
-            diamondPrice = 99999L,
-            rankTier = "D",
-            durationDays = 1,
-            iconEmoji = "💜",
-            isIntimacyBondOnly = true,
-            primaryColor = 0xFF7C4DFF,
-            secondaryColor = 0xFF00E5FF,
-            description = "Purple crystal heart flanked by electric holographic wings."
-        ),
-        StoreItem(
-            id = "link_green_elven",
-            name = "Green Elven",
-            category = "mic_link",
-            subCategory = "Mic Link",
-            diamondPrice = 99999L,
-            rankTier = "D",
-            durationDays = 1,
+            subCategory = "Eternal Bond",
+            diamondPrice = 39999L,
+            rankTier = "S",
+            durationDays = 30, // 30 Days (Monthly Eternal Bond)
             iconEmoji = "💚",
             isIntimacyBondOnly = true,
             primaryColor = 0xFF00E676,
-            secondaryColor = 0xFFE0F2F1,
-            description = "Emerald elven heart with feathered silver wings."
-        ),
-        StoreItem(
-            id = "link_royal_court",
-            name = "Royal Court",
-            category = "mic_link",
-            subCategory = "Mic Link",
-            diamondPrice = 99999L,
-            rankTier = "C",
-            durationDays = 1,
-            iconEmoji = "👑",
-            isIntimacyBondOnly = true,
-            primaryColor = 0xFFFFD700,
-            secondaryColor = 0xFFFF1744,
-            description = "Golden royal crown encasing a glowing heart."
-        ),
-        StoreItem(
-            id = "link_blue_love",
-            name = "Blue Love",
-            category = "mic_link",
-            subCategory = "Mic Link",
-            diamondPrice = 2160L,
-            rankTier = "D",
-            durationDays = 1,
-            iconEmoji = "💙",
-            isNotForSale = true,
-            primaryColor = 0xFF00E5FF,
-            secondaryColor = 0xFF2979FF,
-            description = "Pure sapphire heart with electro-cardiac wave."
+            secondaryColor = 0xFFFFD700,
+            description = "Glowing 3D Colombian Emerald Heart with 24K Gold Infinity Mobius Ribbon & Bio-Electric Arcs.",
+            drawableRes = R.drawable.photoreal_link_emerald_infinity
         )
     )
 
-    // --- C. AVATAR FRAMES ---
-    val avatarFrames = listOf(
+    // --- C. AVATAR FRAMES (ALL REAL FRAMES DYNAMICALLY MAPPED FROM AVATAR_FRAMES_CATALOG) ---
+    val avatarFrames: List<StoreItem> = AVATAR_FRAMES_CATALOG.map { frame ->
         StoreItem(
-            id = "frame_golden_lion",
-            name = "Golden Lion",
+            id = frame.id,
+            name = frame.name,
             category = "avatar_frame",
-            subCategory = "Avatar Frame",
-            diamondPrice = 46560L,
-            rankTier = "A",
-            durationDays = 1,
-            iconEmoji = "🦁",
-            isNotForSale = true,
-            primaryColor = 0xFFFFD700,
-            secondaryColor = 0xFFFF5722,
-            description = "Majestic crowned lion head with golden feathered crest."
-        ),
-        StoreItem(
-            id = "frame_shock",
-            name = "Shock",
-            category = "avatar_frame",
-            subCategory = "Avatar Frame",
-            diamondPrice = 2000L,
-            rankTier = "F",
-            durationDays = 1,
-            iconEmoji = "⚡",
-            primaryColor = 0xFF00E5FF,
-            secondaryColor = 0xFF2979FF,
-            description = "Electric cyan lightning spark ring."
-        ),
-        StoreItem(
-            id = "frame_wooo",
-            name = "Wooo",
-            category = "avatar_frame",
-            subCategory = "Avatar Frame",
-            diamondPrice = 3200L,
-            rankTier = "E",
-            durationDays = 1,
-            iconEmoji = "🐺",
-            primaryColor = 0xFF7986CB,
-            secondaryColor = 0xFF3F51B5,
-            description = "Silver howling phantom wolf with sharp ice claws."
-        ),
-        StoreItem(
-            id = "frame_apple",
-            name = "Apple",
-            category = "avatar_frame",
-            subCategory = "Avatar Frame",
-            diamondPrice = 2000L,
-            rankTier = "F",
-            durationDays = 1,
-            iconEmoji = "🍎",
-            primaryColor = 0xFFFF5252,
-            secondaryColor = 0xFF66BB6A,
-            description = "Ripe crimson apple frame with glossy fresh leaf."
-        ),
-        StoreItem(
-            id = "frame_honey_bear",
-            name = "Honey Bear",
-            category = "avatar_frame",
-            subCategory = "Avatar Frame",
-            diamondPrice = 16560L,
-            rankTier = "C",
-            durationDays = 1,
-            iconEmoji = "🐻",
-            isNotForSale = true,
-            primaryColor = 0xFFFFB74D,
-            secondaryColor = 0xFF8D6E63,
-            description = "Adorable 3D plush honey bear paws frame."
-        ),
-        StoreItem(
-            id = "frame_little_seal",
-            name = "Little Seal",
-            category = "avatar_frame",
-            subCategory = "Avatar Frame",
-            diamondPrice = 16560L,
-            rankTier = "C",
-            durationDays = 1,
-            iconEmoji = "🦭",
-            isNotForSale = true,
-            primaryColor = 0xFFECEFF1,
-            secondaryColor = 0xFFB0BEC5,
-            description = "Fluffy white arctic seal pup head frame."
-        ),
-        StoreItem(
-            id = "frame_vip3_gold",
-            name = "VIP3 Royal Sovereign",
-            category = "avatar_frame",
-            subCategory = "Avatar Frame",
-            diamondPrice = 88000L,
-            rankTier = "S",
-            durationDays = 30,
-            iconEmoji = "👑",
-            primaryColor = 0xFFFFD700,
-            secondaryColor = 0xFFFF1744,
-            description = "Ultimate VIP3 golden ribbon filigree with sparkling diamonds."
+            subCategory = if (frame.vipLevel > 0) "VIP Frame" else "Avatar Frame",
+            diamondPrice = frame.cost,
+            rankTier = when {
+                frame.vipLevel >= 5 -> "S"
+                frame.vipLevel >= 3 -> "A"
+                frame.vipLevel >= 1 -> "B"
+                frame.cost >= 50000 -> "C"
+                frame.cost >= 20000 -> "D"
+                else -> "E"
+            },
+            durationDays = 30, // 30 Days (1 Month)
+            iconEmoji = if (frame.vipLevel > 0) "👑" else "✨",
+            primaryColor = frame.auraColors.firstOrNull() ?: 0xFFFFD700,
+            secondaryColor = frame.auraColors.getOrNull(1) ?: 0xFFFF5722,
+            description = frame.description
         )
-    )
+    }
 
     // --- D. MIC EFFECTS (360° CONTINUOUS ROTATING ORBIT AURA) ---
     val micEffects = listOf(

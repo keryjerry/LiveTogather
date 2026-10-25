@@ -148,6 +148,7 @@ fun VideoHangoutRoomDialog(
     var showCommentInputDialog by remember { mutableStateOf(false) }
     var showInRoomInboxDialog by remember { mutableStateOf(false) }
     var showGiftStoreDialog by remember { mutableStateOf(false) }
+    var showLuxuryStoreDialog by remember { mutableStateOf(false) }
     var showTrackSelectorDialog by remember { mutableStateOf(false) }
     var showEmojiTray by remember { mutableStateOf(false) }
     var activeGiftEvent by remember { mutableStateOf<GiftEvent?>(null) }
@@ -1388,6 +1389,19 @@ fun VideoHangoutRoomDialog(
                             Icon(Icons.Default.Mail, contentDescription = "Inbox", tint = BrandGold, modifier = Modifier.size(19.dp))
                         }
 
+                        // 6B. HOST: Luxury Store (Avatar Frames, Rings, Mic Links)
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF7E22CE).copy(alpha = 0.85f))
+                                .border(1.2.dp, BrandGold, CircleShape)
+                                .clickable { showLuxuryStoreDialog = true },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("🛍️", fontSize = 18.sp)
+                        }
+
                         // 7. HOST: Luxury Gift Store Button (Host can gift co-hosts & viewers)
                         Box(
                             modifier = Modifier
@@ -1443,6 +1457,19 @@ fun VideoHangoutRoomDialog(
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(Icons.Default.Share, contentDescription = "Share", tint = Color.White, modifier = Modifier.size(18.dp))
+                        }
+
+                        // 5B. VIEWER: Luxury Store (Avatar Frames, Rings, Mic Links)
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF7E22CE).copy(alpha = 0.85f))
+                                .border(1.2.dp, BrandGold, CircleShape)
+                                .clickable { showLuxuryStoreDialog = true },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("🛍️", fontSize = 17.sp)
                         }
 
                         // 6. VIEWER: Luxury Gift Store Button
@@ -1862,6 +1889,22 @@ fun VideoHangoutRoomDialog(
                     activeMembers = activeMembers,
                     db = db,
                     onDismiss = { showInRoomInboxDialog = false }
+                )
+            }
+
+            if (showLuxuryStoreDialog) {
+                LuxuryStoreDialog(
+                    currentUser = currentUser.copy(activeFrame = activeUserFrame, ownedFrames = userOwnedFrames, diamonds = userDiamonds),
+                    db = db,
+                    onDismiss = { showLuxuryStoreDialog = false },
+                    onProfileUpdated = { updated ->
+                        activeUserFrame = updated.activeFrame
+                        userOwnedFrames = updated.ownedFrames
+                        userDiamonds = updated.diamonds
+                    },
+                    onOpenTopUp = {
+                        showGiftStoreDialog = true
+                    }
                 )
             }
 

@@ -4887,6 +4887,7 @@ fun AudioHangoutRoomDialog(
     var activeUserFrame by remember { mutableStateOf(currentUser.activeFrame) }
     var userOwnedFrames by remember { mutableStateOf(currentUser.ownedFrames) }
     var showGiftStoreDialog by remember { mutableStateOf(false) }
+    var showLuxuryStoreDialog by remember { mutableStateOf(false) }
     var activeGiftEvent by remember { mutableStateOf<GiftEvent?>(null) }
 
     // Real-time listener for current user diamonds and active frame
@@ -4932,6 +4933,8 @@ fun AudioHangoutRoomDialog(
     var isLocalTalking by remember { mutableStateOf(false) }
     var pendingSeatToJoin by remember { mutableStateOf<MicSeat?>(null) }
     var showEmojiTray by remember { mutableStateOf(false) }
+    var activeMicLinkDesignId by remember { mutableStateOf("mic_link_ruby_crown") }
+    var showMicLinkSelectorDialog by remember { mutableStateOf(false) }
     val activeEmojiReactions = remember { mutableStateMapOf<String, String>() }
 
     // Real-time listener for live floating emoji reactions
@@ -6215,7 +6218,20 @@ fun AudioHangoutRoomDialog(
                                     Text("😊", fontSize = 17.sp)
                                 }
 
-                                // 6. GIFT STORE BUTTON
+                                // 6. LUXURY STORE BUTTON (Avatar Frames, Rings, Mic Links)
+                                Box(
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF7E22CE).copy(alpha = 0.85f))
+                                        .border(1.2.dp, BrandGold, CircleShape)
+                                        .clickable { showLuxuryStoreDialog = true },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("🛍️", fontSize = 18.sp)
+                                }
+
+                                // 7. GIFT STORE BUTTON
                                 Box(
                                     modifier = Modifier
                                         .size(42.dp)
@@ -6410,6 +6426,44 @@ fun AudioHangoutRoomDialog(
                             activeEmojiReactions = activeEmojiReactions,
                             categorySeatEmoji = "🎙️",
                             categorySeatLabel = "Mic",
+                            activeMicLinkId = activeMicLinkDesignId,
+                            onOpenMicLinkSelector = { showMicLinkSelectorDialog = true },
+                            onToggleCompanionMaya = {
+                                val companionUid = "companion_maya_vip"
+                                val currentSeat1 = micSeats.find { it.seatIndex == 1 }
+                                if (currentSeat1 != null && currentSeat1.uid == companionUid) {
+                                    vacateMicSeat(db, room.id, 1, false)
+                                    android.widget.Toast.makeText(context, "Maya vacated Mic 2", android.widget.Toast.LENGTH_SHORT).show()
+                                } else {
+                                    val mayaSeat = MicSeat(
+                                        seatIndex = 1,
+                                        label = "Mic 2",
+                                        uid = companionUid,
+                                        name = "Maya (Bestie 🌸)",
+                                        photo = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80",
+                                        role = "speaker",
+                                        isTalking = true
+                                    )
+                                    db.collection("rooms").document(room.id).collection("mic_seats").document("1").set(mayaSeat)
+                                    // Also ensure user document exists for Maya
+                                    val mayaProfile = mapOf<String, Any>(
+                                        "uid" to companionUid,
+                                        "userId" to "maya_bestie_vip",
+                                        "name" to "Maya (Bestie 🌸)",
+                                        "photo" to "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80",
+                                        "gender" to "female",
+                                        "wealthLevel" to 35,
+                                        "charmLevel" to 42,
+                                        "diamonds" to 500000L,
+                                        "coins" to 1000000L,
+                                        "location" to "Mumbai",
+                                        "locationPrivacy" to "public",
+                                        "voiceVerificationStatus" to "verified"
+                                    )
+                                    db.collection("users").document(companionUid).set(mayaProfile)
+                                    android.widget.Toast.makeText(context, "🌸 Maya joined Mic 2! ⚡ 3D Mic Link Active!", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            },
                             onSeatClick = handleSeatClick,
                             onQuickToggleMute = {
                                 myCurrentMicSeat?.let { seat ->
@@ -7413,7 +7467,102 @@ fun AudioHangoutRoomDialog(
             )
         }
 
-        // 7. Luxury Gift & Store Dialog
+        // 7. Luxury Store Dialog (Avatar Frames, Rings, Mic Links)
+        if (showMicLinkSelectorDialog) {
+            androidx.compose.ui.window.Dialog(
+                onDismissRequest = { showMicLinkSelectorDialog = false }
+            ) {
+                androidx.compose.material3.Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = Color(0xFF161026),
+                    border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFFFFD700)),
+                    modifier = Modifier.fillMaxWidth().padding(12.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "⚡ 3D Mic Link Connectors",
+                            color = Color(0xFFFFD700),
+                            fontSize = 16.sp,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        )
+                        Text(
+                            text = "Tap any design to apply live on stage",
+                            color = Color.White.copy(alpha = 0.7f),
+                            fontSize = 11.sp
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        val designs = listOf(
+                            Triple("mic_link_ruby_crown", "Royal Ruby Crown 👑 (Couple)", R.drawable.photoreal_link_ruby_crown),
+                            Triple("mic_link_twin_besties", "Twin Besties 🌸 (Bestie)", R.drawable.photoreal_link_twin_besties),
+                            Triple("mic_link_cyberpunk_reactor", "Cyber Reactor ⚡ (Cyber)", R.drawable.photoreal_link_cyberpunk_reactor),
+                            Triple("mic_link_celestial_wings", "Celestial Wings ✨ (Soulmate)", R.drawable.photoreal_link_celestial_wings),
+                            Triple("mic_link_emerald_infinity", "Emerald Infinity 💚 (Eternal)", R.drawable.photoreal_link_emerald_infinity)
+                        )
+
+                        designs.forEach { (id, name, res) ->
+                            val isSelected = activeMicLinkDesignId == id
+                            androidx.compose.material3.Surface(
+                                color = if (isSelected) Color(0xFF9333EA).copy(alpha = 0.45f) else Color(0xFF221938),
+                                shape = RoundedCornerShape(12.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) Color(0xFFFFD700) else Color(0xFF3B2D5C)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                                    .clickable {
+                                        activeMicLinkDesignId = id
+                                        showMicLinkSelectorDialog = false
+                                        android.widget.Toast.makeText(context, "⚡ Activated: $name on Stage!", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Image(
+                                        painter = painterResource(id = res),
+                                        contentDescription = name,
+                                        modifier = Modifier.size(36.dp),
+                                        contentScale = ContentScale.Fit
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(name, color = Color.White, fontSize = 13.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                                        Text(if (isSelected) "Active on Stage ✓" else "Tap to switch", color = if (isSelected) Color(0xFF00E5FF) else Color.Gray, fontSize = 10.sp)
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        androidx.compose.material3.TextButton(onClick = { showMicLinkSelectorDialog = false }) {
+                            Text("Close", color = Color.White.copy(alpha = 0.7f))
+                        }
+                    }
+                }
+            }
+        }
+
+        if (showLuxuryStoreDialog) {
+            LuxuryStoreDialog(
+                currentUser = currentUser.copy(activeFrame = activeUserFrame, ownedFrames = userOwnedFrames, diamonds = userDiamonds),
+                db = db,
+                onDismiss = { showLuxuryStoreDialog = false },
+                onProfileUpdated = { updated ->
+                    activeUserFrame = updated.activeFrame
+                    userOwnedFrames = updated.ownedFrames
+                    userDiamonds = updated.diamonds
+                },
+                onOpenTopUp = {
+                    showGiftStoreDialog = true
+                }
+            )
+        }
+
+        // 8. Luxury Gift Sheet Dialog
         if (showGiftStoreDialog) {
             GiftStoreDialog(
                 currentDiamonds = userDiamonds,
@@ -9506,43 +9655,136 @@ fun TenMicStageSection(
     activeEmojiReactions: Map<String, String> = emptyMap(),
     categorySeatEmoji: String = "🎙️",
     categorySeatLabel: String = "Seat",
+    activeMicLinkId: String = "mic_link_ruby_crown",
+    onOpenMicLinkSelector: () -> Unit = {},
+    onToggleCompanionMaya: () -> Unit = {},
     onSeatClick: (MicSeat) -> Unit,
     onQuickToggleMute: () -> Unit,
     onQuickLeaveStage: () -> Unit
 ) {
     val mySeat = seats.find { it.uid == currentUserId }
+    val seat0 = seats.find { it.seatIndex == 0 }
+    val seat1 = seats.find { it.seatIndex == 1 }
+    val isBondActive = (seat0?.uid?.isNotBlank() == true && seat1?.uid?.isNotBlank() == true)
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 4.dp, vertical = 2.dp)
     ) {
-        // Row 1 (5 Mic Seats: 0 to 4)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
+        // Header Controls: Active Mic Link Selector & Maya Toggle
+        androidx.compose.foundation.layout.Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp, vertical = 2.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            for (i in 0..4) {
-                val seat = seats.find { it.seatIndex == i } ?: MicSeat(
-                    seatIndex = i,
-                    label = if (i == 0) "Host 👑" else "Mic ${i + 1}",
-                    uid = "",
-                    name = "",
-                    photo = "",
-                    role = if (i == 0) "host" else "speaker"
-                )
-                MicSeatView(
-                    seat = seat,
-                    isCurrentSelf = seat.uid.isNotEmpty() && seat.uid == currentUserId,
-                    isLocalTalking = isLocalTalking,
-                    isHost = isHost,
-                    allProfiles = allProfiles,
-                    userActiveFrame = userActiveFrame,
-                    reactionEmoji = activeEmojiReactions[seat.uid],
-                    categorySeatEmoji = "🎙️",
-                    categorySeatLabel = "Mic",
-                    onClick = { onSeatClick(seat) }
+            androidx.compose.material3.Surface(
+                color = Color(0xFF1E1435).copy(alpha = 0.88f),
+                shape = RoundedCornerShape(12.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFD700).copy(alpha = 0.65f)),
+                modifier = Modifier.clickable { onOpenMicLinkSelector() }
+            ) {
+                androidx.compose.foundation.layout.Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("⚡ Link: ", fontSize = 10.sp, color = Color.White.copy(alpha = 0.8f))
+                    val title = when (activeMicLinkId) {
+                        "mic_link_twin_besties" -> "Twin Besties 🌸"
+                        "mic_link_cyberpunk_reactor" -> "Cyber Reactor ⚡"
+                        "mic_link_celestial_wings" -> "Celestial Wings ✨"
+                        "mic_link_emerald_infinity" -> "Emerald Infinity 💚"
+                        else -> "Ruby Crown 👑"
+                    }
+                    Text(title, fontSize = 10.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, color = Color(0xFFFFD700))
+                    Text(" ▼", fontSize = 8.sp, color = Color.White.copy(alpha = 0.6f))
+                }
+            }
+
+            if (isHost) {
+                val hasMaya = seats.any { it.uid == "companion_maya_vip" }
+                androidx.compose.material3.Surface(
+                    color = if (hasMaya) Color(0xFFFF1744).copy(alpha = 0.35f) else Color(0xFF00E5FF).copy(alpha = 0.25f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, if (hasMaya) Color(0xFFFF1744) else Color(0xFF00E5FF)),
+                    modifier = Modifier.clickable { onToggleCompanionMaya() }
+                ) {
+                    Text(
+                        text = if (hasMaya) "❌ Remove Maya" else "👥 Seat Maya on Mic 2",
+                        fontSize = 10.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(2.dp))
+
+        // Row 1 (5 Mic Seats: 0 to 4 with StageMicLinkOverlay between Seat 0 & 1)
+        androidx.compose.foundation.layout.BoxWithConstraints(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            val totalW = maxWidth
+            val seat0X = totalW * 0.10f
+            val seat1X = totalW * 0.30f
+            val centerY = 32.dp
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                for (i in 0..4) {
+                    val seat = seats.find { it.seatIndex == i } ?: MicSeat(
+                        seatIndex = i,
+                        label = if (i == 0) "Host 👑" else "Mic ${i + 1}",
+                        uid = "",
+                        name = "",
+                        photo = "",
+                        role = if (i == 0) "host" else "speaker"
+                    )
+                    MicSeatView(
+                        seat = seat,
+                        isCurrentSelf = seat.uid.isNotEmpty() && seat.uid == currentUserId,
+                        isLocalTalking = isLocalTalking,
+                        isHost = isHost,
+                        allProfiles = allProfiles,
+                        userActiveFrame = userActiveFrame,
+                        reactionEmoji = activeEmojiReactions[seat.uid],
+                        categorySeatEmoji = "🎙️",
+                        categorySeatLabel = "Mic",
+                        onClick = { onSeatClick(seat) }
+                    )
+                }
+            }
+
+            // Real-Time Active Mic Link Overlay (between Seat 0 & Seat 1)
+            if (isBondActive) {
+                val (dRes, pCol, sCol) = when (activeMicLinkId) {
+                    "mic_link_twin_besties" -> Triple(R.drawable.photoreal_link_twin_besties, Color(0xFF00E5FF), Color(0xFFFF4081))
+                    "mic_link_cyberpunk_reactor" -> Triple(R.drawable.photoreal_link_cyberpunk_reactor, Color(0xFF00F5FF), Color(0xFFA855F7))
+                    "mic_link_celestial_wings" -> Triple(R.drawable.photoreal_link_celestial_wings, Color(0xFFFFD700), Color(0xFFE0F7FA))
+                    "mic_link_emerald_infinity" -> Triple(R.drawable.photoreal_link_emerald_infinity, Color(0xFF00E676), Color(0xFFFFD700))
+                    else -> Triple(R.drawable.photoreal_link_ruby_crown, Color(0xFFFF1744), Color(0xFFFFD700))
+                }
+
+                val density = androidx.compose.ui.platform.LocalDensity.current
+                val seat0XPx = with(density) { seat0X.toPx() }
+                val seat1XPx = with(density) { seat1X.toPx() }
+                val centerYPx = with(density) { centerY.toPx() }
+
+                StageMicLinkOverlay(
+                    startOffset = androidx.compose.ui.geometry.Offset(seat0XPx, centerYPx),
+                    endOffset = androidx.compose.ui.geometry.Offset(seat1XPx, centerYPx),
+                    drawableRes = dRes,
+                    primaryColor = pCol,
+                    secondaryColor = sCol,
+                    emblemSize = 34.dp,
+                    modifier = Modifier.matchParentSize()
                 )
             }
         }
@@ -9887,8 +10129,8 @@ fun MicSeatView(
             .clickable { onClick() }
             .padding(vertical = 1.dp)
     ) {
-        val seatBoxSize = if (shouldShowFrame) 66.dp else 44.dp
-        val avatarSize = if (shouldShowFrame) 38.dp else 36.dp
+        val seatBoxSize = if (shouldShowFrame) 66.dp else 56.dp
+        val avatarSize = 38.dp
 
         Box(
             modifier = Modifier.size(seatBoxSize),
@@ -9901,11 +10143,12 @@ fun MicSeatView(
                 FlowingAvatarFrame(
                     photoUrl = seat.photo.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
                     frameId = seatFrameId,
-                    avatarSize = 38.dp,
+                    avatarSize = avatarSize,
                     frameSize = 74.dp,
                     isSpeaking = isSpeaking,
                     vipLevel = seatVipLvl,
-                    showVipBadge = false
+                    showVipBadge = false,
+                    showMicEffect = true
                 )
 
                 // Mic Mute / Unmute Status Badge at bottom-right with subtle voice pulse animation
@@ -10660,7 +10903,7 @@ fun GiftStoreDialog(
                         .padding(3.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    val tabs = listOf("🎁 3D Gifts", "🎒 Backpack", "🎬 VIP Gifts", "💎 Recharge", "👑 Frames")
+                    val tabs = listOf("🎁 3D Gifts", "🎒 Backpack", "🎬 VIP Gifts", "💎 Recharge")
                     items(tabs.size) { index ->
                         val title = tabs[index]
                         val isSelected = selectedTab == index
@@ -10729,15 +10972,6 @@ fun GiftStoreDialog(
                         3 -> DiamondsRechargeSection(
                             currentUser = currentUser,
                             onRecharge = { diamonds -> onDiamondsRecharged(diamonds) }
-                        )
-                        4 -> AvatarFramesSection(
-                            currentDiamonds = currentDiamonds,
-                            activeFrame = activeFrame,
-                            ownedFrames = ownedFrames,
-                            currentUser = currentUser,
-                            onBuy = { frameId, cost -> onBuyFrame(frameId, cost) },
-                            onApply = { frameId -> onApplyFrame(frameId) },
-                            onGoToRecharge = { selectedTab = 3 }
                         )
                     }
                 }
