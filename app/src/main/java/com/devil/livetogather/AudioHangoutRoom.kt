@@ -6404,6 +6404,92 @@ fun AudioHangoutRoomDialog(
                         }
                     }
 
+                    // Live Stage Mic Link Controls Bar (Visible in all room types)
+                    androidx.compose.foundation.layout.Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        androidx.compose.material3.Surface(
+                            color = Color(0xFF1E1435).copy(alpha = 0.90f),
+                            shape = RoundedCornerShape(12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFD700).copy(alpha = 0.70f)),
+                            modifier = Modifier.clickable { showMicLinkSelectorDialog = true }
+                        ) {
+                            androidx.compose.foundation.layout.Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("⚡ Link: ", fontSize = 11.sp, color = Color.White.copy(alpha = 0.85f))
+                                val title = when (activeMicLinkDesignId) {
+                                    "mic_link_twin_besties" -> "Twin Besties 🌸"
+                                    "mic_link_cyberpunk_reactor" -> "Cyber Reactor ⚡"
+                                    "mic_link_celestial_wings" -> "Celestial Wings ✨"
+                                    "mic_link_emerald_infinity" -> "Emerald Infinity 💚"
+                                    else -> "Ruby Crown 👑"
+                                }
+                                Text(title, fontSize = 11.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, color = Color(0xFFFFD700))
+                                Text(" ▼", fontSize = 9.sp, color = Color.White.copy(alpha = 0.6f))
+                            }
+                        }
+
+                        if (isUserAdmin) {
+                            val hasMaya = stageSeats.any { it.uid == "companion_maya_vip" }
+                            androidx.compose.material3.Surface(
+                                color = if (hasMaya) Color(0xFFFF1744).copy(alpha = 0.45f) else Color(0xFF00E5FF).copy(alpha = 0.30f),
+                                shape = RoundedCornerShape(12.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, if (hasMaya) Color(0xFFFF1744) else Color(0xFF00E5FF)),
+                                modifier = Modifier.clickable {
+                                    val companionUid = "companion_maya_vip"
+                                    val currentSeat1 = micSeats.find { it.seatIndex == 1 }
+                                    if (currentSeat1 != null && currentSeat1.uid == companionUid) {
+                                        vacateMicSeat(db, room.id, 1, false)
+                                        android.widget.Toast.makeText(context, "Maya vacated Mic 2", android.widget.Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        val mayaSeat = MicSeat(
+                                            seatIndex = 1,
+                                            label = "Mic 2",
+                                            uid = companionUid,
+                                            name = "Maya (Bestie 🌸)",
+                                            photo = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80",
+                                            role = "speaker",
+                                            isTalking = true
+                                        )
+                                        db.collection("rooms").document(room.id).collection("mic_seats").document("1").set(mayaSeat)
+                                        val mayaProfile = mapOf<String, Any>(
+                                            "uid" to companionUid,
+                                            "userId" to "maya_bestie_vip",
+                                            "name" to "Maya (Bestie 🌸)",
+                                            "photo" to "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80",
+                                            "gender" to "female",
+                                            "wealthLevel" to 35,
+                                            "charmLevel" to 42,
+                                            "diamonds" to 500000L,
+                                            "coins" to 1000000L,
+                                            "location" to "Mumbai",
+                                            "locationPrivacy" to "public",
+                                            "voiceVerificationStatus" to "verified"
+                                        )
+                                        db.collection("users").document(companionUid).set(mayaProfile)
+                                        android.widget.Toast.makeText(context, "🌸 Maya joined Mic 2! ⚡ 3D Mic Link Active!", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            ) {
+                                Text(
+                                    text = if (hasMaya) "❌ Remove Maya" else "👥 Seat Maya on Mic 2",
+                                    fontSize = 11.sp,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(2.dp))
+
                     if (isVipRoom) {
                         VipRoyalStageCanvas(
                             seats = stageSeats,
@@ -6413,6 +6499,7 @@ fun AudioHangoutRoomDialog(
                             allProfiles = allProfiles,
                             userActiveFrame = activeUserFrame,
                             activeEmojiReactions = activeEmojiReactions,
+                            activeMicLinkId = activeMicLinkDesignId,
                             onSeatClick = handleSeatClick
                         )
                     } else {
@@ -9672,57 +9759,7 @@ fun TenMicStageSection(
             .fillMaxWidth()
             .padding(horizontal = 4.dp, vertical = 2.dp)
     ) {
-        // Header Controls: Active Mic Link Selector & Maya Toggle
-        androidx.compose.foundation.layout.Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp, vertical = 2.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            androidx.compose.material3.Surface(
-                color = Color(0xFF1E1435).copy(alpha = 0.88f),
-                shape = RoundedCornerShape(12.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFD700).copy(alpha = 0.65f)),
-                modifier = Modifier.clickable { onOpenMicLinkSelector() }
-            ) {
-                androidx.compose.foundation.layout.Row(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("⚡ Link: ", fontSize = 10.sp, color = Color.White.copy(alpha = 0.8f))
-                    val title = when (activeMicLinkId) {
-                        "mic_link_twin_besties" -> "Twin Besties 🌸"
-                        "mic_link_cyberpunk_reactor" -> "Cyber Reactor ⚡"
-                        "mic_link_celestial_wings" -> "Celestial Wings ✨"
-                        "mic_link_emerald_infinity" -> "Emerald Infinity 💚"
-                        else -> "Ruby Crown 👑"
-                    }
-                    Text(title, fontSize = 10.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, color = Color(0xFFFFD700))
-                    Text(" ▼", fontSize = 8.sp, color = Color.White.copy(alpha = 0.6f))
-                }
-            }
 
-            if (isHost) {
-                val hasMaya = seats.any { it.uid == "companion_maya_vip" }
-                androidx.compose.material3.Surface(
-                    color = if (hasMaya) Color(0xFFFF1744).copy(alpha = 0.35f) else Color(0xFF00E5FF).copy(alpha = 0.25f),
-                    shape = RoundedCornerShape(12.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, if (hasMaya) Color(0xFFFF1744) else Color(0xFF00E5FF)),
-                    modifier = Modifier.clickable { onToggleCompanionMaya() }
-                ) {
-                    Text(
-                        text = if (hasMaya) "❌ Remove Maya" else "👥 Seat Maya on Mic 2",
-                        fontSize = 10.sp,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                        color = Color.White,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(2.dp))
 
         // Row 1 (5 Mic Seats: 0 to 4 with StageMicLinkOverlay between Seat 0 & 1)
         androidx.compose.foundation.layout.BoxWithConstraints(
@@ -9835,6 +9872,7 @@ fun VipRoyalStageCanvas(
     allProfiles: List<UserProfile> = emptyList(),
     userActiveFrame: String = "",
     activeEmojiReactions: Map<String, String> = emptyMap(),
+    activeMicLinkId: String = "mic_link_ruby_crown",
     onSeatClick: (MicSeat) -> Unit
 ) {
     // 10 Seats mapped to the shifted-up curved velvet sofa, armchairs, and round table:
@@ -9903,6 +9941,35 @@ fun VipRoyalStageCanvas(
                     onClick = { onSeatClick(seat) }
                 )
             }
+        }
+
+        // Real-Time Active Mic Link Overlay in VIP Room (Between Seat 0 Host and Seat 1 Mic 2)
+        val seat0 = seats.find { it.seatIndex == 0 }
+        val seat1 = seats.find { it.seatIndex == 1 }
+        if (seat0?.uid?.isNotBlank() == true && seat1?.uid?.isNotBlank() == true) {
+            val (dRes, pCol, sCol) = when (activeMicLinkId) {
+                "mic_link_twin_besties" -> Triple(R.drawable.photoreal_link_twin_besties, Color(0xFF00E5FF), Color(0xFFFF4081))
+                "mic_link_cyberpunk_reactor" -> Triple(R.drawable.photoreal_link_cyberpunk_reactor, Color(0xFF00F5FF), Color(0xFFA855F7))
+                "mic_link_celestial_wings" -> Triple(R.drawable.photoreal_link_celestial_wings, Color(0xFFFFD700), Color(0xFFE0F7FA))
+                "mic_link_emerald_infinity" -> Triple(R.drawable.photoreal_link_emerald_infinity, Color(0xFF00E676), Color(0xFFFFD700))
+                else -> Triple(R.drawable.photoreal_link_ruby_crown, Color(0xFFFF1744), Color(0xFFFFD700))
+            }
+
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            val startX = with(density) { (stageWidth * 0.50f).toPx() }
+            val startY = with(density) { (stageHeight * 0.80f).toPx() }
+            val endX = with(density) { (stageWidth * 0.50f).toPx() }
+            val endY = with(density) { (stageHeight * 0.50f).toPx() }
+
+            StageMicLinkOverlay(
+                startOffset = androidx.compose.ui.geometry.Offset(startX, startY),
+                endOffset = androidx.compose.ui.geometry.Offset(endX, endY),
+                drawableRes = dRes,
+                primaryColor = pCol,
+                secondaryColor = sCol,
+                emblemSize = 36.dp,
+                modifier = Modifier.matchParentSize()
+            )
         }
     }
 }
