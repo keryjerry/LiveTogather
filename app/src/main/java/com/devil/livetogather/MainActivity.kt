@@ -4578,19 +4578,27 @@ fun ProfileScreenContent(
                             .padding(14.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        // Top Badges Row (Love Zone & Intimacy)
+                        // Real Voice Verification & Top Badges Row (Zero Dummy)
+                        val isVoiceVerified = currentUser.voiceVerificationStatus == "verified" || currentUser.voiceIntroUrl.isNotBlank()
+                        val effWealthLvl = currentUser.getEffectiveWealthLevel()
+                        val wealthTier = currentUser.getWealthTierInfo()
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Voice Intro Waveform Pill
+                            // Voice Verification Card (Real audio prompt, Male/Female verification, Public/Private)
                             Surface(
-                                color = Color(0xFFF5EEFD),
+                                color = if (isVoiceVerified) Color(0xFFF5EEFD) else Color(0xFFFEF2F2),
                                 shape = RoundedCornerShape(14.dp),
-                                border = BorderStroke(0.8.dp, Color(0xFFE2D6F6)),
+                                border = BorderStroke(1.dp, if (isVoiceVerified) Color(0xFFD8B4FE) else Color(0xFFFECACA)),
                                 modifier = Modifier.clickable {
-                                    Toast.makeText(context, "Playing voice intro (20s) 🎶", Toast.LENGTH_SHORT).show()
+                                    if (isVoiceVerified) {
+                                        Toast.makeText(context, "Playing Verified Voice Intro (20s) 🎶", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "Voice Verification required: Record 20s prompt to activate profile 🎙️", Toast.LENGTH_LONG).show()
+                                    }
                                 }
                             ) {
                                 Row(
@@ -4601,50 +4609,55 @@ fun ProfileScreenContent(
                                         modifier = Modifier
                                             .size(18.dp)
                                             .clip(CircleShape)
-                                            .background(Color(0xFF7E22CE)),
+                                            .background(if (isVoiceVerified) Color(0xFF7E22CE) else Color(0xFFEF4444)),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Text("▶", fontSize = 9.sp, color = Color.White)
+                                        Text(if (isVoiceVerified) "▶" else "🎙️", fontSize = 9.sp, color = Color.White)
                                     }
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text("||||||||||", fontSize = 10.sp, color = Color(0xFF7E22CE), fontWeight = FontWeight.Bold)
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("20s", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF5D4E75))
+                                    Text(
+                                        text = if (isVoiceVerified) "Verified Voice (20s)" else "Voice Verification",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isVoiceVerified) Color(0xFF7E22CE) else Color(0xFFDC2626)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = if (isVoiceVerified) "🌐" else "🔒",
+                                        fontSize = 9.sp
+                                    )
                                 }
                             }
 
-                            // Intimacy & Love Zone Badges
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
+                            // Dynamic Real Relationship / Tier Badges (Zero Dummy)
+                            if (hasSoulmate) {
                                 Surface(
                                     color = Color(0xFFFDF2F8),
                                     shape = RoundedCornerShape(12.dp),
                                     border = BorderStroke(0.8.dp, Color(0xFFFBCFE8))
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text("❤️", fontSize = 10.sp)
                                         Spacer(modifier = Modifier.width(3.dp))
-                                        Text("Intimacy ${(currentUser.diamonds / 10).coerceAtLeast(0)}", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFFBE185D))
+                                        Text("Soulmate Bond", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFFBE185D))
                                     }
                                 }
-
+                            } else {
                                 Surface(
-                                    color = Color(0xFFFEF3C7),
+                                    color = Color(0xFFFFFBEB),
                                     shape = RoundedCornerShape(12.dp),
                                     border = BorderStroke(0.8.dp, Color(0xFFFDE68A))
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text("🏰", fontSize = 10.sp)
+                                        Text(wealthTier.badgeIcon, fontSize = 11.sp)
                                         Spacer(modifier = Modifier.width(3.dp))
-                                        Text("Love Zone Lv.${currentUser.getEffectiveWealthLevel()}", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFFB45309))
+                                        Text("${wealthTier.tierName} • Lv.$effWealthLvl", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFFB45309))
                                     }
                                 }
                             }
@@ -4957,60 +4970,137 @@ fun ProfileScreenContent(
                 }
             }
 
-            // 3. 3D METALLIC HONOR TITLE BANNERS GRID (MATCHING REFERENCE IMAGES)
+            // 3. REALISTIC 3D PRESTIGE MEDALS & USER LEVEL PROGRESS CARDS (ZERO DUMMY)
             item {
-                Surface(
-                    color = Color.White,
-                    shape = RoundedCornerShape(20.dp),
-                    border = BorderStroke(1.dp, Color(0xFFE8DEF8)),
-                    shadowElevation = 1.5.dp,
-                    modifier = Modifier.fillMaxWidth()
+                val effWealthLvlVal = currentUser.getEffectiveWealthLevel()
+                val effWealthXp = currentUser.getEffectiveWealthXp()
+                val wealthTier = currentUser.getWealthTierInfo()
+                val (minWealthXp, maxWealthXp) = LevelBadgeSystem.getXpThresholds(effWealthLvlVal)
+                val wealthProgress = if (maxWealthXp > minWealthXp) {
+                    ((effWealthXp - minWealthXp).toFloat() / (maxWealthXp - minWealthXp).toFloat()).coerceIn(0f, 1f)
+                } else 1f
+
+                val effCharmLvl = currentUser.getEffectiveCharmLevel()
+                val effCharmXp = currentUser.getEffectiveCharmXp()
+                val charmTier = currentUser.getCharmTierInfo()
+                val (minCharmXp, maxCharmXp) = LevelBadgeSystem.getXpThresholds(effCharmLvl)
+                val charmProgress = if (maxCharmXp > minCharmXp) {
+                    ((effCharmXp - minCharmXp).toFloat() / (maxCharmXp - minCharmXp).toFloat()).coerceIn(0f, 1f)
+                } else 1f
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Text(
-                            text = "🎖️ Honor Medals & Titles",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Black,
-                            color = Color(0xFF1B1433)
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // 3-column metallic ribbon badges
-                        val earnedBadges = remember(currentUser.wealthLevel) {
-                            HonorBadgesCatalog.badges.take((currentUser.getEffectiveWealthLevel() / 10 + 2).coerceIn(2, 6))
-                        }
-
-                        LazyVerticalGrid(
-                            columns = GridCells.Fixed(3),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(68.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            items(earnedBadges) { badge ->
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    shadowElevation = 1.dp
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .background(Brush.horizontalGradient(badge.gradientColors))
-                                            .padding(vertical = 5.dp, horizontal = 4.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
+                    // Wealth Level Card with Real 3D Metallic Badge
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(18.dp),
+                        border = BorderStroke(1.2.dp, Brush.horizontalGradient(wealthTier.gradientColors)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Image(
+                                        painter = painterResource(id = wealthTier.badgeDrawableRes),
+                                        contentDescription = wealthTier.tierName,
+                                        modifier = Modifier.size(46.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
                                         Text(
-                                            text = "${badge.iconEmoji} ${badge.title}",
-                                            color = Color.White,
-                                            fontSize = 9.sp,
+                                            text = "Wealth Level • Lv.$effWealthLvlVal",
+                                            color = Color(0xFF1B1433),
                                             fontWeight = FontWeight.Black,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                            fontSize = 13.sp
+                                        )
+                                        Text(
+                                            text = "${wealthTier.crownEmoji} ${wealthTier.tierName}",
+                                            color = Color(0xFFB45309),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
                                         )
                                     }
                                 }
+                                Text(
+                                    text = "%,d / %,d XP".format(effWealthXp, maxWealthXp),
+                                    color = Color(0xFF7C6D93),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
                             }
+                            Spacer(modifier = Modifier.height(10.dp))
+                            LinearProgressIndicator(
+                                progress = { wealthProgress },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(6.dp)
+                                    .clip(RoundedCornerShape(3.dp)),
+                                color = wealthTier.gradientColors.first(),
+                                trackColor = Color(0xFFE2D6F6)
+                            )
+                        }
+                    }
+
+                    // Charm Level Card
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(18.dp),
+                        border = BorderStroke(1.2.dp, Brush.horizontalGradient(charmTier.gradientColors)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Image(
+                                        painter = painterResource(id = charmTier.badgeDrawableRes),
+                                        contentDescription = charmTier.tierName,
+                                        modifier = Modifier.size(46.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text(
+                                            text = "Charm Level • Lv.$effCharmLvl",
+                                            color = Color(0xFF1B1433),
+                                            fontWeight = FontWeight.Black,
+                                            fontSize = 13.sp
+                                        )
+                                        Text(
+                                            text = "${charmTier.crownEmoji} ${charmTier.tierName}",
+                                            color = Color(0xFFBE185D),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = "%,d / %,d XP".format(effCharmXp, maxCharmXp),
+                                    color = Color(0xFF7C6D93),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+                            LinearProgressIndicator(
+                                progress = { charmProgress },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(6.dp)
+                                    .clip(RoundedCornerShape(3.dp)),
+                                color = charmTier.gradientColors.first(),
+                                trackColor = Color(0xFFFBCFE8)
+                            )
                         }
                     }
                 }

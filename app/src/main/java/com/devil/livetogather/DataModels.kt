@@ -823,7 +823,13 @@ data class UserProfile(
     val isHostMonetized: Boolean = false,
     val hostMonetizationDate: Long = 0L,
     val emailPrivacy: String = "only_me",
-    val hasPasswordSet: Boolean = false
+    val hasPasswordSet: Boolean = false,
+
+    // Real-Time 20s Voice Verification & Voice Intro System
+    val voiceVerificationStatus: String = "unverified", // "unverified", "pending", "verified"
+    val voiceIntroUrl: String = "",
+    val voiceIntroDuration: Int = 20,
+    val isVoicePrivate: Boolean = false
 ) {
     fun getEffectiveWealthLevel(): Int = LevelBadgeSystem.getEffectiveWealthLevel(this)
     fun getEffectiveWealthXp(): Long = LevelBadgeSystem.getEffectiveWealthXp(this)
