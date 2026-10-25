@@ -2544,72 +2544,11 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
             )
         }
 
-        // 5. Direct Message Dialog (with 5,000 Diamonds Gate for First-Time DM)
+        // 5. Direct Message Routing to Advanced 1-on-1 Chat Screen
         if (showDirectMessageDialog != null) {
             val target = showDirectMessageDialog!!
-            val matchId = listOf(currentUserId, target.uid).sorted().joinToString("_")
-            val isAlreadyMatched = matches.any { it.matchId == matchId }
-            DirectMessageDialog(
-                targetUser = target,
-                isUnlocked = isAlreadyMatched,
-                currentUserDiamonds = currentUser.diamonds,
-                onDismiss = { showDirectMessageDialog = null },
-                onSend = { text ->
-                    val msg = ChatMessage(senderId = currentUserId, text = text)
-                    db.collection("matches").document(matchId).collection("messages").add(msg)
-                    db.collection("matches").document(matchId).set(
-                        MatchItem(
-                            matchId = matchId,
-                            users = listOf(currentUserId, target.uid),
-                            matchedIntent = currentUser.activeIntent,
-                            lastMessage = text
-                        )
-                    )
-                    sendNotification(
-                        db = db,
-                        targetUserId = target.uid,
-                        sender = currentUser,
-                        type = "message",
-                        title = "New Direct Message",
-                        message = "${currentUser.name}: $text"
-                    )
-                    showDirectMessageDialog = null
-                    Toast.makeText(context, "Message sent to ${target.name}!", Toast.LENGTH_SHORT).show()
-                },
-                onUnlockAndSend = { text ->
-                    val unlockCost = 5000L
-                    if (currentUser.diamonds >= unlockCost) {
-                        val newDiamonds = currentUser.diamonds - unlockCost
-                        currentUser = currentUser.copy(diamonds = newDiamonds)
-                        saveProfileToPrefs(prefs, currentUser)
-                        db.collection("users").document(currentUserId).update("diamonds", newDiamonds)
-                        db.collection("users").document(target.uid).update("diamonds", com.google.firebase.firestore.FieldValue.increment(unlockCost))
-
-                        val msg = ChatMessage(senderId = currentUserId, text = "🎁 Direct Chat Unlocked (5,000 💎 Gift sent!)\n\n$text")
-                        db.collection("matches").document(matchId).collection("messages").add(msg)
-                        db.collection("matches").document(matchId).set(
-                            MatchItem(
-                                matchId = matchId,
-                                users = listOf(currentUserId, target.uid),
-                                matchedIntent = currentUser.activeIntent,
-                                lastMessage = text
-                            )
-                        )
-                        sendNotification(
-                            db = db,
-                            targetUserId = target.uid,
-                            sender = currentUser,
-                            type = "message",
-                            title = "🎁 Direct Chat Unlocked!",
-                            message = "${currentUser.name} gifted 5,000 💎 and started a direct chat!"
-                        )
-                        showDirectMessageDialog = null
-                        Toast.makeText(context, "🎁 Unlocked & Message sent to ${target.name}!", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(context, "⚠️ 5,000 💎 Diamonds required to unlock direct chat with ${target.name}. Please recharge.", Toast.LENGTH_LONG).show()
-                    }
-                }
-            )
+            showDirectMessageDialog = null
+            activeChatPartner = target
         }
 
         // 6. Comments Sheet for Moments
@@ -2637,357 +2576,19 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
             )
         }
 
-        // 8. Active 1-on-1 Chat Room
+        // 8. Active 1-on-1 Chat Room (Advanced Intimacy & Media Engine)
         if (activeChatPartner != null) {
-            val partner = activeChatPartner!!
-            val matchId = listOf(currentUserId, partner.uid).sorted().joinToString("_")
-            var chatInput by remember { mutableStateOf("") }
-            val isBlocked = currentUser.blockedUserIds.contains(partner.uid)
-
-            var showChatMenu by remember { mutableStateOf(false) }
-            var showClearConfirmDialog by remember { mutableStateOf(false) }
-            var showDeleteConfirmDialog by remember { mutableStateOf(false) }
-            var showReportConfirmDialog by remember { mutableStateOf(false) }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(BrandDark)
-            ) {
-                Column(modifier = Modifier.fillMaxSize()) {
-                    // Chat Header
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(BrandCard)
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = { activeChatPartner = null }) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Back",
-                                tint = Color.White
-                            )
-                        }
-                        AsyncImage(
-                            model = partner.photo,
-                            contentDescription = null,
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape),
-                            contentScale = ContentScale.Crop
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    partner.name,
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 15.sp
-                                )
-                                if (isBlocked) {
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        "[Blocked]",
-                                        color = Color.Red,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier
-                                            .background(Color.Red.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
-                                            .padding(horizontal = 4.dp, vertical = 1.dp)
-                                    )
-                                }
-                            }
-                            Text(
-                                "Intent: ${partner.activeIntent.replace('_', ' ')}",
-                                color = BrandOrange,
-                                fontSize = 11.sp
-                            )
-                        }
-
-                        // 3-Dots More Options Menu
-                        Box {
-                            IconButton(onClick = { showChatMenu = true }) {
-                                Icon(
-                                    Icons.Default.MoreVert,
-                                    contentDescription = "Chat Options",
-                                    tint = Color.White
-                                )
-                            }
-                            DropdownMenu(
-                                expanded = showChatMenu,
-                                onDismissRequest = { showChatMenu = false },
-                                modifier = Modifier.background(BrandCard)
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("🧹 Clear Chat History", color = Color.White, fontSize = 13.sp) },
-                                    onClick = {
-                                        showChatMenu = false
-                                        showClearConfirmDialog = true
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            if (isBlocked) "✅ Unblock User" else "🚫 Block User",
-                                            color = if (isBlocked) BrandGreen else Color(0xFFFF5252),
-                                            fontSize = 13.sp
-                                        )
-                                    },
-                                    onClick = {
-                                        showChatMenu = false
-                                        val updatedBlocked = if (isBlocked) {
-                                            currentUser.blockedUserIds - partner.uid
-                                        } else {
-                                            currentUser.blockedUserIds + partner.uid
-                                        }
-                                        currentUser = currentUser.copy(blockedUserIds = updatedBlocked)
-                                        saveProfileToPrefs(prefs, currentUser)
-                                        db.collection("users").document(currentUserId)
-                                            .update("blockedUserIds", updatedBlocked)
-                                        Toast.makeText(
-                                            context,
-                                            if (isBlocked) "${partner.name} unblocked" else "${partner.name} blocked",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("🚨 Report User", color = Color(0xFFFF9100), fontSize = 13.sp) },
-                                    onClick = {
-                                        showChatMenu = false
-                                        showReportConfirmDialog = true
-                                    }
-                                )
-                                HorizontalDivider(color = BrandBorder, thickness = 0.5.dp)
-                                DropdownMenuItem(
-                                    text = { Text("🗑️ Delete Conversation", color = Color.Red, fontSize = 13.sp, fontWeight = FontWeight.Bold) },
-                                    onClick = {
-                                        showChatMenu = false
-                                        showDeleteConfirmDialog = true
-                                    }
-                                )
-                            }
-                        }
-                    }
-
-                    if (showClearConfirmDialog) {
-                        AlertDialog(
-                            onDismissRequest = { showClearConfirmDialog = false },
-                            containerColor = BrandCard,
-                            shape = RoundedCornerShape(20.dp),
-                            title = { Text("Clear Chat?", color = Color.White, fontWeight = FontWeight.Bold) },
-                            text = { Text("All messages in this chat will be cleared.", color = Color.LightGray, fontSize = 13.sp) },
-                            confirmButton = {
-                                Button(
-                                    onClick = {
-                                        db.collection("matches").document(matchId).collection("messages").get()
-                                            .addOnSuccessListener { sn ->
-                                                for (d in sn.documents) { d.reference.delete() }
-                                                db.collection("matches").document(matchId).update("lastMessage", "")
-                                                chatMessages.clear()
-                                                Toast.makeText(context, "Chat history cleared", Toast.LENGTH_SHORT).show()
-                                            }
-                                        showClearConfirmDialog = false
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = BrandCoral)
-                                ) {
-                                    Text("Clear", color = Color.White, fontWeight = FontWeight.Bold)
-                                }
-                            },
-                            dismissButton = {
-                                TextButton(onClick = { showClearConfirmDialog = false }) {
-                                    Text("Cancel", color = Color.Gray)
-                                }
-                            }
-                        )
-                    }
-
-                    if (showDeleteConfirmDialog) {
-                        AlertDialog(
-                            onDismissRequest = { showDeleteConfirmDialog = false },
-                            containerColor = BrandCard,
-                            shape = RoundedCornerShape(20.dp),
-                            title = { Text("Delete Conversation?", color = Color.Red, fontWeight = FontWeight.Bold) },
-                            text = { Text("This will permanently remove this match and its messages from your inbox.", color = Color.LightGray, fontSize = 13.sp) },
-                            confirmButton = {
-                                Button(
-                                    onClick = {
-                                        db.collection("matches").document(matchId).collection("messages").get()
-                                            .addOnSuccessListener { sn ->
-                                                for (d in sn.documents) { d.reference.delete() }
-                                                db.collection("matches").document(matchId).delete()
-                                                matches.removeAll { it.matchId == matchId }
-                                                activeChatPartner = null
-                                                Toast.makeText(context, "Conversation deleted", Toast.LENGTH_SHORT).show()
-                                            }
-                                        showDeleteConfirmDialog = false
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
-                                ) {
-                                    Text("Delete", color = Color.White, fontWeight = FontWeight.Bold)
-                                }
-                            },
-                            dismissButton = {
-                                TextButton(onClick = { showDeleteConfirmDialog = false }) {
-                                    Text("Cancel", color = Color.Gray)
-                                }
-                            }
-                        )
-                    }
-
-                    if (showReportConfirmDialog) {
-                        AlertDialog(
-                            onDismissRequest = { showReportConfirmDialog = false },
-                            containerColor = BrandCard,
-                            shape = RoundedCornerShape(20.dp),
-                            title = { Text("Report User 🚨", color = Color(0xFFFF9100), fontWeight = FontWeight.Bold) },
-                            text = { Text("Are you sure you want to report ${partner.name} for abusive or inappropriate behavior?", color = Color.LightGray, fontSize = 13.sp) },
-                            confirmButton = {
-                                Button(
-                                    onClick = {
-                                        val reportData = hashMapOf(
-                                            "reporterId" to currentUserId,
-                                            "reporterName" to currentUser.name,
-                                            "reportedUserId" to partner.uid,
-                                            "reportedUserName" to partner.name,
-                                            "reason" to "Inappropriate behavior in direct chat",
-                                            "timestamp" to System.currentTimeMillis()
-                                        )
-                                        db.collection("reports").add(reportData)
-                                        Toast.makeText(context, "Report submitted to moderators. Thank you.", Toast.LENGTH_LONG).show()
-                                        showReportConfirmDialog = false
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9100))
-                                ) {
-                                    Text("Report", color = Color.White, fontWeight = FontWeight.Bold)
-                                }
-                            },
-                            dismissButton = {
-                                TextButton(onClick = { showReportConfirmDialog = false }) {
-                                    Text("Cancel", color = Color.Gray)
-                                }
-                            }
-                        )
-                    }
-
-                    // Chat Messages List
-                    LazyColumn(
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(chatMessages) { msg ->
-                            val isMe = msg.senderId == currentUserId
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(14.dp))
-                                        .background(if (isMe) BrandCoral else BrandCard)
-                                        .padding(horizontal = 14.dp, vertical = 9.dp)
-                                ) {
-                                    Text(
-                                        msg.text,
-                                        color = Color.White,
-                                        fontSize = 13.sp
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // Bottom Bar
-                    if (isBlocked) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(BrandCard)
-                                .padding(14.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                Text(
-                                    "You have blocked ${partner.name}.",
-                                    color = Color.LightGray,
-                                    fontSize = 12.sp
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Button(
-                                    onClick = {
-                                        val updatedBlocked = currentUser.blockedUserIds - partner.uid
-                                        currentUser = currentUser.copy(blockedUserIds = updatedBlocked)
-                                        saveProfileToPrefs(prefs, currentUser)
-                                        db.collection("users").document(currentUserId)
-                                            .update("blockedUserIds", updatedBlocked)
-                                        Toast.makeText(context, "${partner.name} unblocked", Toast.LENGTH_SHORT).show()
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = BrandGreen),
-                                    shape = RoundedCornerShape(50)
-                                ) {
-                                    Text("Unblock Now", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                                }
-                            }
-                        }
-                    } else {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(BrandCard)
-                                .padding(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            TextField(
-                                value = chatInput,
-                                onValueChange = { chatInput = it },
-                                placeholder = {
-                                    Text("Type a message...", color = Color.Gray, fontSize = 13.sp)
-                                },
-                                colors = TextFieldDefaults.colors(
-                                    focusedContainerColor = Color.Transparent,
-                                    unfocusedContainerColor = Color.Transparent,
-                                    focusedTextColor = Color.White,
-                                    unfocusedTextColor = Color.White
-                                ),
-                                modifier = Modifier.weight(1f)
-                            )
-                            IconButton(
-                                onClick = {
-                                    if (chatInput.isNotBlank()) {
-                                        val text = chatInput.trim()
-                                        chatInput = ""
-                                        val newMsg = ChatMessage(senderId = currentUserId, text = text)
-                                        db.collection("matches").document(matchId).collection("messages").add(newMsg)
-                                        db.collection("matches").document(matchId).update("lastMessage", text)
-                                        sendNotification(
-                                            db = db,
-                                            targetUserId = partner.uid,
-                                            sender = currentUser,
-                                            type = "message",
-                                            title = "New Message",
-                                            message = "${currentUser.name}: $text"
-                                        )
-                                    }
-                                }
-                            ) {
-                                Icon(
-                                    Icons.AutoMirrored.Filled.Send,
-                                    contentDescription = "Send",
-                                    tint = BrandCoral
-                                )
-                            }
-                        }
-                    }
+            Advanced1v1ChatScreen(
+                currentUserId = currentUserId,
+                currentUser = currentUser,
+                partner = activeChatPartner!!,
+                db = db,
+                onDismiss = { activeChatPartner = null },
+                onUpdateCurrentUser = { updated ->
+                    currentUser = updated
+                    saveProfileToPrefs(prefs, updated)
                 }
-            }
+            )
         }
 
         // 9. In-App Auto-Update Notification Dialog
@@ -3973,7 +3574,27 @@ fun ChatsScreenContent(
 
         if (visibleMatches.isEmpty()) {
             Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Text("No messages yet. Like back profiles to start chatting!", color = Color.Gray, fontSize = 13.sp)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("No messages yet. Like back profiles to start chatting!", color = Color.Gray, fontSize = 13.sp)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = {
+                            val companion = UserProfile(
+                                uid = "companion_maya_vip",
+                                userId = "maya_bestie_vip",
+                                name = "Maya (Bestie 🌸)",
+                                photo = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80",
+                                gender = "female",
+                                city = "Mumbai"
+                            )
+                            onOpenChat(companion)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                        shape = RoundedCornerShape(20.dp)
+                    ) {
+                        Text("✨ Chat with Maya (Intimacy & Media Demo)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                }
             }
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {

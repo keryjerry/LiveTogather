@@ -4957,6 +4957,37 @@ fun AudioHangoutRoomDialog(
             }
     }
 
+    // Real-time listener for active Intimacy Bonds between seated users
+    val activeIntimacyBonds = remember { mutableStateListOf<IntimacyBond>() }
+    LaunchedEffect(currentUser.uid, micSeats) {
+        if (currentUser.uid.isBlank()) return@LaunchedEffect
+        db.collection("intimacy_bonds")
+            .whereEqualTo("status", "active")
+            .addSnapshotListener { snapshot, _ ->
+                if (snapshot != null) {
+                    val bonds = snapshot.documents.mapNotNull { it.toObject(IntimacyBond::class.java) }
+                    activeIntimacyBonds.clear()
+                    activeIntimacyBonds.addAll(bonds)
+
+                    // Auto-ignite link connector if two seated users share an active bond
+                    val seatedUids = micSeats.map { it.uid }.filter { it.isNotBlank() }
+                    for (bond in bonds) {
+                        if (seatedUids.contains(bond.user1Id) && seatedUids.contains(bond.user2Id)) {
+                            val design = when (bond.bondType.lowercase()) {
+                                "soulmate" -> "mic_link_ruby_crown"
+                                "bestie" -> "mic_link_twin_besties"
+                                "eternal" -> "mic_link_emerald_infinity"
+                                "cyber" -> "mic_link_cyberpunk_reactor"
+                                else -> bond.activeMicLinkId.ifBlank { "mic_link_ruby_crown" }
+                            }
+                            activeMicLinkDesignId = design
+                            break
+                        }
+                    }
+                }
+            }
+    }
+
     fun triggerEmojiReaction(emoji: String) {
         if (room.id.isBlank() || currentUser.uid.isBlank()) return
         val reaction = LiveEmojiReaction(
@@ -6548,6 +6579,33 @@ fun AudioHangoutRoomDialog(
                                         "voiceVerificationStatus" to "verified"
                                     )
                                     db.collection("users").document(companionUid).set(mayaProfile)
+
+                                    // Record mutual Intimacy Bond for Stage & 1v1 Chat
+                                    val bondDocId = if (currentUser.uid < companionUid) "${currentUser.uid}_${companionUid}" else "${companionUid}_${currentUser.uid}"
+                                    val mayaBond = mapOf(
+                                        "bondId" to bondDocId,
+                                        "user1Id" to currentUser.uid,
+                                        "user2Id" to companionUid,
+                                        "user1Name" to currentUser.name,
+                                        "user2Name" to "Maya (Bestie 🌸)",
+                                        "user1Photo" to (currentUser.photo ?: ""),
+                                        "user2Photo" to "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80",
+                                        "bondType" to "bestie",
+                                        "intimacyLevel" to 5,
+                                        "intimacyXp" to 1500L,
+                                        "streakDays" to 7,
+                                        "activeMicLinkId" to "mic_link_twin_besties",
+                                        "status" to "active",
+                                        "createdAt" to System.currentTimeMillis()
+                                    )
+                                    db.collection("intimacy_bonds").document(bondDocId).set(mayaBond, com.google.firebase.firestore.SetOptions.merge())
+
+                                    // Ensure mutual follow for 1v1 chat access
+                                    db.collection("users").document(currentUser.uid).collection("followers").document(companionUid)
+                                        .set(mapOf("followedAt" to System.currentTimeMillis()), com.google.firebase.firestore.SetOptions.merge())
+                                    db.collection("users").document(companionUid).collection("followers").document(currentUser.uid)
+                                        .set(mapOf("followedAt" to System.currentTimeMillis()), com.google.firebase.firestore.SetOptions.merge())
+
                                     android.widget.Toast.makeText(context, "🌸 Maya joined Mic 2! ⚡ 3D Mic Link Active!", android.widget.Toast.LENGTH_SHORT).show()
                                 }
                             },
@@ -7570,15 +7628,16 @@ fun AudioHangoutRoomDialog(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            text = "⚡ 3D Mic Link Connectors",
+                            text = "✨ Intimacy Mic Connectors",
                             color = Color(0xFFFFD700),
                             fontSize = 16.sp,
                             fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
                         )
                         Text(
-                            text = "Tap any design to apply live on stage",
+                            text = "Forged through 1v1 chat streaks & mutual proposals (Max 7 bonds/user)",
                             color = Color.White.copy(alpha = 0.7f),
-                            fontSize = 11.sp
+                            fontSize = 11.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
                         )
                         Spacer(modifier = Modifier.height(12.dp))
 

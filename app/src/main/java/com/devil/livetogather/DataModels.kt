@@ -1328,12 +1328,60 @@ data class MatchItem(
     val users: List<String> = emptyList(),
     val matchedIntent: String = "",
     val lastMessage: String = "It's a Match! Say hello.",
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val isUnlocked: Boolean = false,
+    val unlockedBy: String = "",
+    val unlockGiftAmount: Long = 0L,
+    val mediaSharingAllowed: Map<String, Boolean> = emptyMap(),
+    val mediaPermissionRequested: List<String> = emptyList(),
+    val intimacyLevel: Int = 1,
+    val intimacyXp: Long = 0L,
+    val chatStreakDays: Int = 1,
+    val lastChatDate: String = ""
 )
 
 data class ChatMessage(
     val senderId: String = "",
     val text: String = "",
+    val timestamp: Long = System.currentTimeMillis(),
+    val type: String = "text", // "text", "image", "audio", "proposal", "unlock_gift"
+    val mediaUrl: String = "",
+    val audioUrl: String = "",
+    val audioDurationSec: Int = 0,
+    val giftAmount: Long = 0L,
+    val proposalBondType: String = "",
+    val proposalStatus: String = "" // "pending", "accepted", "declined"
+)
+
+data class IntimacyBond(
+    val bondId: String = "",
+    val user1Id: String = "",
+    val user2Id: String = "",
+    val user1Name: String = "",
+    val user2Name: String = "",
+    val user1Photo: String = "",
+    val user2Photo: String = "",
+    val bondType: String = "bestie",      // "couple", "bestie", "soulmate", "eternal"
+    val intimacyLevel: Int = 1,           // 1 to 100
+    val intimacyXp: Long = 0L,
+    val streakDays: Int = 1,
+    val lastInteractionDate: String = "",
+    val activeMicLinkId: String = "mic_link_ruby_crown",
+    val status: String = "active",        // "active", "pending", "terminated"
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+data class IntimacyProposal(
+    val proposalId: String = "",
+    val matchId: String = "",
+    val senderUid: String = "",
+    val senderName: String = "",
+    val senderPhoto: String = "",
+    val receiverUid: String = "",
+    val receiverName: String = "",
+    val receiverPhoto: String = "",
+    val bondType: String = "bestie",
+    val status: String = "pending",       // "pending", "accepted", "declined"
     val timestamp: Long = System.currentTimeMillis()
 )
 
