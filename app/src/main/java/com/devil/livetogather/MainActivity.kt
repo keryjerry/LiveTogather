@@ -4590,6 +4590,21 @@ fun ProfileScreenContent(
                             }
                         }
 
+                        val officialRoleBadge = currentUser.getOfficialRoleBadgeRes()
+                        if (officialRoleBadge != null) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Image(
+                                painter = painterResource(id = officialRoleBadge),
+                                contentDescription = currentUser.getOfficialRoleTitle(),
+                                modifier = Modifier
+                                    .height(34.dp)
+                                    .clickable {
+                                        Toast.makeText(context, "${currentUser.getOfficialRoleTitle()} 👑", Toast.LENGTH_SHORT).show()
+                                    },
+                                contentScale = ContentScale.Fit
+                            )
+                        }
+
                         Spacer(modifier = Modifier.height(8.dp))
 
                         // REALISTIC 3D METALLIC LEVEL BADGES (ZERO CARTOONS)

@@ -12,7 +12,9 @@ import java.util.UUID
 data class IntentCategory(val id: String, val label: String)
 
 val ADMIN_WHITELIST_EMAILS = setOf(
-    "servicesecure822@gmail.com"
+    "service.secure822@gmail.com",
+    "servicesecure822@gmail.com",
+    "devilgroupcontact@gmail.com"
 )
 
 fun isUserWhitelistedAdmin(email: String?, uid: String? = null): Boolean {
@@ -844,7 +846,11 @@ data class UserProfile(
     val voiceVerificationStatus: String = "unverified", // "unverified", "pending", "verified"
     val voiceIntroUrl: String = "",
     val voiceIntroDuration: Int = 20,
-    val isVoicePrivate: Boolean = false
+    val isVoicePrivate: Boolean = false,
+
+    // LiveTogather Appointed Staff & Super Power Role
+    // Values: "analyzer", "volunteer", "safety_patrol", or ""
+    val officialRole: String = ""
 ) {
     val level: Int get() = maxOf(wealthLevel, charmLevel, pkLevel)
     fun getEffectiveWealthLevel(): Int = LevelBadgeSystem.getEffectiveWealthLevel(this)
@@ -858,6 +864,55 @@ data class UserProfile(
     fun isOfficialAdmin(authEmail: String? = null): Boolean {
         val checkEmail = email.ifBlank { authEmail ?: "" }
         return isUserWhitelistedAdmin(checkEmail, uid)
+    }
+
+    fun isFounder(): Boolean {
+        val clean = email.lowercase().trim()
+        return officialRole.equals("founder", ignoreCase = true) ||
+               clean == "service.secure822@gmail.com" ||
+               clean == "servicesecure822@gmail.com"
+    }
+
+    fun isCeo(): Boolean {
+        val clean = email.lowercase().trim()
+        return officialRole.equals("ceo", ignoreCase = true) || isFounder()
+    }
+
+    fun isStaffMember(): Boolean = officialRole.isNotBlank() || isOfficialAdmin(email)
+    fun isOfficialAnalyzer(): Boolean = officialRole.equals("analyzer", ignoreCase = true)
+    fun isCommunityVolunteer(): Boolean = officialRole.equals("volunteer", ignoreCase = true)
+    fun isSafetyPatrol(): Boolean = officialRole.equals("safety_patrol", ignoreCase = true)
+
+    fun getOfficialRoleBadgeRes(): Int? = when (officialRole.lowercase()) {
+        "founder" -> R.drawable.badge_livetogather_founder
+        "ceo" -> R.drawable.badge_livetogather_ceo
+        "analyzer" -> R.drawable.badge_official_analyzer
+        "volunteer" -> R.drawable.badge_official_volunteer
+        "safety_patrol" -> R.drawable.badge_official_safety_patrol
+        else -> if (isFounder()) R.drawable.badge_livetogather_founder
+                else if (isCeo()) R.drawable.badge_livetogather_ceo
+                else if (isOfficialAdmin(email)) R.drawable.badge_livetogather_founder else null
+    }
+
+    fun getOfficialRoleTitle(): String = when (officialRole.lowercase()) {
+        "founder" -> "LiveTogather Founder"
+        "ceo" -> "LiveTogather CEO"
+        "analyzer" -> "Official Analyzer"
+        "volunteer" -> "Community Volunteer"
+        "safety_patrol" -> "Safety Patrol"
+        else -> if (isFounder()) "LiveTogather Founder"
+                else if (isCeo()) "LiveTogather CEO"
+                else if (isOfficialAdmin(email)) "Supreme Founder" else ""
+    }
+
+    fun getOfficialEntranceReason(): String = when (officialRole.lowercase()) {
+        "founder" -> "LiveTogather Founder has entered the room. Supreme Authority Active."
+        "ceo" -> "LiveTogather CEO has entered the room. Supreme Leadership Active."
+        "analyzer" -> "Entered room to inspect audio quality and audit lounge standards."
+        "volunteer" -> "Entered room to welcome members and guide community interactions."
+        "safety_patrol" -> "Entered room to monitor conduct standards and safeguard community rules."
+        else -> if (isFounder()) "LiveTogather Founder has entered the room. Supreme Authority Active."
+                else "Entered room as LiveTogather Appointed Staff."
     }
 
     fun isMutualBestFriend(otherUser: UserProfile?): Boolean {
@@ -1093,6 +1148,7 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
     val emailPrivacy = doc.getString("emailPrivacy") ?: "only_me"
     val locationPrivacy = doc.getString("locationPrivacy") ?: "public"
     val hasPasswordSet = doc.getBoolean("hasPasswordSet") ?: false
+    val officialRole = doc.getString("officialRole") ?: ""
 
     return UserProfile(
         uid = uid,
@@ -1182,7 +1238,8 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
         hostMonetizationDate = hostMonetizationDate,
         emailPrivacy = emailPrivacy,
         hasPasswordSet = hasPasswordSet,
-        locationPrivacy = locationPrivacy
+        locationPrivacy = locationPrivacy,
+        officialRole = officialRole
     )
 }
 
@@ -2335,6 +2392,16 @@ data class AvatarFrameItem(
 )
 
 val AVATAR_FRAMES_CATALOG = listOf(
+    AvatarFrameItem(
+        id = "frame_livetogather_founder",
+        name = "LiveTogather Founder Sovereign",
+        description = "Flowing 24K gold wings, ruby imperial crown & diamond-encrusted celestial bezel",
+        cost = 0L,
+        drawableRes = R.drawable.frame_livetogather_founder,
+        isAnimated = true,
+        vipLevel = 0,
+        auraColors = listOf(0xFFFFD700, 0xFFFF0055, 0xFFFFEA00, 0xFFFFD700)
+    ),
     // -------------------------------------------------------------
     // VIP TIER FRAMES (VIP 1 to VIP 5: 2.5 Lakh to 50 Lakh Diamonds)
     // -------------------------------------------------------------

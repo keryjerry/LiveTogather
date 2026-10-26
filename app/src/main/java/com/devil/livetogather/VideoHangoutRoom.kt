@@ -476,7 +476,7 @@ fun VideoHangoutRoomDialog(
                 onUpdateProfile = { userDiamonds = it.diamonds }
             )
 
-            if (newTime >= 3600L) {
+            if (newTime >= 3600L && !currentUser.isFounder() && !currentUser.isCeo() && !currentUser.isStaffMember()) {
                 showGuestLimitExpiredDialog = true
                 break
             }
@@ -549,7 +549,7 @@ fun VideoHangoutRoomDialog(
     // Helper functions for sending comments & PK controls
     fun sendComment(message: String) {
         if (message.isBlank()) return
-        if (!userHasRecharged && userRechargeCount == 0 && userTotalRoomTimeSeconds >= 3600L) {
+        if (!userHasRecharged && userRechargeCount == 0 && userTotalRoomTimeSeconds >= 3600L && !currentUser.isFounder() && !currentUser.isCeo() && !currentUser.isStaffMember()) {
             Toast.makeText(context, "🚫 1-hour free room access expired. Recharge ₹59 to chat.", Toast.LENGTH_LONG).show()
             showGuestLimitExpiredDialog = true
             return

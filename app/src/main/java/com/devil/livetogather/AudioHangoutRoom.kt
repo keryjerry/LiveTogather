@@ -336,8 +336,11 @@ fun LevelBadgePill(
 fun GrandBroadEntranceBanner(
     userName: String,
     level: Int,
+    userProfile: UserProfile? = null,
     modifier: Modifier = Modifier
 ) {
+    val officialBadgeRes = userProfile?.getOfficialRoleBadgeRes()
+    val isApex = userProfile?.isFounder() == true || userProfile?.isCeo() == true
     val isHighTier = level >= 20 || LevelBadgeSystem.isSpecialHighTierUser(userName)
     val tierInfo = LevelBadgeSystem.getLevelTierInfo(level)
 
@@ -349,7 +352,68 @@ fun GrandBroadEntranceBanner(
         label = "glow"
     )
 
-    if (isHighTier) {
+    if (officialBadgeRes != null) {
+        val officialTitle = userProfile?.getOfficialRoleTitle() ?: "LiveTogather Official"
+        val officialReason = userProfile?.getOfficialEntranceReason() ?: "Entered room as LiveTogather Appointed Staff."
+
+        Card(
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = if (isApex) Color(0xFF1B0A1C).copy(alpha = 0.98f) else Color(0xFF0F172A).copy(alpha = 0.96f)
+            ),
+            border = BorderStroke(
+                2.dp,
+                Brush.horizontalGradient(
+                    if (isApex) listOf(Color(0xFFFFD700), Color(0xFFFF1744), Color(0xFFFFEA00), Color(0xFFFFD700))
+                    else listOf(Color(0xFF00E5FF), Color(0xFF00E676), Color(0xFF00E5FF))
+                )
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 20.dp),
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp)
+                .graphicsLayer(scaleX = 0.98f + glowAlpha * 0.04f, scaleY = 0.98f + glowAlpha * 0.04f)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Image(
+                    painter = painterResource(id = officialBadgeRes),
+                    contentDescription = officialTitle,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .height(if (isApex) 58.dp else 46.dp)
+                        .fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = if (isApex) "👑 ${userName.uppercase()} ($officialTitle)" else "🛡️ ${userName.uppercase()} ($officialTitle)",
+                        color = if (isApex) Color(0xFFFFD700) else Color(0xFF00E5FF),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Black,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Spacer(modifier = Modifier.height(3.dp))
+                Text(
+                    text = "✨ $officialReason",
+                    color = if (isApex) Color(0xFFFFEA00) else Color(0xFFE2E8F0),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 4.dp)
+                )
+            }
+        }
+    } else if (isHighTier) {
         Card(
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = Color(0xFF140D18).copy(alpha = 0.95f)),
@@ -2825,6 +2889,17 @@ fun RoomMemberProfileSheet(
                                         .border(0.5.dp, BrandBorder, RoundedCornerShape(50))
                                         .padding(horizontal = 6.dp, vertical = 1.dp)
                                 )
+                                val memberOfficialBadge = userProfile?.getOfficialRoleBadgeRes()
+                                if (memberOfficialBadge != null) {
+                                    Image(
+                                        painter = painterResource(id = memberOfficialBadge),
+                                        contentDescription = userProfile.getOfficialRoleTitle(),
+                                        modifier = Modifier
+                                            .height(20.dp)
+                                            .padding(start = 2.dp),
+                                        contentScale = ContentScale.Fit
+                                    )
+                                }
                             }
                         }
                     }
@@ -3455,7 +3530,26 @@ fun RoomMemberProfileSheet(
                                     Spacer(modifier = Modifier.height(6.dp))
                                 }
 
-                                if (!isTargetHost && (!isTargetAdmin || isHost)) {
+                                val isTargetUserFounder = userProfile?.isFounder() == true
+                                val isCurUserFounder = currentUser.isFounder()
+                                val canModerateTarget = (isHost || currentUser.isFounder() || currentUser.isCeo() || currentUser.isStaffMember())
+
+                                if (isTargetUserFounder && !isCurUserFounder) {
+                                    Surface(
+                                        color = Color(0xFF3E1200),
+                                        shape = RoundedCornerShape(10.dp),
+                                        border = BorderStroke(1.dp, Color(0xFFFFD700)),
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.Center
+                                        ) {
+                                            Text("👑 LiveTogather Founder • Supreme Immunity Active", color = Color(0xFFFFD700), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                } else if ((!isTargetHost || canModerateTarget) && (!isTargetAdmin || isHost || canModerateTarget)) {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -4936,7 +5030,7 @@ fun AudioHangoutRoomDialog(
                 onUpdateProfile = { userDiamonds = it.diamonds }
             )
 
-            if (newTime >= 3600L) {
+            if (newTime >= 3600L && !currentUser.isFounder() && !currentUser.isCeo() && !currentUser.isStaffMember()) {
                 showGuestLimitExpiredDialog = true
                 break
             }
@@ -6348,7 +6442,8 @@ fun AudioHangoutRoomDialog(
 
                         GrandBroadEntranceBanner(
                             userName = arrivalName,
-                            level = arrivalLevel
+                            level = arrivalLevel,
+                            userProfile = arrivalProfile
                         )
                     }
 
@@ -6423,24 +6518,25 @@ fun AudioHangoutRoomDialog(
                         else MicSeat(seatIndex = idx, label = "Mic ${idx + 1}", uid = "", name = "", photo = "", role = "speaker")
                     }
 
+                    val canStaffModerate = isUserAdmin || currentUser.isStaffMember() || currentUser.isFounder() || currentUser.isCeo()
                     val handleSeatClick: (MicSeat) -> Unit = { seat ->
                         val currentSeat = micSeats.find { it.uid == currentUser.uid }
                         if (seat.uid == currentUser.uid) {
                             selectedOwnSeatForControl = seat
                         } else if (seat.uid.isEmpty()) {
                             // Vacant mic seat!
-                            if (seat.isLocked && !isUserAdmin) {
+                            if (seat.isLocked && !canStaffModerate) {
                                 Toast.makeText(context, "This microphone is locked by the host 🔒", Toast.LENGTH_SHORT).show()
                             } else if (currentSeat != null) {
                                 // User (Host or Speaker) is ALREADY seated -> 1-TAP INSTANT MOVE TO THIS MIC!
-                                if (seat.isLocked && !isUserAdmin) {
+                                if (seat.isLocked && !canStaffModerate) {
                                     Toast.makeText(context, "This microphone is locked by the host 🔒", Toast.LENGTH_SHORT).show()
                                 } else {
                                     joinMicSeat(db, room.id, seat.seatIndex, currentUser, micSeats)
                                     Toast.makeText(context, "Moved to Mic ${seat.seatIndex + 1}! 🎙️", Toast.LENGTH_SHORT).show()
                                 }
-                            } else if (isUserAdmin) {
-                                // Host/Admin not yet seated -> open admin options (Take mic, lock, invite)
+                            } else if (canStaffModerate) {
+                                // Host/Admin/Staff not yet seated -> open admin options (Take mic, lock, invite)
                                 selectedSeatForAdmin = seat
                             } else {
                                 // Audience member tapping empty mic -> take mic
@@ -6453,8 +6549,8 @@ fun AudioHangoutRoomDialog(
                                     recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                                 }
                             }
-                        } else if (isUserAdmin) {
-                            // Occupied mic seat and user is host/admin -> open moderation & speaker relocation options
+                        } else if (canStaffModerate) {
+                            // Occupied mic seat and user is host/admin/staff -> open moderation & speaker relocation options
                             selectedSeatForAdmin = seat
                         } else {
                             // Occupied mic seat and user is audience -> view speaker profile
@@ -6500,7 +6596,43 @@ fun AudioHangoutRoomDialog(
                             }
                         }
 
+                        // MASTER AUDIO CONTROL: MUTE ALL / UNMUTE ALL (For Founder, CEO, Staff & Admin)
+                        if (canStaffModerate) {
+                            val occupiedSeats = micSeats.filter { it.uid.isNotEmpty() }
+                            val allOccupiedMuted = occupiedSeats.isNotEmpty() && occupiedSeats.all { it.isMuted }
 
+                            Surface(
+                                color = if (allOccupiedMuted) Color(0xFF1B5E20) else Color(0xFFB71C1C),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, if (allOccupiedMuted) Color(0xFF81C784) else Color(0xFFFF8A80)),
+                                modifier = Modifier.clickable {
+                                    val targetMuteState = !allOccupiedMuted
+                                    occupiedSeats.forEach { s ->
+                                        val occupant = allProfiles.find { it.uid == s.uid }
+                                        // Founder Supreme Immunity: Never mute Founder unless clicked by Founder
+                                        if (occupant?.isFounder() == true && s.uid != currentUser.uid) {
+                                            // Skip founder
+                                        } else {
+                                            toggleMuteMicSeat(db, room.id, s.seatIndex, targetMuteState)
+                                        }
+                                    }
+                                    val msg = if (targetMuteState) "🔇 All room stage microphones muted!" else "🎙️ All stage microphones unmuted!"
+                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = if (allOccupiedMuted) "🎙️ UNMUTE ALL" else "🔇 MUTE ALL",
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(2.dp))
@@ -7469,13 +7601,24 @@ fun AudioHangoutRoomDialog(
         // 7. Host & Admin Mic Seat Dialog
         if (selectedSeatForAdmin != null) {
             val seat = selectedSeatForAdmin!!
+            val seatOccupant = allProfiles.find { it.uid == seat.uid }
+            val isTargetFounder = seatOccupant?.isFounder() == true
+            val isCurrentFounder = currentUser.isFounder()
+            val canSovereignModerate = currentUser.isFounder() || currentUser.isCeo() || currentUser.isStaffMember()
+
             HostSeatAdminDialog(
                 seat = seat,
                 allSeats = micSeats,
                 currentUserId = currentUser.uid,
+                isModeratorApexOrStaff = canSovereignModerate,
+                isTargetFounder = isTargetFounder,
                 onDismiss = { selectedSeatForAdmin = null },
                 onToggleMute = {
-                    toggleMuteMicSeat(db, room.id, seat.seatIndex, seat.isMuted)
+                    if (isTargetFounder && !isCurrentFounder) {
+                        Toast.makeText(context, "🛡️ LiveTogather Founder has Supreme Immunity. Cannot mute! 👑", Toast.LENGTH_SHORT).show()
+                    } else {
+                        toggleMuteMicSeat(db, room.id, seat.seatIndex, seat.isMuted)
+                    }
                     selectedSeatForAdmin = null
                 },
                 onToggleLock = {
@@ -7495,12 +7638,18 @@ fun AudioHangoutRoomDialog(
                     selectedSeatForAdmin = null
                 },
                 onKickToAudience = {
-                    vacateMicSeat(db, room.id, seat.seatIndex, seat.isLocked)
-                    Toast.makeText(context, "Removed ${seat.name} from stage", Toast.LENGTH_SHORT).show()
+                    if (isTargetFounder && !isCurrentFounder) {
+                        Toast.makeText(context, "🛡️ LiveTogather Founder has Supreme Immunity. Cannot remove! 👑", Toast.LENGTH_SHORT).show()
+                    } else {
+                        vacateMicSeat(db, room.id, seat.seatIndex, seat.isLocked)
+                        Toast.makeText(context, "Removed ${seat.name} from stage", Toast.LENGTH_SHORT).show()
+                    }
                     selectedSeatForAdmin = null
                 },
                 onKickOutOfRoom = {
-                    if (seat.uid.isNotBlank() && seat.uid != room.hostId) {
+                    if (isTargetFounder && !isCurrentFounder) {
+                        Toast.makeText(context, "🛡️ LiveTogather Founder has Supreme Immunity. Cannot kick! 👑", Toast.LENGTH_SHORT).show()
+                    } else if (seat.uid.isNotBlank() && (seat.uid != room.hostId || canSovereignModerate)) {
                         db.collection("rooms").document(room.id)
                             .update("kickedUserIds", FieldValue.arrayUnion(seat.uid))
                         vacateMicSeat(db, room.id, seat.seatIndex, seat.isLocked)
@@ -7509,7 +7658,9 @@ fun AudioHangoutRoomDialog(
                     selectedSeatForAdmin = null
                 },
                 onBanFromRoom = {
-                    if (seat.uid.isNotBlank() && seat.uid != room.hostId) {
+                    if (isTargetFounder && !isCurrentFounder) {
+                        Toast.makeText(context, "🛡️ LiveTogather Founder has Supreme Immunity. Cannot ban! 👑", Toast.LENGTH_SHORT).show()
+                    } else if (seat.uid.isNotBlank() && (seat.uid != room.hostId || canSovereignModerate)) {
                         db.collection("rooms").document(room.id)
                             .update("bannedUserIds", FieldValue.arrayUnion(seat.uid))
                         vacateMicSeat(db, room.id, seat.seatIndex, seat.isLocked)
@@ -8109,7 +8260,7 @@ fun AudioHangoutRoomDialog(
                                     keyboardActions = KeyboardActions(
                                         onSend = {
                                             if (commentInputText.isNotBlank()) {
-                                                if (!userHasRecharged && userRechargeCount == 0 && userTotalRoomTimeSeconds >= 3600L) {
+                                                if (!userHasRecharged && userRechargeCount == 0 && userTotalRoomTimeSeconds >= 3600L && !currentUser.isFounder() && !currentUser.isCeo() && !currentUser.isStaffMember()) {
                                                     android.widget.Toast.makeText(context, "🚫 1-hour free room access expired. Recharge ₹59 to chat.", android.widget.Toast.LENGTH_LONG).show()
                                                     showGuestLimitExpiredDialog = true
                                                     return@KeyboardActions
@@ -8155,7 +8306,7 @@ fun AudioHangoutRoomDialog(
                                 IconButton(
                                     onClick = {
                                         if (commentInputText.isNotBlank()) {
-                                            if (!userHasRecharged && userRechargeCount == 0 && userTotalRoomTimeSeconds >= 3600L) {
+                                            if (!userHasRecharged && userRechargeCount == 0 && userTotalRoomTimeSeconds >= 3600L && !currentUser.isFounder() && !currentUser.isCeo() && !currentUser.isStaffMember()) {
                                                 android.widget.Toast.makeText(context, "🚫 1-hour free room access expired. Recharge ₹59 to chat.", android.widget.Toast.LENGTH_LONG).show()
                                                 showGuestLimitExpiredDialog = true
                                                 return@IconButton
@@ -10417,6 +10568,17 @@ fun MicSeatView(
                 textAlign = TextAlign.Center,
                 maxLines = 1
             )
+            val officialRoleBadge = seatOccupantProfile?.getOfficialRoleBadgeRes()
+            if (officialRoleBadge != null) {
+                Image(
+                    painter = painterResource(id = officialRoleBadge),
+                    contentDescription = seatOccupantProfile.getOfficialRoleTitle(),
+                    modifier = Modifier
+                        .height(18.dp)
+                        .padding(top = 1.dp),
+                    contentScale = ContentScale.Fit
+                )
+            }
         } else if (seat.isLocked) {
             Text(
                 text = "Mic ${seat.seatIndex + 1} 🔒",
@@ -10446,6 +10608,8 @@ fun HostSeatAdminDialog(
     seat: MicSeat,
     allSeats: List<MicSeat> = emptyList(),
     currentUserId: String,
+    isModeratorApexOrStaff: Boolean = false,
+    isTargetFounder: Boolean = false,
     onDismiss: () -> Unit,
     onToggleMute: () -> Unit,
     onToggleLock: () -> Unit,
@@ -10629,7 +10793,23 @@ fun HostSeatAdminDialog(
                     }
 
                     // Moderation on other speakers
-                    if (seat.seatIndex != 0 && seat.uid != currentUserId) {
+                    if (isTargetFounder) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Surface(
+                            color = Color(0xFF3E1200),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, Color(0xFFFFD700)),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Text("👑 LiveTogather Founder - Supreme Immunity Active", color = Color(0xFFFFD700), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    } else if ((seat.seatIndex != 0 || isModeratorApexOrStaff) && seat.uid != currentUserId) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Button(
                             onClick = onKickToAudience,
@@ -10638,7 +10818,7 @@ fun HostSeatAdminDialog(
                             modifier = Modifier.fillMaxWidth().height(38.dp)
                         ) {
                             Text(
-                                text = "🚫 Move Speaker to Audience",
+                                text = if (seat.seatIndex == 0) "🚫 Move Host to Audience" else "🚫 Move Speaker to Audience",
                                 color = Color.White,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold

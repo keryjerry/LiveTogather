@@ -1796,10 +1796,22 @@ fun AdminApprovalDashboardModal(
                         onClick = { selectedAdminTab = 1 },
                         text = {
                             Text(
-                                text = "User Reports (${pendingReports.size})",
+                                text = "Reports (${pendingReports.size})",
                                 fontWeight = if (selectedAdminTab == 1) FontWeight.Bold else FontWeight.Normal,
                                 color = if (selectedAdminTab == 1) Color.Red else Color.Gray,
-                                fontSize = 13.sp
+                                fontSize = 12.sp
+                            )
+                        }
+                    )
+                    Tab(
+                        selected = selectedAdminTab == 2,
+                        onClick = { selectedAdminTab = 2 },
+                        text = {
+                            Text(
+                                text = "⚡ Founder & Staff",
+                                fontWeight = if (selectedAdminTab == 2) FontWeight.Bold else FontWeight.Normal,
+                                color = if (selectedAdminTab == 2) Color(0xFFFFD700) else Color.Gray,
+                                fontSize = 12.sp
                             )
                         }
                     )
@@ -1866,7 +1878,7 @@ fun AdminApprovalDashboardModal(
                             }
                         }
                     }
-                } else {
+                } else if (selectedAdminTab == 1) {
                     // TAB 1: USER REPORTS & SUSPENSION
                     if (pendingReports.isEmpty()) {
                         Box(
@@ -1919,6 +1931,9 @@ fun AdminApprovalDashboardModal(
                             }
                         }
                     }
+                } else if (selectedAdminTab == 2) {
+                    // TAB 2: FOUNDER, CEO & OFFICIAL STAFF POWER HUB
+                    AdminStaffAndPowerHubSection(adminUser = adminUser)
                 }
             }
         }
@@ -3526,6 +3541,683 @@ private fun CountdownUnitBlock(value: String, label: String) {
         ) {
             Text(text = value, color = Color(0xFFFFD700), fontSize = 17.sp, fontWeight = FontWeight.Black)
             Text(text = label, color = Color.Gray, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+
+// ---------------------------------------------------------------------
+// TAB 2: FOUNDER, CEO & OFFICIAL STAFF POWER HUB
+// ---------------------------------------------------------------------
+
+@Composable
+fun AdminStaffAndPowerHubSection(adminUser: UserProfile) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val db = remember { com.google.firebase.firestore.FirebaseFirestore.getInstance() }
+    var searchQuery by remember { mutableStateOf("") }
+    var isSearching by remember { mutableStateOf(false) }
+    var searchedUser by remember { mutableStateOf<UserProfile?>(null) }
+    var searchError by remember { mutableStateOf<String?>(null) }
+    var diamondDelta by remember { mutableStateOf("20000") }
+    var coinDelta by remember { mutableStateOf("20000") }
+    var isProcessing by remember { mutableStateOf(false) }
+
+    val frameOptions = remember {
+        listOf(
+            "frame_livetogather_founder" to "👑 Founder Flowing Wings Frame",
+            "frame_imperial_gold" to "⚡ Imperial Gold Wings",
+            "frame_angel_wings" to "🪽 Celestial Angel Wings",
+            "frame_dark_angel" to "🖤 Black Velvet Royale",
+            "frame_ice_valkyrie" to "💎 Eternal Diamond Prism",
+            "frame_phoenix_fire" to "🔥 Solar Eclipse Inferno"
+        )
+    }
+    var selectedFrameId by remember { mutableStateOf(frameOptions[0].first) }
+
+    val micEffectOptions = remember {
+        listOf(
+            "mic_effect_sovereign_gold_wings" to "👑 Sovereign Gold Wings (Video)",
+            "mic_effect_ruby_energy_flame" to "🔥 Ruby Energy Flame (Video)",
+            "mic_effect_cyber_neon_electric" to "⚡ Cyber Neon Electric (Video)",
+            "mic_effect_diamond_crystal_vortex" to "💎 Diamond Crystal Vortex (Video)",
+            "mic_effect_emerald_celestial_wave" to "💚 Emerald Celestial Wave (Video)",
+            "mic_effect_golden_amber_aura" to "✨ Golden Amber Aura (Video)"
+        )
+    }
+    var selectedMicEffectId by remember { mutableStateOf(micEffectOptions[0].first) }
+
+    val validityOptions = listOf(7 to "7 Days", 10 to "10 Days", 30 to "30 Days", 90 to "90 Days", 0 to "Lifetime")
+    var selectedValidityDays by remember { mutableIntStateOf(30) }
+
+    fun executeSearch(query: String) {
+        val q = query.trim()
+        if (q.isBlank()) {
+            Toast.makeText(context, "Enter 8-digit ID or Email", Toast.LENGTH_SHORT).show()
+            return
+        }
+        isSearching = true
+        searchError = null
+
+        val queryTask = if (q.contains("@")) {
+            db.collection("users").whereEqualTo("email", q.lowercase()).limit(1).get()
+        } else if (q.length == 8 && q.all { it.isDigit() }) {
+            db.collection("users").whereEqualTo("userId", q).limit(1).get()
+        } else {
+            db.collection("users").document(q).get()
+        }
+
+        queryTask.addOnSuccessListener { result ->
+            isSearching = false
+            if (result is com.google.firebase.firestore.QuerySnapshot) {
+                if (!result.isEmpty) {
+                    searchedUser = parseUserProfileFromDoc(result.documents[0])
+                } else {
+                    searchedUser = null
+                    searchError = "No user found with '$q'"
+                }
+            } else if (result is com.google.firebase.firestore.DocumentSnapshot) {
+                if (result.exists()) {
+                    searchedUser = parseUserProfileFromDoc(result)
+                } else {
+                    searchedUser = null
+                    searchError = "No user found with '$q'"
+                }
+            }
+        }.addOnFailureListener { err ->
+            isSearching = false
+            searchedUser = null
+            searchError = "Search error: ${err.message}"
+        }
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        // Quick Founders Shortcuts Row
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1F152E)),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.5f))
+            ) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("👑 Quick Founder Access", color = BrandGold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                searchQuery = "service.secure822@gmail.com"
+                                executeSearch("service.secure822@gmail.com")
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7E57C2)),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.weight(1f).height(36.dp)
+                        ) {
+                            Text("👑 service.secure822", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+
+                        Button(
+                            onClick = {
+                                searchQuery = "servicesecure822@gmail.com"
+                                executeSearch("servicesecure822@gmail.com")
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4527A0)),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.weight(1f).height(36.dp)
+                        ) {
+                            Text("👑 servicesecure822", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Search Input Bar
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = BrandCard),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, BrandBorder)
+            ) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("🔍 Search User by 8-Digit ID or Email", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            placeholder = { Text("e.g. 52418932 or email", color = Color.Gray, fontSize = 12.sp) },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = BrandGold,
+                                unfocusedBorderColor = BrandBorder
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+                        Button(
+                            onClick = { executeSearch(searchQuery) },
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.height(52.dp)
+                        ) {
+                            if (isSearching) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = BrandDark, strokeWidth = 2.dp)
+                            } else {
+                                Text("Search", color = BrandDark, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        }
+                    }
+
+                    if (searchError != null) {
+                        Text(text = searchError!!, color = Color(0xFFFF5252), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        // Target User Details & Super Power Hub
+        if (searchedUser != null) {
+            val target = searchedUser!!
+
+            // User Identity Card
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF141024)),
+                    shape = RoundedCornerShape(18.dp),
+                    border = BorderStroke(1.5.dp, if (target.isFounder()) BrandGold else if (target.isCeo()) Color(0xFF00E5FF) else BrandBorder)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            FlowingAvatarFrame(
+                                photoUrl = target.photo,
+                                frameId = target.activeFrame,
+                                avatarSize = 56.dp,
+                                frameSize = 84.dp,
+                                showAnimation = true
+                            )
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(target.name, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Black)
+                                    if (target.isFounder()) {
+                                        Text("👑 Founder", color = BrandGold, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    } else if (target.isCeo()) {
+                                        Text("💎 CEO", color = Color(0xFF00E5FF), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                                Text("ID: ${target.userId} | ${target.email}", color = Color.LightGray, fontSize = 11.sp)
+                                Spacer(modifier = Modifier.height(3.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Text("💎 %,d".format(target.diamonds), color = Color(0xFF00E5FF), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text("🪙 %,d".format(target.coins), color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+
+                        // Current Role Badge Preview
+                        val roleBadgeRes = target.getOfficialRoleBadgeRes()
+                        if (roleBadgeRes != null) {
+                            Surface(
+                                color = Color.Black.copy(alpha = 0.4f),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.5f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        androidx.compose.foundation.Image(
+                                            painter = androidx.compose.ui.res.painterResource(id = roleBadgeRes),
+                                            contentDescription = "Badge",
+                                            modifier = Modifier.height(28.dp)
+                                        )
+                                        Text(target.getOfficialRoleTitle(), color = BrandGold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    Text("● ACTIVE", color = Color(0xFF00E676), fontSize = 9.sp, fontWeight = FontWeight.Black)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 1-Click Official Appointments Panel
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = BrandCard),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, BrandBorder)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("👑 1-Click Leadership & Staff Appointments", color = BrandGold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Text("Clicking automatically assigns the official role, unlocks 3D winged badges and frames in real time.", color = Color.Gray, fontSize = 10.5.sp)
+
+                        // Founder & CEO Row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    isProcessing = true
+                                    db.collection("users").document(target.uid).update(
+                                        mapOf(
+                                            "officialRole" to "founder",
+                                            "activeFrame" to "frame_livetogather_founder",
+                                            "ownedFrames" to FieldValue.arrayUnion("frame_livetogather_founder"),
+                                            "isAdmin" to true
+                                        )
+                                    ).addOnSuccessListener {
+                                        isProcessing = false
+                                        searchedUser = target.copy(officialRole = "founder", activeFrame = "frame_livetogather_founder", isAdmin = true)
+                                        Toast.makeText(context, "👑 ${target.name} appointed as LiveTogather Founder! Wings Frame & Badge activated.", Toast.LENGTH_SHORT).show()
+                                    }.addOnFailureListener { isProcessing = false }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB300)),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f).height(42.dp)
+                            ) {
+                                Text("👑 Appoint Founder", color = BrandDark, fontWeight = FontWeight.Black, fontSize = 11.sp)
+                            }
+
+                            Button(
+                                onClick = {
+                                    isProcessing = true
+                                    db.collection("users").document(target.uid).update(
+                                        mapOf(
+                                            "officialRole" to "ceo",
+                                            "isAdmin" to true
+                                        )
+                                    ).addOnSuccessListener {
+                                        isProcessing = false
+                                        searchedUser = target.copy(officialRole = "ceo", isAdmin = true)
+                                        Toast.makeText(context, "💎 ${target.name} appointed as LiveTogather CEO! Badge activated.", Toast.LENGTH_SHORT).show()
+                                    }.addOnFailureListener { isProcessing = false }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00B0FF)),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f).height(42.dp)
+                            ) {
+                                Text("💎 Appoint CEO", color = BrandDark, fontWeight = FontWeight.Black, fontSize = 11.sp)
+                            }
+                        }
+
+                        // Staff Appointments Row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    isProcessing = true
+                                    db.collection("users").document(target.uid).update("officialRole", "analyzer")
+                                        .addOnSuccessListener {
+                                            isProcessing = false
+                                            searchedUser = target.copy(officialRole = "analyzer")
+                                            Toast.makeText(context, "🔍 Appointed Official Analyzer! Badge activated.", Toast.LENGTH_SHORT).show()
+                                        }.addOnFailureListener { isProcessing = false }
+                                },
+                                border = BorderStroke(1.dp, Color(0xFF00F0FF)),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
+                                modifier = Modifier.weight(1f).height(38.dp)
+                            ) {
+                                Text("🔍 Analyzer", color = Color(0xFF00F0FF), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    isProcessing = true
+                                    db.collection("users").document(target.uid).update("officialRole", "volunteer")
+                                        .addOnSuccessListener {
+                                            isProcessing = false
+                                            searchedUser = target.copy(officialRole = "volunteer")
+                                            Toast.makeText(context, "🤝 Appointed Community Volunteer! Badge activated.", Toast.LENGTH_SHORT).show()
+                                        }.addOnFailureListener { isProcessing = false }
+                                },
+                                border = BorderStroke(1.dp, Color(0xFF00FFA3)),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
+                                modifier = Modifier.weight(1f).height(38.dp)
+                            ) {
+                                Text("🤝 Volunteer", color = Color(0xFF00FFA3), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    isProcessing = true
+                                    db.collection("users").document(target.uid).update("officialRole", "safety_patrol")
+                                        .addOnSuccessListener {
+                                            isProcessing = false
+                                            searchedUser = target.copy(officialRole = "safety_patrol")
+                                            Toast.makeText(context, "🛡️ Appointed Safety Patrol! Badge activated.", Toast.LENGTH_SHORT).show()
+                                        }.addOnFailureListener { isProcessing = false }
+                                },
+                                border = BorderStroke(1.dp, Color(0xFFFFD700)),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
+                                modifier = Modifier.weight(1f).height(38.dp)
+                            ) {
+                                Text("🛡️ Safety", color = Color(0xFFFFD700), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        // Dismiss from Position (पदमुक्ति) Button
+                        Button(
+                            onClick = {
+                                isProcessing = true
+                                val newFrame = if (target.activeFrame == "frame_livetogather_founder") "" else target.activeFrame
+                                db.collection("users").document(target.uid).update(
+                                    mapOf(
+                                        "officialRole" to "",
+                                        "activeFrame" to newFrame
+                                    )
+                                ).addOnSuccessListener {
+                                    isProcessing = false
+                                    searchedUser = target.copy(officialRole = "", activeFrame = newFrame)
+                                    Toast.makeText(context, "⚠️ Position dismissed! Badges revoked.", Toast.LENGTH_SHORT).show()
+                                }.addOnFailureListener { isProcessing = false }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB71C1C)),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth().height(38.dp)
+                        ) {
+                            Text("⚠️ Dismiss from Position (पदमुक्ति / Revoke Badge)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+
+            // Wallet Super Power (Inject / Deduct Diamonds & Coins)
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = BrandCard),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, BrandBorder)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("💎 Wallet Power (Direct Diamonds & Coins Injection)", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+
+                        // Amount Presets
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf("5000", "20000", "50000", "100000").forEach { preset ->
+                                OutlinedButton(
+                                    onClick = {
+                                        diamondDelta = preset
+                                        coinDelta = preset
+                                    },
+                                    border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.5f)),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                    modifier = Modifier.weight(1f).height(32.dp)
+                                ) {
+                                    Text("+$preset", fontSize = 10.sp, color = BrandGold)
+                                }
+                            }
+                        }
+
+                        // Amount Input
+                        OutlinedTextField(
+                            value = diamondDelta,
+                            onValueChange = { diamondDelta = it },
+                            label = { Text("Amount", color = Color.Gray, fontSize = 11.sp) },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = BrandGold,
+                                unfocusedBorderColor = BrandBorder
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        // Diamond Buttons Row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    val amt = diamondDelta.toLongOrNull() ?: 0L
+                                    if (amt <= 0) return@Button
+                                    isProcessing = true
+                                    db.collection("users").document(target.uid)
+                                        .update("diamonds", FieldValue.increment(amt))
+                                        .addOnSuccessListener {
+                                            isProcessing = false
+                                            searchedUser = target.copy(diamonds = target.diamonds + amt)
+                                            Toast.makeText(context, "💎 Added %,d Diamonds!".format(amt), Toast.LENGTH_SHORT).show()
+                                        }.addOnFailureListener { isProcessing = false }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF)),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f).height(38.dp)
+                            ) {
+                                Text("+ Inject 💎", color = BrandDark, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            }
+
+                            Button(
+                                onClick = {
+                                    val amt = diamondDelta.toLongOrNull() ?: 0L
+                                    if (amt <= 0) return@Button
+                                    isProcessing = true
+                                    db.collection("users").document(target.uid)
+                                        .update("diamonds", FieldValue.increment(-amt))
+                                        .addOnSuccessListener {
+                                            isProcessing = false
+                                            searchedUser = target.copy(diamonds = maxOf(0L, target.diamonds - amt))
+                                            Toast.makeText(context, "💎 Deducted %,d Diamonds!".format(amt), Toast.LENGTH_SHORT).show()
+                                        }.addOnFailureListener { isProcessing = false }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF37474F)),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f).height(38.dp)
+                            ) {
+                                Text("- Deduct 💎", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            }
+                        }
+
+                        // Coin Buttons Row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    val amt = diamondDelta.toLongOrNull() ?: 0L
+                                    if (amt <= 0) return@Button
+                                    isProcessing = true
+                                    db.collection("users").document(target.uid)
+                                        .update("coins", FieldValue.increment(amt))
+                                        .addOnSuccessListener {
+                                            isProcessing = false
+                                            searchedUser = target.copy(coins = target.coins + amt)
+                                            Toast.makeText(context, "🪙 Added %,d Coins!".format(amt), Toast.LENGTH_SHORT).show()
+                                        }.addOnFailureListener { isProcessing = false }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f).height(38.dp)
+                            ) {
+                                Text("+ Inject 🪙", color = BrandDark, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            }
+
+                            Button(
+                                onClick = {
+                                    val amt = diamondDelta.toLongOrNull() ?: 0L
+                                    if (amt <= 0) return@Button
+                                    isProcessing = true
+                                    db.collection("users").document(target.uid)
+                                        .update("coins", FieldValue.increment(-amt))
+                                        .addOnSuccessListener {
+                                            isProcessing = false
+                                            searchedUser = target.copy(coins = maxOf(0L, target.coins - amt))
+                                            Toast.makeText(context, "🪙 Deducted %,d Coins!".format(amt), Toast.LENGTH_SHORT).show()
+                                        }.addOnFailureListener { isProcessing = false }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF37474F)),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f).height(38.dp)
+                            ) {
+                                Text("- Deduct 🪙", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Avatar Frames & 3D Mic Effects Granter & Revoke
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = BrandCard),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, BrandBorder)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("🖼️ Avatar Frames & 3D Video Mic Effects", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+
+                        // Validity Days Selector
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            validityOptions.forEach { (days, label) ->
+                                val isSel = selectedValidityDays == days
+                                OutlinedButton(
+                                    onClick = { selectedValidityDays = days },
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        containerColor = if (isSel) BrandGold.copy(alpha = 0.2f) else Color.Transparent,
+                                        contentColor = if (isSel) BrandGold else Color.Gray
+                                    ),
+                                    border = BorderStroke(1.dp, if (isSel) BrandGold else BrandBorder),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
+                                    modifier = Modifier.weight(1f).height(32.dp)
+                                ) {
+                                    Text(label, fontSize = 9.sp, fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal)
+                                }
+                            }
+                        }
+
+                        // Frame Action Buttons
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    isProcessing = true
+                                    val now = System.currentTimeMillis()
+                                    val expiry = if (selectedValidityDays > 0) now + (selectedValidityDays * 86400000L) else 0L
+                                    val updates = mapOf(
+                                        "activeFrame" to selectedFrameId,
+                                        "ownedFrames" to FieldValue.arrayUnion(selectedFrameId),
+                                        "frameExpiries.$selectedFrameId" to expiry
+                                    )
+                                    db.collection("users").document(target.uid).update(updates)
+                                        .addOnSuccessListener {
+                                            isProcessing = false
+                                            searchedUser = target.copy(activeFrame = selectedFrameId)
+                                            Toast.makeText(context, "🎁 Frame granted and equipped!", Toast.LENGTH_SHORT).show()
+                                        }.addOnFailureListener { isProcessing = false }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6A1B9A)),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f).height(38.dp)
+                            ) {
+                                Text("🎁 Grant Frame", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    isProcessing = true
+                                    db.collection("users").document(target.uid).update(
+                                        mapOf("activeFrame" to "")
+                                    ).addOnSuccessListener {
+                                        isProcessing = false
+                                        searchedUser = target.copy(activeFrame = "")
+                                        Toast.makeText(context, "❌ Frame revoked", Toast.LENGTH_SHORT).show()
+                                    }.addOnFailureListener { isProcessing = false }
+                                },
+                                border = BorderStroke(1.dp, Color(0xFFFF5252)),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f).height(38.dp)
+                            ) {
+                                Text("❌ Revoke Frame", color = Color(0xFFFF5252), fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            }
+                        }
+
+                        // Mic Effect Action Buttons
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    isProcessing = true
+                                    val now = System.currentTimeMillis()
+                                    val expiry = if (selectedValidityDays > 0) now + (selectedValidityDays * 86400000L) else 0L
+                                    val updates = mapOf(
+                                        "activeMicEffect" to selectedMicEffectId,
+                                        "ownedMicEffects" to FieldValue.arrayUnion(selectedMicEffectId),
+                                        "micEffectExpiries.$selectedMicEffectId" to expiry
+                                    )
+                                    db.collection("users").document(target.uid).update(updates)
+                                        .addOnSuccessListener {
+                                            isProcessing = false
+                                            searchedUser = target.copy(activeMicEffect = selectedMicEffectId)
+                                            Toast.makeText(context, "✨ 3D Mic Effect granted and equipped!", Toast.LENGTH_SHORT).show()
+                                        }.addOnFailureListener { isProcessing = false }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B)),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f).height(38.dp)
+                            ) {
+                                Text("✨ Grant Mic Effect", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    isProcessing = true
+                                    db.collection("users").document(target.uid).update(
+                                        mapOf("activeMicEffect" to "")
+                                    ).addOnSuccessListener {
+                                        isProcessing = false
+                                        searchedUser = target.copy(activeMicEffect = "")
+                                        Toast.makeText(context, "❌ Mic Effect revoked", Toast.LENGTH_SHORT).show()
+                                    }.addOnFailureListener { isProcessing = false }
+                                },
+                                border = BorderStroke(1.dp, Color(0xFFFF5252)),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f).height(38.dp)
+                            ) {
+                                Text("❌ Revoke Mic Effect", color = Color(0xFFFF5252), fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
