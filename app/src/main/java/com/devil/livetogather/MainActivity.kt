@@ -79,11 +79,13 @@ import coil.compose.AsyncImage
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.SetOptions
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 
 val BrandDark = Color(0xFF0B090A)
@@ -497,6 +499,11 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
             }
         )
     }
+
+    // Coin Store & Help Desk Modals for Room Access & TopUp
+    var showAppCoinStoreModal by remember { mutableStateOf(false) }
+    var helpDeskPackageForStore by remember { mutableStateOf<CoinPackageItem?>(null) }
+    var showAppHelpDeskModal by remember { mutableStateOf(false) }
 
     // Top Search Bar State (Dual-Mode: Room vs User)
     var isSearchExpanded by remember { mutableStateOf(false) }
@@ -1110,7 +1117,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
         Scaffold(
             containerColor = if (isProfileScreen) Color.Transparent else BrandDark,
             topBar = {
-                if (activeAudioRoom == null || isAudioRoomMinimized) {
+                if (!isProfileScreen && (activeAudioRoom == null || isAudioRoomMinimized)) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1501,7 +1508,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                 if (activeAudioRoom == null || isAudioRoomMinimized) {
                     val isProfileScreen = currentScreen == "profile"
                     NavigationBar(
-                        containerColor = if (isProfileScreen) Color(0xFFF7F4FD).copy(alpha = 0.95f) else BrandCard,
+                        containerColor = if (isProfileScreen) Color.Transparent else BrandCard,
                         contentColor = if (isProfileScreen) Color(0xFF1B1433) else Color.White
                     ) {
                         val items = listOf(
@@ -1951,6 +1958,18 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
         // 0. Advanced Real-time Audio or Video Hangout Room Dialog
         if (activeAudioRoom != null) {
             val room = activeAudioRoom!!
+            val isExpiredGuest = (!currentUser.hasRecharged && currentUser.rechargeCount == 0 && currentUser.totalRoomTimeSeconds >= 3600L)
+            if (isExpiredGuest) {
+                RoomRechargePaywallModal(
+                    onDismiss = {
+                        activeAudioRoom = null
+                    },
+                    onRecharge = {
+                        activeAudioRoom = null
+                        showAppCoinStoreModal = true
+                    }
+                )
+            } else {
             val onRoomDismissAction = {
                 isAudioRoomMinimized = false
                 if (room.id.isNotBlank()) {
@@ -2053,6 +2072,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                         activeAudioRoom = converted
                     }
                 )
+            }
             }
         }
 
@@ -2637,6 +2657,64 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                     prefs.edit().putBoolean(WelcomeBonusManager.PREF_SHOW_WELCOME_DIALOG, false).apply()
                     showWelcomeBonusDialog = false
                 }
+            )
+        }
+
+        // Automated Diamond Spend & Recharge Milestone Rewards
+        LaunchedEffect(currentUser.diamondsSpentCount) {
+            AutomatedRewardManager.checkDiamondSpendMilestones(context, currentUser, db) {
+                currentUser = it
+            }
+        }
+        LaunchedEffect(currentUser.rechargeCount, currentUser.totalRoomTimeSeconds) {
+            AutomatedRewardManager.checkRechargeMilestones(context, currentUser, db) {
+                currentUser = it
+            }
+        }
+
+        // Interactive Level-Up Milestone Dialog (+10 Free Diamonds)
+        val currentLevel = maxOf(currentUser.wealthLevel, currentUser.charmLevel)
+        var lastKnownLevel by remember { mutableStateOf(prefs.getInt("last_known_level_${currentUser.uid}", currentLevel)) }
+        var showLevelUpCelebration by remember { mutableStateOf(false) }
+
+        LaunchedEffect(currentLevel) {
+            if (currentLevel > lastKnownLevel && lastKnownLevel > 0) {
+                showLevelUpCelebration = true
+            }
+            lastKnownLevel = currentLevel
+            prefs.edit().putInt("last_known_level_${currentUser.uid}", currentLevel).apply()
+        }
+
+        if (showLevelUpCelebration) {
+            LevelUpCelebrationDialog(
+                newLevel = currentLevel,
+                onClaimDiamonds = {
+                    val newDiamonds = currentUser.diamonds + 10L
+                    db.collection("users").document(currentUser.uid).update("diamonds", FieldValue.increment(10L))
+                    currentUser = currentUser.copy(diamonds = newDiamonds)
+                    showLevelUpCelebration = false
+                    Toast.makeText(context, "🎉 +10 Diamonds Added to Your Wallet!", Toast.LENGTH_SHORT).show()
+                }
+            )
+        }
+
+        if (showAppCoinStoreModal) {
+            CoinStoreTopUpDialog(
+                currentUser = currentUser,
+                onDismiss = { showAppCoinStoreModal = false },
+                onOpenHelpDeskWithPackage = { pack ->
+                    helpDeskPackageForStore = pack
+                    showAppCoinStoreModal = false
+                    showAppHelpDeskModal = true
+                }
+            )
+        }
+
+        if (showAppHelpDeskModal) {
+            HelpDeskModal(
+                currentUser = currentUser,
+                prefilledPackage = helpDeskPackageForStore,
+                onDismiss = { showAppHelpDeskModal = false }
             )
         }
     }
@@ -3582,23 +3660,7 @@ fun ChatsScreenContent(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("No messages yet. Like back profiles to start chatting!", color = Color.Gray, fontSize = 13.sp)
                     Spacer(modifier = Modifier.height(16.dp))
-                    Button(
-                        onClick = {
-                            val companion = UserProfile(
-                                uid = "companion_maya_vip",
-                                userId = "maya_bestie_vip",
-                                name = "Maya (Bestie 🌸)",
-                                photo = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80",
-                                gender = "female",
-                                city = "Mumbai"
-                            )
-                            onOpenChat(companion)
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
-                        shape = RoundedCornerShape(20.dp)
-                    ) {
-                        Text("✨ Chat with Maya (Intimacy & Media Demo)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    }
+
                 }
             }
         } else {
@@ -4085,6 +4147,7 @@ fun ProfileScreenContent(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .statusBarsPadding()
             .background(
                 Brush.verticalGradient(
                     listOf(
@@ -6420,8 +6483,11 @@ fun ProfileScreenContent(
 
                         Button(
                             onClick = {
+                                if (isSaving) return@Button
                                 keyboardController?.hide()
                                 focusManager.clearFocus()
+                                val targetName = name.trim().ifEmpty { currentUser.name }
+                                val targetNameLower = targetName.lowercase()
                                 val parsedAge = age.toIntOrNull() ?: currentUser.age
                                 val rawPhoto = photoUrl.ifEmpty { currentUser.photo }
                                 val safePhoto = if (rawPhoto.startsWith("file://") || rawPhoto.startsWith("content://")) {
@@ -6435,25 +6501,55 @@ fun ProfileScreenContent(
                                 }
                                 photoUrl = safePhoto
 
-                                val updated = currentUser.copy(
-                                    uid = currentUserId,
-                                    name = name.trim().ifEmpty { currentUser.name },
-                                    age = parsedAge,
-                                    city = city.trim().ifEmpty { currentUser.city },
-                                    profession = profession.trim(),
-                                    education = education.trim(),
-                                    hobbies = hobbies.trim(),
-                                    bio = bio.trim(),
-                                    photo = safePhoto,
-                                    gender = gender,
-                                    interestedIn = interestedIn
-                                )
-                                onUpdateProfile(updated)
-                                isEditing = false
-                                Toast.makeText(context, "Profile updated successfully! ✅", Toast.LENGTH_SHORT).show()
-                                db.collection("users").document(currentUserId)
-                                    .set(updated, SetOptions.merge())
+                                coroutineScope.launch {
+                                    isSaving = true
+                                    if (!targetName.equals(currentUser.name.trim(), ignoreCase = true)) {
+                                        try {
+                                            val existingDocs = db.collection("users")
+                                                .whereEqualTo("nameLower", targetNameLower)
+                                                .get()
+                                                .await()
+                                            val isTaken = existingDocs.documents.any { it.id != currentUserId } ||
+                                                try {
+                                                    val exactDocs = db.collection("users")
+                                                        .whereEqualTo("name", targetName)
+                                                        .get()
+                                                        .await()
+                                                    exactDocs.documents.any { it.id != currentUserId }
+                                                } catch (_: Exception) { false }
+                                            if (isTaken) {
+                                                Toast.makeText(context, "This name is already in use, try different.", Toast.LENGTH_LONG).show()
+                                                isSaving = false
+                                                return@launch
+                                            }
+                                        } catch (e: Exception) {
+                                            android.util.Log.w("MainActivity", "Name uniqueness check: ${e.message}")
+                                        }
+                                    }
+
+                                    val updated = currentUser.copy(
+                                        uid = currentUserId,
+                                        name = targetName,
+                                        nameLower = targetNameLower,
+                                        age = parsedAge,
+                                        city = city.trim().ifEmpty { currentUser.city },
+                                        profession = profession.trim(),
+                                        education = education.trim(),
+                                        hobbies = hobbies.trim(),
+                                        bio = bio.trim(),
+                                        photo = safePhoto,
+                                        gender = gender,
+                                        interestedIn = interestedIn
+                                    )
+                                    onUpdateProfile(updated)
+                                    isEditing = false
+                                    isSaving = false
+                                    Toast.makeText(context, "Profile updated successfully! ✅", Toast.LENGTH_SHORT).show()
+                                    db.collection("users").document(currentUserId)
+                                        .set(updated, SetOptions.merge())
+                                }
                             },
+                            enabled = !isSaving,
                             colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.weight(1f).height(44.dp)

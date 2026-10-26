@@ -1,0 +1,453 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// This security rules file assumes the following data structures:
+//
+// 1. users/{userId}
+//    - Document ID: Firebase Auth UID
+//    - Fields: uid (string), name (string), email (string), isAdmin (bool, restricted),
+//              age (int), gender (string), diamonds (int/float), coins (int/float), etc.
+//
+// 2. users/{userId}/followers/{followerId}
+//    - Document ID: Follower user UID
+//    - Fields: uid (string), followedAt (timestamp/number), etc.
+//
+// 3. payment_requests/{reqId}
+//    - Document ID: Auto-generated or custom request ID
+//    - Fields: userId (string), amount (number), utr (string), status (string), etc.
+//
+// 4. admin_notifications/{notifId}
+//    - Document ID: Notification ID
+//    - Fields: title (string), message (string), targetUid (string), createdAt (timestamp/number)
+//
+// 5. reports/{reportId}
+//    - Document ID: Auto-generated report ID
+//    - Fields: reportedBy (string), targetUid (string), reason (string), details (string)
+//
+// 6. rooms/{roomId}
+//    - Document ID: Room ID
+//    - Fields: hostUid / hostId (string), title (string), category (string),
+//              adminUserIds (list of strings), isLive (bool), etc.
+//
+// 7. rooms/{roomId}/mic_seats/{seatId}
+//    - Document ID: Seat index (0-7)
+//    - Fields: seatIndex (int), occupantUid (string), isMuted (bool), isLocked (bool)
+//
+// 8. rooms/{roomId}/live_comments/{commentId}
+//    - Document ID: Comment ID
+//    - Fields: userId (string), text (string), timestamp (number/timestamp)
+//
+// 9. rooms/{roomId}/gift_events/{eventId}
+//    - Document ID: Event ID
+//    - Fields: senderUid (string), receiverUid (string), giftId (string), diamonds (number)
+//
+// 10. matches/{matchId}
+//     - Document ID: Match ID (usually sorted user UIDs)
+//     - Fields: users (list of 2 strings: UIDs), matchedAt (timestamp/number), etc.
+//
+// 11. chats/{chatId}
+//     - Document ID: Chat conversation ID
+//     - Fields: participants (list of strings: UIDs), lastMessage (string), updatedAt
+//
+// 12. chats/{chatId}/messages/{msgId}
+//     - Document ID: Message ID
+//     - Fields: senderId (string), text (string), timestamp (timestamp/number), mediaUrl (string)
+//
+// 13. moments/{momentId}
+//     - Document ID: Moment ID
+//     - Fields: userId (string), caption (string), mediaUrls (list), createdAt
+//
+// 14. swipes/{swipeId}
+//     - Document ID: Swipe record ID (e.g., swiperId_swipedId)
+//     - Fields: userId (string), targetUserId (string), direction (string), timestamp
+//
+// 15. intimacy_bonds/{bondId}
+//     - Document ID: Bond ID (e.g., user1_user2)
+//     - Fields: user1Id (string), user2Id (string), level (int), intimacyScore (int)
+//
+// 16. intent_categories/{catId}
+//     - Document ID: Category slug/ID
+//     - Fields: name (string), iconUrl (string), activeRoomsCount (int)
+//
+// 17. claimed_devices/{deviceId} & claimed_ips/{ip}
+//     - Document ID: Sanitized Device UUID or IP Address
+//     - Fields: uid (string), claimedAt (timestamp/number), deviceModel (string)
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    // Check if the request is from an authenticated user
+    function isAuthenticated() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    // Check if the current user is the owner of the document path
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Check if user has administrative rights via:
+    // 1. Firebase Auth custom claim `admin == true`
+    // 2. Existence and flag in `admin_whitelists` collection (with @ replaced with _at_)
+    // 3. User document flag `isAdmin == true`
+    function isAdmin() {
+      return isAuthenticated() && (
+        (request.auth.token.get('admin', false) == true) ||
+        (
+          'email' in request.auth.token &&
+          request.auth.token.email != null &&
+          exists(/databases/$(database)/documents/admin_whitelists/$(request.auth.token.email.replace('@', '_at_'))) &&
+          get(/databases/$(database)/documents/admin_whitelists/$(request.auth.token.email.replace('@', '_at_'))).data.get('isAdmin', false) == true
+        ) ||
+        (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAdmin', false) == true
+        )
+      );
+    }
+
+    // Validate that immutable fields are not modified during an update
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // Check if the current user is host or room admin
+    function isRoomHostOrAdmin(roomData) {
+      return isAuthenticated() && (
+        roomData.get('hostUid', '') == request.auth.uid ||
+        roomData.get('hostId', '') == request.auth.uid ||
+        (roomData.get('adminUserIds', []).hasAny([request.auth.uid])) ||
+        isAdmin()
+      );
+    }
+
+    // Check if the current user is host
+    function isRoomHost(roomData) {
+      return isAuthenticated() && (
+        roomData.get('hostUid', '') == request.auth.uid ||
+        roomData.get('hostId', '') == request.auth.uid ||
+        isAdmin()
+      );
+    }
+
+    // ===============================================================
+    // User Profiles & Followers
+    // ===============================================================
+
+    match /users/{userId} {
+      // Authenticated users can view profiles
+      allow read: if isAuthenticated();
+
+      // Only the user themselves can create their profile doc, and non-admins cannot self-promote to admin
+      allow create: if isOwner(userId) &&
+        (!('isAdmin' in request.resource.data) || request.resource.data.isAdmin == false || isAdmin());
+
+      // Owner can update their profile as long as they don't modify the isAdmin flag; Admins can update anything
+      allow update: if (isOwner(userId) && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin']))) || isAdmin();
+
+      // Deletion of user profile requires admin privileges
+      allow delete: if isAdmin();
+
+      // Followers subcollection: users/{userId}/followers/{followerId}
+      match /followers/{followerId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated() && (request.auth.uid == userId || request.auth.uid == followerId);
+      }
+
+      // Following subcollection: users/{userId}/following/{followingId}
+      match /following/{followingId} {
+        allow read: if isAuthenticated();
+        allow write: if isOwner(userId);
+      }
+
+      // User private notifications subcollection
+      match /notifications/{notifId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow write: if isAuthenticated();
+      }
+
+      // User coin & earning transaction ledgers
+      match /coin_transactions/{txId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow write: if isOwner(userId) || isAdmin();
+      }
+
+      match /earning_transactions/{txId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow write: if isOwner(userId) || isAdmin();
+      }
+    }
+
+    // ===============================================================
+    // Payment Requests & Financial Operations
+    // ===============================================================
+
+    match /payment_requests/{reqId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    match /withdrawal_requests/{reqId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // ===============================================================
+    // Admin Notifications & Whitelists
+    // ===============================================================
+
+    match /admin_notifications/{notifId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+
+    match /admin_whitelists/{emailDoc} {
+      allow read, write: if isAdmin();
+    }
+
+    // ===============================================================
+    // User Reports & Support
+    // ===============================================================
+
+    match /reports/{reportId} {
+      allow create: if isAuthenticated();
+      allow read, update, delete: if isAdmin();
+    }
+
+    match /feedback/{feedbackId} {
+      allow create: if isAuthenticated();
+      allow read, update, delete: if isAdmin();
+    }
+
+    // ===============================================================
+    // Rooms & Interactive Live Hangouts
+    // ===============================================================
+
+    match /rooms/{roomId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (
+        resource.data.get('hostUid', '') == request.auth.uid ||
+        resource.data.get('hostId', '') == request.auth.uid ||
+        resource.data.get('adminUserIds', []).hasAny([request.auth.uid]) ||
+        isAdmin()
+      );
+      allow delete: if isAuthenticated() && (
+        resource.data.get('hostUid', '') == request.auth.uid ||
+        resource.data.get('hostId', '') == request.auth.uid ||
+        isAdmin()
+      );
+
+      // Mic Seats in Room
+      match /mic_seats/{seatId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated();
+      }
+
+      // Live Comments in Room
+      match /live_comments/{commentId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+        allow update, delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      }
+
+      // Gift Events in Room
+      match /gift_events/{eventId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated();
+        allow update, delete: if isAdmin();
+      }
+
+      // Active Room Members
+      match /members/{memberId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated();
+      }
+
+      // Video Stage Requests
+      match /stage_requests/{reqId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated();
+      }
+
+      // Video Hangout Invites
+      match /video_invites/{inviteId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated();
+      }
+
+      // PK Battle Supporters
+      match /pk_supporters/{supporterId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated();
+      }
+    }
+
+    // ===============================================================
+    // Matches & Dating Discovery
+    // ===============================================================
+
+    match /matches/{matchId} {
+      allow read: if isAuthenticated() && resource.data.users.hasAny([request.auth.uid]);
+      allow write: if isAuthenticated() && request.resource.data.users.hasAny([request.auth.uid]);
+
+      // Direct match messages subcollection
+      match /messages/{msgId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && request.resource.data.senderId == request.auth.uid;
+        allow update, delete: if isAuthenticated() && (resource.data.senderId == request.auth.uid || isAdmin());
+      }
+    }
+
+    // ===============================================================
+    // Chats & Direct Messaging
+    // ===============================================================
+
+    match /chats/{chatId} {
+      allow read: if isAuthenticated() && resource.data.participants.hasAny([request.auth.uid]);
+      allow write: if isAuthenticated();
+
+      match /messages/{msgId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && request.resource.data.senderId == request.auth.uid;
+        allow update, delete: if isAuthenticated() && (resource.data.senderId == request.auth.uid || isAdmin());
+      }
+    }
+
+    match /message_requests/{reqId} {
+      allow read: if isAuthenticated() && (
+        resource.data.get('senderId', '') == request.auth.uid ||
+        resource.data.get('receiverId', '') == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if isAuthenticated() && request.resource.data.senderId == request.auth.uid;
+      allow update: if isAuthenticated() && (
+        resource.data.get('senderId', '') == request.auth.uid ||
+        resource.data.get('receiverId', '') == request.auth.uid ||
+        isAdmin()
+      );
+      allow delete: if isAuthenticated() && (
+        resource.data.get('senderId', '') == request.auth.uid ||
+        resource.data.get('receiverId', '') == request.auth.uid ||
+        isAdmin()
+      );
+    }
+
+    // ===============================================================
+    // Moments & Social Feed
+    // ===============================================================
+
+    match /moments/{momentId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+
+      match /comments/{commentId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+        allow update, delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      }
+    }
+
+    // ===============================================================
+    // Swipes, Intimacy Bonds & Proposals
+    // ===============================================================
+
+    match /swipes/{swipeId} {
+      allow read, write: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid);
+    }
+
+    match /intimacy_bonds/{bondId} {
+      allow read: if isAuthenticated() && (
+        resource.data.user1Id == request.auth.uid ||
+        resource.data.user2Id == request.auth.uid
+      );
+      allow write: if isAuthenticated() && (
+        request.resource.data.user1Id == request.auth.uid ||
+        request.resource.data.user2Id == request.auth.uid
+      );
+    }
+
+    match /proposals/{proposalId} {
+      allow read: if isAuthenticated() && (
+        resource.data.user1Id == request.auth.uid ||
+        resource.data.user2Id == request.auth.uid
+      );
+      allow write: if isAuthenticated() && (
+        resource == null ||
+        resource.data.user1Id == request.auth.uid ||
+        resource.data.user2Id == request.auth.uid ||
+        request.resource.data.user1Id == request.auth.uid ||
+        request.resource.data.user2Id == request.auth.uid
+      );
+    }
+
+    // ===============================================================
+    // Discovery & Intent Categories
+    // ===============================================================
+
+    match /intent_categories/{catId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // ===============================================================
+    // Welcome Bonus Fraud Prevention: Claimed Devices & IPs
+    // ===============================================================
+
+    match /claimed_devices/{deviceId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+
+    match /claimed_ips/{ip} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+
+    // ===============================================================
+    // Global App Configuration & Broadcast Notifications
+    // ===============================================================
+
+    match /app_config/{configId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /notifications/{notifId} {
+      allow read: if isAuthenticated() && (
+        resource.data.get('userId', '') == request.auth.uid ||
+        resource.data.get('uid', '') == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() && (
+        resource.data.get('userId', '') == request.auth.uid ||
+        resource.data.get('uid', '') == request.auth.uid ||
+        isAdmin()
+      );
+    }
+
+    // ===============================================================
+    // Default Deny Root Fallback
+    // ===============================================================
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -4886,6 +4886,12 @@ fun AudioHangoutRoomDialog(
     var userDiamonds by remember { mutableStateOf(currentUser.diamonds) }
     var activeUserFrame by remember { mutableStateOf(currentUser.activeFrame) }
     var userOwnedFrames by remember { mutableStateOf(currentUser.ownedFrames) }
+    var userActiveMicEffect by remember { mutableStateOf(currentUser.activeMicEffect) }
+    var userOwnedMicEffects by remember { mutableStateOf(currentUser.ownedMicEffects) }
+    var userHasRecharged by remember { mutableStateOf(currentUser.hasRecharged) }
+    var userRechargeCount by remember { mutableStateOf(currentUser.rechargeCount) }
+    var userTotalRoomTimeSeconds by remember { mutableStateOf(currentUser.totalRoomTimeSeconds) }
+    var showGuestLimitExpiredDialog by remember { mutableStateOf(false) }
     var showGiftStoreDialog by remember { mutableStateOf(false) }
     var showLuxuryStoreDialog by remember { mutableStateOf(false) }
     var activeGiftEvent by remember { mutableStateOf<GiftEvent?>(null) }
@@ -4898,10 +4904,42 @@ fun AudioHangoutRoomDialog(
                     if (snap != null && snap.exists()) {
                         userDiamonds = snap.getLong("diamonds") ?: 0L
                         activeUserFrame = snap.getString("activeFrame") ?: ""
+                        userActiveMicEffect = snap.getString("activeMicEffect") ?: ""
+                        userHasRecharged = snap.getBoolean("hasRecharged") ?: false
+                        userRechargeCount = snap.getLong("rechargeCount")?.toInt() ?: 0
+                        userTotalRoomTimeSeconds = snap.getLong("totalRoomTimeSeconds") ?: 0L
                         @Suppress("UNCHECKED_CAST")
                         userOwnedFrames = (snap.get("ownedFrames") as? List<String>) ?: emptyList()
+                        @Suppress("UNCHECKED_CAST")
+                        userOwnedMicEffects = (snap.get("ownedMicEffects") as? List<String>) ?: emptyList()
                     }
                 }
+        }
+    }
+
+    // Live Room Time Tracking & Free 1-Hour Guest Limit for Unrecharged Users
+    LaunchedEffect(currentUser.uid, userHasRecharged, userRechargeCount) {
+        if (userHasRecharged || userRechargeCount > 0) return@LaunchedEffect
+        while (true) {
+            delay(10000L) // every 10 seconds
+            val newTime = userTotalRoomTimeSeconds + 10L
+            userTotalRoomTimeSeconds = newTime
+            try {
+                db.collection("users").document(currentUser.uid)
+                    .update("totalRoomTimeSeconds", FieldValue.increment(10L))
+            } catch (_: Exception) {}
+
+            AutomatedRewardManager.checkRoomTimeRewards(
+                context = context,
+                profile = currentUser.copy(totalRoomTimeSeconds = newTime, diamonds = userDiamonds),
+                db = db,
+                onUpdateProfile = { userDiamonds = it.diamonds }
+            )
+
+            if (newTime >= 3600L) {
+                showGuestLimitExpiredDialog = true
+                break
+            }
         }
     }
 
@@ -6462,57 +6500,7 @@ fun AudioHangoutRoomDialog(
                             }
                         }
 
-                        if (isUserAdmin) {
-                            val hasMaya = stageSeats.any { it.uid == "companion_maya_vip" }
-                            androidx.compose.material3.Surface(
-                                color = if (hasMaya) Color(0xFFFF1744).copy(alpha = 0.45f) else Color(0xFF00E5FF).copy(alpha = 0.30f),
-                                shape = RoundedCornerShape(12.dp),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, if (hasMaya) Color(0xFFFF1744) else Color(0xFF00E5FF)),
-                                modifier = Modifier.clickable {
-                                    val companionUid = "companion_maya_vip"
-                                    val currentSeat1 = micSeats.find { it.seatIndex == 1 }
-                                    if (currentSeat1 != null && currentSeat1.uid == companionUid) {
-                                        vacateMicSeat(db, room.id, 1, false)
-                                        android.widget.Toast.makeText(context, "Maya vacated Mic 2", android.widget.Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        val mayaSeat = MicSeat(
-                                            seatIndex = 1,
-                                            label = "Mic 2",
-                                            uid = companionUid,
-                                            name = "Maya (Bestie 🌸)",
-                                            photo = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80",
-                                            role = "speaker",
-                                            isTalking = true
-                                        )
-                                        db.collection("rooms").document(room.id).collection("mic_seats").document("1").set(mayaSeat)
-                                        val mayaProfile = mapOf<String, Any>(
-                                            "uid" to companionUid,
-                                            "userId" to "maya_bestie_vip",
-                                            "name" to "Maya (Bestie 🌸)",
-                                            "photo" to "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80",
-                                            "gender" to "female",
-                                            "wealthLevel" to 35,
-                                            "charmLevel" to 42,
-                                            "diamonds" to 500000L,
-                                            "coins" to 1000000L,
-                                            "location" to "Mumbai",
-                                            "locationPrivacy" to "public",
-                                            "voiceVerificationStatus" to "verified"
-                                        )
-                                        db.collection("users").document(companionUid).set(mayaProfile)
-                                        android.widget.Toast.makeText(context, "🌸 Maya joined Mic 2! ⚡ 3D Mic Link Active!", android.widget.Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            ) {
-                                Text(
-                                    text = if (hasMaya) "❌ Remove Maya" else "👥 Seat Maya on Mic 2",
-                                    fontSize = 11.sp,
-                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                                    color = Color.White,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
-                            }
-                        }
+
                     }
 
                     Spacer(modifier = Modifier.height(2.dp))
@@ -6525,6 +6513,7 @@ fun AudioHangoutRoomDialog(
                             isLocalTalking = isLocalTalking,
                             allProfiles = allProfiles,
                             userActiveFrame = activeUserFrame,
+                            userActiveMicEffect = userActiveMicEffect,
                             activeEmojiReactions = activeEmojiReactions,
                             activeMicLinkId = activeMicLinkDesignId,
                             onSeatClick = handleSeatClick
@@ -6537,6 +6526,7 @@ fun AudioHangoutRoomDialog(
                             isLocalTalking = isLocalTalking,
                             allProfiles = allProfiles,
                             userActiveFrame = activeUserFrame,
+                            userActiveMicEffect = userActiveMicEffect,
                             activeEmojiReactions = activeEmojiReactions,
                             categorySeatEmoji = "🎙️",
                             categorySeatLabel = "Mic",
@@ -7690,16 +7680,38 @@ fun AudioHangoutRoomDialog(
 
         if (showLuxuryStoreDialog) {
             LuxuryStoreDialog(
-                currentUser = currentUser.copy(activeFrame = activeUserFrame, ownedFrames = userOwnedFrames, diamonds = userDiamonds),
+                currentUser = currentUser.copy(
+                    activeFrame = activeUserFrame,
+                    ownedFrames = userOwnedFrames,
+                    activeMicEffect = userActiveMicEffect,
+                    ownedMicEffects = userOwnedMicEffects,
+                    diamonds = userDiamonds
+                ),
                 db = db,
                 onDismiss = { showLuxuryStoreDialog = false },
                 onProfileUpdated = { updated ->
                     activeUserFrame = updated.activeFrame
                     userOwnedFrames = updated.ownedFrames
+                    userActiveMicEffect = updated.activeMicEffect
+                    userOwnedMicEffects = updated.ownedMicEffects
                     userDiamonds = updated.diamonds
                 },
                 onOpenTopUp = {
                     showGiftStoreDialog = true
+                }
+            )
+        }
+
+        // Free 1-Hour Guest Access Expired Dialog
+        if (showGuestLimitExpiredDialog) {
+            RoomRechargePaywallModal(
+                onDismiss = {
+                    showGuestLimitExpiredDialog = false
+                    onDismiss()
+                },
+                onRecharge = {
+                    showGuestLimitExpiredDialog = false
+                    onDismiss()
                 }
             )
         }
@@ -8097,6 +8109,11 @@ fun AudioHangoutRoomDialog(
                                     keyboardActions = KeyboardActions(
                                         onSend = {
                                             if (commentInputText.isNotBlank()) {
+                                                if (!userHasRecharged && userRechargeCount == 0 && userTotalRoomTimeSeconds >= 3600L) {
+                                                    android.widget.Toast.makeText(context, "🚫 1-hour free room access expired. Recharge ₹59 to chat.", android.widget.Toast.LENGTH_LONG).show()
+                                                    showGuestLimitExpiredDialog = true
+                                                    return@KeyboardActions
+                                                }
                                                 val msg = commentInputText.trim()
                                                 val badWord = AbuseFilterEngine.findAbusiveWord(msg)
                                                 if (badWord != null) {
@@ -8138,6 +8155,11 @@ fun AudioHangoutRoomDialog(
                                 IconButton(
                                     onClick = {
                                         if (commentInputText.isNotBlank()) {
+                                            if (!userHasRecharged && userRechargeCount == 0 && userTotalRoomTimeSeconds >= 3600L) {
+                                                android.widget.Toast.makeText(context, "🚫 1-hour free room access expired. Recharge ₹59 to chat.", android.widget.Toast.LENGTH_LONG).show()
+                                                showGuestLimitExpiredDialog = true
+                                                return@IconButton
+                                            }
                                             val msg = commentInputText.trim()
                                             val badWord = AbuseFilterEngine.findAbusiveWord(msg)
                                             if (badWord != null) {
@@ -9810,6 +9832,7 @@ fun TenMicStageSection(
     isLocalTalking: Boolean,
     allProfiles: List<UserProfile> = emptyList(),
     userActiveFrame: String = "",
+    userActiveMicEffect: String = "",
     activeEmojiReactions: Map<String, String> = emptyMap(),
     categorySeatEmoji: String = "🎙️",
     categorySeatLabel: String = "Seat",
@@ -9862,6 +9885,7 @@ fun TenMicStageSection(
                         isHost = isHost,
                         allProfiles = allProfiles,
                         userActiveFrame = userActiveFrame,
+                        userActiveMicEffect = userActiveMicEffect,
                         reactionEmoji = activeEmojiReactions[seat.uid],
                         categorySeatEmoji = "🎙️",
                         categorySeatLabel = "Mic",
@@ -9921,6 +9945,7 @@ fun TenMicStageSection(
                     isHost = isHost,
                     allProfiles = allProfiles,
                     userActiveFrame = userActiveFrame,
+                    userActiveMicEffect = userActiveMicEffect,
                     reactionEmoji = activeEmojiReactions[seat.uid],
                     categorySeatEmoji = "🎙️",
                     categorySeatLabel = "Mic",
@@ -9942,6 +9967,7 @@ fun VipRoyalStageCanvas(
     isLocalTalking: Boolean,
     allProfiles: List<UserProfile> = emptyList(),
     userActiveFrame: String = "",
+    userActiveMicEffect: String = "",
     activeEmojiReactions: Map<String, String> = emptyMap(),
     activeMicLinkId: String = "mic_link_ruby_crown",
     onSeatClick: (MicSeat) -> Unit
@@ -10279,13 +10305,10 @@ fun MicSeatView(
                 val frameItem = getAvatarFrameItem(seatFrameId)
                 val seatVipLvl = seatOccupantProfile?.getVipLevel() ?: (frameItem?.vipLevel ?: 0)
 
-                val seatMicEffectId = if (isCurrentSelf && userActiveMicEffect.isNotBlank()) {
+                val seatMicEffectId = if (isCurrentSelf) {
                     userActiveMicEffect
-                } else if (seatOccupantProfile?.activeMicEffect?.isNotBlank() == true) {
-                    seatOccupantProfile.activeMicEffect
                 } else {
-                    // For Host Mic (seatIndex == 0), show Cyber Neon Electric Blue as the active test effect!
-                    if (seat.seatIndex == 0) "mic_effect_cyber_neon_electric" else ""
+                    seatOccupantProfile?.activeMicEffect ?: ""
                 }
 
                 FlowingAvatarFrame(

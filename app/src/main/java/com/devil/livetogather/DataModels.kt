@@ -789,11 +789,17 @@ data class UserProfile(
     // Diamond Economy & Avatar Frames System
     val diamonds: Long = 0L,
     val coins: Long = 0L,
+    val nameLower: String = "",
     val activeFrame: String = "",
     val activeMicEffect: String = "",
     val ownedMicEffects: List<String> = emptyList(),
     val ownedFrames: List<String> = emptyList(),
     val frameExpiries: Map<String, Long> = emptyMap(),
+    val micEffectExpiries: Map<String, Long> = emptyMap(),
+    val totalRoomTimeSeconds: Long = 0L,
+    val hasRecharged: Boolean = false,
+    val rechargeCount: Int = 0,
+    val diamondsSpentCount: Int = 0,
     val backpack: Map<String, Int> = emptyMap(), // giftId -> quantity
 
     // First-Time Sign Up Welcome Bonus & 7-Day VIP 1 Trial
@@ -1033,9 +1039,13 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
     val hostTrialStartDate = doc.getLong("hostTrialStartDate") ?: 0L
     val diamonds = doc.getLong("diamonds") ?: 0L
     val coins = doc.getLong("coins") ?: diamonds
+    val nameLower = doc.getString("nameLower") ?: name.lowercase().trim()
     val activeFrame = doc.getString("activeFrame") ?: ""
     @Suppress("UNCHECKED_CAST")
     val ownedFrames = (doc.get("ownedFrames") as? List<String>) ?: emptyList()
+    val activeMicEffect = doc.getString("activeMicEffect") ?: ""
+    @Suppress("UNCHECKED_CAST")
+    val ownedMicEffects = (doc.get("ownedMicEffects") as? List<String>) ?: emptyList()
     val vipTrialStartDate = doc.getLong("vipTrialStartDate") ?: 0L
     val vipTrialExpiryDate = doc.getLong("vipTrialExpiryDate") ?: 0L
     val hasClaimedWelcomeBonus = doc.getBoolean("hasClaimedWelcomeBonus") ?: false
@@ -1048,6 +1058,18 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
         val l = (v as? Number)?.toLong()
         if (l != null) k to l else null
     }?.toMap() ?: emptyMap()
+
+    @Suppress("UNCHECKED_CAST")
+    val rawMicExpiries = doc.get("micEffectExpiries") as? Map<String, Any>
+    val micEffectExpiries: Map<String, Long> = rawMicExpiries?.mapNotNull { (k, v) ->
+        val l = (v as? Number)?.toLong()
+        if (l != null) k to l else null
+    }?.toMap() ?: emptyMap()
+
+    val totalRoomTimeSeconds = doc.getLong("totalRoomTimeSeconds") ?: 0L
+    val hasRecharged = doc.getBoolean("hasRecharged") ?: false
+    val rechargeCount = (doc.getLong("rechargeCount") ?: 0L).toInt()
+    val diamondsSpentCount = (doc.getLong("diamondsSpentCount") ?: 0L).toInt()
     val isSuspended = doc.getBoolean("isSuspended") ?: false
     val suspensionExpiry = doc.getLong("suspensionExpiry") ?: 0L
     val suspensionReason = doc.getString("suspensionReason") ?: ""
@@ -1126,9 +1148,17 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
         hostTrialStartDate = hostTrialStartDate,
         diamonds = diamonds,
         coins = coins,
+        nameLower = nameLower,
         activeFrame = activeFrame,
         ownedFrames = ownedFrames,
+        activeMicEffect = activeMicEffect,
+        ownedMicEffects = ownedMicEffects,
         frameExpiries = frameExpiries,
+        micEffectExpiries = micEffectExpiries,
+        totalRoomTimeSeconds = totalRoomTimeSeconds,
+        hasRecharged = hasRecharged,
+        rechargeCount = rechargeCount,
+        diamondsSpentCount = diamondsSpentCount,
         vipTrialStartDate = vipTrialStartDate,
         vipTrialExpiryDate = vipTrialExpiryDate,
         hasClaimedWelcomeBonus = hasClaimedWelcomeBonus,

@@ -167,6 +167,10 @@ fun VideoHangoutRoomDialog(
     var userDiamonds by remember { mutableStateOf(currentUser.diamonds) }
     var activeUserFrame by remember { mutableStateOf(currentUser.activeFrame) }
     var userOwnedFrames by remember { mutableStateOf(currentUser.ownedFrames) }
+    var userHasRecharged by remember { mutableStateOf(currentUser.hasRecharged) }
+    var userRechargeCount by remember { mutableStateOf(currentUser.rechargeCount) }
+    var userTotalRoomTimeSeconds by remember { mutableStateOf(currentUser.totalRoomTimeSeconds) }
+    var showGuestLimitExpiredDialog by remember { mutableStateOf(false) }
 
     // Comments State
     val liveComments = remember { mutableStateListOf<LiveRoomComment>() }
@@ -443,10 +447,39 @@ fun VideoHangoutRoomDialog(
                     if (snap != null && snap.exists()) {
                         userDiamonds = snap.getLong("diamonds") ?: 0L
                         activeUserFrame = snap.getString("activeFrame") ?: ""
+                        userHasRecharged = snap.getBoolean("hasRecharged") ?: false
+                        userRechargeCount = snap.getLong("rechargeCount")?.toInt() ?: 0
+                        userTotalRoomTimeSeconds = snap.getLong("totalRoomTimeSeconds") ?: 0L
                         @Suppress("UNCHECKED_CAST")
                         userOwnedFrames = (snap.get("ownedFrames") as? List<String>) ?: emptyList()
                     }
                 }
+        }
+    }
+
+    // Live Room Time Tracking & Free 1-Hour Guest Limit for Unrecharged Users
+    LaunchedEffect(currentUser.uid, userHasRecharged, userRechargeCount) {
+        if (userHasRecharged || userRechargeCount > 0) return@LaunchedEffect
+        while (true) {
+            delay(10000L) // every 10 seconds
+            val newTime = userTotalRoomTimeSeconds + 10L
+            userTotalRoomTimeSeconds = newTime
+            try {
+                db.collection("users").document(currentUser.uid)
+                    .update("totalRoomTimeSeconds", FieldValue.increment(10L))
+            } catch (_: Exception) {}
+
+            AutomatedRewardManager.checkRoomTimeRewards(
+                context = context,
+                profile = currentUser.copy(totalRoomTimeSeconds = newTime, diamonds = userDiamonds),
+                db = db,
+                onUpdateProfile = { userDiamonds = it.diamonds }
+            )
+
+            if (newTime >= 3600L) {
+                showGuestLimitExpiredDialog = true
+                break
+            }
         }
     }
 
@@ -516,6 +549,11 @@ fun VideoHangoutRoomDialog(
     // Helper functions for sending comments & PK controls
     fun sendComment(message: String) {
         if (message.isBlank()) return
+        if (!userHasRecharged && userRechargeCount == 0 && userTotalRoomTimeSeconds >= 3600L) {
+            Toast.makeText(context, "🚫 1-hour free room access expired. Recharge ₹59 to chat.", Toast.LENGTH_LONG).show()
+            showGuestLimitExpiredDialog = true
+            return
+        }
         val now = System.currentTimeMillis()
         val commenterLevel = currentUser.getEffectiveWealthLevel()
         val commenterTier = if (currentUser.getVipLevel() > 0) "VIP" else if (currentUser.isVipOrPlatinum()) "Platinum" else "Standard"
@@ -1887,6 +1925,19 @@ fun VideoHangoutRoomDialog(
                     activeMembers = activeMembers,
                     db = db,
                     onDismiss = { showInRoomInboxDialog = false }
+                )
+            }
+
+            if (showGuestLimitExpiredDialog) {
+                RoomRechargePaywallModal(
+                    onDismiss = {
+                        showGuestLimitExpiredDialog = false
+                        onDismiss()
+                    },
+                    onRecharge = {
+                        showGuestLimitExpiredDialog = false
+                        onDismiss()
+                    }
                 )
             }
 

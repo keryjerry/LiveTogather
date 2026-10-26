@@ -68,6 +68,7 @@ data class CoinPackageItem(
 )
 
 val APP_COIN_PACKAGES = listOf(
+    CoinPackageItem("pack_59", 20000L, "₹59", "59", "Minimum Room Unlock Pack 💎", "MINIMUM RECHARGE"),
     CoinPackageItem("pack_49", 15000L, "₹45", "45", "Starter Pack 💎", "POPULAR"),
     CoinPackageItem("pack_149", 50000L, "₹115", "115", "Special Launch Pack 💎", "BEST VALUE"),
     CoinPackageItem("pack_299", 120000L, "₹229", "229", "Super Value Pack 💎"),
@@ -367,6 +368,8 @@ object PaymentAndSupportManager {
         if (request.coinsRequested > 0L) {
             updateMap["coins"] = FieldValue.increment(request.coinsRequested)
             updateMap["diamonds"] = FieldValue.increment(request.coinsRequested)
+            updateMap["hasRecharged"] = true
+            updateMap["rechargeCount"] = FieldValue.increment(1)
         }
         if (request.category.contains("Monetization", ignoreCase = true) || request.amountPaid.contains("599")) {
             updateMap["isHostMonetized"] = true

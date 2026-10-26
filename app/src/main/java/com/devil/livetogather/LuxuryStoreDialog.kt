@@ -449,17 +449,57 @@ fun LuxuryStoreDialog(
                                 isPurchasing = true
                                 coroutineScope.launch(Dispatchers.IO) {
                                     try {
+                                        val now = System.currentTimeMillis()
+                                        val durationMs = targetItem.durationDays * 24L * 60L * 60L * 1000L
+                                        val expiry = now + durationMs
+                                        val isMicEffect = targetItem.category == "mic_effect"
                                         val newDiamonds = currentUser.diamonds - targetItem.diamondPrice
+                                        val newSpentCount = currentUser.diamondsSpentCount + 1
+
                                         val updates = mutableMapOf<String, Any>(
                                             "diamonds" to newDiamonds,
-                                            "ownedFrames" to FieldValue.arrayUnion(targetItem.id)
+                                            "diamondsSpentCount" to FieldValue.increment(1)
                                         )
 
-                                        if (targetItem.category == "avatar_frame") {
-                                            updates["activeFrame"] = targetItem.id
-                                        } else if (targetItem.category == "mic_effect") {
-                                            updates["activeMicEffect"] = targetItem.id
+                                        val updatedUser: UserProfile
+                                        if (isMicEffect) {
+                                            val newOwned = currentUser.ownedMicEffects.toMutableList().apply {
+                                                if (!contains(targetItem.id)) add(targetItem.id)
+                                            }
+                                            val newExpiries = currentUser.micEffectExpiries.toMutableMap().apply {
+                                                put(targetItem.id, expiry)
+                                            }
                                             updates["ownedMicEffects"] = FieldValue.arrayUnion(targetItem.id)
+                                            updates["activeMicEffect"] = targetItem.id
+                                            updates["micEffectExpiries"] = newExpiries
+
+                                            updatedUser = currentUser.copy(
+                                                diamonds = newDiamonds,
+                                                diamondsSpentCount = newSpentCount,
+                                                ownedMicEffects = newOwned,
+                                                activeMicEffect = targetItem.id,
+                                                micEffectExpiries = newExpiries
+                                            )
+                                        } else {
+                                            val newOwned = currentUser.ownedFrames.toMutableList().apply {
+                                                if (!contains(targetItem.id)) add(targetItem.id)
+                                            }
+                                            val newExpiries = currentUser.frameExpiries.toMutableMap().apply {
+                                                put(targetItem.id, expiry)
+                                            }
+                                            updates["ownedFrames"] = FieldValue.arrayUnion(targetItem.id)
+                                            if (targetItem.category == "avatar_frame") {
+                                                updates["activeFrame"] = targetItem.id
+                                            }
+                                            updates["frameExpiries"] = newExpiries
+
+                                            updatedUser = currentUser.copy(
+                                                diamonds = newDiamonds,
+                                                diamondsSpentCount = newSpentCount,
+                                                ownedFrames = newOwned,
+                                                activeFrame = if (targetItem.category == "avatar_frame") targetItem.id else currentUser.activeFrame,
+                                                frameExpiries = newExpiries
+                                            )
                                         }
 
                                         db.collection("users").document(currentUser.uid).update(updates)
@@ -470,19 +510,13 @@ fun LuxuryStoreDialog(
                                             .putLong("user_diamonds", newDiamonds)
                                             .apply()
 
-                                        if (targetItem.category == "avatar_frame") {
+                                        if (isMicEffect) {
+                                            prefs.edit().putString("profile_active_mic_effect", targetItem.id).apply()
+                                        } else if (targetItem.category == "avatar_frame") {
                                             prefs.edit().putString("profile_active_frame", targetItem.id).apply()
                                         }
 
                                         withContext(Dispatchers.Main) {
-                                            val updatedOwned = currentUser.ownedFrames.toMutableList().apply {
-                                                if (!contains(targetItem.id)) add(targetItem.id)
-                                            }
-                                            val updatedUser = currentUser.copy(
-                                                diamonds = newDiamonds,
-                                                ownedFrames = updatedOwned,
-                                                activeFrame = if (targetItem.category == "avatar_frame") targetItem.id else currentUser.activeFrame
-                                            )
                                             onProfileUpdated(updatedUser)
                                             Toast.makeText(
                                                 context,
@@ -543,11 +577,14 @@ fun StoreItemCard(
     onEquipToggle: (StoreItem) -> Unit = {},
     onPurchase: (StoreItem) -> Unit
 ) {
-    val isOwned = if (item.category == "mic_effect") {
+    val now = System.currentTimeMillis()
+    val expiry = if (item.category == "mic_effect") currentUser.micEffectExpiries[item.id] ?: 0L else currentUser.frameExpiries[item.id] ?: 0L
+    val isExpired = expiry > 0L && now > expiry
+    val isOwned = (!isExpired) && (if (item.category == "mic_effect") {
         currentUser.ownedMicEffects.contains(item.id) || currentUser.activeMicEffect == item.id
     } else {
         currentUser.ownedFrames.contains(item.id) || currentUser.activeFrame == item.id
-    }
+    })
     val isEquipped = if (item.category == "mic_effect") {
         currentUser.activeMicEffect == item.id
     } else {
@@ -747,11 +784,17 @@ fun StoreItemCard(
                 )
             }
 
+            val daysLeftText = if (isOwned && expiry > now) {
+                val d = ((expiry - now) / (1000L * 60 * 60 * 24)).toInt() + 1
+                "⏳ $d Days Left"
+            } else {
+                "${item.durationDays} Days"
+            }
             Text(
-                text = "${item.durationDays} Days",
+                text = daysLeftText,
                 fontSize = 9.sp,
-                color = Color(0xFFA498BF),
-                fontWeight = FontWeight.Medium
+                color = if (isOwned) Color(0xFFFFD700) else Color(0xFFA498BF),
+                fontWeight = if (isOwned) FontWeight.Bold else FontWeight.Medium
             )
 
             Spacer(modifier = Modifier.height(6.dp))
@@ -768,7 +811,7 @@ fun StoreItemCard(
                             .clickable(enabled = !isPurchasing) { onEquipToggle(item) }
                     ) {
                         Text(
-                            text = "Equipped (Tap to Remove)",
+                            text = if (item.category == "mic_effect") "Wearing • Tap to Unwear" else "Equipped (Tap to Remove)",
                             fontSize = 8.sp,
                             fontWeight = FontWeight.Black,
                             color = Color(0xFFFFD700),
@@ -786,7 +829,7 @@ fun StoreItemCard(
                             .clickable(enabled = !isPurchasing) { onEquipToggle(item) }
                     ) {
                         Text(
-                            text = "Equip",
+                            text = if (item.category == "mic_effect") "Wear (Equip)" else "Equip",
                             fontSize = 9.5.sp,
                             fontWeight = FontWeight.Black,
                             color = Color.White,

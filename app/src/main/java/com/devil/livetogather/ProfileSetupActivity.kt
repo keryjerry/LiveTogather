@@ -50,6 +50,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import java.util.*
 
@@ -614,17 +615,44 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
                         return@Button
                     }
 
+                    val targetName = name.trim()
+                    val targetNameLower = targetName.lowercase()
+
                     coroutineScope.launch {
                         isSaving = true
+                        val effectiveUid = auth.currentUser?.uid
+                            ?: prefs.getString("user_uid", null)
+                            ?: currentUid.ifBlank { "user_${UUID.randomUUID().toString().take(8)}" }
+
+                        // Check if name is already taken in Firestore
+                        try {
+                            val existingDocs = db.collection("users")
+                                .whereEqualTo("nameLower", targetNameLower)
+                                .get()
+                                .await()
+                            val isTaken = existingDocs.documents.any { it.id != effectiveUid } ||
+                                try {
+                                    val exactDocs = db.collection("users")
+                                        .whereEqualTo("name", targetName)
+                                        .get()
+                                        .await()
+                                    exactDocs.documents.any { it.id != effectiveUid }
+                                } catch (_: Exception) { false }
+
+                            if (isTaken) {
+                                Toast.makeText(context, "This name is already in use, try different.", Toast.LENGTH_LONG).show()
+                                isSaving = false
+                                return@launch
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.w("ProfileSetup", "Unique name check error: ${e.message}")
+                        }
+
                         try {
                             auth.currentUser?.updatePassword(password.trim())
                         } catch (e: Exception) {
                             android.util.Log.w("ProfileSetup", "updatePassword error: ${e.message}")
                         }
-
-                        val effectiveUid = auth.currentUser?.uid
-                            ?: prefs.getString("user_uid", null)
-                            ?: currentUid.ifBlank { "user_${UUID.randomUUID().toString().take(8)}" }
 
                         val generatedUserId = (10000000..99999999).random().toString()
                         val initialProfile = UserProfile(
@@ -632,7 +660,8 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
                             userId = generatedUserId,
                             email = auth.currentUser?.email?.trim() ?: prefs.getString("profile_email", "") ?: "",
                             deviceId = deviceId.ifBlank { WelcomeBonusManager.getDeviceId(context) },
-                            name = name.trim(),
+                            name = targetName,
+                            nameLower = targetNameLower,
                             age = ageVal,
                             gender = gender,
                             city = city.trim(),
