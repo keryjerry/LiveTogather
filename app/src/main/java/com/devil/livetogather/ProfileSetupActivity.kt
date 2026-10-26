@@ -140,6 +140,7 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
     var isSaving by remember { mutableStateOf(false) }
     var isUploadingPhoto by remember { mutableStateOf(false) }
     var isDetectingGps by remember { mutableStateOf(false) }
+    var showAvatarPickerDialog by remember { mutableStateOf(false) }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -322,7 +323,7 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
                 }
 
                 IconButton(
-                    onClick = { imagePickerLauncher.launch("image/*") },
+                    onClick = { showAvatarPickerDialog = true },
                     modifier = Modifier
                         .size(36.dp)
                         .align(Alignment.BottomEnd)
@@ -338,11 +339,23 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
                 }
             }
 
-            Text(
-                text = "Tap camera to upload a real photo",
-                color = Color.LightGray,
-                fontSize = 11.sp
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFF1E1E2F))
+                    .clickable { showAvatarPickerDialog = true }
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text("👑", fontSize = 12.sp)
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "Tap to choose from 20 HD Luxury Studio Avatars",
+                    color = Color(0xFFFFD700),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
 
             // Setup Form Card
             Card(
@@ -688,5 +701,25 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
 
             Spacer(modifier = Modifier.height(20.dp))
         }
+    }
+
+    if (showAvatarPickerDialog) {
+        val userLevel = prefs.getInt("user_level", 1)
+        val isVip = prefs.getBoolean("is_vip", false) || (prefs.getString("user_plan", "")?.contains("VIP", true) == true)
+        LuxuryAvatarPickerDialog(
+            currentPhotoUrl = photoUrl,
+            userLevel = userLevel,
+            isVip = isVip,
+            onAvatarSelected = { preset ->
+                photoUrl = preset.imageUrl
+                localAvatarUri = null
+                showAvatarPickerDialog = false
+            },
+            onRequestCustomUpload = {
+                showAvatarPickerDialog = false
+                imagePickerLauncher.launch("image/*")
+            },
+            onDismiss = { showAvatarPickerDialog = false }
+        )
     }
 }

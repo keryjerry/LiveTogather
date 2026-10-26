@@ -517,10 +517,10 @@ data class SubscriptionPlanItem(
 )
 
 val SUBSCRIPTION_PLANS = listOf(
-    SubscriptionPlanItem("weekly", "Weekly Pass", "₹79", "/ wk", "Basic Matching"),
-    SubscriptionPlanItem("monthly", "Monthly Pass", "₹199", "/ mo", "Unlimited Likes"),
-    SubscriptionPlanItem("platinum", "PLATINUM", "₹249", "/ mo", "Profile Boost"),
-    SubscriptionPlanItem("vip", "VIP LEVEL ★", "₹399", "/ mo", "Direct Msg + Visitors", isPopular = true)
+    SubscriptionPlanItem("weekly", "Weekly Pass", "₹65", "/ wk", "Basic Matching"),
+    SubscriptionPlanItem("monthly", "Monthly Pass", "₹159", "/ mo", "Unlimited Likes"),
+    SubscriptionPlanItem("platinum", "PLATINUM", "₹199", "/ mo", "Profile Boost"),
+    SubscriptionPlanItem("vip", "VIP LEVEL ★", "₹319", "/ mo", "Direct Msg + Visitors", isPopular = true)
 )
 
 data class PkSupporter(
@@ -543,9 +543,12 @@ data class LevelTierInfo(
 )
 
 object LevelBadgeSystem {
+    // 90% Progression Scaling: LiveTogather users reach milestone levels 10% faster (90 days vs 100 days)
+    private fun scale90(baseXp: Long): Long = (baseXp * 90L) / 100L
+
     fun getXpThresholds(level: Int): Pair<Long, Long> {
         val safeLvl = level.coerceIn(1, 120)
-        val minXp = when {
+        val rawMinXp = when {
             safeLvl <= 1 -> 0L
             safeLvl <= 5 -> (safeLvl - 1) * 250L
             safeLvl <= 10 -> 1000L + (safeLvl - 5) * 800L
@@ -557,8 +560,10 @@ object LevelBadgeSystem {
             safeLvl <= 99 -> 450000L + (safeLvl - 75) * 45000L
             else -> 1530000L + (safeLvl - 100) * 100000L
         }
+        val minXp = if (rawMinXp == 0L) 0L else scale90(rawMinXp)
+
         val nextLevel = safeLvl + 1
-        val nextMinXp = when {
+        val rawNextMinXp = when {
             nextLevel <= 5 -> (nextLevel - 1) * 250L
             nextLevel <= 10 -> 1000L + (nextLevel - 5) * 800L
             nextLevel <= 15 -> 5000L + (nextLevel - 10) * 1400L
@@ -569,6 +574,7 @@ object LevelBadgeSystem {
             nextLevel <= 99 -> 450000L + (nextLevel - 75) * 45000L
             else -> 1530000L + (nextLevel - 100) * 100000L
         }
+        val nextMinXp = scale90(rawNextMinXp)
         return Pair(minXp, nextMinXp)
     }
 
@@ -832,6 +838,7 @@ data class UserProfile(
     val voiceIntroDuration: Int = 20,
     val isVoicePrivate: Boolean = false
 ) {
+    val level: Int get() = maxOf(wealthLevel, charmLevel, pkLevel)
     fun getEffectiveWealthLevel(): Int = LevelBadgeSystem.getEffectiveWealthLevel(this)
     fun getEffectiveWealthXp(): Long = LevelBadgeSystem.getEffectiveWealthXp(this)
     fun getEffectiveCharmLevel(): Int = LevelBadgeSystem.getEffectiveCharmLevel(this)
@@ -2555,3 +2562,192 @@ fun getAvatarFrameItem(frameId: String): AvatarFrameItem? {
 
 
 
+
+
+// ---------------------------------------------------------------------
+// LUXURY REALISTIC HD STUDIO AVATAR CATALOG (NO CARTOONS)
+// ---------------------------------------------------------------------
+
+data class LuxuryAvatarPreset(
+    val id: String,
+    val name: String,
+    val gender: String, // "Female" or "Male"
+    val category: String, // "VIP Royalty", "Studio Aesthetic", "Urban Glamour", "Executive & Charisma"
+    val imageUrl: String,
+    val requiredLevel: Int = 1,
+    val badge: String = "STUDIO HD"
+)
+
+object LuxuryAvatarCatalog {
+    val presets: List<LuxuryAvatarPreset> = listOf(
+        // FEMALE PRESETS (10 Realistic HD Studio Portraits)
+        LuxuryAvatarPreset(
+            id = "av_fem_1",
+            name = "Aria Velvet",
+            gender = "Female",
+            category = "VIP Royalty",
+            imageUrl = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80",
+            badge = "ROYALTY"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_fem_2",
+            name = "Serena Rose",
+            gender = "Female",
+            category = "VIP Royalty",
+            imageUrl = "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80",
+            badge = "EXCLUSIVE"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_fem_3",
+            name = "Chloe Sapphire",
+            gender = "Female",
+            category = "Studio Aesthetic",
+            imageUrl = "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=800&q=80",
+            badge = "STUDIO HD"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_fem_4",
+            name = "Kiara Moon",
+            gender = "Female",
+            category = "Studio Aesthetic",
+            imageUrl = "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80",
+            badge = "POPULAR"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_fem_5",
+            name = "Natasha Gold",
+            gender = "Female",
+            category = "Urban Glamour",
+            imageUrl = "https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?auto=format&fit=crop&w=800&q=80",
+            badge = "GLAMOUR"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_fem_6",
+            name = "Elena Pearl",
+            gender = "Female",
+            category = "Urban Glamour",
+            imageUrl = "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?auto=format&fit=crop&w=800&q=80",
+            badge = "TRENDING"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_fem_7",
+            name = "Zara Diamond",
+            gender = "Female",
+            category = "Executive & Charisma",
+            imageUrl = "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=800&q=80",
+            badge = "EXECUTIVE"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_fem_8",
+            name = "Rhea Celestial",
+            gender = "Female",
+            category = "Executive & Charisma",
+            imageUrl = "https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=800&q=80",
+            badge = "CHARISMA"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_fem_9",
+            name = "Maya Divine",
+            gender = "Female",
+            category = "Studio Aesthetic",
+            imageUrl = "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=800&q=80",
+            badge = "STUDIO HD"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_fem_10",
+            name = "Ananya Star",
+            gender = "Female",
+            category = "VIP Royalty",
+            imageUrl = "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=800&q=80",
+            badge = "SOVEREIGN"
+        ),
+
+        // MALE PRESETS (10 Realistic HD Studio Portraits)
+        LuxuryAvatarPreset(
+            id = "av_male_1",
+            name = "Alexander Crown",
+            gender = "Male",
+            category = "VIP Royalty",
+            imageUrl = "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=800&q=80",
+            badge = "ROYALTY"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_male_2",
+            name = "Marcus Sterling",
+            gender = "Male",
+            category = "VIP Royalty",
+            imageUrl = "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=800&q=80",
+            badge = "EXCLUSIVE"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_male_3",
+            name = "Leo Knight",
+            gender = "Male",
+            category = "Studio Aesthetic",
+            imageUrl = "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&w=800&q=80",
+            badge = "STUDIO HD"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_male_4",
+            name = "Ethan Maverick",
+            gender = "Male",
+            category = "Studio Aesthetic",
+            imageUrl = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80",
+            badge = "POPULAR"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_male_5",
+            name = "Kabir Sovereign",
+            gender = "Male",
+            category = "Urban Glamour",
+            imageUrl = "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=800&q=80",
+            badge = "GLAMOUR"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_male_6",
+            name = "Damian Vance",
+            gender = "Male",
+            category = "Urban Glamour",
+            imageUrl = "https://images.unsplash.com/photo-1496345875659-11f7dd282d1d?auto=format&fit=crop&w=800&q=80",
+            badge = "TRENDING"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_male_7",
+            name = "Vikram Baron",
+            gender = "Male",
+            category = "Executive & Charisma",
+            imageUrl = "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=800&q=80",
+            badge = "EXECUTIVE"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_male_8",
+            name = "Julian Drake",
+            gender = "Male",
+            category = "Executive & Charisma",
+            imageUrl = "https://images.unsplash.com/photo-1501196354995-cbb51c65aaea?auto=format&fit=crop&w=800&q=80",
+            badge = "CHARISMA"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_male_9",
+            name = "Zane Phoenix",
+            gender = "Male",
+            category = "Studio Aesthetic",
+            imageUrl = "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=800&q=80",
+            badge = "STUDIO HD"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_male_10",
+            name = "Reyansh Emperor",
+            gender = "Male",
+            category = "VIP Royalty",
+            imageUrl = "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=800&q=80",
+            badge = "SOVEREIGN"
+        )
+    )
+
+    val categories = listOf("All", "VIP Royalty", "Studio Aesthetic", "Urban Glamour", "Executive & Charisma")
+
+    fun canUploadCustomAvatar(userLevel: Int, isVip: Boolean): Boolean {
+        return userLevel >= 2 || isVip
+    }
+}

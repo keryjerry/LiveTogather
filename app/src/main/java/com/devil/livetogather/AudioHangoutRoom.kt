@@ -8102,6 +8102,11 @@ fun AudioHangoutRoomDialog(
                                         onSend = {
                                             if (commentInputText.isNotBlank()) {
                                                 val msg = commentInputText.trim()
+                                                val badWord = AbuseFilterEngine.checkAbuse(msg)
+                                                if (badWord != null) {
+                                                    android.widget.Toast.makeText(context, "🚫 Blocked: Inappropriate word ($badWord) is prohibited in LiveTogather!", android.widget.Toast.LENGTH_SHORT).show()
+                                                    return@KeyboardActions
+                                                }
                                                 val commentDoc = LiveRoomComment(
                                                     id = UUID.randomUUID().toString(),
                                                     roomId = room.id,
@@ -8140,6 +8145,11 @@ fun AudioHangoutRoomDialog(
                                     onClick = {
                                         if (commentInputText.isNotBlank()) {
                                             val msg = commentInputText.trim()
+                                            val badWord = AbuseFilterEngine.checkAbuse(msg)
+                                            if (badWord != null) {
+                                                android.widget.Toast.makeText(context, "🚫 Blocked: Inappropriate word ($badWord) is prohibited in LiveTogather!", android.widget.Toast.LENGTH_SHORT).show()
+                                                return@IconButton
+                                            }
                                             val commentDoc = LiveRoomComment(
                                                 id = UUID.randomUUID().toString(),
                                                 roomId = room.id,
@@ -8818,6 +8828,11 @@ fun InRoomInboxDialog(
                                         onSend = {
                                             if (messageInput.isNotBlank()) {
                                                 val text = messageInput.trim()
+                                                val badWord = AbuseFilterEngine.checkAbuse(text)
+                                                if (badWord != null) {
+                                                    android.widget.Toast.makeText(context, "🚫 Blocked: Inappropriate word ($badWord) is prohibited in LiveTogather!", android.widget.Toast.LENGTH_SHORT).show()
+                                                    return@KeyboardActions
+                                                }
                                                 val newMsg = ChatMessage(senderId = currentUser.uid, text = text, timestamp = System.currentTimeMillis())
                                                 db.collection("matches").document(matchId).collection("messages").add(newMsg)
                                                 db.collection("matches").document(matchId).set(
@@ -8846,6 +8861,11 @@ fun InRoomInboxDialog(
                                 onClick = {
                                     if (messageInput.isNotBlank()) {
                                         val text = messageInput.trim()
+                                        val badWord = AbuseFilterEngine.checkAbuse(text)
+                                        if (badWord != null) {
+                                            android.widget.Toast.makeText(context, "🚫 Blocked: Inappropriate word ($badWord) is prohibited in LiveTogather!", android.widget.Toast.LENGTH_SHORT).show()
+                                            return@IconButton
+                                        }
                                         val newMsg = ChatMessage(senderId = currentUser.uid, text = text, timestamp = System.currentTimeMillis())
                                         db.collection("matches").document(matchId).collection("messages").add(newMsg)
                                         db.collection("matches").document(matchId).set(

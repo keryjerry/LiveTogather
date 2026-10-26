@@ -12,6 +12,9 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -224,7 +227,11 @@ fun Advanced1v1ChatScreen(
                 .fillMaxSize()
                 .background(BrandDark)
         ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding()
+        ) {
             // -------------------------------------------------------------
             // 1. CHAT HEADER (BACK, AVATAR, STREAK BADGE, HEARTS & 3-DOTS)
             // -------------------------------------------------------------
@@ -762,30 +769,81 @@ fun Advanced1v1ChatScreen(
             }
 
             // -------------------------------------------------------------
-            // 3. WHATSAPP-STYLE BOTTOM INPUT BAR
+            // 3. WHATSAPP-STYLE BOTTOM INPUT BAR (Lifted above System Nav Bar)
             // -------------------------------------------------------------
-            if (isBlocked) {
-                // Blocked state bar
-                Surface(
-                    color = BrandCard,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
+            val doSendChatMessage = {
+                val rawText = chatInput.trim()
+                if (rawText.isNotBlank()) {
+                    val (isAbuse, badWord) = AbuseFilterEngine.checkAbuse(rawText)
+                    if (isAbuse) {
+                        Toast.makeText(
+                            context,
+                            "🚫 Blocked: Inappropriate word ($badWord) is prohibited in LiveTogather!",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    } else {
+                        // Aggressive shouting / all-caps check
+                        val isAllCaps = rawText.length >= 6 && rawText == rawText.uppercase() && rawText.any { it.isLetter() }
+                        val isExcessivePunctuation = rawText.count { it == '!' } >= 3 || rawText.count { it == '?' } >= 4
+                        if (isAllCaps || isExcessivePunctuation) {
+                            Toast.makeText(
+                                context,
+                                "⚠️ Message sent: Please communicate calmly without aggressive shouting or all-caps.",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+
+                        chatInput = ""
+
+                        val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+                        val lastDate = matchItem?.lastChatDate ?: ""
+                        val isNewDay = lastDate != todayStr
+
+                        val newStreak = if (isNewDay) (matchItem?.chatStreakDays ?: 0) + 1 else (matchItem?.chatStreakDays ?: 1)
+                        val newXp = (matchItem?.intimacyXp ?: 0L) + (if (isNewDay) 50L else 5L)
+                        val newLevel = (1 + (newXp / 100).toInt()).coerceAtLeast(1)
+
+                        val newMsg = ChatMessage(senderId = currentUserId, text = rawText, type = "text")
+                        db.collection("matches").document(matchId).collection("messages").add(newMsg)
+
+                        db.collection("matches").document(matchId).set(
+                            mapOf(
+                                "lastMessage" to rawText,
+                                "chatStreakDays" to newStreak,
+                                "intimacyXp" to newXp,
+                                "intimacyLevel" to newLevel,
+                                "lastChatDate" to todayStr,
+                                "timestamp" to System.currentTimeMillis()
+                            ),
+                            SetOptions.merge()
+                        )
+                    }
+                }
+            }
+
+            Surface(
+                color = BrandCard,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+            ) {
+                if (isBlocked) {
+                    // Blocked state bar
                     Row(
-                        modifier = Modifier.padding(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
                         Text("You have blocked ${partner.name}.", color = Color.LightGray, fontSize = 12.sp)
                     }
-                }
-            } else if (isMutualFollow == false || !isChatUnlocked) {
-                // Input locked until mutual follow and unlock gift
-                Surface(
-                    color = Color(0xFF151824),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
+                } else if (isMutualFollow == false || !isChatUnlocked) {
+                    // Input locked until mutual follow and unlock gift
                     Row(
-                        modifier = Modifier.padding(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
@@ -797,15 +855,13 @@ fun Advanced1v1ChatScreen(
                             fontSize = 11.5.sp
                         )
                     }
-                }
-            } else if (isRecordingVoice) {
-                // Active Voice Note Recording Bar
-                Surface(
-                    color = Color(0xFF261022),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
+                } else if (isRecordingVoice) {
+                    // Active Voice Note Recording Bar
                     Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF261022))
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -866,82 +922,68 @@ fun Advanced1v1ChatScreen(
                             }
                         }
                     }
-                }
-            } else {
-                // Standard Chat Input Bar (Attachment, Text Field, Mic/Send)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(BrandCard)
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Attachment Icon (Conditional Trust Media Sharing)
-                    IconButton(
-                        onClick = {
-                            if (canSendMedia) {
-                                imagePickerLauncher.launch("image/*")
-                            } else {
-                                showMediaTrustDialog = true
-                            }
-                        }
+                } else {
+                    // Standard Chat Input Bar (Attachment, Text Field, Mic & Dedicated Send Button)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.AttachFile,
-                            contentDescription = "Attach Media",
-                            tint = if (canSendMedia) Color(0xFF00E5FF) else Color.Gray
-                        )
-                    }
-
-                    // Text Field
-                    TextField(
-                        value = chatInput,
-                        onValueChange = { chatInput = it },
-                        placeholder = { Text("Type a message...", color = Color.Gray, fontSize = 13.sp) },
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        ),
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    if (chatInput.isNotBlank()) {
-                        // Send Text Button
+                        // 1. Attachment Icon (Conditional Trust Media Sharing)
                         IconButton(
                             onClick = {
-                                val text = chatInput.trim()
-                                chatInput = ""
-
-                                val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
-                                val lastDate = matchItem?.lastChatDate ?: ""
-                                val isNewDay = lastDate != todayStr
-
-                                val newStreak = if (isNewDay) (matchItem?.chatStreakDays ?: 0) + 1 else (matchItem?.chatStreakDays ?: 1)
-                                val newXp = (matchItem?.intimacyXp ?: 0L) + (if (isNewDay) 50L else 5L)
-                                val newLevel = (1 + (newXp / 100).toInt()).coerceAtLeast(1)
-
-                                val newMsg = ChatMessage(senderId = currentUserId, text = text, type = "text")
-                                db.collection("matches").document(matchId).collection("messages").add(newMsg)
-
-                                db.collection("matches").document(matchId).set(
-                                    mapOf(
-                                        "lastMessage" to text,
-                                        "chatStreakDays" to newStreak,
-                                        "intimacyXp" to newXp,
-                                        "intimacyLevel" to newLevel,
-                                        "lastChatDate" to todayStr,
-                                        "timestamp" to System.currentTimeMillis()
-                                    ),
-                                    SetOptions.merge()
-                                )
-                            }
+                                if (canSendMedia) {
+                                    imagePickerLauncher.launch("image/*")
+                                } else {
+                                    showMediaTrustDialog = true
+                                }
+                            },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(Color(0xFF261B36), CircleShape)
                         ) {
-                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = BrandCoral)
+                            Icon(
+                                imageVector = Icons.Default.AttachFile,
+                                contentDescription = "Attach Media",
+                                tint = if (canSendMedia) Color(0xFF00E5FF) else Color.LightGray,
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
-                    } else {
-                        // Mic Button for Real-Time Voice Recording
+
+                        Spacer(modifier = Modifier.width(6.dp))
+
+                        // 2. Rounded Text Field with Enter-to-Send
+                        Surface(
+                            color = Color(0xFF1B1428),
+                            shape = RoundedCornerShape(24.dp),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            TextField(
+                                value = chatInput,
+                                onValueChange = { chatInput = it },
+                                placeholder = { Text("Type a message...", color = Color.Gray, fontSize = 13.sp) },
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = Color.Transparent,
+                                    unfocusedContainerColor = Color.Transparent,
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White,
+                                    focusedIndicatorColor = Color.Transparent,
+                                    unfocusedIndicatorColor = Color.Transparent
+                                ),
+                                maxLines = 4,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                                keyboardActions = KeyboardActions(
+                                    onSend = { doSendChatMessage() }
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(6.dp))
+
+                        // 3. Mic Button for Real-Time Voice Recording
                         IconButton(
                             onClick = {
                                 val hasAudioPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -954,9 +996,40 @@ fun Advanced1v1ChatScreen(
                                 } else {
                                     audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                                 }
-                            }
+                            },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(Color(0xFF261B36), CircleShape)
                         ) {
-                            Icon(Icons.Default.Mic, contentDescription = "Record Voice Clip", tint = Color(0xFFFFD700))
+                            Icon(
+                                imageVector = Icons.Default.Mic,
+                                contentDescription = "Record Voice Clip",
+                                tint = Color(0xFFFFD700),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(6.dp))
+
+                        // 4. Prominent Dedicated Send Button (Always Visible & Active Highlight)
+                        val hasSendText = chatInput.trim().isNotEmpty()
+                        IconButton(
+                            onClick = { doSendChatMessage() },
+                            enabled = hasSendText,
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(
+                                    if (hasSendText) Brush.linearGradient(listOf(BrandCoral, Color(0xFFFF4081)))
+                                    else Brush.linearGradient(listOf(Color(0xFF261B36), Color(0xFF261B36))),
+                                    CircleShape
+                                )
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "Send",
+                                tint = if (hasSendText) Color.White else Color.Gray,
+                                modifier = Modifier.size(19.dp)
+                            )
                         }
                     }
                 }

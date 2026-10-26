@@ -68,11 +68,11 @@ data class CoinPackageItem(
 )
 
 val APP_COIN_PACKAGES = listOf(
-    CoinPackageItem("pack_149", 50000L, "₹149", "149", "Special Launch Pack 💎", "BEST VALUE"),
-    CoinPackageItem("pack_49", 15000L, "₹49", "49", "Starter Pack 💎"),
-    CoinPackageItem("pack_299", 120000L, "₹299", "299", "Super Value Pack 💎"),
-    CoinPackageItem("pack_599", 300000L, "₹599", "599", "Royal VIP Pack 💎"),
-    CoinPackageItem("pack_999", 600000L, "₹999", "999", "Imperial Diamond Vault 💎")
+    CoinPackageItem("pack_49", 15000L, "₹45", "45", "Starter Pack 💎", "POPULAR"),
+    CoinPackageItem("pack_149", 50000L, "₹115", "115", "Special Launch Pack 💎", "BEST VALUE"),
+    CoinPackageItem("pack_299", 120000L, "₹229", "229", "Super Value Pack 💎"),
+    CoinPackageItem("pack_599", 300000L, "₹450", "450", "Royal VIP Pack 💎"),
+    CoinPackageItem("pack_999", 600000L, "₹899", "899", "Imperial Diamond Vault 💎", "SOVEREIGN")
 )
 
 val SUPPORT_CATEGORIES = listOf(

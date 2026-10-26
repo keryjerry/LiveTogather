@@ -4029,6 +4029,7 @@ fun ProfileScreenContent(
     var helpDeskPrefilledPackage by remember { mutableStateOf<CoinPackageItem?>(null) }
     var isUploadingPhoto by remember { mutableStateOf(false) }
     var showLuxuryStoreModal by remember { mutableStateOf(false) }
+    var showLuxuryAvatarModal by remember { mutableStateOf(false) }
     var showVoiceVerificationModal by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -4303,11 +4304,11 @@ fun ProfileScreenContent(
                                         frameSize = 104.dp,
                                         vipLevel = currentUser.getVipLevel(),
                                         showMicEffect = true,
-                                        onClick = { imagePickerLauncher.launch("image/*") }
+                                        onClick = { showLuxuryAvatarModal = true }
                                     )
                                     // Camera edit pill
                                     IconButton(
-                                        onClick = { if (!isUploadingPhoto) imagePickerLauncher.launch("image/*") },
+                                        onClick = { if (!isUploadingPhoto) showLuxuryAvatarModal = true },
                                         modifier = Modifier
                                             .size(22.dp)
                                             .align(Alignment.BottomEnd)
@@ -4371,7 +4372,7 @@ fun ProfileScreenContent(
                                     frameSize = 128.dp,
                                     vipLevel = currentUser.getVipLevel(),
                                     showMicEffect = true,
-                                    onClick = { imagePickerLauncher.launch("image/*") }
+                                    onClick = { showLuxuryAvatarModal = true }
                                 )
 
                                 if (isUploadingPhoto) {
@@ -4403,7 +4404,7 @@ fun ProfileScreenContent(
 
                                 // Photo Change Camera Button
                                 IconButton(
-                                    onClick = { if (!isUploadingPhoto) imagePickerLauncher.launch("image/*") },
+                                    onClick = { if (!isUploadingPhoto) showLuxuryAvatarModal = true },
                                     enabled = !isUploadingPhoto,
                                     modifier = Modifier
                                         .size(26.dp)
@@ -5831,6 +5832,27 @@ fun ProfileScreenContent(
             onDismiss = { showLuxuryStoreModal = false },
             onOpenTopUp = { showCoinStoreModal = true },
             onProfileUpdated = { updated -> onUpdateProfile(updated) }
+        )
+    }
+
+    if (showLuxuryAvatarModal) {
+        LuxuryAvatarPickerDialog(
+            currentPhotoUrl = photoUrl,
+            userLevel = currentUser.level,
+            isVip = currentUser.isVipOrPlatinum(),
+            onAvatarSelected = { preset ->
+                photoUrl = preset.imageUrl
+                val updatedProfile = currentUser.copy(uid = currentUserId, photo = preset.imageUrl)
+                onUpdateProfile(updatedProfile)
+                db.collection("users").document(currentUserId)
+                    .set(mapOf("photo" to preset.imageUrl), SetOptions.merge())
+                showLuxuryAvatarModal = false
+            },
+            onRequestCustomUpload = {
+                showLuxuryAvatarModal = false
+                imagePickerLauncher.launch("image/*")
+            },
+            onDismiss = { showLuxuryAvatarModal = false }
         )
     }
 
