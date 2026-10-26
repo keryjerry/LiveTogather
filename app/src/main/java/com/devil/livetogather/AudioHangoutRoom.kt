@@ -8102,7 +8102,7 @@ fun AudioHangoutRoomDialog(
                                         onSend = {
                                             if (commentInputText.isNotBlank()) {
                                                 val msg = commentInputText.trim()
-                                                val badWord = AbuseFilterEngine.checkAbuse(msg)
+                                                val badWord = AbuseFilterEngine.findAbusiveWord(msg)
                                                 if (badWord != null) {
                                                     android.widget.Toast.makeText(context, "🚫 Blocked: Inappropriate word ($badWord) is prohibited in LiveTogather!", android.widget.Toast.LENGTH_SHORT).show()
                                                     return@KeyboardActions
@@ -8145,7 +8145,7 @@ fun AudioHangoutRoomDialog(
                                     onClick = {
                                         if (commentInputText.isNotBlank()) {
                                             val msg = commentInputText.trim()
-                                            val badWord = AbuseFilterEngine.checkAbuse(msg)
+                                            val badWord = AbuseFilterEngine.findAbusiveWord(msg)
                                             if (badWord != null) {
                                                 android.widget.Toast.makeText(context, "🚫 Blocked: Inappropriate word ($badWord) is prohibited in LiveTogather!", android.widget.Toast.LENGTH_SHORT).show()
                                                 return@IconButton
@@ -8828,7 +8828,7 @@ fun InRoomInboxDialog(
                                         onSend = {
                                             if (messageInput.isNotBlank()) {
                                                 val text = messageInput.trim()
-                                                val badWord = AbuseFilterEngine.checkAbuse(text)
+                                                val badWord = AbuseFilterEngine.findAbusiveWord(text)
                                                 if (badWord != null) {
                                                     android.widget.Toast.makeText(context, "🚫 Blocked: Inappropriate word ($badWord) is prohibited in LiveTogather!", android.widget.Toast.LENGTH_SHORT).show()
                                                     return@KeyboardActions
@@ -8861,7 +8861,7 @@ fun InRoomInboxDialog(
                                 onClick = {
                                     if (messageInput.isNotBlank()) {
                                         val text = messageInput.trim()
-                                        val badWord = AbuseFilterEngine.checkAbuse(text)
+                                        val badWord = AbuseFilterEngine.findAbusiveWord(text)
                                         if (badWord != null) {
                                             android.widget.Toast.makeText(context, "🚫 Blocked: Inappropriate word ($badWord) is prohibited in LiveTogather!", android.widget.Toast.LENGTH_SHORT).show()
                                             return@IconButton

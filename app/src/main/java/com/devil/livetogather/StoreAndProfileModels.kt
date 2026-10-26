@@ -32,7 +32,8 @@ data class StoreItem(
     val primaryColor: Long = 0xFFFFD700,
     val secondaryColor: Long = 0xFF00E5FF,
     val description: String = "",
-    val drawableRes: Int = 0
+    val drawableRes: Int = 0,
+    val videoRes: Int = 0
 )
 
 // ---------------------------------------------------------------------
@@ -41,88 +42,82 @@ data class StoreItem(
 
 object LuxuryStoreCatalog {
 
-    // --- A. RINGS (INTIMACY) ---
+    // --- A. RINGS & ROMANTIC PROPOSALS (DISTINCT REAL ITEMS & VIDEOS) ---
     val rings = listOf(
         StoreItem(
-            id = "ring_blue_heart",
-            name = "Blue Heart",
-            category = "ring",
-            subCategory = "Ring",
-            diamondPrice = 480000L,
-            rankTier = "D",
-            durationDays = 7,
-            iconEmoji = "💙",
-            primaryColor = 0xFF00B0FF,
-            secondaryColor = 0xFF80D8FF,
-            description = "Twin sapphire heart diamonds bonded in platinum."
-        ),
-        StoreItem(
-            id = "ring_golden_diamond",
-            name = "Golden Diamond",
-            category = "ring",
-            subCategory = "Ring",
-            diamondPrice = 12000000L,
-            rankTier = "S",
-            durationDays = 7,
-            iconEmoji = "👑",
-            isActivityOnly = true,
-            primaryColor = 0xFFFFD700,
-            secondaryColor = 0xFFFF1744,
-            description = "Sovereign 24k gold crown ring with radiant crimson ruby."
-        ),
-        StoreItem(
-            id = "ring_marry_me",
-            name = "Marry Me.",
+            id = "ring_diamond_proposal",
+            name = "Diamond Proposal Ring",
             category = "ring",
             subCategory = "Ring",
             diamondPrice = 150000L,
-            rankTier = "E",
-            durationDays = 7,
+            rankTier = "S",
+            durationDays = 30,
             iconEmoji = "💍",
+            drawableRes = R.drawable.thumb_diamond_ring_proposal,
+            videoRes = R.raw.diamond_ring_proposal,
             primaryColor = 0xFF00E5FF,
             secondaryColor = 0xFFE0F7FA,
-            description = "Solitaire diamond ring for true romantic commitment."
+            description = "3D Sparkling Solitaire Diamond Proposal Ring with prism dispersion."
         ),
         StoreItem(
-            id = "ring_sun_and_moon",
-            name = "Sun and Moon",
+            id = "ring_rose_proposal",
+            name = "Rose For Proposal",
             category = "ring",
-            subCategory = "Ring",
-            diamondPrice = 6000000L,
+            subCategory = "Love Zone",
+            diamondPrice = 75000L,
             rankTier = "A",
-            durationDays = 7,
-            iconEmoji = "☀️",
-            isActivityOnly = true,
-            primaryColor = 0xFFFFB300,
-            secondaryColor = 0xFFE1BEE7,
-            description = "Interlocking golden celestial rings with angel wings."
-        ),
-        StoreItem(
-            id = "ring_purple_crush",
-            name = "Purple Crush",
-            category = "ring",
-            subCategory = "Ring",
-            diamondPrice = 6000000L,
-            rankTier = "A",
-            durationDays = 7,
-            iconEmoji = "💜",
-            isActivityOnly = true,
-            primaryColor = 0xFFE040FB,
-            secondaryColor = 0xFF8E24AA,
-            description = "Amethyst love banner with celestial prince and princess."
-        ),
-        StoreItem(
-            id = "ring_ruby_rose",
-            name = "Red Ruby Rose",
-            category = "ring",
-            subCategory = "Ring",
-            diamondPrice = 3500000L,
-            rankTier = "S",
-            durationDays = 7,
+            durationDays = 30,
             iconEmoji = "🌹",
+            drawableRes = R.drawable.thumb_rose_proposal,
+            videoRes = R.raw.rose_proposal,
             primaryColor = 0xFFFF1744,
             secondaryColor = 0xFFFFD700,
-            description = "Carved red ruby rose ring wrapped in royal golden thorns."
+            description = "Romantic blooming velvet rose with golden dew drops."
+        ),
+        StoreItem(
+            id = "ring_princess_ruby",
+            name = "Princess Ruby Necklace",
+            category = "ring",
+            subCategory = "Jewelry",
+            diamondPrice = 65000L,
+            rankTier = "S",
+            durationDays = 30,
+            iconEmoji = "💎",
+            drawableRes = R.drawable.thumb_princess_ruby_necklace,
+            videoRes = R.raw.princess_ruby_necklace,
+            primaryColor = 0xFFFF1744,
+            secondaryColor = 0xFFFFD700,
+            description = "Royal pigeon-blood ruby gemstone in 24k gold filigree."
+        ),
+        StoreItem(
+            id = "ring_treasure_for_you",
+            name = "Treasure For You",
+            category = "ring",
+            subCategory = "Jewelry",
+            diamondPrice = 80000L,
+            rankTier = "S",
+            durationDays = 30,
+            iconEmoji = "📦",
+            drawableRes = R.drawable.thumb_treasure_for_you,
+            videoRes = R.raw.treasure_for_you,
+            primaryColor = 0xFFFFD700,
+            secondaryColor = 0xFFFFB300,
+            description = "Glittering royal diamond crown and sparkling golden vault."
+        ),
+        StoreItem(
+            id = "ring_founded_treasure",
+            name = "Imperial Lost Treasure",
+            category = "ring",
+            subCategory = "Jewelry",
+            diamondPrice = 90000L,
+            rankTier = "S",
+            durationDays = 30,
+            iconEmoji = "👑",
+            drawableRes = R.drawable.thumb_founded_treasure,
+            videoRes = R.raw.founded_treasure,
+            primaryColor = 0xFFFFD700,
+            secondaryColor = 0xFFFF5722,
+            description = "Ancient royal gold chest opening with dazzling jewels and rubies."
         )
     )
 
@@ -274,33 +269,127 @@ object LuxuryStoreCatalog {
         )
     )
 
-    // --- E. ENTRANCE EFFECTS ---
+    // --- E. ENTRANCE EFFECTS (8 REAL HD 3D VIDEO ENTRANCES) ---
     val entrances = listOf(
+        StoreItem(
+            id = "ent_king_palace",
+            name = "Imperial King Palace",
+            category = "entrance",
+            subCategory = "VIP Vehicles",
+            diamondPrice = 85000L,
+            rankTier = "S",
+            durationDays = 30,
+            iconEmoji = "👑",
+            drawableRes = R.drawable.thumb_king_entry,
+            videoRes = R.raw.king_entry,
+            primaryColor = 0xFFFFD700,
+            secondaryColor = 0xFFFF8F00,
+            description = "Royal King Coronation palace walk with golden fireworks."
+        ),
+        StoreItem(
+            id = "ent_fire_lion",
+            name = "Blazing Fire Lion",
+            category = "entrance",
+            subCategory = "VIP Vehicles",
+            diamondPrice = 75000L,
+            rankTier = "S",
+            durationDays = 30,
+            iconEmoji = "🦁",
+            drawableRes = R.drawable.thumb_king_lion_entry,
+            videoRes = R.raw.king_lion_entry,
+            primaryColor = 0xFFFF5722,
+            secondaryColor = 0xFFFFD700,
+            description = "Majestic roaring solar flame lion 3D entrance."
+        ),
+        StoreItem(
+            id = "ent_golden_supercar",
+            name = "Golden 3D Supercar",
+            category = "entrance",
+            subCategory = "VIP Vehicles",
+            diamondPrice = 60000L,
+            rankTier = "S",
+            durationDays = 30,
+            iconEmoji = "🏎️",
+            drawableRes = R.drawable.thumb_golden_super_car,
+            videoRes = R.raw.golden_super_car,
+            primaryColor = 0xFFFFD700,
+            secondaryColor = 0xFFFFB300,
+            description = "High-speed 3D gold sports car power drift entry."
+        ),
         StoreItem(
             id = "ent_cyber_lamborghini",
             name = "Cyber Lamborghini",
             category = "entrance",
             subCategory = "VIP Vehicles",
-            diamondPrice = 30000L,
+            diamondPrice = 50000L,
             rankTier = "S",
-            durationDays = 7,
+            durationDays = 30,
             iconEmoji = "🏎️",
+            drawableRes = R.drawable.thumb_lamborgini_car,
+            videoRes = R.raw.lamborgini_car,
             primaryColor = 0xFFFF2A6D,
             secondaryColor = 0xFF00E5FF,
-            description = "Golden supercar drifts into the room with neon fireworks."
+            description = "Neon futuristic cyber supercar high-speed entrance."
         ),
         StoreItem(
             id = "ent_royal_jet",
-            name = "Royal Sovereign Jet",
+            name = "Royal Supersonic Jet",
             category = "entrance",
-            subCategory = "VIP Vehicles",
-            diamondPrice = 50000L,
+            subCategory = "Aircrafts",
+            diamondPrice = 120000L,
             rankTier = "S",
-            durationDays = 7,
+            durationDays = 30,
             iconEmoji = "✈️",
+            drawableRes = R.drawable.thumb_royal_jet,
+            videoRes = R.raw.royal_jet,
             primaryColor = 0xFFFFD700,
             secondaryColor = 0xFFFFFFFF,
-            description = "Private luxury jet supersonic fly-over announcement."
+            description = "Supersonic luxury private jet soaring into room."
+        ),
+        StoreItem(
+            id = "ent_heaven_ship",
+            name = "Heaven Sovereign Yacht",
+            category = "entrance",
+            subCategory = "Aircrafts",
+            diamondPrice = 100000L,
+            rankTier = "S",
+            durationDays = 30,
+            iconEmoji = "🛥️",
+            drawableRes = R.drawable.thumb_heaven_ship,
+            videoRes = R.raw.heaven_ship,
+            primaryColor = 0xFF00E5FF,
+            secondaryColor = 0xFFFFD700,
+            description = "Billionaire mega yacht cruising with sky fireworks."
+        ),
+        StoreItem(
+            id = "ent_fire_eagle",
+            name = "Fire Phoenix Eagle",
+            category = "entrance",
+            subCategory = "Banners",
+            diamondPrice = 45000L,
+            rankTier = "A",
+            durationDays = 30,
+            iconEmoji = "🦅",
+            drawableRes = R.drawable.thumb_eagle_entry,
+            videoRes = R.raw.eagle_entry,
+            primaryColor = 0xFFFF6D00,
+            secondaryColor = 0xFFFFD700,
+            description = "Blazing golden fire phoenix flight entrance."
+        ),
+        StoreItem(
+            id = "ent_mecha_terminator",
+            name = "Cyber Mecha Dragon",
+            category = "entrance",
+            subCategory = "Banners",
+            diamondPrice = 65000L,
+            rankTier = "S",
+            durationDays = 30,
+            iconEmoji = "🐉",
+            drawableRes = R.drawable.thumb_terminator_entry,
+            videoRes = R.raw.terminator_entry,
+            primaryColor = 0xFF00F5FF,
+            secondaryColor = 0xFFA855F7,
+            description = "Futuristic mecha dragon lightning burst entry."
         )
     )
 

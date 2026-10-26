@@ -211,6 +211,14 @@ object AbuseFilterEngine {
     }
 
     /**
+     * Convenient helper: Returns the abusive word/phrase if abusive, or NULL if clean text.
+     */
+    fun findAbusiveWord(rawText: String): String? {
+        val (isAbuse, offendingWord) = checkAbuse(rawText)
+        return if (isAbuse) (offendingWord ?: "Inappropriate content") else null
+    }
+
+    /**
      * Filters and masks abusive words with asterisks (e.g. "****")
      */
     fun maskAbusiveText(rawText: String): String {
