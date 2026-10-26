@@ -69,8 +69,6 @@ fun LuxuryStoreDialog(
             StoreCategory.AVATAR -> "Avatar Frame"
             StoreCategory.MIC_EFFECTS -> "Sound Wave"
             StoreCategory.ENTRANCE -> "VIP Vehicles"
-            StoreCategory.CHAT_FRAME -> "Chat Bubble"
-            StoreCategory.PROFILE_THEME -> "Themes"
         }
     }
 
@@ -111,7 +109,6 @@ fun LuxuryStoreDialog(
                     else -> LuxuryStoreCatalog.entrances
                 }
             }
-            else -> LuxuryStoreCatalog.allItems.filter { it.category == selectedCategory.id }
         }
     }
 
@@ -340,8 +337,6 @@ fun LuxuryStoreDialog(
                     StoreCategory.AVATAR -> listOf("Avatar Frame", "CP Avatar Frame", "Dynamic Avatar")
                     StoreCategory.MIC_EFFECTS -> listOf("Sound Wave", "Mic Animation", "Mic Color Name")
                     StoreCategory.ENTRANCE -> listOf("VIP Vehicles", "Aircrafts", "Banners")
-                    StoreCategory.CHAT_FRAME -> listOf("Chat Bubble", "VIP Glow")
-                    StoreCategory.PROFILE_THEME -> listOf("Themes", "Borders")
                 }
 
                 Row(
@@ -708,19 +703,15 @@ fun StoreItemCard(
                         }
                     }
                     else -> {
-                        if (item.drawableRes != 0) {
-                            Image(
-                                painter = painterResource(id = item.drawableRes),
-                                contentDescription = item.name,
-                                modifier = Modifier.size(50.dp),
-                                contentScale = ContentScale.Fit
-                            )
-                        } else {
-                            Text(
-                                text = item.iconEmoji,
-                                fontSize = 26.sp
-                            )
-                        }
+                        val thumb = if (item.drawableRes != 0) item.drawableRes else R.drawable.thumb_diamond_ring_proposal
+                        Image(
+                            painter = painterResource(id = thumb),
+                            contentDescription = item.name,
+                            modifier = Modifier
+                                .size(50.dp)
+                                .clip(RoundedCornerShape(8.dp)),
+                            contentScale = ContentScale.Fit
+                        )
                     }
                 }
             }
@@ -1080,8 +1071,16 @@ fun InventoryBackpackDialog(
                                     modifier = Modifier.padding(10.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
-                                    Text(item.iconEmoji, fontSize = 28.sp)
-                                    Spacer(modifier = Modifier.height(4.dp))
+                                    val thumb = if (item.drawableRes != 0) item.drawableRes else R.drawable.thumb_diamond_ring_proposal
+                                    Image(
+                                        painter = painterResource(id = thumb),
+                                        contentDescription = item.name,
+                                        modifier = Modifier
+                                            .size(46.dp)
+                                            .clip(RoundedCornerShape(8.dp)),
+                                        contentScale = ContentScale.Fit
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
                                     Text(
                                         text = item.name,
                                         fontSize = 11.sp,

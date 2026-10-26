@@ -10,9 +10,7 @@ enum class StoreCategory(val id: String, val title: String, val icon: String) {
     INTIMACY("intimacy", "Intimacy", "💍"),
     AVATAR("avatar", "Avatar", "👑"),
     MIC_EFFECTS("mic_effects", "Mic Effects", "🌀"),
-    ENTRANCE("entrance", "Entrance", "🚀"),
-    CHAT_FRAME("chat_frame", "Chat Frame", "💬"),
-    PROFILE_THEME("profile_theme", "Profile", "🖼️")
+    ENTRANCE("entrance", "Entrance", "🚀")
 }
 
 data class StoreItem(
