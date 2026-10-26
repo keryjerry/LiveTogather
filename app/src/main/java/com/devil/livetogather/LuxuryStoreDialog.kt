@@ -67,8 +67,8 @@ fun LuxuryStoreDialog(
         selectedSubCategory = when (selectedCategory) {
             StoreCategory.INTIMACY -> "Ring"
             StoreCategory.AVATAR -> "Avatar Frame"
-            StoreCategory.MIC_EFFECTS -> "Sound Wave"
-            StoreCategory.ENTRANCE -> "VIP Vehicles"
+            StoreCategory.MIC_EFFECTS -> "All Effects"
+            StoreCategory.ENTRANCE -> "All Entrances"
         }
     }
 
@@ -95,14 +95,15 @@ fun LuxuryStoreDialog(
             }
             StoreCategory.MIC_EFFECTS -> {
                 when (selectedSubCategory) {
+                    "All Effects" -> LuxuryStoreCatalog.micEffects
                     "Sound Wave" -> LuxuryStoreCatalog.micEffects.filter { it.subCategory == "Sound Wave" }
-                    "Mic Animation" -> LuxuryStoreCatalog.micEffects.filter { it.subCategory == "Mic Animation" }
-                    "Mic Color Name" -> LuxuryStoreCatalog.micEffects.filter { it.subCategory == "Mic Color Name" }
+                    "Mic Animation" -> LuxuryStoreCatalog.micEffects.filter { it.subCategory == "Mic Animation" || it.subCategory == "Mic Color Name" }
                     else -> LuxuryStoreCatalog.micEffects
                 }
             }
             StoreCategory.ENTRANCE -> {
                 when (selectedSubCategory) {
+                    "All Entrances" -> LuxuryStoreCatalog.entrances
                     "VIP Vehicles" -> LuxuryStoreCatalog.entrances.filter { it.subCategory == "VIP Vehicles" }
                     "Aircrafts" -> LuxuryStoreCatalog.entrances.filter { it.subCategory == "Aircrafts" }
                     "Banners" -> LuxuryStoreCatalog.entrances.filter { it.subCategory == "Banners" }
@@ -335,8 +336,8 @@ fun LuxuryStoreDialog(
                 val subTabs = when (selectedCategory) {
                     StoreCategory.INTIMACY -> listOf("Ring", "Jewelry", "Love Zone", "Mic Link", "Special")
                     StoreCategory.AVATAR -> listOf("Avatar Frame", "CP Avatar Frame", "Dynamic Avatar")
-                    StoreCategory.MIC_EFFECTS -> listOf("Sound Wave", "Mic Animation", "Mic Color Name")
-                    StoreCategory.ENTRANCE -> listOf("VIP Vehicles", "Aircrafts", "Banners")
+                    StoreCategory.MIC_EFFECTS -> listOf("All Effects", "Sound Wave", "Mic Animation")
+                    StoreCategory.ENTRANCE -> listOf("All Entrances", "VIP Vehicles", "Aircrafts", "Banners")
                 }
 
                 Row(
@@ -1025,8 +1026,12 @@ fun InventoryBackpackDialog(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                val ownedItems = remember(currentUser.ownedFrames) {
-                    LuxuryStoreCatalog.allItems.filter { currentUser.ownedFrames.contains(it.id) }
+                val ownedItems = remember(currentUser.ownedFrames, currentUser.ownedMicEffects, currentUser.activeMicEffect) {
+                    LuxuryStoreCatalog.allItems.filter { 
+                        currentUser.ownedFrames.contains(it.id) || 
+                        currentUser.ownedMicEffects.contains(it.id) || 
+                        currentUser.activeMicEffect == it.id 
+                    }
                 }
 
                 if (ownedItems.isEmpty()) {
@@ -1057,7 +1062,8 @@ fun InventoryBackpackDialog(
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         items(ownedItems) { item ->
-                            val isEquipped = currentUser.activeFrame == item.id
+                            val isMicEffect = item.category == "mic_effect"
+                            val isEquipped = if (isMicEffect) currentUser.activeMicEffect == item.id else currentUser.activeFrame == item.id
                             Surface(
                                 shape = RoundedCornerShape(14.dp),
                                 color = if (isEquipped) Color(0xFF2A1C44) else Color(0xFF201B36),
@@ -1095,14 +1101,18 @@ fun InventoryBackpackDialog(
                                             isEquipping = true
                                             coroutineScope.launch(Dispatchers.IO) {
                                                 try {
-                                                    val newFrame = if (isEquipped) "" else item.id
+                                                    val targetEquipId = if (isEquipped) "" else item.id
+                                                    val fieldToUpdate = if (isMicEffect) "activeMicEffect" else "activeFrame"
                                                     db.collection("users").document(currentUser.uid)
-                                                        .update("activeFrame", newFrame)
+                                                        .update(fieldToUpdate, targetEquipId)
+                                                    val prefs = context.getSharedPreferences("livetogather_user_prefs", android.content.Context.MODE_PRIVATE)
+                                                    prefs.edit().putString(if (isMicEffect) "profile_active_mic_effect" else "profile_active_frame", targetEquipId).apply()
                                                     withContext(Dispatchers.Main) {
-                                                        onProfileUpdated(currentUser.copy(activeFrame = newFrame))
+                                                        val updated = if (isMicEffect) currentUser.copy(activeMicEffect = targetEquipId) else currentUser.copy(activeFrame = targetEquipId)
+                                                        onProfileUpdated(updated)
                                                         Toast.makeText(
                                                             context,
-                                                            if (newFrame.isNotBlank()) "Equipped ${item.name}!" else "Unequipped!",
+                                                            if (targetEquipId.isNotBlank()) "Equipped ${item.name}!" else "Unequipped!",
                                                             Toast.LENGTH_SHORT
                                                         ).show()
                                                     }

@@ -4094,15 +4094,8 @@ fun ProfileScreenContent(
             modifier = Modifier
                 .fillMaxSize()
                 .imePadding()
-                .navigationBarsPadding()
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) {
-                    keyboardController?.hide()
-                    focusManager.clearFocus()
-                }
-                .padding(16.dp),
+                .navigationBarsPadding(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 120.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             // 1. TOP STATUS & WALLET BAR (Handle, Diamonds, Coins & Settings)

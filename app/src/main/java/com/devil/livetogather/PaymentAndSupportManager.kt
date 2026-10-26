@@ -430,18 +430,20 @@ fun PostPaymentVerificationDialog(
     val context = LocalContext.current
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(dismissOnBackPress = true, dismissOnClickOutside = true)
+        properties = DialogProperties(dismissOnBackPress = true, dismissOnClickOutside = true, usePlatformDefaultWidth = false)
     ) {
         Surface(
             shape = RoundedCornerShape(22.dp),
             color = BrandCard,
             border = BorderStroke(1.5.dp, BrandGold),
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
+                .fillMaxWidth(0.92f)
+                .padding(vertical = 16.dp)
         ) {
             Column(
-                modifier = Modifier.padding(20.dp),
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
@@ -597,15 +599,11 @@ fun UpiPaymentCheckoutModal(
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
 
-    BackHandler(enabled = isKeyboardOpen) {
-        keyboardController?.hide()
-        focusManager.clearFocus()
-    }
-
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
-            dismissOnBackPress = !isKeyboardOpen,
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true,
             usePlatformDefaultWidth = false
         )
     ) {
@@ -622,59 +620,82 @@ fun UpiPaymentCheckoutModal(
 
         Surface(
             modifier = Modifier
-                .fillMaxWidth(0.94f)
-                .fillMaxHeight(0.90f)
-                .imePadding()
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) {
-                    keyboardController?.hide()
-                    focusManager.clearFocus()
-                },
+                .fillMaxWidth(0.96f)
+                .fillMaxHeight(0.95f),
             shape = RoundedCornerShape(22.dp),
             color = BrandDark,
             border = BorderStroke(1.5.dp, BrandGold)
         ) {
             Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(18.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(11.dp)
+                modifier = Modifier.fillMaxSize()
             ) {
-                // Header
+                // PINNED TOP BAR (Always visible, cannot be scrolled away, Back & Close always ready)
+                val isMonetizationPkg = selectedPackage.id == "pkg_host_monetization_599" || selectedPackage.title.contains("Monetization", ignoreCase = true)
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF1E172E))
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    val isMonetizationPkg = selectedPackage.id == "pkg_host_monetization_599" || selectedPackage.title.contains("Monetization", ignoreCase = true)
-                    Column {
-                        Text(
-                            text = if (isMonetizationPkg) "🚀 Host Monetization" else "💎 Diamond Recharge",
-                            color = Color.White,
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        val displayUserId = if (currentUser.userId.isNotBlank()) currentUser.userId else (10000000 + kotlin.math.abs(currentUser.uid.hashCode()) % 90000000).toString()
-                        Text(
-                            text = "User ID: #$displayUserId",
-                            color = BrandGold,
-                            fontSize = 11.sp
-                        )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { onDismiss() }
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .background(BrandCard),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ArrowBack,
+                                contentDescription = "Back",
+                                tint = BrandGold,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = if (isMonetizationPkg) "🚀 Host Monetization" else "💎 Diamond Recharge",
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            val displayUserId = if (currentUser.userId.isNotBlank()) currentUser.userId else (10000000 + kotlin.math.abs(currentUser.uid.hashCode()) % 90000000).toString()
+                            Text(
+                                text = "User ID: #$displayUserId • Tap ← to return",
+                                color = BrandGold,
+                                fontSize = 10.5.sp
+                            )
+                        }
                     }
 
                     IconButton(
                         onClick = onDismiss,
                         modifier = Modifier
-                            .size(32.dp)
+                            .size(34.dp)
                             .background(BrandCard, CircleShape)
                     ) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(18.dp))
                     }
                 }
+
+                HorizontalDivider(color = BrandBorder.copy(alpha = 0.5f), thickness = 1.dp)
+
+                // FULLY SCROLLABLE BODY (Smooth scrolling, generous bottom padding so Submit is easily reachable)
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(11.dp)
+                ) {
 
                 // Selected Package Card
                 Surface(
@@ -1030,9 +1051,13 @@ fun UpiPaymentCheckoutModal(
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                // Generous bottom spacer so UTR and Submit can be scrolled way up above keyboard
+                Spacer(modifier = Modifier.height(350.dp))
             }
         }
     }
+}
 }
 
 /**
@@ -1078,15 +1103,11 @@ fun HelpDeskModal(
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
 
-    BackHandler(enabled = isKeyboardOpen) {
-        keyboardController?.hide()
-        focusManager.clearFocus()
-    }
-
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
-            dismissOnBackPress = !isKeyboardOpen,
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true,
             usePlatformDefaultWidth = false
         )
     ) {
@@ -1103,39 +1124,39 @@ fun HelpDeskModal(
 
         Surface(
             modifier = Modifier
-                .fillMaxWidth(0.95f)
-                .fillMaxHeight(0.92f)
-                .imePadding()
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) {
-                    keyboardController?.hide()
-                    focusManager.clearFocus()
-                },
+                .fillMaxWidth(0.96f)
+                .fillMaxHeight(0.95f),
             shape = RoundedCornerShape(24.dp),
             color = BrandDark,
             border = BorderStroke(1.5.dp, BrandBorder)
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Header
+                // PINNED TOP BAR (Always visible, cannot be scrolled away, Back & Close always ready)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(BrandCard)
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { onDismiss() }
+                    ) {
                         Box(
                             modifier = Modifier
-                                .size(36.dp)
+                                .size(34.dp)
                                 .clip(CircleShape)
-                                .background(BrandCoral.copy(alpha = 0.2f)),
+                                .background(BrandDark),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("🎧", fontSize = 18.sp)
+                            Icon(
+                                imageVector = Icons.Default.ArrowBack,
+                                contentDescription = "Back",
+                                tint = BrandGold,
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
@@ -1151,9 +1172,9 @@ fun HelpDeskModal(
                                 (10000000 + kotlin.math.abs(currentUser.uid.hashCode()) % 90000000).toString()
                             }
                             Text(
-                                text = "Account ID: #$displayId",
+                                text = "Account ID: #$displayId • Tap ← to return",
                                 color = BrandGold,
-                                fontSize = 11.sp,
+                                fontSize = 10.5.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
@@ -1162,10 +1183,10 @@ fun HelpDeskModal(
                     IconButton(
                         onClick = onDismiss,
                         modifier = Modifier
-                            .size(32.dp)
+                            .size(34.dp)
                             .background(BrandDark, CircleShape)
                     ) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(18.dp))
                     }
                 }
 
@@ -1202,9 +1223,9 @@ fun HelpDeskModal(
                     // TAB 0: SUBMIT TICKET
                     Column(
                         modifier = Modifier
-                            .fillMaxSize()
+                            .weight(1f)
+                            .fillMaxWidth()
                             .verticalScroll(rememberScrollState())
-                            .imePadding()
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
@@ -1508,6 +1529,9 @@ fun HelpDeskModal(
                                 )
                             }
                         }
+
+                        // Generous bottom spacer so UTR and Submit can be scrolled way up above keyboard
+                        Spacer(modifier = Modifier.height(350.dp))
                     }
                 } else {
                     // TAB 1: MY TICKETS
@@ -2287,67 +2311,88 @@ fun CoinStoreTopUpDialog(
                 onDismiss()
             }
         )
-    }
-
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth(0.94f)
-                .fillMaxHeight(0.90f),
-            shape = RoundedCornerShape(24.dp),
-            color = BrandDark,
-            border = BorderStroke(1.5.dp, BrandGold)
+    } else {
+        Dialog(
+            onDismissRequest = onDismiss,
+            properties = DialogProperties(
+                dismissOnBackPress = true,
+                dismissOnClickOutside = true,
+                usePlatformDefaultWidth = false
+            )
         ) {
-            Column(
+            Surface(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .fillMaxWidth(0.96f)
+                    .fillMaxHeight(0.95f),
+                shape = RoundedCornerShape(24.dp),
+                color = BrandDark,
+                border = BorderStroke(1.5.dp, BrandGold)
             ) {
-                // 1. Header
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Column(
+                    modifier = Modifier.fillMaxSize()
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(38.dp)
-                                .clip(CircleShape)
-                                .background(BrandGold.copy(alpha = 0.2f)),
-                            contentAlignment = Alignment.Center
+                    // PINNED TOP BAR (Always visible, cannot be scrolled away, Back & Close always ready)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF1E172E))
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.clickable { onDismiss() }
                         ) {
-                            Text(if (selectedTab == 0) "💎" else "💵", fontSize = 20.sp)
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(BrandCard),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ArrowBack,
+                                    contentDescription = "Back",
+                                    tint = BrandGold,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = if (selectedTab == 0) "Diamond & Coin Wallet" else "Host Earning Wallet",
+                                    color = Color.White,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = if (selectedTab == 0) "Recharge diamonds • Instant UTR credit" else "Real cash host earnings & UPI withdrawal",
+                                    color = BrandGold,
+                                    fontSize = 10.5.sp
+                                )
+                            }
                         }
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column {
-                            Text(
-                                text = if (selectedTab == 0) "Diamond & Coin Wallet" else "Host Earning Wallet",
-                                color = Color.White,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = if (selectedTab == 0) "Recharge diamonds for room gifts & VIP" else "Real cash host earnings & UPI withdrawal",
-                                color = Color.LightGray,
-                                fontSize = 11.sp
-                            )
+
+                        IconButton(
+                            onClick = onDismiss,
+                            modifier = Modifier
+                                .size(34.dp)
+                                .background(BrandCard, CircleShape)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(18.dp))
                         }
                     }
 
-                    IconButton(
-                        onClick = onDismiss,
+                    HorizontalDivider(color = BrandBorder.copy(alpha = 0.5f), thickness = 1.dp)
+
+                    Column(
                         modifier = Modifier
-                            .size(32.dp)
-                            .background(BrandCard, CircleShape)
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(16.dp))
-                    }
-                }
 
                 // 2. Dual-Wallet Tab Selector
                 Row(
@@ -2577,6 +2622,7 @@ fun CoinStoreTopUpDialog(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth(),
+                        contentPadding = PaddingValues(bottom = 350.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         // 0. Host Monetization Status & Activation Card
@@ -3186,6 +3232,8 @@ fun CoinStoreTopUpDialog(
     }
 }
 }
+}
+    }
 
 /**
  * VipStatusAndPurchaseDialog
