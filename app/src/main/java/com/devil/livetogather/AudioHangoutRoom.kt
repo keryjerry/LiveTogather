@@ -10243,6 +10243,7 @@ fun MicSeatView(
     isHost: Boolean,
     allProfiles: List<UserProfile> = emptyList(),
     userActiveFrame: String = "",
+    userActiveMicEffect: String = "",
     reactionEmoji: String? = null,
     categorySeatEmoji: String = "🎙️",
     categorySeatLabel: String = "Mic",
@@ -10286,6 +10287,15 @@ fun MicSeatView(
                 val frameItem = getAvatarFrameItem(seatFrameId)
                 val seatVipLvl = seatOccupantProfile?.getVipLevel() ?: (frameItem?.vipLevel ?: 0)
 
+                val seatMicEffectId = if (isCurrentSelf && userActiveMicEffect.isNotBlank()) {
+                    userActiveMicEffect
+                } else if (seatOccupantProfile?.activeMicEffect?.isNotBlank() == true) {
+                    seatOccupantProfile.activeMicEffect
+                } else {
+                    // For Host Mic (seatIndex == 0), show Cyber Neon Electric Blue as the active test effect!
+                    if (seat.seatIndex == 0) "mic_effect_cyber_neon_electric" else ""
+                }
+
                 FlowingAvatarFrame(
                     photoUrl = seat.photo.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
                     frameId = seatFrameId,
@@ -10294,7 +10304,8 @@ fun MicSeatView(
                     isSpeaking = isSpeaking,
                     vipLevel = seatVipLvl,
                     showVipBadge = false,
-                    showMicEffect = true
+                    showMicEffect = true,
+                    micEffectId = seatMicEffectId
                 )
 
                 // Mic Mute / Unmute Status Badge at bottom-right with subtle voice pulse animation

@@ -224,48 +224,112 @@ object LuxuryStoreCatalog {
         )
     }
 
-    // --- D. MIC EFFECTS (360° CONTINUOUS ROTATING ORBIT AURA) ---
+    // --- D. MIC EFFECTS (7 REAL HD 3D TRANSPARENT MAGIC EFFECTS) ---
     val micEffects = listOf(
         StoreItem(
-            id = "mic_pale_blue_star",
-            name = "Pale Blue Star",
+            id = "mic_effect_golden_amber_aura",
+            name = "Golden Amber Radiant Aura",
             category = "mic_effect",
             subCategory = "Sound Wave",
-            diamondPrice = 2160L,
-            rankTier = "C",
-            durationDays = 1,
-            iconEmoji = "⭐",
-            isNotForSale = true,
-            primaryColor = 0xFF80D8FF,
-            secondaryColor = 0xFF0091EA,
-            description = "Ethereal crystal orbit with twinkling celestial stars."
-        ),
-        StoreItem(
-            id = "mic_radiant_echo",
-            name = "Radiant Echo",
-            category = "mic_effect",
-            subCategory = "Sound Wave",
-            diamondPrice = 4560L,
-            rankTier = "B",
-            durationDays = 1,
-            iconEmoji = "✨",
-            isNotForSale = true,
-            primaryColor = 0xFFFFD700,
-            secondaryColor = 0xFFFF6D00,
-            description = "Golden solar flare vortex swirling continuously around the mic."
-        ),
-        StoreItem(
-            id = "mic_cosmic_neon",
-            name = "Cosmic Neon Ring",
-            category = "mic_effect",
-            subCategory = "Sound Wave",
-            diamondPrice = 7200L,
+            diamondPrice = 2500L,
             rankTier = "A",
-            durationDays = 7,
-            iconEmoji = "🪐",
-            primaryColor = 0xFFE040FB,
+            durationDays = 30,
+            iconEmoji = "🌟",
+            drawableRes = R.drawable.thumb_mic_effect_golden_amber_aura,
+            videoRes = R.raw.mic_effect_golden_amber_aura,
+            primaryColor = 0xFFFFB300,
+            secondaryColor = 0xFFFFD54F,
+            description = "Radiant golden amber aura with revolving solar energy."
+        ),
+        StoreItem(
+            id = "mic_effect_solar_particle_ring",
+            name = "Golden Solar Particle Ring",
+            category = "mic_effect",
+            subCategory = "Sound Wave",
+            diamondPrice = 2800L,
+            rankTier = "A",
+            durationDays = 30,
+            iconEmoji = "☀️",
+            drawableRes = R.drawable.thumb_mic_effect_solar_particle_ring,
+            videoRes = R.raw.mic_effect_solar_particle_ring,
+            primaryColor = 0xFFFFD700,
+            secondaryColor = 0xFFFF9100,
+            description = "Orbiting 24K gold stellar particles dancing around the mic."
+        ),
+        StoreItem(
+            id = "mic_effect_ruby_energy_flame",
+            name = "Crimson Ruby Energy Flame",
+            category = "mic_effect",
+            subCategory = "Sound Wave",
+            diamondPrice = 3200L,
+            rankTier = "S",
+            durationDays = 30,
+            iconEmoji = "🔥",
+            drawableRes = R.drawable.thumb_mic_effect_ruby_energy_flame,
+            videoRes = R.raw.mic_effect_ruby_energy_flame,
+            primaryColor = 0xFFFF1744,
+            secondaryColor = 0xFFFF5252,
+            description = "Blazing crimson ruby plasma flame vortex circling the avatar."
+        ),
+        StoreItem(
+            id = "mic_effect_cyber_neon_electric",
+            name = "Cyber Neon Electric Blue",
+            category = "mic_effect",
+            subCategory = "Mic Animation",
+            diamondPrice = 3500L,
+            rankTier = "S",
+            durationDays = 30,
+            iconEmoji = "⚡",
+            drawableRes = R.drawable.thumb_mic_effect_cyber_neon_electric,
+            videoRes = R.raw.mic_effect_cyber_neon_electric,
+            primaryColor = 0xFF00E5FF,
+            secondaryColor = 0xFFA855F7,
+            description = "High-voltage cyan and purple electric lightning rings."
+        ),
+        StoreItem(
+            id = "mic_effect_diamond_crystal_vortex",
+            name = "Prismatic Diamond Crystal Vortex",
+            category = "mic_effect",
+            subCategory = "Mic Animation",
+            diamondPrice = 3900L,
+            rankTier = "S",
+            durationDays = 30,
+            iconEmoji = "💎",
+            drawableRes = R.drawable.thumb_mic_effect_diamond_crystal_vortex,
+            videoRes = R.raw.mic_effect_diamond_crystal_vortex,
+            primaryColor = 0xFFE0F7FA,
+            secondaryColor = 0xFF80D8FF,
+            description = "Pure prismatic diamond light crystal vortex spinning gracefully."
+        ),
+        StoreItem(
+            id = "mic_effect_sovereign_gold_wings",
+            name = "Imperial Sovereign Gold Wings",
+            category = "mic_effect",
+            subCategory = "Mic Animation",
+            diamondPrice = 4200L,
+            rankTier = "S",
+            durationDays = 30,
+            iconEmoji = "👑",
+            drawableRes = R.drawable.thumb_mic_effect_sovereign_gold_wings,
+            videoRes = R.raw.mic_effect_sovereign_gold_wings,
+            primaryColor = 0xFFFFD700,
+            secondaryColor = 0xFFFF8F00,
+            description = "Royal golden angel wings radiating celestial power around the mic."
+        ),
+        StoreItem(
+            id = "mic_effect_emerald_celestial_wave",
+            name = "Emerald Cyan Celestial Wave",
+            category = "mic_effect",
+            subCategory = "Mic Color Name",
+            diamondPrice = 4500L,
+            rankTier = "S",
+            durationDays = 30,
+            iconEmoji = "🌊",
+            drawableRes = R.drawable.thumb_mic_effect_emerald_celestial_wave,
+            videoRes = R.raw.mic_effect_emerald_celestial_wave,
+            primaryColor = 0xFF00E676,
             secondaryColor = 0xFF00E5FF,
-            description = "Blinking dual neon rings spinning with audio energy."
+            description = "Luminous emerald cyan ripple wave pulsating with voice vibrations."
         )
     )
 

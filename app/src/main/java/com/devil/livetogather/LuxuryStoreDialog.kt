@@ -95,7 +95,14 @@ fun LuxuryStoreDialog(
                     else -> LuxuryStoreCatalog.avatarFrames
                 }
             }
-            StoreCategory.MIC_EFFECTS -> LuxuryStoreCatalog.micEffects
+            StoreCategory.MIC_EFFECTS -> {
+                when (selectedSubCategory) {
+                    "Sound Wave" -> LuxuryStoreCatalog.micEffects.filter { it.subCategory == "Sound Wave" }
+                    "Mic Animation" -> LuxuryStoreCatalog.micEffects.filter { it.subCategory == "Mic Animation" }
+                    "Mic Color Name" -> LuxuryStoreCatalog.micEffects.filter { it.subCategory == "Mic Color Name" }
+                    else -> LuxuryStoreCatalog.micEffects
+                }
+            }
             StoreCategory.ENTRANCE -> {
                 when (selectedSubCategory) {
                     "VIP Vehicles" -> LuxuryStoreCatalog.entrances.filter { it.subCategory == "VIP Vehicles" }
@@ -395,16 +402,26 @@ fun LuxuryStoreDialog(
                                 isPurchasing = true
                                 coroutineScope.launch(Dispatchers.IO) {
                                     try {
-                                        val targetFrame = if (currentUser.activeFrame == targetItem.id) "" else targetItem.id
-                                        db.collection("users").document(currentUser.uid).update("activeFrame", targetFrame)
+                                        val isMicEffect = targetItem.category == "mic_effect"
+                                        val targetEquipId = if (isMicEffect) {
+                                            if (currentUser.activeMicEffect == targetItem.id) "" else targetItem.id
+                                        } else {
+                                            if (currentUser.activeFrame == targetItem.id) "" else targetItem.id
+                                        }
+                                        val fieldName = if (isMicEffect) "activeMicEffect" else "activeFrame"
+                                        db.collection("users").document(currentUser.uid).update(fieldName, targetEquipId)
                                         val prefs = context.getSharedPreferences("livetogather_user_prefs", android.content.Context.MODE_PRIVATE)
-                                        prefs.edit().putString("profile_active_frame", targetFrame).apply()
+                                        prefs.edit().putString(if (isMicEffect) "profile_active_mic_effect" else "profile_active_frame", targetEquipId).apply()
                                         withContext(Dispatchers.Main) {
-                                            val updatedUser = currentUser.copy(activeFrame = targetFrame)
+                                            val updatedUser = if (isMicEffect) {
+                                                currentUser.copy(activeMicEffect = targetEquipId)
+                                            } else {
+                                                currentUser.copy(activeFrame = targetEquipId)
+                                            }
                                             onProfileUpdated(updatedUser)
                                             Toast.makeText(
                                                 context,
-                                                if (targetFrame.isNotBlank()) "👑 Equipped ${targetItem.name}!" else "Frame removed",
+                                                if (targetEquipId.isNotBlank()) "✨ Equipped ${targetItem.name}!" else "${targetItem.name} removed",
                                                 Toast.LENGTH_SHORT
                                             ).show()
                                         }
@@ -442,9 +459,11 @@ fun LuxuryStoreDialog(
                                             "ownedFrames" to FieldValue.arrayUnion(targetItem.id)
                                         )
 
-                                        // If it's a frame, also auto-equip it
                                         if (targetItem.category == "avatar_frame") {
                                             updates["activeFrame"] = targetItem.id
+                                        } else if (targetItem.category == "mic_effect") {
+                                            updates["activeMicEffect"] = targetItem.id
+                                            updates["ownedMicEffects"] = FieldValue.arrayUnion(targetItem.id)
                                         }
 
                                         db.collection("users").document(currentUser.uid).update(updates)
@@ -528,8 +547,16 @@ fun StoreItemCard(
     onEquipToggle: (StoreItem) -> Unit = {},
     onPurchase: (StoreItem) -> Unit
 ) {
-    val isOwned = currentUser.ownedFrames.contains(item.id) || currentUser.activeFrame == item.id
-    val isEquipped = currentUser.activeFrame == item.id
+    val isOwned = if (item.category == "mic_effect") {
+        currentUser.ownedMicEffects.contains(item.id) || currentUser.activeMicEffect == item.id
+    } else {
+        currentUser.ownedFrames.contains(item.id) || currentUser.activeFrame == item.id
+    }
+    val isEquipped = if (item.category == "mic_effect") {
+        currentUser.activeMicEffect == item.id
+    } else {
+        currentUser.activeFrame == item.id
+    }
     val hasVideo = item.videoRes != 0
 
     Surface(
@@ -632,6 +659,18 @@ fun StoreItemCard(
                             showAnimation = true,
                             showVipBadge = false,
                             showMicEffect = false
+                        )
+                    }
+                    "mic_effect" -> {
+                        FlowingAvatarFrame(
+                            photoUrl = currentUser.photo,
+                            frameId = "",
+                            avatarSize = 34.dp,
+                            frameSize = 58.dp,
+                            showAnimation = true,
+                            showVipBadge = false,
+                            showMicEffect = true,
+                            micEffectId = item.id
                         )
                     }
                     "mic_link" -> {

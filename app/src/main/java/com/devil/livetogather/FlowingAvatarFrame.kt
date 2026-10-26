@@ -42,6 +42,15 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import android.graphics.SurfaceTexture
+import android.media.MediaPlayer
+import android.net.Uri
+import android.view.Surface
+import android.view.TextureView
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.viewinterop.AndroidView
 
 /**
  * High-performance Flowing Avatar Frame Composable.
@@ -60,6 +69,7 @@ fun FlowingAvatarFrame(
     showAnimation: Boolean = true,
     showVipBadge: Boolean = true,
     showMicEffect: Boolean = false,
+    micEffectId: String = "",
     onClick: (() -> Unit)? = null
 ) {
     val frameItem = AVATAR_FRAMES_CATALOG.find { it.id == frameId }
@@ -123,8 +133,8 @@ fun FlowingAvatarFrame(
     // Calibrated Golden Ratio: Ensures the inner hole (53.52% of frame) always clears the avatar completely
     val effectiveFrameSize = if (frameId.isNotBlank()) {
         if (frameSize >= avatarSize * 1.95f) frameSize else (avatarSize * 1.95f)
-    } else if (showMicEffect) {
-        avatarSize + 18.dp
+    } else if (showMicEffect || micEffectId.isNotBlank()) {
+        avatarSize + 24.dp
     } else {
         avatarSize
     }
@@ -146,8 +156,22 @@ fun FlowingAvatarFrame(
             )
         }
 
-        // 360° Rotating Cosmic Galaxy Vortex Mic Effect (Clean Circular Avatars WITHOUT VIP Frames)
-        if (showMicEffect && frameId.isBlank()) {
+        // 3D Transparent Video Magic Mic Effect (7 Real HD Video Effects)
+        val activeVideoRes = if (micEffectId.isNotBlank()) {
+            getMicEffectVideoRes(micEffectId)
+        } else if (showMicEffect) {
+            R.raw.mic_effect_cyber_neon_electric
+        } else {
+            0
+        }
+
+        if (activeVideoRes != 0) {
+            VideoMicMagicEffectOverlay(
+                videoRes = activeVideoRes,
+                avatarSize = avatarSize,
+                effectSize = effectiveFrameSize + 14.dp
+            )
+        } else if (showMicEffect && frameId.isBlank()) {
             CosmicGalaxyVortexEffect(
                 avatarSize = avatarSize,
                 size = effectiveFrameSize,
@@ -630,5 +654,87 @@ fun formatDiamondCost(cost: Long): String {
         cost >= 100000L -> "%.1fL".format(cost / 100000.0).replace(".0L", "L")
         cost >= 1000L -> "${cost / 1000}K"
         else -> cost.toString()
+    }
+}
+
+
+// ---------------------------------------------------------------------
+// 3D TRANSPARENT VIDEO MAGIC MIC EFFECT OVERLAY
+// ---------------------------------------------------------------------
+
+fun getMicEffectVideoRes(effectId: String): Int {
+    return when (effectId) {
+        "mic_effect_golden_amber_aura" -> R.raw.mic_effect_golden_amber_aura
+        "mic_effect_solar_particle_ring" -> R.raw.mic_effect_solar_particle_ring
+        "mic_effect_ruby_energy_flame" -> R.raw.mic_effect_ruby_energy_flame
+        "mic_effect_cyber_neon_electric" -> R.raw.mic_effect_cyber_neon_electric
+        "mic_effect_diamond_crystal_vortex" -> R.raw.mic_effect_diamond_crystal_vortex
+        "mic_effect_sovereign_gold_wings" -> R.raw.mic_effect_sovereign_gold_wings
+        "mic_effect_emerald_celestial_wave" -> R.raw.mic_effect_emerald_celestial_wave
+        else -> 0
+    }
+}
+
+@Composable
+fun VideoMicMagicEffectOverlay(
+    videoRes: Int,
+    avatarSize: Dp,
+    effectSize: Dp,
+    modifier: Modifier = Modifier
+) {
+    if (videoRes == 0) return
+
+    Box(
+        modifier = modifier
+            .size(effectSize)
+            .clip(CircleShape), // 1. COMPLETELY REMOVES 4 SQUARE CORNERS
+        contentAlignment = Alignment.Center
+    ) {
+        AndroidView(
+            factory = { ctx ->
+                TextureView(ctx).apply {
+                    isOpaque = false // Enables transparency
+                    surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                        var mediaPlayer: MediaPlayer? = null
+                        override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
+                            val s = Surface(surface)
+                            mediaPlayer = MediaPlayer().apply {
+                                setSurface(s)
+                                val videoUri = Uri.parse("android.resource://${ctx.packageName}/$videoRes")
+                                setDataSource(ctx, videoUri)
+                                isLooping = true
+                                setVolume(0f, 0f)
+                                setOnPreparedListener { mp ->
+                                    mp.start()
+                                }
+                                prepareAsync()
+                            }
+                        }
+                        override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {}
+                        override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
+                            mediaPlayer?.release()
+                            mediaPlayer = null
+                            return true
+                        }
+                        override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {}
+                    }
+                }
+            },
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer(
+                    compositingStrategy = CompositingStrategy.Offscreen,
+                    blendMode = BlendMode.Screen // 2. REMOVES BLACK BACKGROUND (#000000 -> 100% TRANSPARENT)
+                )
+                .drawWithContent {
+                    drawContent()
+                    // 3. PUNCH OUT 100% TRANSPARENT CIRCULAR HOLE FOR AVATAR FACE
+                    drawCircle(
+                        color = Color.Transparent,
+                        radius = (avatarSize.toPx() / 2f),
+                        blendMode = BlendMode.Clear
+                    )
+                }
+        )
     }
 }

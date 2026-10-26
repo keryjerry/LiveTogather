@@ -790,6 +790,8 @@ data class UserProfile(
     val diamonds: Long = 0L,
     val coins: Long = 0L,
     val activeFrame: String = "",
+    val activeMicEffect: String = "",
+    val ownedMicEffects: List<String> = emptyList(),
     val ownedFrames: List<String> = emptyList(),
     val frameExpiries: Map<String, Long> = emptyMap(),
     val backpack: Map<String, Int> = emptyMap(), // giftId -> quantity
