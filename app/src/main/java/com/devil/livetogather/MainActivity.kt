@@ -15,6 +15,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -240,6 +241,7 @@ class MainActivity : ComponentActivity() {
     private var initialDeepLinkRoomId: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         initialDeepLinkRoomId = extractRoomId(intent)
         val imageLoader = ImageLoader.Builder(this)
@@ -1102,20 +1104,23 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
         return
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(BrandDark)) {
+    val isProfileScreen = currentScreen == "profile"
+
+    Box(modifier = Modifier.fillMaxSize().background(if (isProfileScreen) Color(0xFFF7F4FD) else BrandDark)) {
         Scaffold(
-            containerColor = BrandDark,
+            containerColor = if (isProfileScreen) Color.Transparent else BrandDark,
             topBar = {
                 if (activeAudioRoom == null || isAudioRoomMinimized) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(BrandCard)
+                            .statusBarsPadding()
+                            .background(if (isProfileScreen) Color.Transparent else BrandCard)
                     ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                            .padding(horizontal = 16.dp, vertical = if (isProfileScreen) 4.dp else 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -1136,6 +1141,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                         }
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            val topBarIconTint = if (isProfileScreen) Color(0xFF1B1433) else Color.White
                             // Real-Time Cloud Firestore Server Refresh Action
                             val infiniteTransition = rememberInfiniteTransition(label = "refreshAnim")
                             val rotation by infiniteTransition.animateFloat(
@@ -1154,7 +1160,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                                     imageVector = Icons.Default.Refresh,
                                     contentDescription = "Refresh Cloud Firestore",
                                     modifier = Modifier.rotate(if (refreshEngine.isRefreshing) rotation else 0f),
-                                    tint = if (refreshEngine.isRefreshing) BrandCoral else Color.White
+                                    tint = if (refreshEngine.isRefreshing) BrandCoral else topBarIconTint
                                 )
                             }
 
@@ -1170,7 +1176,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                                 Icon(
                                     imageVector = if (isSearchExpanded) Icons.Default.Close else Icons.Default.Search,
                                     contentDescription = "Search",
-                                    tint = if (isSearchExpanded) BrandCoral else Color.White
+                                    tint = if (isSearchExpanded) BrandCoral else topBarIconTint
                                 )
                             }
 
@@ -1191,7 +1197,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                                     Icon(
                                         imageVector = Icons.Default.Notifications,
                                         contentDescription = "Notifications",
-                                        tint = if (unreadNotificationsCount > 0) BrandOrange else Color.White
+                                        tint = if (unreadNotificationsCount > 0) BrandOrange else topBarIconTint
                                     )
                                 }
                             }
@@ -1213,7 +1219,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                                     Icon(
                                         imageVector = Icons.Default.Settings,
                                         contentDescription = "Profile Settings",
-                                        tint = Color.White
+                                        tint = topBarIconTint
                                     )
                                 }
                             }
@@ -1493,7 +1499,11 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
         },
         bottomBar = {
                 if (activeAudioRoom == null || isAudioRoomMinimized) {
-                    NavigationBar(containerColor = BrandCard) {
+                    val isProfileScreen = currentScreen == "profile"
+                    NavigationBar(
+                        containerColor = if (isProfileScreen) Color(0xFFF7F4FD).copy(alpha = 0.95f) else BrandCard,
+                        contentColor = if (isProfileScreen) Color(0xFF1B1433) else Color.White
+                    ) {
                         val items = listOf(
                             Triple("discover", "Discover", Icons.Default.LocalFireDepartment),
                             Triple("likes", "Likes", Icons.Default.Favorite),
@@ -1503,6 +1513,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                         )
                         items.forEach { (route, label, icon) ->
                             val selected = currentScreen == route
+                            val unselectedColor = if (isProfileScreen) Color(0xFF6B7280) else Color.Gray
                             NavigationBarItem(
                                 selected = selected,
                                 onClick = { currentScreen = route },
@@ -1510,14 +1521,14 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                                     Icon(
                                         icon,
                                         contentDescription = label,
-                                        tint = if (selected) BrandCoral else Color.Gray
+                                        tint = if (selected) BrandCoral else unselectedColor
                                     )
                                 },
                                 label = {
                                     Text(
                                         label,
                                         fontSize = 10.sp,
-                                        color = if (selected) BrandCoral else Color.Gray
+                                        color = if (selected) BrandCoral else unselectedColor
                                     )
                                 }
                             )
@@ -1730,9 +1741,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                                             photoUrl = currentUser.photo,
                                             joinedAt = System.currentTimeMillis(),
                                             role = if (isHost) "host" else "listener",
-                                            tier = if (currentUser.isVipOrPlatinum()) {
-                                                if (currentUser.plan.contains("VIP", ignoreCase = true)) "VIP" else "Platinum"
-                                            } else "Standard"
+                                            tier = if (currentUser.getVipLevel() > 0) "VIP" else if (currentUser.isVipOrPlatinum()) "Platinum" else "Standard"
                                         )
                                         db.collection("rooms").document(room.id)
                                             .collection("members").document(currentUserId)
@@ -2097,9 +2106,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                         photoUrl = currentUser.photo,
                         joinedAt = System.currentTimeMillis(),
                         role = if (isHost) "host" else "listener",
-                        tier = if (currentUser.isVipOrPlatinum()) {
-                            if (currentUser.plan.contains("VIP", ignoreCase = true)) "VIP" else "Platinum"
-                        } else "Standard"
+                        tier = if (currentUser.getVipLevel() > 0) "VIP" else if (currentUser.isVipOrPlatinum()) "Platinum" else "Standard"
                     )
                     db.collection("rooms").document(room.id)
                         .collection("members").document(currentUserId)
@@ -2302,9 +2309,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                         photoUrl = currentUser.photo,
                         joinedAt = System.currentTimeMillis(),
                         role = "host",
-                        tier = if (currentUser.isVipOrPlatinum()) {
-                            if (currentUser.plan.contains("VIP", ignoreCase = true)) "VIP" else "Platinum"
-                        } else "Standard"
+                        tier = if (currentUser.getVipLevel() > 0) "VIP" else if (currentUser.isVipOrPlatinum()) "Platinum" else "Standard"
                     )
                     db.collection("rooms").document(roomId).collection("members").document(currentUserId).set(hostMember)
                     db.collection("intent_categories").document(categoryId)
@@ -3033,8 +3038,8 @@ fun RoomMembersDeckDialog(
                                             )
                                             Spacer(modifier = Modifier.width(6.dp))
                                             // Tier Badge
-                                            val isVip = member.plan.contains("VIP", ignoreCase = true)
-                                            val isPlatinum = member.plan.contains("Platinum", ignoreCase = true)
+                                            val isVip = member.getVipLevel() > 0
+                                            val isPlatinum = member.isVipOrPlatinum() && member.getVipLevel() == 0
                                             if (isVip || isPlatinum) {
                                                 Text(
                                                     text = if (isVip) "VIP ★" else "PLATINUM",
@@ -4093,10 +4098,9 @@ fun ProfileScreenContent(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .imePadding()
-                .navigationBarsPadding(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 120.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+                .imePadding(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             // 1. TOP STATUS & WALLET BAR (Handle, Diamonds, Coins & Settings)
             item {
@@ -6796,21 +6800,21 @@ fun SubscriptionPlansModal(
                             modifier = Modifier
                                 .size(38.dp)
                                 .clip(CircleShape)
-                                .background(BrandGold.copy(alpha = 0.2f)),
+                                .background(BrandCoral.copy(alpha = 0.2f)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("👑", fontSize = 20.sp)
+                            Text("💖", fontSize = 20.sp)
                         }
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
                             Text(
-                                "VIP Membership Levels",
+                                "Dating & Matching Passes",
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 16.sp
                             )
                             Text(
-                                "Select a tier to upgrade & unlock perks",
+                                "Unlimited swipes, likes & direct messages (Dating Only)",
                                 color = Color.LightGray,
                                 fontSize = 11.sp
                             )
@@ -6944,6 +6948,32 @@ fun SubscriptionPlansModal(
                                     fontSize = 12.sp
                                 )
 
+                                if (plan.id == "dating_vip" || plan.price == "₹319") {
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Surface(
+                                        color = BrandCoral.copy(alpha = 0.12f),
+                                        shape = RoundedCornerShape(8.dp),
+                                        border = BorderStroke(1.dp, BrandCoral.copy(alpha = 0.4f)),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Column(modifier = Modifier.padding(8.dp)) {
+                                            Text(
+                                                text = "💖 Dating Only • Not for Live Broadcasting",
+                                                color = BrandCoral,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 10.5.sp
+                                            )
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = "This plan is only for dating. It does not belong to the broadcasting features.",
+                                                color = Color(0xFFE2E8F0),
+                                                fontSize = 10.sp,
+                                                lineHeight = 13.sp
+                                            )
+                                        }
+                                    }
+                                }
+
                                 Spacer(modifier = Modifier.height(10.dp))
 
                                 Button(
@@ -6955,7 +6985,7 @@ fun SubscriptionPlansModal(
                                     )
                                 ) {
                                     Text(
-                                        if (isSelected) "Active Tier ✓" else "Choose ${plan.title} →",
+                                        if (isSelected) "Active Dating Pass ✓" else "Choose ${plan.title} →",
                                         color = if (isSelected) Color.Black else Color.White,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 13.sp

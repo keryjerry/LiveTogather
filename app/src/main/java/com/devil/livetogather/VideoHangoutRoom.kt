@@ -518,9 +518,7 @@ fun VideoHangoutRoomDialog(
         if (message.isBlank()) return
         val now = System.currentTimeMillis()
         val commenterLevel = currentUser.getEffectiveWealthLevel()
-        val commenterTier = if (currentUser.isVipOrPlatinum()) {
-            if (currentUser.plan.contains("VIP", ignoreCase = true)) "VIP" else "Platinum"
-        } else "Standard"
+        val commenterTier = if (currentUser.getVipLevel() > 0) "VIP" else if (currentUser.isVipOrPlatinum()) "Platinum" else "Standard"
 
         val commentItem = LiveRoomComment(
             id = UUID.randomUUID().toString(),

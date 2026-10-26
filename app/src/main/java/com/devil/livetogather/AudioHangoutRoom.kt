@@ -5269,9 +5269,7 @@ fun AudioHangoutRoomDialog(
             userId = currentUser.uid,
             userName = currentUser.name,
             userPhoto = currentUser.photo,
-            tier = if (currentUser.isVipOrPlatinum()) {
-                if (currentUser.plan.contains("VIP", ignoreCase = true)) "VIP" else "Platinum"
-            } else "Standard",
+            tier = if (currentUser.getVipLevel() > 0) "VIP" else if (currentUser.isVipOrPlatinum()) "Platinum" else "Standard",
             message = "✨ Welcome ${currentUser.name} to the room! Have fun! 🎉",
             timestamp = System.currentTimeMillis()
         )
@@ -5299,9 +5297,7 @@ fun AudioHangoutRoomDialog(
             photoUrl = currentUser.photo,
             joinedAt = System.currentTimeMillis(),
             role = if (isUserHost) "host" else "listener",
-            tier = if (currentUser.isVipOrPlatinum()) {
-                if (currentUser.plan.contains("VIP", ignoreCase = true)) "VIP" else "Platinum"
-            } else "Standard"
+            tier = if (currentUser.getVipLevel() > 0) "VIP" else if (currentUser.isVipOrPlatinum()) "Platinum" else "Standard"
         )
     }
 
@@ -8113,9 +8109,7 @@ fun AudioHangoutRoomDialog(
                                                     userId = currentUser.uid,
                                                     userName = currentUser.name,
                                                     userPhoto = currentUser.photo,
-                                                    tier = if (currentUser.isVipOrPlatinum()) {
-                                                        if (currentUser.plan.contains("VIP", true)) "VIP" else "Platinum"
-                                                    } else "Standard",
+                                                    tier = if (currentUser.getVipLevel() > 0) "VIP" else if (currentUser.isVipOrPlatinum()) "Platinum" else "Standard",
                                                     message = msg,
                                                     timestamp = System.currentTimeMillis()
                                                 )
@@ -8156,9 +8150,7 @@ fun AudioHangoutRoomDialog(
                                                 userId = currentUser.uid,
                                                 userName = currentUser.name,
                                                 userPhoto = currentUser.photo,
-                                                tier = if (currentUser.isVipOrPlatinum()) {
-                                                    if (currentUser.plan.contains("VIP", true)) "VIP" else "Platinum"
-                                                } else "Standard",
+                                                tier = if (currentUser.getVipLevel() > 0) "VIP" else if (currentUser.isVipOrPlatinum()) "Platinum" else "Standard",
                                                 message = msg,
                                                 timestamp = System.currentTimeMillis()
                                             )

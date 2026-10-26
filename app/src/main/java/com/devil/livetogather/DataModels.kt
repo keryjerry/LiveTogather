@@ -517,10 +517,10 @@ data class SubscriptionPlanItem(
 )
 
 val SUBSCRIPTION_PLANS = listOf(
-    SubscriptionPlanItem("weekly", "Weekly Pass", "₹65", "/ wk", "Basic Matching"),
-    SubscriptionPlanItem("monthly", "Monthly Pass", "₹159", "/ mo", "Unlimited Likes"),
-    SubscriptionPlanItem("platinum", "PLATINUM", "₹199", "/ mo", "Profile Boost"),
-    SubscriptionPlanItem("vip", "VIP LEVEL ★", "₹319", "/ mo", "Direct Msg + Visitors", isPopular = true)
+    SubscriptionPlanItem("weekly", "Weekly Pass", "₹65", "/ wk", "Basic Matching & Daily Swipes"),
+    SubscriptionPlanItem("monthly", "Monthly Pass", "₹159", "/ mo", "Unlimited Likes & Swipes"),
+    SubscriptionPlanItem("platinum_dating", "Platinum Dating Pass", "₹199", "/ mo", "Profile Boost & Priority Swipes"),
+    SubscriptionPlanItem("dating_vip", "Dating VIP Pass", "₹319", "/ mo", "Direct Msg + Visitors (Dating Only)", isPopular = true)
 )
 
 data class PkSupporter(
@@ -885,11 +885,22 @@ data class UserProfile(
         }
     }
 
+    fun isDatingSubscription(): Boolean {
+        val p = plan.lowercase().trim()
+        return p.contains("dating") || p.contains("match") || p.contains("pass") || p.contains("weekly") || p.contains("monthly") || p == "vip level ★" || p == "vip"
+    }
+
     fun isPaidSubscriber(): Boolean {
         return plan.isNotBlank() && !plan.equals("Free", ignoreCase = true)
     }
 
+    fun isDatingVip(): Boolean {
+        return (plan.contains("VIP", ignoreCase = true) || plan == "dating_vip") && isDatingSubscription()
+    }
+
     fun isVipOrPlatinum(): Boolean {
+        // Dating subscriptions are strictly for dating/matching and NEVER grant broadcast VIP status
+        if (isDatingSubscription()) return false
         return plan.contains("VIP", ignoreCase = true) || plan.contains("Platinum", ignoreCase = true)
     }
 
@@ -938,11 +949,18 @@ data class UserProfile(
                 return frame.vipLevel
             }
         }
+
+        // Dating subscriptions strictly DO NOT grant any broadcast VIP level or broadcast crown
+        if (isDatingSubscription()) {
+            return if (isTrialActive) 1 else 0
+        }
+
         if (plan.contains("VIP 6", ignoreCase = true)) return 6
         if (plan.contains("VIP 5", ignoreCase = true)) return 5
         if (plan.contains("VIP 4", ignoreCase = true)) return 4
         if (plan.contains("VIP 3", ignoreCase = true)) return 3
         if (plan.contains("VIP 2", ignoreCase = true)) return 2
+        if (plan.contains("VIP 1", ignoreCase = true)) return 1
         if (plan.contains("VIP", ignoreCase = true)) return 1
         if (plan.contains("Platinum", ignoreCase = true)) return 2
         if (isTrialActive) return 1
@@ -973,7 +991,10 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
     val interests = doc.getString("interests") ?: ""
     val profession = doc.getString("profession") ?: "Designer"
     val education = doc.getString("education") ?: "Graduate"
-    val plan = doc.getString("plan") ?: "Free"
+    val rawPlan = doc.getString("plan") ?: "Free"
+    val plan = if (rawPlan.equals("VIP LEVEL ★", ignoreCase = true) || rawPlan.equals("vip", ignoreCase = true)) {
+        "Dating VIP Pass"
+    } else rawPlan
     val distanceKm = (doc.getLong("distanceKm") ?: 12L).toInt()
     val current_room = doc.getString("current_room") ?: ""
     val hasBio = doc.getBoolean("hasBio") ?: true
