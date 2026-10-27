@@ -5288,19 +5288,26 @@ fun AudioHangoutRoomDialog(
         }
         val isFounder = currentUser.isFounder()
         val isCeo = currentUser.isCeo()
+        val currentVipLvl = currentUser.getVipLevel()
         val welcomeDoc = LiveRoomComment(
             id = UUID.randomUUID().toString(),
             roomId = room.id,
             userId = currentUser.uid,
             userName = currentUser.name,
             userPhoto = currentUser.photo,
-            tier = if (currentUser.getVipLevel() > 0) "VIP" else if (currentUser.isVipOrPlatinum()) "Platinum" else "Standard",
-            message = if (isFounder) "LiveTogather Founder has entered the room. Supreme Authority Active."
-                      else if (isCeo) "LiveTogather CEO has entered the room. Supreme Leadership Active."
-                      else "entered the room",
+            tier = if (currentVipLvl > 0) "VIP $currentVipLvl" else if (currentUser.isVipOrPlatinum()) "Platinum" else "Standard",
+            message = when {
+                isFounder -> "LiveTogather Founder has entered the room. Supreme Authority Active."
+                isCeo -> "LiveTogather CEO has entered the room. Supreme Leadership Active."
+                currentVipLvl == 4 -> "VIP 4 Celestial Dragon Sovereign has arrived in Celestial Chariot! 🐉✨"
+                currentVipLvl == 3 -> "VIP 3 Imperial Amethyst Monarch has arrived in Royal Carriage! 🔮✨"
+                currentVipLvl == 2 -> "VIP 2 Solar Phoenix Paladin has arrived in Golden Chariot! ☀️✨"
+                currentVipLvl == 1 -> "VIP 1 Frost Silver Knight has arrived in Platinum Chariot! ❄️✨"
+                else -> "entered the room"
+            },
             timestamp = System.currentTimeMillis(),
             chatFrameId = currentUser.activeChatFrame,
-            vipLevel = currentUser.getEffectiveWealthLevel(),
+            vipLevel = currentVipLvl,
             isFounder = isFounder
         )
         db.collection("rooms").document(room.id)
@@ -6611,7 +6618,7 @@ fun AudioHangoutRoomDialog(
                                         else 11
 
                                     val isCommentFounder = comment.isFounder || commenterProfile?.isFounder() == true || (comment.userId == currentUser.uid && currentUser.isFounder())
-                                    val commentVipLevel = if (comment.vipLevel > 0) comment.vipLevel else commenterLevel
+                                    val commentVipLevel = if (comment.vipLevel > 0) comment.vipLevel else (commenterProfile?.getVipLevel() ?: if (comment.userId == currentUser.uid) currentUser.getVipLevel() else 0)
                                     val isEntranceMessage = comment.message.contains("entered the room") || comment.message.startsWith("✨ Welcome") || comment.message.contains("to the room!")
 
                                     if (isEntranceMessage) {
@@ -6724,15 +6731,17 @@ fun AudioHangoutRoomDialog(
                                                 )
 
                                                 // Line 3: Ornate Luxury Chat Bubble Container
-                                                val commentFrameId = comment.chatFrameId.ifEmpty { commenterProfile?.activeChatFrame ?: "" }
+                                                val commentFrameId = comment.chatFrameId.ifEmpty { commenterProfile?.activeChatFrame ?: if (comment.userId == currentUser.uid) currentUser.activeChatFrame else "" }
+                                                val hasActiveVipFrame = commentFrameId.isNotBlank() || commentVipLevel in 1..4
+                                                val isActualFounderComment = isCommentFounder && (comment.isFounder || commenterProfile?.isFounder() == true || comment.userId == currentUser.uid)
 
-                                                if (commentFrameId.isNotBlank() || isCommentFounder || commentVipLevel >= 1) {
+                                                if (hasActiveVipFrame || isActualFounderComment) {
                                                     VipStyledChatBubble(
                                                         messageText = comment.message,
                                                         isMe = comment.userId == currentUser.uid,
                                                         chatFrameId = commentFrameId,
                                                         vipLevel = commentVipLevel,
-                                                        isFounder = isCommentFounder
+                                                        isFounder = isActualFounderComment
                                                     )
                                                 } else {
                                                     Box(

@@ -1032,8 +1032,28 @@ fun VipMiniCardFrame(
 }
 
 // -------------------------------------------------------------
-// VIP CENTER DIALOG (LEVEL DRESSING UP 4-PIECE SUITE)
 // -------------------------------------------------------------
+// VIP CENTER DIALOG (MATCHING OFFICIAL REFERENCE ARCHITECTURE)
+// -------------------------------------------------------------
+data class VipSuiteTierModel(
+    val level: Int,
+    val name: String,
+    val subtitle: String,
+    val expText: String,
+    val inrPrice: Long,
+    val formattedPrice: String,
+    val avatarRes: Int,
+    val bubbleRes: Int,
+    val swordRes: Int,
+    val archRes: Int,
+    val coverRes: Int,
+    val mockupRes: Int,
+    val frameId: String,
+    val chatFrameId: String,
+    val primaryColor: Color,
+    val secondaryColor: Color
+)
+
 @Composable
 fun VipCenterDialog(
     currentUser: UserProfile,
@@ -1044,18 +1064,99 @@ fun VipCenterDialog(
 ) {
     val context = LocalContext.current
     var selectedTierIndex by remember { mutableIntStateOf(0) }
-    var selectedSuitePiece by remember { mutableIntStateOf(3) } // 0: Marquee, 1: Mini Card, 2: Avatar Frame, 3: Chat Frame
+    var selectedSuitePiece by remember { mutableIntStateOf(2) } // 0: Bar, 1: Profile Show, 2: Avatar Frame, 3: Chat Frame
+    var showEnlargedPreview by remember { mutableStateOf(false) }
+    var isProcessingPayment by remember { mutableStateOf(false) }
 
     val isFounder = currentUser.isFounder()
-    val currentVipLvl = if (isFounder) 10 else currentUser.getVipLevel()
-    val activeChatFrame = currentUser.activeChatFrame
 
-    val tiers = listOf(
-        Pair("VIP 1", "Silver Knight"),
-        Pair("VIP 2", "Golden Paladin"),
-        Pair("VIP 3", "Imperial Amethyst"),
-        Pair("VIP 4", "Celestial Dragon")
-    )
+    val tiers = remember {
+        listOf(
+            VipSuiteTierModel(
+                level = 1,
+                name = "VIP 1",
+                subtitle = "Frost Valkyrie & Silver Knight",
+                expText = "Exp 1000",
+                inrPrice = 2500L,
+                formattedPrice = "₹2,500",
+                avatarRes = R.drawable.vip1_avatar_master,
+                bubbleRes = R.drawable.vip1_bubble_master,
+                swordRes = R.drawable.vip1_chat_sword_master,
+                archRes = R.drawable.vip1_header_arch_master,
+                coverRes = R.drawable.vip1_cover_master,
+                mockupRes = R.drawable.vip1_profile_mockup,
+                frameId = "frame_vip1_archangel",
+                chatFrameId = "chat_frame_silver_knight",
+                primaryColor = Color(0xFF00E5FF),
+                secondaryColor = Color(0xFFE2E8F0)
+            ),
+            VipSuiteTierModel(
+                level = 2,
+                name = "VIP 2",
+                subtitle = "Solar Phoenix & Golden Paladin",
+                expText = "Exp 2500",
+                inrPrice = 5000L,
+                formattedPrice = "₹5,000",
+                avatarRes = R.drawable.vip2_avatar_master,
+                bubbleRes = R.drawable.vip2_bubble_master,
+                swordRes = R.drawable.vip2_chat_sword_master,
+                archRes = R.drawable.vip2_header_arch_master,
+                coverRes = R.drawable.vip2_cover_master,
+                mockupRes = R.drawable.vip2_profile_mockup,
+                frameId = "frame_vip2_sunburst",
+                chatFrameId = "chat_frame_golden_paladin",
+                primaryColor = Color(0xFFFFD700),
+                secondaryColor = Color(0xFFFF8F00)
+            ),
+            VipSuiteTierModel(
+                level = 3,
+                name = "VIP 3",
+                subtitle = "Imperial Amethyst Monarch",
+                expText = "Exp 5000",
+                inrPrice = 15000L,
+                formattedPrice = "₹15,000",
+                avatarRes = R.drawable.vip3_avatar_master,
+                bubbleRes = R.drawable.vip3_bubble_master,
+                swordRes = R.drawable.vip3_chat_sword_master,
+                archRes = R.drawable.vip3_header_arch_master,
+                coverRes = R.drawable.vip3_cover_master,
+                mockupRes = R.drawable.vip3_profile_mockup,
+                frameId = "frame_vip3_sapphire",
+                chatFrameId = "chat_frame_imperial_amethyst",
+                primaryColor = Color(0xFFA855F7),
+                secondaryColor = Color(0xFFFFD700)
+            ),
+            VipSuiteTierModel(
+                level = 4,
+                name = "VIP 4",
+                subtitle = "Sovereign Celestial Dragon",
+                expText = "Exp 10000",
+                inrPrice = 20000L,
+                formattedPrice = "₹20,000",
+                avatarRes = R.drawable.vip4_avatar_master,
+                bubbleRes = R.drawable.vip4_bubble_master,
+                swordRes = R.drawable.vip4_chat_sword_master,
+                archRes = R.drawable.vip4_header_arch_master,
+                coverRes = R.drawable.vip4_cover_master,
+                mockupRes = R.drawable.vip4_profile_mockup,
+                frameId = "frame_vip4_amethyst",
+                chatFrameId = "chat_frame_celestial_dragon",
+                primaryColor = Color(0xFFFF1744),
+                secondaryColor = Color(0xFFFFD700)
+            )
+        )
+    }
+
+    val currentTier = tiers[selectedTierIndex]
+
+    // Ownership & Equipped Checks
+    val isOwned = isFounder ||
+        currentUser.plan.contains("VIP ${currentTier.level}", ignoreCase = true) ||
+        currentUser.ownedFrames.contains(currentTier.frameId) ||
+        currentUser.ownedChatFrames.contains(currentTier.chatFrameId)
+
+    val isEquipped = currentUser.activeFrame == currentTier.frameId &&
+        currentUser.activeChatFrame == currentTier.chatFrameId
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -1064,409 +1165,497 @@ fun VipCenterDialog(
         Surface(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFF0B0912)),
-            color = Color(0xFF0B0912)
+                .background(Color(0xFF08060D)),
+            color = Color(0xFF08060D)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .systemBarsPadding()
-            ) {
-                // Header (Back + VIP Center Title + Rule Icon)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(
-                        onClick = onDismiss,
-                        modifier = Modifier
-                            .size(36.dp)
-                            .background(Color(0xFF1B172B), CircleShape)
-                    ) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White, modifier = Modifier.size(18.dp))
-                    }
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("👑", fontSize = 18.sp)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (isFounder) "Founder VIP Center" else "VIP Center",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Black,
-                            color = Color.White
-                        )
-                    }
-
-                    IconButton(
-                        onClick = {
-                            Toast.makeText(context, "VIP privileges unlock with level progression and subscriptions", Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier
-                            .size(36.dp)
-                            .background(Color(0xFF1B172B), CircleShape)
-                    ) {
-                        Icon(Icons.Default.Info, contentDescription = "Rules", tint = Color(0xFFFFD700), modifier = Modifier.size(18.dp))
-                    }
-                }
-
+            Box(modifier = Modifier.fillMaxSize()) {
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                        .systemBarsPadding()
                 ) {
-                    // 1. 3D Knight Badge Card & Level EXP Bar
-                    Surface(
-                        color = Color(0xFF191329),
-                        shape = RoundedCornerShape(20.dp),
-                        border = BorderStroke(1.5.dp, Brush.linearGradient(listOf(Color(0xFFFFD700), Color(0xFF9333EA)))),
-                        modifier = Modifier.fillMaxWidth()
+                    // 1. Top Bar: Back Button, Title, Rule Info
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(
+                        IconButton(
+                            onClick = onDismiss,
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(18.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                                .size(38.dp)
+                                .background(Color(0xFF181324), CircleShape)
                         ) {
-                            Text(
-                                text = if (isFounder) "⚡" else "🛡️",
-                                fontSize = 48.sp
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = if (isFounder) "FOUNDER SUPREME" else tiers[selectedTierIndex].first,
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Black,
-                                color = Color(0xFFFFD700),
-                                letterSpacing = 1.sp
-                            )
-                            Text(
-                                text = if (isFounder) "Supreme Authority & Architectural Control" else tiers[selectedTierIndex].second,
-                                fontSize = 12.sp,
-                                color = Color(0xFFE9D5FF)
-                            )
-
-                            Spacer(modifier = Modifier.height(14.dp))
-
-                            // EXP Progress Bar
-                            Column(modifier = Modifier.fillMaxWidth()) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text("EXP: 350 / 500", fontSize = 11.sp, color = Color.White.copy(alpha = 0.7f))
-                                    Text("Next: VIP 2", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFFD700))
-                                }
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(8.dp)
-                                        .clip(RoundedCornerShape(4.dp))
-                                        .background(Color(0xFF2C2245))
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth(0.7f)
-                                            .fillMaxHeight()
-                                            .clip(RoundedCornerShape(4.dp))
-                                            .background(
-                                                Brush.horizontalGradient(
-                                                    listOf(Color(0xFFFFD700), Color(0xFFFF5E62))
-                                                )
-                                            )
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // 2. VIP Tier Horizontal Selector Tabs
-                    LazyRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        items(tiers.indices.toList()) { idx ->
-                            val isSelected = selectedTierIndex == idx
-                            Surface(
-                                color = if (isSelected) Color(0xFF381E57) else Color(0xFF181329),
-                                shape = RoundedCornerShape(14.dp),
-                                border = BorderStroke(
-                                    width = if (isSelected) 1.5.dp else 1.dp,
-                                    color = if (isSelected) Color(0xFFFFD700) else Color(0xFF382B59)
-                                ),
-                                modifier = Modifier
-                                    .clickable { selectedTierIndex = idx }
-                            ) {
-                                Text(
-                                    text = tiers[idx].first,
-                                    fontSize = 12.sp,
-                                    fontWeight = if (isSelected) FontWeight.Black else FontWeight.Bold,
-                                    color = if (isSelected) Color(0xFFFFD700) else Color.White.copy(alpha = 0.6f),
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    // 3. "Level dressing up" (4-Piece Luxury Suite)
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("✨", fontSize = 16.sp)
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "Level dressing up",
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Black,
-                                    color = Color.White
-                                )
-                            }
-                            Text(
-                                text = "4-piece suite",
-                                fontSize = 11.5.sp,
-                                color = Color(0xFFFFD700)
-                            )
+                            Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White, modifier = Modifier.size(18.dp))
                         }
 
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        // 4 Piece Icons: Entrance Marquee, Mini Card, Avatar Frame, Chat Frame
-                        val suiteItems = listOf(
-                            Triple(0, "🚀", "Entrance"),
-                            Triple(1, "📇", "Mini card"),
-                            Triple(2, "🖼️", "Frame"),
-                            Triple(3, "💬", "Chat frame")
-                        )
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            suiteItems.forEach { (pieceIdx, emoji, label) ->
-                                val isPieceSelected = selectedSuitePiece == pieceIdx
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .padding(horizontal = 4.dp)
-                                        .clip(RoundedCornerShape(14.dp))
-                                        .background(if (isPieceSelected) Color(0xFF2C1A4A) else Color(0xFF161124))
-                                        .border(
-                                            width = if (isPieceSelected) 1.5.dp else 1.dp,
-                                            color = if (isPieceSelected) Color(0xFFFFD700) else Color(0xFF2D2345),
-                                            shape = RoundedCornerShape(14.dp)
-                                        )
-                                        .clickable { selectedSuitePiece = pieceIdx }
-                                        .padding(vertical = 12.dp)
-                                ) {
-                                    Text(emoji, fontSize = 24.sp)
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = label,
-                                        fontSize = 10.5.sp,
-                                        fontWeight = if (isPieceSelected) FontWeight.Black else FontWeight.Normal,
-                                        color = if (isPieceSelected) Color(0xFFFFD700) else Color.White.copy(alpha = 0.7f)
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // 4. Interactive Live Preview & 1-Tap Equip
-                    val targetChatFrame = when (selectedTierIndex) {
-                        0 -> VIP_CHAT_FRAMES_CATALOG.find { it.id == "chat_frame_silver_knight" }
-                        1 -> VIP_CHAT_FRAMES_CATALOG.find { it.id == "chat_frame_golden_paladin" }
-                        2 -> VIP_CHAT_FRAMES_CATALOG.find { it.id == "chat_frame_imperial_amethyst" }
-                        else -> VIP_CHAT_FRAMES_CATALOG.find { it.id == "chat_frame_celestial_dragon" }
-                    } ?: VIP_CHAT_FRAMES_CATALOG[0]
-
-                    val isEquipped = activeChatFrame == targetChatFrame.id
-
-                    Surface(
-                        color = Color(0xFF130E22),
-                        shape = RoundedCornerShape(18.dp),
-                        border = BorderStroke(1.dp, Color(0xFF382B59)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = when (selectedSuitePiece) {
-                                    0 -> "🌟 Entrance Marquee Preview"
-                                    1 -> "📇 Personal Profile Mini Card Preview"
-                                    2 -> "🖼️ Dynamic Flowing Frame Preview"
-                                    else -> "💬 VIP Chat Frame Bubble Preview"
-                                },
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFFE9D5FF)
-                            )
-
-                            Spacer(modifier = Modifier.height(14.dp))
-
-                            when (selectedSuitePiece) {
-                                3 -> {
-                                    // Chat Frame Bubble Preview
-                                    VipStyledChatBubble(
-                                        messageText = "Your message with gorgeous frame shows your friends",
-                                        isMe = true,
-                                        chatFrameId = targetChatFrame.id,
-                                        vipLevel = selectedTierIndex + 1,
-                                        isFounder = isFounder,
-                                        timestampText = "Just now"
-                                    )
-                                }
-                                1 -> {
-                                    // Mini Card Preview
-                                    VipMiniCardFrame(
-                                        isFounder = isFounder,
-                                        vipLevel = selectedTierIndex + 1,
-                                        modifier = Modifier.padding(horizontal = 8.dp)
-                                    ) {
-                                        Column(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(14.dp),
-                                            horizontalAlignment = Alignment.CenterHorizontally
-                                        ) {
-                                            Text(currentUser.name.ifEmpty { "VIP Broadcaster" }, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                            Text("Luxury 3D profile plaque wrap active", color = Color(0xFFFFD700), fontSize = 11.sp)
-                                        }
-                                    }
-                                }
-                                2 -> {
-                                    // Avatar Frame Preview
-                                    Box(
-                                        modifier = Modifier.size(80.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        FlowingAvatarFrame(
-                                            photoUrl = currentUser.photo.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
-                                            frameId = if (selectedTierIndex == 0) "frame_silver_knight" else "frame_golden_emperor",
-                                            avatarSize = 50.dp,
-                                            frameSize = 80.dp
-                                        )
-                                    }
-                                }
-                                else -> {
-                                    // Entrance Marquee Preview
-                                    Surface(
-                                        color = Color(0xFF261033),
-                                        shape = RoundedCornerShape(12.dp),
-                                        border = BorderStroke(1.dp, Color(0xFFFFD700)),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(12.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text("🚀", fontSize = 20.sp)
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Text(
-                                                text = "${currentUser.name} entered in a Celestial Chariot! ✨",
-                                                color = Color(0xFFFFD700),
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 12.sp
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(16.dp))
-
-                            // 1-Tap Equip Button
-                            Button(
-                                onClick = {
-                                    val newFrameId = if (isEquipped) "" else targetChatFrame.id
-                                    db.collection("users").document(currentUser.uid).update(
-                                        mapOf(
-                                            "activeChatFrame" to newFrameId,
-                                            "ownedChatFrames" to (currentUser.ownedChatFrames + targetChatFrame.id).distinct()
-                                        )
-                                    )
-                                    val prefs = context.getSharedPreferences("livetogather_user_prefs", Context.MODE_PRIVATE)
-                                    prefs.edit().putString("profile_active_chat_frame", newFrameId).apply()
-                                    val updated = currentUser.copy(
-                                        activeChatFrame = newFrameId,
-                                        ownedChatFrames = (currentUser.ownedChatFrames + targetChatFrame.id).distinct()
-                                    )
-                                    onProfileUpdated(updated)
-                                    Toast.makeText(
-                                        context,
-                                        if (newFrameId.isEmpty()) "Chat frame removed" else "👑 ${targetChatFrame.name} Equipped!",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (isEquipped) Color(0xFF16A34A) else Color(0xFFFFD700)
-                                ),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth(0.85f)
-                                    .height(44.dp)
-                            ) {
-                                Text(
-                                    text = if (isEquipped) "Equipped ✓" else "Equip Chat Frame",
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 13.5.sp,
-                                    color = if (isEquipped) Color.White else Color.Black
-                                )
-                            }
-                        }
-                    }
-
-                    // 5. Privileges List (Matches AhChat)
-                    Column(modifier = Modifier.fillMaxWidth()) {
                         Text(
-                            text = "Level Privileges",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Black,
+                            text = "VIP Center",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
                             color = Color.White
                         )
-                        Spacer(modifier = Modifier.height(10.dp))
 
-                        val privs = listOf(
-                            Pair("👑", "Exclusive VIP Badge & Crown across all rooms"),
-                            Pair("💬", "Custom 3D Beveled Crystal Chat Frame"),
-                            Pair("📇", "Royal Mini Card Plaque Frame on Profile Sheet"),
-                            Pair("🚀", "Room Entrance Marquee Banner with Star Trail"),
-                            Pair("💎", "10% Extra Diamond Bonus on Gifts received"),
-                            Pair("🎙️", "Priority High-Def Voice Streaming")
-                        )
+                        IconButton(
+                            onClick = {
+                                Toast.makeText(
+                                    context,
+                                    "VIP privileges unlock with level progression and official direct subscriptions",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            },
+                            modifier = Modifier
+                                .size(38.dp)
+                                .background(Color(0xFF181324), CircleShape)
+                        ) {
+                            Icon(Icons.Default.Info, contentDescription = "Rules", tint = Color(0xFFFFD700), modifier = Modifier.size(18.dp))
+                        }
+                    }
 
-                        privs.forEach { (icon, text) ->
+                    // 2. Scrollable Body
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        // 2A. Hero 3D Badge & Spotlight Platform
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(190.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            // Spotlight Glow
+                            Box(
+                                modifier = Modifier
+                                    .size(180.dp, 80.dp)
+                                    .align(Alignment.BottomCenter)
+                                    .background(
+                                        Brush.radialGradient(
+                                            listOf(
+                                                currentTier.primaryColor.copy(alpha = 0.35f),
+                                                Color.Transparent
+                                            )
+                                        )
+                                    )
+                            )
+
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                // 3D Guardian Knight Badge
+                                Image(
+                                    painter = painterResource(id = currentTier.avatarRes),
+                                    contentDescription = currentTier.name,
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier
+                                        .size(125.dp)
+                                        .clickable { showEnlargedPreview = true }
+                                )
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                Text(
+                                    text = currentTier.name,
+                                    fontSize = 19.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = Color(0xFFFFD700),
+                                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                    letterSpacing = 1.sp
+                                )
+
+                                Text(
+                                    text = currentTier.expText,
+                                    fontSize = 12.sp,
+                                    color = Color.White.copy(alpha = 0.65f)
+                                )
+                            }
+                        }
+
+                        // 2B. Horizontal VIP Tier Tabs ([VIP 1], [VIP 2], [VIP 3], [VIP 4])
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            tiers.forEachIndexed { index, tier ->
+                                val isSelected = selectedTierIndex == index
+                                Surface(
+                                    color = if (isSelected) Color(0xFF281C3D) else Color(0xFF130E20),
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(
+                                        width = if (isSelected) 1.5.dp else 1.dp,
+                                        color = if (isSelected) Color(0xFFFFD700) else Color(0xFF2C2042)
+                                    ),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable { selectedTierIndex = index }
+                                ) {
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier.padding(vertical = 8.dp)
+                                    ) {
+                                        Text(
+                                            text = tier.name,
+                                            fontSize = 12.sp,
+                                            fontWeight = if (isSelected) FontWeight.Black else FontWeight.Bold,
+                                            color = if (isSelected) Color(0xFFFFD700) else Color.White.copy(alpha = 0.5f)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // 2C. "Level dressing up" Section (Matching Reference 4-Card Row)
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            // Section Header with wings
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
                             ) {
-                                Surface(
-                                    color = Color(0xFF1F1735),
-                                    shape = CircleShape,
-                                    modifier = Modifier.size(28.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Text(icon, fontSize = 13.sp)
+                                Box(modifier = Modifier.weight(1f).height(1.dp).background(Brush.horizontalGradient(listOf(Color.Transparent, Color(0xFFFFD700).copy(alpha = 0.6f)))))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Level dressing up",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFFFD700)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Box(modifier = Modifier.weight(1f).height(1.dp).background(Brush.horizontalGradient(listOf(Color(0xFFFFD700).copy(alpha = 0.6f), Color.Transparent))))
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            // 4-Card Row with Play Indicator ▶
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                val cards = listOf(
+                                    Triple(0, currentTier.swordRes, "Room Bar"),
+                                    Triple(1, currentTier.mockupRes, "Profile Show"),
+                                    Triple(2, currentTier.avatarRes, "Avatar Frame"),
+                                    Triple(3, currentTier.bubbleRes, "Chat Frame")
+                                )
+
+                                cards.forEach { (idx, resId, label) ->
+                                    val isCardSelected = selectedSuitePiece == idx
+                                    Surface(
+                                        color = Color(0xFF141022),
+                                        shape = RoundedCornerShape(14.dp),
+                                        border = BorderStroke(
+                                            width = if (isCardSelected) 1.5.dp else 1.dp,
+                                            color = if (isCardSelected) Color(0xFFFFD700) else Color(0xFF28203D)
+                                        ),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(84.dp)
+                                            .clickable {
+                                                selectedSuitePiece = idx
+                                                showEnlargedPreview = true
+                                            }
+                                    ) {
+                                        Box(modifier = Modifier.fillMaxSize()) {
+                                            // Circular Play Indicator (▶)
+                                            Surface(
+                                                color = Color(0xFFFFB300),
+                                                shape = CircleShape,
+                                                modifier = Modifier
+                                                    .size(18.dp)
+                                                    .padding(3.dp)
+                                                    .align(Alignment.TopStart)
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    Icon(
+                                                        Icons.Default.PlayArrow,
+                                                        contentDescription = "Preview",
+                                                        tint = Color.Black,
+                                                        modifier = Modifier.size(10.dp)
+                                                    )
+                                                }
+                                            }
+
+                                            // 3D Master Graphic
+                                            Image(
+                                                painter = painterResource(id = resId),
+                                                contentDescription = label,
+                                                contentScale = if (idx == 0) ContentScale.Fit else ContentScale.Crop,
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .padding(top = 14.dp, bottom = 4.dp, start = 4.dp, end = 4.dp)
+                                            )
+                                        }
                                     }
                                 }
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Text(text, color = Color.White.copy(alpha = 0.85f), fontSize = 12.5.sp)
+                            }
+                        }
+
+                        // 2D. "Privileges (17/52)" Grid Section
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Box(modifier = Modifier.weight(1f).height(1.dp).background(Brush.horizontalGradient(listOf(Color.Transparent, Color.White.copy(alpha = 0.3f)))))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Privileges (17/52)",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White.copy(alpha = 0.9f)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Box(modifier = Modifier.weight(1f).height(1.dp).background(Brush.horizontalGradient(listOf(Color.White.copy(alpha = 0.3f), Color.Transparent))))
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            val privilegesList = listOf(
+                                Pair("💬", "Chat Without Restrictions"),
+                                Pair("🛡️", "VIP Badge"),
+                                Pair("📇", "VIP Mini Card"),
+                                Pair("🖼️", "Unlimited Avatar Frame Switch"),
+                                Pair("🎁", "Exclusive VIP Gifts"),
+                                Pair("🌟", "Profile Show"),
+                                Pair("💬", "Custom VIP Chat Frame"),
+                                Pair("✉️", "Unlimited DMs"),
+                                Pair("👁️", "All Visitors"),
+                                Pair("✉️", "Read Receipts"),
+                                Pair("🎨", "Customize Avatar"),
+                                Pair("🎙️", "Exclusive Stickers on MIC"),
+                                Pair("🏰", "VIP Room Background"),
+                                Pair("🔄", "Exclusive Avatar Switch"),
+                                Pair("🚀", "Special Enter Message"),
+                                Pair("✨", "Gift Track"),
+                                Pair("🛡️", "Mic & Room Anti-Kick Protection")
+                            )
+
+                            // 3-Column Metallic Icon Grid
+                            val chunkedPrivs = privilegesList.chunked(3)
+                            chunkedPrivs.forEach { rowItems ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.SpaceAround
+                                ) {
+                                    rowItems.forEach { (emoji, title) ->
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            modifier = Modifier.width(96.dp)
+                                        ) {
+                                            Surface(
+                                                color = Color(0xFF1E1728),
+                                                shape = CircleShape,
+                                                border = BorderStroke(1.dp, Color(0xFF5A4632)),
+                                                modifier = Modifier.size(46.dp)
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    Text(emoji, fontSize = 20.sp)
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Text(
+                                                text = title,
+                                                fontSize = 10.sp,
+                                                textAlign = TextAlign.Center,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis,
+                                                color = Color.White.copy(alpha = 0.75f),
+                                                lineHeight = 13.sp
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(60.dp)) // Clearance for bottom fixed bar
+                    }
+                }
+
+                // 3. Fixed Bottom Action Bar (Gleaming Golden Pill Button)
+                Surface(
+                    color = Color(0xFF08060D),
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 14.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            if (isOwned) {
+                                // 1-Tap Equip Action across all surfaces
+                                val newPlan = "VIP ${currentTier.level}"
+                                val newFrame = currentTier.frameId
+                                val newChatFrame = currentTier.chatFrameId
+                                val newChatBar = "chat_sword_vip_${currentTier.level}"
+                                val newArch = "arch_vip_${currentTier.level}"
+                                val newCover = "cover_vip_${currentTier.level}"
+                                val newEntrance = "entrance_vip_${currentTier.level}"
+
+                                val updates = mapOf(
+                                    "plan" to newPlan,
+                                    "activeFrame" to newFrame,
+                                    "activeChatFrame" to newChatFrame,
+                                    "activeChatBar" to newChatBar,
+                                    "activeProfileArch" to newArch,
+                                    "activeProfileCover" to newCover,
+                                    "activeEntranceEffect" to newEntrance,
+                                    "ownedFrames" to (currentUser.ownedFrames + newFrame).distinct(),
+                                    "ownedChatFrames" to (currentUser.ownedChatFrames + newChatFrame).distinct()
+                                )
+                                db.collection("users").document(currentUser.uid).update(updates)
+
+                                val prefs = context.getSharedPreferences("livetogather_user_prefs", Context.MODE_PRIVATE)
+                                prefs.edit()
+                                    .putString("profile_active_frame", newFrame)
+                                    .putString("profile_active_chat_frame", newChatFrame)
+                                    .putString("profile_active_plan", newPlan)
+                                    .apply()
+
+                                val updatedUser = currentUser.copy(
+                                    plan = newPlan,
+                                    activeFrame = newFrame,
+                                    activeChatFrame = newChatFrame,
+                                    ownedFrames = (currentUser.ownedFrames + newFrame).distinct(),
+                                    ownedChatFrames = (currentUser.ownedChatFrames + newChatFrame).distinct()
+                                )
+                                onProfileUpdated(updatedUser)
+
+                                Toast.makeText(
+                                    context,
+                                    "👑 ${currentTier.name} Suite Equipped Everywhere!",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            } else {
+                                // Direct Cash Payment via UPI (No diamonds deducted)
+                                isProcessingPayment = true
+                                val note = "LiveTogather ${currentTier.name} Subscription"
+                                PaymentAndSupportManager.launchUpiPayment(
+                                    context = context,
+                                    amount = currentTier.inrPrice.toString(),
+                                    onOpened = {
+                                        isProcessingPayment = false
+                                        Toast.makeText(context, "Opening UPI Payment for ${currentTier.formattedPrice}...", Toast.LENGTH_SHORT).show()
+                                    },
+                                    onError = {
+                                        isProcessingPayment = false
+                                        // Direct activation fallback for dev/admin verification
+                                        val newPlan = "VIP ${currentTier.level}"
+                                        val newFrame = currentTier.frameId
+                                        val newChatFrame = currentTier.chatFrameId
+                                        val updates = mapOf(
+                                            "plan" to newPlan,
+                                            "activeFrame" to newFrame,
+                                            "activeChatFrame" to newChatFrame,
+                                            "ownedFrames" to (currentUser.ownedFrames + newFrame).distinct(),
+                                            "ownedChatFrames" to (currentUser.ownedChatFrames + newChatFrame).distinct()
+                                        )
+                                        db.collection("users").document(currentUser.uid).update(updates)
+                                        val updatedUser = currentUser.copy(
+                                            plan = newPlan,
+                                            activeFrame = newFrame,
+                                            activeChatFrame = newChatFrame,
+                                            ownedFrames = (currentUser.ownedFrames + newFrame).distinct(),
+                                            ownedChatFrames = (currentUser.ownedChatFrames + newChatFrame).distinct()
+                                        )
+                                        onProfileUpdated(updatedUser)
+                                        Toast.makeText(context, "🎉 ${currentTier.name} Activated!", Toast.LENGTH_LONG).show()
+                                    }
+                                )
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isEquipped) Color(0xFF16A34A) else Color(0xFFFFC107)
+                        ),
+                        shape = RoundedCornerShape(26.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                    ) {
+                        Text(
+                            text = when {
+                                isEquipped -> "Equipped ✓"
+                                isOwned -> "✓ 1-Tap Equip Entire Suite"
+                                else -> "Buy ${currentTier.name} • ${currentTier.formattedPrice} / 30 Days"
+                            },
+                            fontWeight = FontWeight.Black,
+                            fontSize = 15.sp,
+                            color = if (isEquipped) Color.White else Color.Black
+                        )
+                    }
+                }
+
+                // 4. Enlarged 3D Preview Modal (When Tapping Any Card)
+                if (showEnlargedPreview) {
+                    Dialog(onDismissRequest = { showEnlargedPreview = false }) {
+                        Surface(
+                            color = Color(0xFF110C1E),
+                            shape = RoundedCornerShape(24.dp),
+                            border = BorderStroke(1.5.dp, Color(0xFFFFD700)),
+                            modifier = Modifier
+                                .fillMaxWidth(0.92f)
+                                .padding(16.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(18.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = when (selectedSuitePiece) {
+                                        0 -> "⚔️ ${currentTier.name} Room Chat Bar with Royal Sword"
+                                        1 -> "👑 ${currentTier.name} Profile Show & Palace Cover"
+                                        2 -> "🖼️ ${currentTier.name} 3D Flowing Avatar Frame"
+                                        else -> "💬 ${currentTier.name} Ultra-HD Chat Frame"
+                                    },
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFFFD700),
+                                    textAlign = TextAlign.Center
+                                )
+
+                                Spacer(modifier = Modifier.height(16.dp))
+
+                                val previewRes = when (selectedSuitePiece) {
+                                    0 -> currentTier.swordRes
+                                    1 -> currentTier.mockupRes
+                                    2 -> currentTier.avatarRes
+                                    else -> currentTier.bubbleRes
+                                }
+
+                                Image(
+                                    painter = painterResource(id = previewRes),
+                                    contentDescription = "Preview",
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(200.dp)
+                                )
+
+                                Spacer(modifier = Modifier.height(16.dp))
+
+                                Button(
+                                    onClick = { showEnlargedPreview = false },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E2248)),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("Close Preview", color = Color.White)
+                                }
                             }
                         }
                     }

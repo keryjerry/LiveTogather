@@ -89,7 +89,7 @@ fun LuxuryStoreDialog(
             StoreCategory.AVATAR -> {
                 when (selectedSubCategory) {
                     "Avatar Frame" -> LuxuryStoreCatalog.avatarFrames
-                    "CP Avatar Frame" -> LuxuryStoreCatalog.avatarFrames.filter { it.subCategory == "VIP Frame" }
+                    "CP Avatar Frame" -> LuxuryStoreCatalog.avatarFrames.filter { it.rankTier == "S" }
                     "Dynamic Avatar" -> LuxuryStoreCatalog.avatarFrames.filter { it.rankTier == "S" || it.rankTier == "A" }
                     else -> LuxuryStoreCatalog.avatarFrames
                 }
@@ -105,7 +105,7 @@ fun LuxuryStoreDialog(
             StoreCategory.ENTRANCE -> {
                 when (selectedSubCategory) {
                     "All Entrances" -> LuxuryStoreCatalog.entrances
-                    "VIP Vehicles" -> LuxuryStoreCatalog.entrances.filter { it.subCategory == "VIP Vehicles" }
+                    "Mythic Rides" -> LuxuryStoreCatalog.entrances.filter { it.subCategory == "Mythic Rides" }
                     "Aircrafts" -> LuxuryStoreCatalog.entrances.filter { it.subCategory == "Aircrafts" }
                     "Banners" -> LuxuryStoreCatalog.entrances.filter { it.subCategory == "Banners" }
                     else -> LuxuryStoreCatalog.entrances
@@ -338,7 +338,7 @@ fun LuxuryStoreDialog(
                     StoreCategory.INTIMACY -> listOf("Ring", "Jewelry", "Love Zone", "Mic Link", "Special")
                     StoreCategory.AVATAR -> listOf("Avatar Frame", "CP Avatar Frame", "Dynamic Avatar")
                     StoreCategory.MIC_EFFECTS -> listOf("All Effects", "Sound Wave", "Mic Animation")
-                    StoreCategory.ENTRANCE -> listOf("All Entrances", "VIP Vehicles", "Aircrafts", "Banners")
+                    StoreCategory.ENTRANCE -> listOf("All Entrances", "Mythic Rides", "Aircrafts", "Banners")
                 }
 
                 Row(

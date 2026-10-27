@@ -605,7 +605,10 @@ fun VideoHangoutRoomDialog(
             userPhoto = currentUser.photo,
             tier = commenterTier,
             message = message.trim(),
-            timestamp = now
+            timestamp = now,
+            chatFrameId = currentUser.activeChatFrame,
+            vipLevel = currentUser.getVipLevel(),
+            isFounder = currentUser.isFounder()
         )
         db.collection("rooms").document(room.id).collection("live_comments")
             .document(commentItem.id).set(commentItem)
@@ -1183,7 +1186,7 @@ fun VideoHangoutRoomDialog(
                             .ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" }
 
                         val isCommentFounder = comment.isFounder || commenterProfile?.isFounder() == true || (comment.userId == currentUser.uid && currentUser.isFounder())
-                        val commentVipLevel = if (comment.vipLevel > 0) comment.vipLevel else commenterLevel
+                        val commentVipLevel = if (comment.vipLevel > 0) comment.vipLevel else (commenterProfile?.getVipLevel() ?: if (comment.userId == currentUser.uid) currentUser.getVipLevel() else 0)
                         val isEntranceMessage = comment.message.contains("entered the room") || comment.message.startsWith("✨ Welcome") || comment.message.contains("to the room!")
 
                         if (isEntranceMessage) {

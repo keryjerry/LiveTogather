@@ -199,12 +199,12 @@ object LuxuryStoreCatalog {
     )
 
     // --- C. AVATAR FRAMES (ALL REAL FRAMES DYNAMICALLY MAPPED FROM AVATAR_FRAMES_CATALOG) ---
-    val avatarFrames: List<StoreItem> = AVATAR_FRAMES_CATALOG.map { frame ->
+    val avatarFrames: List<StoreItem> = AVATAR_FRAMES_CATALOG.filter { it.vipLevel == 0 && it.id != "frame_livetogather_founder" }.map { frame ->
         StoreItem(
             id = frame.id,
             name = frame.name,
             category = "avatar_frame",
-            subCategory = if (frame.vipLevel > 0) "VIP Frame" else "Avatar Frame",
+            subCategory = "Avatar Frame",
             diamondPrice = frame.cost,
             rankTier = when {
                 frame.vipLevel >= 5 -> "S"
@@ -337,7 +337,7 @@ object LuxuryStoreCatalog {
             id = "ent_king_palace",
             name = "Imperial King Palace",
             category = "entrance",
-            subCategory = "VIP Vehicles",
+            subCategory = "Mythic Rides",
             diamondPrice = 85000L,
             rankTier = "S",
             durationDays = 30,
@@ -352,7 +352,7 @@ object LuxuryStoreCatalog {
             id = "ent_fire_lion",
             name = "Blazing Fire Lion",
             category = "entrance",
-            subCategory = "VIP Vehicles",
+            subCategory = "Mythic Rides",
             diamondPrice = 75000L,
             rankTier = "S",
             durationDays = 30,
@@ -367,7 +367,7 @@ object LuxuryStoreCatalog {
             id = "ent_golden_supercar",
             name = "Golden 3D Supercar",
             category = "entrance",
-            subCategory = "VIP Vehicles",
+            subCategory = "Mythic Rides",
             diamondPrice = 60000L,
             rankTier = "S",
             durationDays = 30,
@@ -382,7 +382,7 @@ object LuxuryStoreCatalog {
             id = "ent_cyber_lamborghini",
             name = "Cyber Lamborghini",
             category = "entrance",
-            subCategory = "VIP Vehicles",
+            subCategory = "Mythic Rides",
             diamondPrice = 50000L,
             rankTier = "S",
             durationDays = 30,
