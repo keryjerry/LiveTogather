@@ -43,6 +43,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
@@ -4299,20 +4300,51 @@ fun ProfileScreenContent(
             item {
                 val hasSoulmate = currentUser.bestFriends.isNotEmpty()
                 val partnerUid = currentUser.bestFriends.firstOrNull() ?: ""
+                val vipLvl = currentUser.getVipLevel()
+                val vipCoverRes = when (vipLvl) {
+                    1 -> R.drawable.vip1_cover_master
+                    2 -> R.drawable.vip2_cover_master
+                    3 -> R.drawable.vip3_cover_master
+                    4 -> R.drawable.vip4_cover_master
+                    else -> 0
+                }
+                val vipArchRes = when (vipLvl) {
+                    1 -> R.drawable.vip1_header_arch_master
+                    2 -> R.drawable.vip2_header_arch_master
+                    3 -> R.drawable.vip3_header_arch_master
+                    4 -> R.drawable.vip4_header_arch_master
+                    else -> 0
+                }
 
                 Surface(
-                    color = Color.White,
+                    color = if (vipCoverRes != 0) Color(0xFF100B1E) else Color.White,
                     shape = RoundedCornerShape(24.dp),
-                    border = BorderStroke(1.dp, Color(0xFFE8DEF8)),
+                    border = BorderStroke(if (vipCoverRes != 0) 1.5.dp else 1.dp, if (vipCoverRes != 0) Color(0xFFFFD700) else Color(0xFFE8DEF8)),
                     shadowElevation = 2.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        if (vipCoverRes != 0) {
+                            Image(
+                                painter = painterResource(id = vipCoverRes),
+                                contentDescription = "VIP Cover",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.matchParentSize(),
+                                alpha = 0.32f
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .background(Brush.verticalGradient(listOf(Color(0xD00A0714), Color(0xEE0A0714))))
+                            )
+                        }
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
                         // Real Voice Verification & Top Badges Row (Zero Dummy)
                         val isVoiceVerified = currentUser.voiceVerificationStatus == "verified" || currentUser.voiceIntroUrl.isNotBlank()
                         val effWealthLvl = currentUser.getEffectiveWealthLevel()
@@ -4471,7 +4503,17 @@ fun ProfileScreenContent(
                                 }
                             }
                         } else {
-                            // Single Luxury Centered Avatar
+                            // Single Luxury Centered Avatar with VIP 3D Header Arch
+                            if (vipArchRes != 0) {
+                                Image(
+                                    painter = painterResource(id = vipArchRes),
+                                    contentDescription = "VIP Arch",
+                                    modifier = Modifier
+                                        .size(160.dp, 36.dp)
+                                        .offset(y = 4.dp),
+                                    contentScale = ContentScale.Fit
+                                )
+                            }
                             Box(contentAlignment = Alignment.Center) {
                                 FlowingAvatarFrame(
                                     photoUrl = photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80" },
@@ -4809,6 +4851,7 @@ fun ProfileScreenContent(
                                 Text(text = "Moments", color = Color(0xFF7C6D93), fontSize = 10.sp, fontWeight = FontWeight.Medium)
                             }
                         }
+                    }
                     }
                 }
             }

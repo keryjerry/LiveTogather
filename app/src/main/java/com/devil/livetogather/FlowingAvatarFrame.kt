@@ -229,7 +229,8 @@ fun FlowingAvatarFrame(
         }
 
         // VIP Level Badge (if user has VIP level and showVipBadge is true)
-        if (showVipBadge && effectiveVip > 0) {
+        val isVipSuiteFrame = frameId.startsWith("vip_suite_frame_") || frameId.startsWith("frame_vip")
+        if (showVipBadge && effectiveVip > 0 && !isVipSuiteFrame) {
             val (badgeText, badgeBg) = when (effectiveVip) {
                 1 -> "VIP 1" to Color(0xFFC0C0C0) // Silver
                 2 -> "VIP 2" to BrandGold        // Gold

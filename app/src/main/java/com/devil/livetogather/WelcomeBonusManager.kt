@@ -53,7 +53,7 @@ object WelcomeBonusManager {
 
     const val WELCOME_BONUS_DIAMONDS = 50_000L // 50,000 Diamonds
     const val VIP_TRIAL_DURATION_MS = 3L * 24 * 60 * 60 * 1000L // Strictly 3 Days (72 Hours)
-    const val VIP1_FRAME_ID = "frame_vip1_archangel"
+    const val VIP1_FRAME_ID = "vip_suite_frame_1"
     const val PREF_SHOW_WELCOME_DIALOG = "show_welcome_bonus_dialog"
     const val NOTIFICATION_CHANNEL_ID = "welcome_bonus_channel"
 

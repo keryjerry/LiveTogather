@@ -2419,67 +2419,47 @@ val AVATAR_FRAMES_CATALOG = listOf(
         auraColors = listOf(0xFFFFD700, 0xFFFF0055, 0xFFFFEA00, 0xFFFFD700)
     ),
     // -------------------------------------------------------------
-    // VIP TIER FRAMES (VIP 1 to VIP 5: 2.5 Lakh to 50 Lakh Diamonds)
+    // EXCLUSIVE VIP 3D SUITE FRAMES (VIP 1 to VIP 4 - DIRECT SUITE ACCESS)
     // -------------------------------------------------------------
     AvatarFrameItem(
-        id = "frame_vip1_archangel",
-        name = "VIP 1 • Noble Archangel",
-        description = "Platinum celestial wings with rotating halo & diamond dust",
-        cost = 250000L,
-        drawableRes = R.drawable.frame_vip1_archangel,
+        id = "vip_suite_frame_1",
+        name = "VIP 1 • Frost Valkyrie Ring",
+        description = "Royal 3D silver frost valkyrie winged ring with diamond halo",
+        cost = 0L,
+        drawableRes = R.drawable.vip1_avatar_master,
         isAnimated = true,
         vipLevel = 1,
-        auraColors = listOf(0xFFE0E0E0, 0xFFFFFFFF, 0xFFB0BEC5, 0xFFE0E0E0)
+        auraColors = listOf(0xFF00E5FF, 0xFFE2E8F0, 0xFF0288D1, 0xFF00E5FF)
     ),
     AvatarFrameItem(
-        id = "frame_vip2_sunburst",
-        name = "VIP 2 • Imperial Solar Gold",
-        description = "Radiant golden wings with pulsating solar sunburst crown",
-        cost = 500000L,
-        drawableRes = R.drawable.frame_vip2_sunburst,
+        id = "vip_suite_frame_2",
+        name = "VIP 2 • Solar Phoenix Ring",
+        description = "Royal 3D 24K solar phoenix golden crest with ruby crown",
+        cost = 0L,
+        drawableRes = R.drawable.vip2_avatar_master,
         isAnimated = true,
         vipLevel = 2,
         auraColors = listOf(0xFFFFD700, 0xFFFFA000, 0xFFFFE082, 0xFFFFD700)
     ),
     AvatarFrameItem(
-        id = "frame_vip3_sapphire",
-        name = "VIP 3 • Sapphire Sky King",
-        description = "Electric royal sapphire crystal wings with spinning diamond ring",
-        cost = 1000000L,
-        drawableRes = R.drawable.frame_vip3_sapphire,
+        id = "vip_suite_frame_3",
+        name = "VIP 3 • Imperial Amethyst Ring",
+        description = "Royal 3D amethyst crystal monarch frame with purple aura",
+        cost = 0L,
+        drawableRes = R.drawable.vip3_avatar_master,
         isAnimated = true,
         vipLevel = 3,
-        auraColors = listOf(0xFF00E5FF, 0xFF2979FF, 0xFF80D8FF, 0xFF00E5FF)
+        auraColors = listOf(0xFFA855F7, 0xFF7C3AED, 0xFFFFD700, 0xFFA855F7)
     ),
     AvatarFrameItem(
-        id = "frame_vip4_amethyst",
-        name = "VIP 4 • Cyan Divine Blade",
-        description = "Radiant cyan crystal wings with twin swords & diamond crown",
-        cost = 2500000L,
-        drawableRes = R.drawable.frame_vip4_amethyst,
+        id = "vip_suite_frame_4",
+        name = "VIP 4 • Sovereign Celestial Dragon",
+        description = "Royal 3D fiery celestial dragon ring with golden horns & crown",
+        cost = 0L,
+        drawableRes = R.drawable.vip4_avatar_master,
         isAnimated = true,
         vipLevel = 4,
-        auraColors = listOf(0xFF00E5FF, 0xFF1DE9B6, 0xFFE0F2F1, 0xFF00E5FF)
-    ),
-    AvatarFrameItem(
-        id = "frame_vip5_god_emperor",
-        name = "VIP 5 • Emerald Realm Knight",
-        description = "Royal emerald gold wings with twin broadswords & emerald crown",
-        cost = 5000000L,
-        drawableRes = R.drawable.frame_vip5_god_emperor,
-        isAnimated = true,
-        vipLevel = 5,
-        auraColors = listOf(0xFF00E676, 0xFFFFD700, 0xFF00C853, 0xFF00E676)
-    ),
-    AvatarFrameItem(
-        id = "frame_vip6_imperial_eagle",
-        name = "VIP 6 • Imperial Supreme Eagles",
-        description = "Dual golden imperial eagles with massive spreading wings & high crown",
-        cost = 10000000L,
-        drawableRes = R.drawable.frame_vip6_imperial_eagle,
-        isAnimated = true,
-        vipLevel = 6,
-        auraColors = listOf(0xFFFFD700, 0xFF00C853, 0xFFFFFFFF, 0xFFFFD700)
+        auraColors = listOf(0xFFFF1744, 0xFFFFD700, 0xFFFF6D00, 0xFFFF1744)
     ),
 
     // -------------------------------------------------------------
@@ -2688,11 +2668,24 @@ val AVATAR_FRAMES_CATALOG = listOf(
 )
 
 fun getAvatarFrameDrawable(frameId: String): Int {
-    return AVATAR_FRAMES_CATALOG.find { it.id == frameId }?.drawableRes ?: R.drawable.frame_angel_wings
+    return when (frameId) {
+        "vip_suite_frame_1", "frame_vip1_archangel" -> R.drawable.vip1_avatar_master
+        "vip_suite_frame_2", "frame_vip2_sunburst" -> R.drawable.vip2_avatar_master
+        "vip_suite_frame_3", "frame_vip3_sapphire" -> R.drawable.vip3_avatar_master
+        "vip_suite_frame_4", "frame_vip4_amethyst", "frame_vip5_god_emperor", "frame_vip6_imperial_eagle" -> R.drawable.vip4_avatar_master
+        else -> AVATAR_FRAMES_CATALOG.find { it.id == frameId }?.drawableRes ?: R.drawable.frame_angel_wings
+    }
 }
 
 fun getAvatarFrameItem(frameId: String): AvatarFrameItem? {
-    return AVATAR_FRAMES_CATALOG.find { it.id == frameId }
+    val resolvedId = when (frameId) {
+        "frame_vip1_archangel" -> "vip_suite_frame_1"
+        "frame_vip2_sunburst" -> "vip_suite_frame_2"
+        "frame_vip3_sapphire" -> "vip_suite_frame_3"
+        "frame_vip4_amethyst", "frame_vip5_god_emperor", "frame_vip6_imperial_eagle" -> "vip_suite_frame_4"
+        else -> frameId
+    }
+    return AVATAR_FRAMES_CATALOG.find { it.id == resolvedId }
 }
 
 

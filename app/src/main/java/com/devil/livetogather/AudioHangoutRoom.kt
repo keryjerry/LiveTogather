@@ -11068,7 +11068,7 @@ fun GiftStoreDialog(
                         Text("🎁", fontSize = 20.sp)
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "Gift & VIP Store",
+                            text = "🎁 Luxury Gift Store",
                             color = Color.White,
                             fontSize = 17.sp,
                             fontWeight = FontWeight.Bold
@@ -11123,7 +11123,7 @@ fun GiftStoreDialog(
                         .padding(3.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    val tabs = listOf("🎁 3D Gifts", "🎒 Backpack", "🎬 VIP Gifts", "💎 Recharge")
+                    val tabs = listOf("🎁 3D Gifts", "🎒 Backpack", "🎬 Video Gifts", "💎 Recharge")
                     items(tabs.size) { index ->
                         val title = tabs[index]
                         val isSelected = selectedTab == index

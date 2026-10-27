@@ -1068,6 +1068,8 @@ fun VipCenterDialog(
     var showEnlargedPreview by remember { mutableStateOf(false) }
     var isProcessingPayment by remember { mutableStateOf(false) }
 
+    var showPaymentModal by remember { mutableStateOf(false) }
+    var checkoutPackage by remember { mutableStateOf<CoinPackageItem?>(null) }
     val isFounder = currentUser.isFounder()
 
     val tiers = remember {
@@ -1085,7 +1087,7 @@ fun VipCenterDialog(
                 archRes = R.drawable.vip1_header_arch_master,
                 coverRes = R.drawable.vip1_cover_master,
                 mockupRes = R.drawable.vip1_profile_mockup,
-                frameId = "frame_vip1_archangel",
+                frameId = "vip_suite_frame_1",
                 chatFrameId = "chat_frame_silver_knight",
                 primaryColor = Color(0xFF00E5FF),
                 secondaryColor = Color(0xFFE2E8F0)
@@ -1103,7 +1105,7 @@ fun VipCenterDialog(
                 archRes = R.drawable.vip2_header_arch_master,
                 coverRes = R.drawable.vip2_cover_master,
                 mockupRes = R.drawable.vip2_profile_mockup,
-                frameId = "frame_vip2_sunburst",
+                frameId = "vip_suite_frame_2",
                 chatFrameId = "chat_frame_golden_paladin",
                 primaryColor = Color(0xFFFFD700),
                 secondaryColor = Color(0xFFFF8F00)
@@ -1121,7 +1123,7 @@ fun VipCenterDialog(
                 archRes = R.drawable.vip3_header_arch_master,
                 coverRes = R.drawable.vip3_cover_master,
                 mockupRes = R.drawable.vip3_profile_mockup,
-                frameId = "frame_vip3_sapphire",
+                frameId = "vip_suite_frame_3",
                 chatFrameId = "chat_frame_imperial_amethyst",
                 primaryColor = Color(0xFFA855F7),
                 secondaryColor = Color(0xFFFFD700)
@@ -1139,7 +1141,7 @@ fun VipCenterDialog(
                 archRes = R.drawable.vip4_header_arch_master,
                 coverRes = R.drawable.vip4_cover_master,
                 mockupRes = R.drawable.vip4_profile_mockup,
-                frameId = "frame_vip4_amethyst",
+                frameId = "vip_suite_frame_4",
                 chatFrameId = "chat_frame_celestial_dragon",
                 primaryColor = Color(0xFFFF1744),
                 secondaryColor = Color(0xFFFFD700)
@@ -1162,6 +1164,61 @@ fun VipCenterDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
+        if (showPaymentModal && checkoutPackage != null) {
+            UpiPaymentCheckoutModal(
+                currentUser = currentUser,
+                selectedPackage = checkoutPackage!!,
+                onDismiss = {
+                    showPaymentModal = false
+                    checkoutPackage = null
+                },
+                onSuccess = {
+                    showPaymentModal = false
+                    val pkg = checkoutPackage
+                    checkoutPackage = null
+                    // Direct 1-tap activation on successful purchase
+                    val newPlan = "VIP ${currentTier.level}"
+                    val newFrame = currentTier.frameId
+                    val newChatFrame = currentTier.chatFrameId
+                    val newChatBar = "chat_sword_vip_${currentTier.level}"
+                    val newArch = "arch_vip_${currentTier.level}"
+                    val newCover = "cover_vip_${currentTier.level}"
+                    val newEntrance = "entrance_vip_${currentTier.level}"
+
+                    val updates = mapOf(
+                        "plan" to newPlan,
+                        "vipLevel" to currentTier.level,
+                        "activeFrame" to newFrame,
+                        "activeChatFrame" to newChatFrame,
+                        "activeChatBar" to newChatBar,
+                        "activeProfileArch" to newArch,
+                        "activeProfileCover" to newCover,
+                        "activeEntranceEffect" to newEntrance,
+                        "ownedFrames" to (currentUser.ownedFrames + newFrame).distinct(),
+                        "ownedChatFrames" to (currentUser.ownedChatFrames + newChatFrame).distinct()
+                    )
+                    db.collection("users").document(currentUser.uid).update(updates)
+
+                    val prefs = context.getSharedPreferences("livetogather_user_prefs", Context.MODE_PRIVATE)
+                    prefs.edit()
+                        .putString("profile_active_frame", newFrame)
+                        .putString("profile_active_chat_frame", newChatFrame)
+                        .putString("profile_active_plan", newPlan)
+                        .apply()
+
+                    val updatedUser = currentUser.copy(
+                        plan = newPlan,
+                        activeFrame = newFrame,
+                        activeChatFrame = newChatFrame,
+                        ownedFrames = (currentUser.ownedFrames + newFrame).distinct(),
+                        ownedChatFrames = (currentUser.ownedChatFrames + newChatFrame).distinct()
+                    )
+                    onProfileUpdated(updatedUser)
+                    Toast.makeText(context, "🎉 ${currentTier.name} Dressing Up Suite Activated!", Toast.LENGTH_LONG).show()
+                }
+            )
+        }
+
         Surface(
             modifier = Modifier
                 .fillMaxSize()
@@ -1275,6 +1332,42 @@ fun VipCenterDialog(
                                     fontSize = 12.sp,
                                     color = Color.White.copy(alpha = 0.65f)
                                 )
+
+                                Spacer(modifier = Modifier.height(4.dp))
+
+                                Surface(
+                                    color = Color(0xFF1E1728),
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.2.dp, Color(0xFFFFD700)),
+                                    modifier = Modifier.padding(top = 4.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("💎", fontSize = 14.sp)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "Price: ${currentTier.formattedPrice} / 30 Days",
+                                            color = Color(0xFFFFD700),
+                                            fontWeight = FontWeight.ExtraBold,
+                                            fontSize = 13.5.sp
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Surface(
+                                            color = Color(0xFF16A34A),
+                                            shape = RoundedCornerShape(6.dp)
+                                        ) {
+                                            Text(
+                                                text = "DIRECT INR",
+                                                color = Color.White,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Black,
+                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
 
@@ -1486,116 +1579,120 @@ fun VipCenterDialog(
                     }
                 }
 
-                // 3. Fixed Bottom Action Bar (Gleaming Golden Pill Button)
+                // 3. Fixed Bottom Action Bar (Direct Purchase Button + 1-Tap Equip)
                 Surface(
                     color = Color(0xFF08060D),
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .padding(horizontal = 24.dp, vertical = 14.dp)
+                        .padding(horizontal = 20.dp, vertical = 10.dp)
                 ) {
-                    Button(
-                        onClick = {
-                            if (isOwned) {
-                                // 1-Tap Equip Action across all surfaces
-                                val newPlan = "VIP ${currentTier.level}"
-                                val newFrame = currentTier.frameId
-                                val newChatFrame = currentTier.chatFrameId
-                                val newChatBar = "chat_sword_vip_${currentTier.level}"
-                                val newArch = "arch_vip_${currentTier.level}"
-                                val newCover = "cover_vip_${currentTier.level}"
-                                val newEntrance = "entrance_vip_${currentTier.level}"
-
-                                val updates = mapOf(
-                                    "plan" to newPlan,
-                                    "activeFrame" to newFrame,
-                                    "activeChatFrame" to newChatFrame,
-                                    "activeChatBar" to newChatBar,
-                                    "activeProfileArch" to newArch,
-                                    "activeProfileCover" to newCover,
-                                    "activeEntranceEffect" to newEntrance,
-                                    "ownedFrames" to (currentUser.ownedFrames + newFrame).distinct(),
-                                    "ownedChatFrames" to (currentUser.ownedChatFrames + newChatFrame).distinct()
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        // PRIMARY ACTION: Direct Purchase Button (Opens Payment Section)
+                        Button(
+                            onClick = {
+                                checkoutPackage = CoinPackageItem(
+                                    id = "vip_package_${currentTier.level}",
+                                    coins = 0L,
+                                    priceInr = currentTier.formattedPrice,
+                                    numericPrice = currentTier.inrPrice.toString(),
+                                    title = "LiveTogather ${currentTier.name} Dressing Up Suite (30 Days)",
+                                    badge = currentTier.name
                                 )
-                                db.collection("users").document(currentUser.uid).update(updates)
-
-                                val prefs = context.getSharedPreferences("livetogather_user_prefs", Context.MODE_PRIVATE)
-                                prefs.edit()
-                                    .putString("profile_active_frame", newFrame)
-                                    .putString("profile_active_chat_frame", newChatFrame)
-                                    .putString("profile_active_plan", newPlan)
-                                    .apply()
-
-                                val updatedUser = currentUser.copy(
-                                    plan = newPlan,
-                                    activeFrame = newFrame,
-                                    activeChatFrame = newChatFrame,
-                                    ownedFrames = (currentUser.ownedFrames + newFrame).distinct(),
-                                    ownedChatFrames = (currentUser.ownedChatFrames + newChatFrame).distinct()
-                                )
-                                onProfileUpdated(updatedUser)
-
-                                Toast.makeText(
-                                    context,
-                                    "👑 ${currentTier.name} Suite Equipped Everywhere!",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            } else {
-                                // Direct Cash Payment via UPI (No diamonds deducted)
-                                isProcessingPayment = true
-                                val note = "LiveTogather ${currentTier.name} Subscription"
-                                PaymentAndSupportManager.launchUpiPayment(
-                                    context = context,
-                                    amount = currentTier.inrPrice.toString(),
-                                    onOpened = {
-                                        isProcessingPayment = false
-                                        Toast.makeText(context, "Opening UPI Payment for ${currentTier.formattedPrice}...", Toast.LENGTH_SHORT).show()
-                                    },
-                                    onError = {
-                                        isProcessingPayment = false
-                                        // Direct activation fallback for dev/admin verification
-                                        val newPlan = "VIP ${currentTier.level}"
-                                        val newFrame = currentTier.frameId
-                                        val newChatFrame = currentTier.chatFrameId
-                                        val updates = mapOf(
-                                            "plan" to newPlan,
-                                            "activeFrame" to newFrame,
-                                            "activeChatFrame" to newChatFrame,
-                                            "ownedFrames" to (currentUser.ownedFrames + newFrame).distinct(),
-                                            "ownedChatFrames" to (currentUser.ownedChatFrames + newChatFrame).distinct()
-                                        )
-                                        db.collection("users").document(currentUser.uid).update(updates)
-                                        val updatedUser = currentUser.copy(
-                                            plan = newPlan,
-                                            activeFrame = newFrame,
-                                            activeChatFrame = newChatFrame,
-                                            ownedFrames = (currentUser.ownedFrames + newFrame).distinct(),
-                                            ownedChatFrames = (currentUser.ownedChatFrames + newChatFrame).distinct()
-                                        )
-                                        onProfileUpdated(updatedUser)
-                                        Toast.makeText(context, "🎉 ${currentTier.name} Activated!", Toast.LENGTH_LONG).show()
-                                    }
+                                showPaymentModal = true
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFC107)),
+                            shape = RoundedCornerShape(26.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Text("💳", fontSize = 16.sp)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Purchase ${currentTier.name} • ${currentTier.formattedPrice} / 30 Days",
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 15.sp,
+                                    color = Color(0xFF1B1433)
                                 )
                             }
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isEquipped) Color(0xFF16A34A) else Color(0xFFFFC107)
-                        ),
-                        shape = RoundedCornerShape(26.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp)
-                    ) {
-                        Text(
-                            text = when {
-                                isEquipped -> "Equipped ✓"
-                                isOwned -> "✓ 1-Tap Equip Entire Suite"
-                                else -> "Buy ${currentTier.name} • ${currentTier.formattedPrice} / 30 Days"
-                            },
-                            fontWeight = FontWeight.Black,
-                            fontSize = 15.sp,
-                            color = if (isEquipped) Color.White else Color.Black
-                        )
+                        }
+
+                        // SECONDARY ACTION: 1-Tap Equip Suite (Available for Founder or owned tier)
+                        if (isOwned || isFounder) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedButton(
+                                onClick = {
+                                    val newPlan = "VIP ${currentTier.level}"
+                                    val newFrame = currentTier.frameId
+                                    val newChatFrame = currentTier.chatFrameId
+                                    val newChatBar = "chat_sword_vip_${currentTier.level}"
+                                    val newArch = "arch_vip_${currentTier.level}"
+                                    val newCover = "cover_vip_${currentTier.level}"
+                                    val newEntrance = "entrance_vip_${currentTier.level}"
+
+                                    val updates = mapOf(
+                                        "plan" to newPlan,
+                                        "vipLevel" to currentTier.level,
+                                        "activeFrame" to newFrame,
+                                        "activeChatFrame" to newChatFrame,
+                                        "activeChatBar" to newChatBar,
+                                        "activeProfileArch" to newArch,
+                                        "activeProfileCover" to newCover,
+                                        "activeEntranceEffect" to newEntrance,
+                                        "ownedFrames" to (currentUser.ownedFrames + newFrame).distinct(),
+                                        "ownedChatFrames" to (currentUser.ownedChatFrames + newChatFrame).distinct()
+                                    )
+                                    db.collection("users").document(currentUser.uid).update(updates)
+
+                                    val prefs = context.getSharedPreferences("livetogather_user_prefs", Context.MODE_PRIVATE)
+                                    prefs.edit()
+                                        .putString("profile_active_frame", newFrame)
+                                        .putString("profile_active_chat_frame", newChatFrame)
+                                        .putString("profile_active_plan", newPlan)
+                                        .apply()
+
+                                    val updatedUser = currentUser.copy(
+                                        plan = newPlan,
+                                        activeFrame = newFrame,
+                                        activeChatFrame = newChatFrame,
+                                        ownedFrames = (currentUser.ownedFrames + newFrame).distinct(),
+                                        ownedChatFrames = (currentUser.ownedChatFrames + newChatFrame).distinct()
+                                    )
+                                    onProfileUpdated(updatedUser)
+
+                                    Toast.makeText(
+                                        context,
+                                        "👑 ${currentTier.name} Suite Equipped Everywhere!",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                },
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = if (isEquipped) Color(0xFF4ADE80) else Color(0xFFFFD700)
+                                ),
+                                border = BorderStroke(
+                                    1.5.dp,
+                                    if (isEquipped) Color(0xFF4ADE80) else Color(0xFFFFD700)
+                                ),
+                                shape = RoundedCornerShape(26.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(42.dp)
+                            ) {
+                                Text(
+                                    text = if (isEquipped) "✓ Suite Currently Equipped (Tap to Re-Apply)" else "⚡ 1-Tap Equip ${currentTier.name} Suite",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                            }
+                        }
                     }
                 }
 
