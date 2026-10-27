@@ -4501,9 +4501,12 @@ fun ProfileScreenContent(
                                         }
                                     }
 
-                                    // 74dp Avatar Anchor Box so Online dot and Camera button sit cleanly on the photo edge
+                                    // 74dp Avatar Anchor Box - Direct 1-tap on profile picture opens avatar / upload picker!
                                     Box(
-                                        modifier = Modifier.size(74.dp),
+                                        modifier = Modifier
+                                            .size(74.dp)
+                                            .clip(CircleShape)
+                                            .clickable { if (!isUploadingPhoto) showLuxuryAvatarModal = true },
                                         contentAlignment = Alignment.Center
                                     ) {
                                         if (currentUser.isUserOnline()) {
@@ -4518,23 +4521,8 @@ fun ProfileScreenContent(
                                             )
                                         }
 
-                                        IconButton(
-                                            onClick = { if (!isUploadingPhoto) showLuxuryAvatarModal = true },
-                                            enabled = !isUploadingPhoto,
-                                            modifier = Modifier
-                                                .size(26.dp)
-                                                .align(Alignment.BottomEnd)
-                                                .offset(x = 3.dp, y = 3.dp)
-                                                .background(Color(0xFF7E22CE), CircleShape)
-                                                .border(1.5.dp, Color.White, CircleShape)
-                                        ) {
-                                            Icon(
-                                                Icons.Default.CameraAlt,
-                                                contentDescription = "Upload Photo",
-                                                tint = Color.White,
-                                                modifier = Modifier.size(13.dp)
-                                            )
-                                        }
+                                        // Camera icon removed completely as per user request!
+                                        // User taps directly on the avatar photo to open avatar/upload picker.
                                     }
                                 }
                             }

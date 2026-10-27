@@ -440,9 +440,17 @@ fun VipStyledChatBubble(
             label = "GlowAlpha"
         )
 
+        val swordRes = when (frameItem.vipLevel) {
+            1 -> R.drawable.vip1_chat_sword_master
+            2 -> R.drawable.vip2_chat_sword_master
+            3 -> R.drawable.vip3_chat_sword_master
+            4 -> R.drawable.vip4_chat_sword_master
+            else -> 0
+        }
+
         Box(
             modifier = modifier
-                .padding(vertical = 4.dp, horizontal = 2.dp)
+                .padding(start = 2.dp, end = 2.dp, top = if (swordRes != 0) 8.dp else 4.dp, bottom = 4.dp)
                 .shadow(
                     elevation = if (frameItem.isFounder) 10.dp else 6.dp,
                     shape = RoundedCornerShape(14.dp),
@@ -470,7 +478,12 @@ fun VipStyledChatBubble(
                         ),
                         shape = RoundedCornerShape(13.dp)
                     )
-                    .padding(horizontal = 16.dp, vertical = 10.dp)
+                    .padding(
+                        start = 14.dp,
+                        end = 14.dp,
+                        top = if (swordRes != 0) 12.dp else 10.dp,
+                        bottom = 10.dp
+                    )
             ) {
                 Column {
                     Text(
@@ -494,22 +507,14 @@ fun VipStyledChatBubble(
                 }
             }
 
-            val swordRes = when (frameItem.vipLevel) {
-                1 -> R.drawable.vip1_chat_sword_master
-                2 -> R.drawable.vip2_chat_sword_master
-                3 -> R.drawable.vip3_chat_sword_master
-                4 -> R.drawable.vip4_chat_sword_master
-                else -> 0
-            }
-
             if (swordRes != 0) {
                 Image(
                     painter = painterResource(id = swordRes),
                     contentDescription = "VIP Sword Crest",
                     modifier = Modifier
                         .align(Alignment.TopStart)
-                        .offset(x = 6.dp, y = (-12).dp)
-                        .size(96.dp, 26.dp),
+                        .offset(x = 8.dp, y = (-8).dp)
+                        .size(76.dp, 20.dp),
                     contentScale = ContentScale.Fit
                 )
             } else {
@@ -671,8 +676,15 @@ fun UserChatBadgesRow(
         // 5. 💎 VIP Badge Pill (If VIP Level > 0)
         val effVip = if (vipLevel > 0) vipLevel else (userProfile?.getVipLevel() ?: 0)
         if (effVip > 0 || isApexFounder) {
+            val badgeBgColor = when (effVip) {
+                4 -> Color(0xFF991B1B)
+                3 -> Color(0xFF7E22CE)
+                2 -> Color(0xFFB45309)
+                1 -> Color(0xFF334155)
+                else -> if (isApexFounder) Color(0xFF8B1838) else Color(0xFFB45309)
+            }
             Surface(
-                color = if (isApexFounder) Color(0xFF8B1838) else Color(0xFFB45309),
+                color = badgeBgColor,
                 shape = RoundedCornerShape(50),
                 border = BorderStroke(0.8.dp, BrandGold),
                 modifier = Modifier.height(17.dp)
@@ -683,7 +695,7 @@ fun UserChatBadgesRow(
                     horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     Text(
-                        text = if (isApexFounder) "👑 VIP 10" else "👑 VIP $effVip",
+                        text = if (effVip in 1..4) "👑 VIP $effVip" else if (isApexFounder) "👑 VIP 10" else "👑 VIP $effVip",
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Black,
                         color = Color.White

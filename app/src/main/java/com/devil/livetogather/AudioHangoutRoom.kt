@@ -9499,49 +9499,41 @@ fun CategoryHubLobbyDialog(
                                             .clickable { onJoinRoom(hostRoom) }
                                     ) {
                                         // Real User Avatar Frame lookup (NO dummy frames!)
-                                        val frameRes = if (hostUser.activeFrame.isNotBlank()) {
-                                            AVATAR_FRAMES_CATALOG.find { it.id == hostUser.activeFrame }?.drawableRes
-                                        } else null
-
+                                        // Clean Large Circular Host Avatar (NO avatar frames here as per user request!)
                                         Box(
-                                            modifier = Modifier.size(76.dp),
+                                            modifier = Modifier.size(72.dp),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             AsyncImage(
                                                 model = hostUser.photo.ifEmpty { hostRoom.hostPhotoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" } },
                                                 contentDescription = hostUser.name,
                                                 modifier = Modifier
-                                                    .size(60.dp)
+                                                    .size(66.dp)
                                                     .clip(CircleShape)
                                                     .border(
-                                                        2.dp,
-                                                        if (hostRoom.isHostLive) Color(0xFFFF1744) else Color.White.copy(alpha = 0.2f),
+                                                        2.5.dp,
+                                                        if (hostRoom.isHostLive) Brush.sweepGradient(listOf(BrandCoral, BrandGold, BrandOrange, BrandCoral)) else Brush.linearGradient(listOf(Color(0xFF3F4B6B), Color(0xFF262C3E))),
                                                         CircleShape
                                                     ),
                                                 contentScale = ContentScale.Crop
                                             )
 
-                                            // Overlay REAL frame ONLY if equipped in Firestore
-                                            if (frameRes != null) {
-                                                Image(
-                                                    painter = painterResource(id = frameRes),
-                                                    contentDescription = "Avatar Frame",
-                                                    modifier = Modifier.size(76.dp),
-                                                    contentScale = ContentScale.Fit
-                                                )
-                                            }
-
-                                            // Live Dot Badge
                                             if (hostRoom.isHostLive) {
-                                                Surface(
-                                                    color = Color(0xFFFF1744),
-                                                    shape = CircleShape,
-                                                    border = BorderStroke(1.dp, Color.White),
+                                                Box(
                                                     modifier = Modifier
-                                                        .size(12.dp)
-                                                        .align(Alignment.BottomEnd)
-                                                        .padding(bottom = 3.dp, end = 5.dp)
-                                                ) {}
+                                                        .align(Alignment.BottomCenter)
+                                                        .offset(y = 2.dp)
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                        .background(Color(0xFFFF1744))
+                                                        .padding(horizontal = 6.dp, vertical = 1.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "LIVE",
+                                                        fontSize = 8.sp,
+                                                        fontWeight = FontWeight.Black,
+                                                        color = Color.White
+                                                    )
+                                                }
                                             }
                                         }
 
@@ -10308,8 +10300,7 @@ fun MicSeatView(
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .width(66.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .width(68.dp)
             .clickable { onClick() }
             .padding(vertical = 1.dp)
     ) {
