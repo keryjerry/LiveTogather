@@ -69,50 +69,53 @@ val VIP_CHAT_FRAMES_CATALOG: List<VipChatFrameItem> = listOf(
         id = "chat_frame_silver_knight",
         name = "Silver Knight (VIP 1)",
         vipLevel = 1,
-        borderBrush = Brush.linearGradient(
-            listOf(Color(0xFFE2E8F0), Color(0xFF94A3B8), Color(0xFF00E5FF), Color(0xFFE2E8F0))
+        borderBrush = Brush.horizontalGradient(
+            listOf(Color(0xFFE2E8F0), Color(0xFF94A3B8), Color(0xFFCBD5E1), Color(0xFFE2E8F0))
         ),
-        backgroundBrush = Brush.linearGradient(
-            listOf(Color(0xFF131D2E), Color(0xFF0D1420))
+        backgroundBrush = Brush.verticalGradient(
+            listOf(Color(0xFF131D2E), Color(0xFF0B121C))
         ),
-        accentColor = Color(0xFF00E5FF),
+        textColor = Color(0xFFF8FAFC),
+        accentColor = Color(0xFF94A3B8),
         secondaryAccentColor = Color(0xFFE2E8F0),
-        gemColor = Color(0xFF00E5FF),
+        gemColor = Color(0xFFCBD5E1),
         cornerWingColor = Color(0xFF94A3B8),
         badgeLabel = "VIP 1",
-        badgeBgColor = Color(0xFF0284C7),
+        badgeBgColor = Color(0xFF334155),
         cornerGemEmoji = "💎",
-        description = "Beveled silver crystal bubble for Knight VIP 1"
+        description = "Beveled silver crystal bubble with winged steel crest for VIP 1"
     ),
     VipChatFrameItem(
         id = "chat_frame_golden_paladin",
         name = "Golden Paladin (VIP 2)",
         vipLevel = 2,
-        borderBrush = Brush.linearGradient(
-            listOf(Color(0xFFFFE082), Color(0xFFFFB300), Color(0xFFFF8F00), Color(0xFFFFE082))
+        borderBrush = Brush.horizontalGradient(
+            listOf(Color(0xFFFFE082), Color(0xFFFFB300), Color(0xFFFFD700), Color(0xFFFFE082))
         ),
-        backgroundBrush = Brush.linearGradient(
-            listOf(Color(0xFF2E1C07), Color(0xFF1A0F03))
+        backgroundBrush = Brush.verticalGradient(
+            listOf(Color(0xFF2E1C07), Color(0xFF140B02))
         ),
+        textColor = Color(0xFFFFFBEB),
         accentColor = Color(0xFFFFD700),
         secondaryAccentColor = Color(0xFFFF8F00),
         gemColor = Color(0xFFFFEA00),
         cornerWingColor = Color(0xFFFFD700),
         badgeLabel = "VIP 2",
         badgeBgColor = Color(0xFFB45309),
-        cornerGemEmoji = "⭐",
-        description = "Regal golden baroque frame with imperial amber glow"
+        cornerGemEmoji = "\u2b50",
+        description = "Regal golden baroque frame with imperial amber glow for VIP 2"
     ),
     VipChatFrameItem(
         id = "chat_frame_imperial_amethyst",
         name = "Imperial Amethyst (VIP 3)",
         vipLevel = 3,
-        borderBrush = Brush.linearGradient(
+        borderBrush = Brush.horizontalGradient(
             listOf(Color(0xFFE879F9), Color(0xFFA855F7), Color(0xFFFFD700), Color(0xFFE879F9))
         ),
-        backgroundBrush = Brush.linearGradient(
-            listOf(Color(0xFF2C103A), Color(0xFF160820))
+        backgroundBrush = Brush.verticalGradient(
+            listOf(Color(0xFF2C103A), Color(0xFF14061C))
         ),
+        textColor = Color(0xFFFAF5FF),
         accentColor = Color(0xFFE879F9),
         secondaryAccentColor = Color(0xFFFFD700),
         gemColor = Color(0xFFA855F7),
@@ -120,26 +123,27 @@ val VIP_CHAT_FRAMES_CATALOG: List<VipChatFrameItem> = listOf(
         badgeLabel = "VIP 3",
         badgeBgColor = Color(0xFF7E22CE),
         cornerGemEmoji = "🔮",
-        description = "Royal amethyst crystal with gold corner embellishments"
+        description = "Royal amethyst crystal with gold embellishments for VIP 3"
     ),
     VipChatFrameItem(
         id = "chat_frame_celestial_dragon",
         name = "Celestial Dragon (VIP 4+)",
         vipLevel = 4,
-        borderBrush = Brush.sweepGradient(
-            listOf(Color(0xFF00F5FF), Color(0xFFFF1744), Color(0xFFFFD700), Color(0xFF00F5FF))
+        borderBrush = Brush.horizontalGradient(
+            listOf(Color(0xFFFFD700), Color(0xFFFF2A55), Color(0xFFFF7A00), Color(0xFFFFD700))
         ),
-        backgroundBrush = Brush.linearGradient(
-            listOf(Color(0xFF102636), Color(0xFF1F0D2E))
+        backgroundBrush = Brush.verticalGradient(
+            listOf(Color(0xFF26081B), Color(0xFF13040E))
         ),
-        accentColor = Color(0xFF00F5FF),
+        textColor = Color(0xFFFFF1F2),
+        accentColor = Color(0xFFFF2A55),
         secondaryAccentColor = Color(0xFFFFD700),
-        gemColor = Color(0xFF00F5FF),
-        cornerWingColor = Color(0xFFFFD700),
+        gemColor = Color(0xFFFFD700),
+        cornerWingColor = Color(0xFFFF7A00),
         badgeLabel = "VIP 👑",
-        badgeBgColor = Color(0xFFDC2626),
+        badgeBgColor = Color(0xFF991B1B),
         cornerGemEmoji = "🐉",
-        description = "Cosmic dragon sweep bubble with pulsating auroras"
+        description = "Celestial Dragon Ruby & 24K Gold velvet bubble with 3D winged sword crest"
     ),
     VipChatFrameItem(
         id = "chat_frame_mystic_scorpio",
@@ -201,7 +205,7 @@ fun getVipChatFrame(frameId: String?, vipLevel: Int = 0, isFounder: Boolean = fa
             if (found != null) return found
         }
     }
-    if (isFounder) {
+    if (isFounder && vipLevel == 0 && frameId.isNullOrBlank()) {
         return VIP_CHAT_FRAMES_CATALOG.find { it.id == "chat_frame_founder_supreme" }
     }
     return null
@@ -520,59 +524,61 @@ fun VipStyledChatBubble(
                 )
             }
 
-            // Bottom Center Ornate Seal
-            OrnateBottomSeal(
-                primaryColor = frameItem.secondaryAccentColor,
-                accentColor = frameItem.accentColor,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .offset(y = 3.dp)
-            )
+            if (swordRes == 0) {
+                // Bottom Center Ornate Seal
+                OrnateBottomSeal(
+                    primaryColor = frameItem.secondaryAccentColor,
+                    accentColor = frameItem.accentColor,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .offset(y = 3.dp)
+                )
 
-            // 4 Sculpted Baroque Corner Wings with Gemstones
-            OrnateCornerFlourish(
-                isTop = true,
-                isLeft = true,
-                primaryColor = frameItem.secondaryAccentColor,
-                accentColor = frameItem.accentColor,
-                gemColor = frameItem.gemColor,
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .offset(x = (-2).dp, y = (-2).dp)
-            )
+                // 4 Sculpted Baroque Corner Wings with Gemstones
+                OrnateCornerFlourish(
+                    isTop = true,
+                    isLeft = true,
+                    primaryColor = frameItem.secondaryAccentColor,
+                    accentColor = frameItem.accentColor,
+                    gemColor = frameItem.gemColor,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .offset(x = (-2).dp, y = (-2).dp)
+                )
 
-            OrnateCornerFlourish(
-                isTop = true,
-                isLeft = false,
-                primaryColor = frameItem.secondaryAccentColor,
-                accentColor = frameItem.accentColor,
-                gemColor = frameItem.gemColor,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .offset(x = 2.dp, y = (-2).dp)
-            )
+                OrnateCornerFlourish(
+                    isTop = true,
+                    isLeft = false,
+                    primaryColor = frameItem.secondaryAccentColor,
+                    accentColor = frameItem.accentColor,
+                    gemColor = frameItem.gemColor,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(x = 2.dp, y = (-2).dp)
+                )
 
-            OrnateCornerFlourish(
-                isTop = false,
-                isLeft = true,
-                primaryColor = frameItem.secondaryAccentColor,
-                accentColor = frameItem.accentColor,
-                gemColor = frameItem.gemColor,
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .offset(x = (-2).dp, y = 2.dp)
-            )
+                OrnateCornerFlourish(
+                    isTop = false,
+                    isLeft = true,
+                    primaryColor = frameItem.secondaryAccentColor,
+                    accentColor = frameItem.accentColor,
+                    gemColor = frameItem.gemColor,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .offset(x = (-2).dp, y = 2.dp)
+                )
 
-            OrnateCornerFlourish(
-                isTop = false,
-                isLeft = false,
-                primaryColor = frameItem.secondaryAccentColor,
-                accentColor = frameItem.accentColor,
-                gemColor = frameItem.gemColor,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .offset(x = 2.dp, y = 2.dp)
-            )
+                OrnateCornerFlourish(
+                    isTop = false,
+                    isLeft = false,
+                    primaryColor = frameItem.secondaryAccentColor,
+                    accentColor = frameItem.accentColor,
+                    gemColor = frameItem.gemColor,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .offset(x = 2.dp, y = 2.dp)
+                )
+            }
         }
     } else {
         // Standard Chat Bubble (Fallback for non-VIP)
@@ -1183,11 +1189,9 @@ fun VipCenterDialog(
 
     val currentTier = tiers[selectedTierIndex]
 
-    // Ownership & Equipped Checks
-    val isOwned = isFounder ||
-        currentUser.plan.contains("VIP ${currentTier.level}", ignoreCase = true) ||
-        currentUser.ownedFrames.contains(currentTier.frameId) ||
-        currentUser.ownedChatFrames.contains(currentTier.chatFrameId)
+    // Ownership & Equipped Checks - Strictly for the specific purchased tier!
+    val isOwned = (currentUser.getVipLevel() == currentTier.level) ||
+        currentUser.plan.equals("VIP ${currentTier.level}", ignoreCase = true)
 
     val isEquipped = currentUser.activeFrame == currentTier.frameId &&
         currentUser.activeChatFrame == currentTier.chatFrameId
@@ -1614,9 +1618,8 @@ fun VipCenterDialog(
                 // 3. Fixed Bottom Action Bar:
                 // Strictly ONLY Purchase button if not purchased!
                 // Once purchased, shows Wear (वियर) and Unwear (अनवियर) button!
-                val hasPurchasedTier = currentUser.plan.contains("VIP ${currentTier.level}", ignoreCase = true) ||
-                    currentUser.ownedFrames.contains(currentTier.frameId) ||
-                    currentUser.ownedChatFrames.contains(currentTier.chatFrameId)
+                val hasPurchasedTier = (currentUser.getVipLevel() == currentTier.level) ||
+                    currentUser.plan.equals("VIP ${currentTier.level}", ignoreCase = true)
 
                 val isWorn = currentUser.activeFrame == currentTier.frameId &&
                     currentUser.activeChatFrame == currentTier.chatFrameId
@@ -1705,17 +1708,13 @@ fun VipCenterDialog(
                                             "activeChatBar" to newChatBar,
                                             "activeProfileArch" to newArch,
                                             "activeProfileCover" to newCover,
-                                            "activeEntranceEffect" to newEntrance,
-                                            "ownedFrames" to (currentUser.ownedFrames + newFrame).distinct(),
-                                            "ownedChatFrames" to (currentUser.ownedChatFrames + newChatFrame).distinct()
+                                            "activeEntranceEffect" to newEntrance
                                         )
                                         db.collection("users").document(currentUser.uid).update(updates)
                                         val updatedUser = currentUser.copy(
                                             plan = newPlan,
                                             activeFrame = newFrame,
-                                            activeChatFrame = newChatFrame,
-                                            ownedFrames = (currentUser.ownedFrames + newFrame).distinct(),
-                                            ownedChatFrames = (currentUser.ownedChatFrames + newChatFrame).distinct()
+                                            activeChatFrame = newChatFrame
                                         )
                                         onProfileUpdated(updatedUser)
                                         Toast.makeText(context, "👑 ${currentTier.name} Suite Worn (वियर हो गया)!", Toast.LENGTH_SHORT).show()

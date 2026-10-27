@@ -1185,9 +1185,9 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
 
     val isProfileScreen = currentScreen == "profile"
 
-    Box(modifier = Modifier.fillMaxSize().background(if (isProfileScreen) Color(0xFFF7F4FD) else BrandDark)) {
+    Box(modifier = Modifier.fillMaxSize().background(BrandDark)) {
         Scaffold(
-            containerColor = if (isProfileScreen) Color.Transparent else BrandDark,
+            containerColor = BrandDark,
             topBar = {
                 if (!isProfileScreen && (activeAudioRoom == null || isAudioRoomMinimized)) {
                     Column(
@@ -1578,10 +1578,9 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
         },
         bottomBar = {
                 if (activeAudioRoom == null || isAudioRoomMinimized) {
-                    val isProfileScreen = currentScreen == "profile"
                     NavigationBar(
-                        containerColor = if (isProfileScreen) Color.Transparent else BrandCard,
-                        contentColor = if (isProfileScreen) Color(0xFF1B1433) else Color.White
+                        containerColor = BrandCard,
+                        contentColor = Color.White
                     ) {
                         val items = listOf(
                             Triple("discover", "Discover", Icons.Default.LocalFireDepartment),
@@ -1592,7 +1591,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                         )
                         items.forEach { (route, label, icon) ->
                             val selected = currentScreen == route
-                            val unselectedColor = if (isProfileScreen) Color(0xFF6B7280) else Color.Gray
+                            val unselectedColor = Color.Gray
                             NavigationBarItem(
                                 selected = selected,
                                 onClick = { currentScreen = route },
@@ -4235,15 +4234,7 @@ fun ProfileScreenContent(
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        Color(0xFFF7F4FD),
-                        Color(0xFFECE5F8),
-                        Color(0xFFE2DAF2)
-                    )
-                )
-            )
+            .background(BrandDark)
     ) {
         LazyColumn(
             modifier = Modifier
@@ -4263,7 +4254,7 @@ fun ProfileScreenContent(
                 ) {
                     Text(
                         text = "@${(name.ifBlank { "member" }).lowercase().replace(" ", "_")}",
-                        color = Color(0xFF1B1433),
+                        color = Color.White,
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Black
                     )
@@ -4274,10 +4265,10 @@ fun ProfileScreenContent(
                     ) {
                         // Diamonds Wallet Pill
                         Surface(
-                            color = Color.White,
+                            color = Color(0xFF1E1728),
                             shape = RoundedCornerShape(16.dp),
-                            border = BorderStroke(1.2.dp, Color(0xFFE2D6F6)),
-                            shadowElevation = 1.dp,
+                            border = BorderStroke(1.dp, Color(0xFF7E22CE)),
+                            shadowElevation = 2.dp,
                             modifier = Modifier.clickable { showCoinStoreModal = true }
                         ) {
                             Row(
@@ -4288,21 +4279,21 @@ fun ProfileScreenContent(
                                 Spacer(modifier = Modifier.width(3.dp))
                                 Text(
                                     text = String.format("%,d", currentUser.diamonds),
-                                    color = Color(0xFF7E22CE),
+                                    color = Color(0xFFD8B4FE),
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Black
                                 )
                                 Spacer(modifier = Modifier.width(3.dp))
-                                Text("+", color = Color(0xFF9333EA), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text("+", color = Color(0xFFC084FC), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
 
                         // Coins Wallet Pill
                         Surface(
-                            color = Color.White,
+                            color = Color(0xFF1E1728),
                             shape = RoundedCornerShape(16.dp),
-                            border = BorderStroke(1.2.dp, Color(0xFFE2D6F6)),
-                            shadowElevation = 1.dp,
+                            border = BorderStroke(1.dp, Color(0xFFFFD700)),
+                            shadowElevation = 2.dp,
                             modifier = Modifier.clickable { showCoinStoreModal = true }
                         ) {
                             Row(
@@ -4313,22 +4304,22 @@ fun ProfileScreenContent(
                                 Spacer(modifier = Modifier.width(3.dp))
                                 Text(
                                     text = String.format("%,d", currentUser.coins),
-                                    color = Color(0xFFB45309),
+                                    color = Color(0xFFFFD700),
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Black
                                 )
                             }
                         }
 
-                        // Settings Hexagon Button
+                        // Settings Button
                         IconButton(
                             onClick = onOpenSettings,
                             modifier = Modifier
                                 .size(32.dp)
-                                .background(Color.White, CircleShape)
-                                .border(1.dp, Color(0xFFE2D6F6), CircleShape)
+                                .background(Color(0xFF1E1728), CircleShape)
+                                .border(1.dp, Color(0xFF3D2C54), CircleShape)
                         ) {
-                            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color(0xFF1B1433), modifier = Modifier.size(17.dp))
+                            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White, modifier = Modifier.size(17.dp))
                         }
                     }
                 }
@@ -4359,55 +4350,64 @@ fun ProfileScreenContent(
                     color = Color(0xFF0F0B18),
                     shape = RoundedCornerShape(24.dp),
                     border = BorderStroke(1.5.dp, if (vipLvl > 0) Color(0xFFFFD700) else Color(0xFF2D223E)),
-                    shadowElevation = 3.dp,
+                    shadowElevation = 6.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        // A. TOP PROFILE COVER BANNER (Full width, 140dp height, crisp HD palace image!)
-                        Box(
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        // FULL-CARD 3D PALACE BACKGROUND (Edge-to-edge covering the entire card!)
+                        if (vipCoverRes != 0) {
+                            Image(
+                                painter = painterResource(id = vipCoverRes),
+                                contentDescription = "VIP Palace Cover",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.matchParentSize()
+                            )
+                            // Elegant Dark Vertical Gradient so the full palace shows while text remains 100% legible
+                            Box(
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .background(
+                                        Brush.verticalGradient(
+                                            listOf(
+                                                Color.Transparent,
+                                                Color(0x3309070D),
+                                                Color(0x7709070D),
+                                                Color(0xEE09070D)
+                                            )
+                                        )
+                                    )
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .background(
+                                        Brush.verticalGradient(
+                                            listOf(
+                                                Color(0xFF2E1065),
+                                                Color(0xFF1E1B4B),
+                                                Color(0xFF0F0B18)
+                                            )
+                                        )
+                                    )
+                            )
+                        }
+
+                        // Content inside the card
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(140.dp)
+                                .padding(bottom = 16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            if (vipCoverRes != 0) {
-                                Image(
-                                    painter = painterResource(id = vipCoverRes),
-                                    contentDescription = "VIP Palace Cover",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(
-                                            Brush.verticalGradient(
-                                                listOf(Color.Transparent, Color(0x550F0B18), Color(0xEE0F0B18))
-                                            )
-                                        )
-                                )
-                            } else {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(
-                                            Brush.linearGradient(
-                                                listOf(Color(0xFF2E1065), Color(0xFF4C1D95), Color(0xFF1E1B4B))
-                                            )
-                                        )
-                                )
-                            }
-
-                            // Top chips on cover
+                            // A. Top chips on cover (Voice Verification & Wealth Badge)
                             val effWealthLvl = currentUser.getEffectiveWealthLevel()
                             val wealthTier = currentUser.getWealthTierInfo()
 
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -4457,311 +4457,307 @@ fun ProfileScreenContent(
                                     }
                                 }
                             }
-                        }
 
-                        // B. OVERLAPPING AVATAR WITH 3D ARCH & TRANSPARENT PNG FRAME
-                        Box(
-                            modifier = Modifier
-                                .offset(y = (-45).dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (vipArchRes != 0) {
-                                Image(
-                                    painter = painterResource(id = vipArchRes),
-                                    contentDescription = "VIP Arch",
-                                    modifier = Modifier
-                                        .size(160.dp, 38.dp)
-                                        .align(Alignment.TopCenter)
-                                        .offset(y = (-14).dp),
-                                    contentScale = ContentScale.Fit
-                                )
-                            }
+                            Spacer(modifier = Modifier.height(8.dp))
 
+                            // B. 3D Arch & Center Avatar with Solid VIP Frame
                             Box(contentAlignment = Alignment.Center) {
-                                FlowingAvatarFrame(
-                                    photoUrl = photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80" },
-                                    frameId = currentUser.activeFrame,
-                                    avatarSize = 74.dp,
-                                    frameSize = 185.dp,
-                                    vipLevel = currentUser.getVipLevel(),
-                                    showMicEffect = false,
-                                    onClick = { showLuxuryAvatarModal = true }
-                                )
-
-                                if (isUploadingPhoto) {
-                                    Box(
+                                if (vipArchRes != 0) {
+                                    Image(
+                                        painter = painterResource(id = vipArchRes),
+                                        contentDescription = "VIP Arch",
                                         modifier = Modifier
-                                            .size(74.dp)
-                                            .clip(CircleShape)
-                                            .background(Color.Black.copy(alpha = 0.55f)),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        CircularProgressIndicator(
-                                            color = Color(0xFF7E22CE),
-                                            modifier = Modifier.size(28.dp),
-                                            strokeWidth = 2.dp
-                                        )
-                                    }
+                                            .size(170.dp, 40.dp)
+                                            .align(Alignment.TopCenter)
+                                            .offset(y = (-18).dp),
+                                        contentScale = ContentScale.Fit
+                                    )
                                 }
 
-                                // 74dp Avatar Anchor Box so Online dot and Camera button sit cleanly on the photo edge
-                                Box(
-                                    modifier = Modifier.size(74.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    // Online Green Dot (Only when online!)
-                                    if (currentUser.isUserOnline()) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    FlowingAvatarFrame(
+                                        photoUrl = photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80" },
+                                        frameId = currentUser.activeFrame,
+                                        avatarSize = 74.dp,
+                                        frameSize = 185.dp,
+                                        vipLevel = currentUser.getVipLevel(),
+                                        showMicEffect = false,
+                                        onClick = { showLuxuryAvatarModal = true }
+                                    )
+
+                                    if (isUploadingPhoto) {
                                         Box(
                                             modifier = Modifier
-                                                .size(13.dp)
+                                                .size(74.dp)
                                                 .clip(CircleShape)
-                                                .background(Color(0xFF10B981))
-                                                .border(2.dp, Color(0xFF0F0B18), CircleShape)
-                                                .align(Alignment.TopEnd)
-                                                .offset(x = 1.dp, y = (-1).dp)
-                                        )
-                                    }
-
-                                    // Photo Change Camera Button
-                                    IconButton(
-                                        onClick = { if (!isUploadingPhoto) showLuxuryAvatarModal = true },
-                                        enabled = !isUploadingPhoto,
-                                        modifier = Modifier
-                                            .size(26.dp)
-                                            .align(Alignment.BottomEnd)
-                                            .offset(x = 3.dp, y = 3.dp)
-                                            .background(Color(0xFF7E22CE), CircleShape)
-                                            .border(1.5.dp, Color.White, CircleShape)
-                                    ) {
-                                        Icon(
-                                            Icons.Default.CameraAlt,
-                                            contentDescription = "Upload Photo",
-                                            tint = Color.White,
-                                            modifier = Modifier.size(13.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        // C. IDENTITY, BADGES & COUNTERS (Compensating for avatar offset)
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .offset(y = (-36).dp)
-                                .padding(horizontal = 14.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            // User Name in Radiant Gold
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                Text(
-                                    text = name,
-                                    color = if (vipLvl > 0) Color(0xFFFFD700) else Color.White,
-                                    fontSize = 19.sp,
-                                    fontWeight = FontWeight.Black
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                if (isVoiceVerified) {
-                                    Surface(
-                                        color = Color(0xFFFEF3C7),
-                                        shape = RoundedCornerShape(8.dp),
-                                        border = BorderStroke(1.dp, Color(0xFFF59E0B)),
-                                        shadowElevation = 1.dp
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
-                                            verticalAlignment = Alignment.CenterVertically
+                                                .background(Color.Black.copy(alpha = 0.55f)),
+                                            contentAlignment = Alignment.Center
                                         ) {
-                                            Text("🛡️", fontSize = 10.sp)
-                                            Spacer(modifier = Modifier.width(2.dp))
-                                            Text(
-                                                text = "Verified",
-                                                fontSize = 9.sp,
-                                                fontWeight = FontWeight.Black,
-                                                color = Color(0xFFB45309)
+                                            CircularProgressIndicator(
+                                                color = Color(0xFF7E22CE),
+                                                modifier = Modifier.size(28.dp),
+                                                strokeWidth = 2.dp
+                                            )
+                                        }
+                                    }
+
+                                    // 74dp Avatar Anchor Box so Online dot and Camera button sit cleanly on the photo edge
+                                    Box(
+                                        modifier = Modifier.size(74.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (currentUser.isUserOnline()) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(13.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color(0xFF10B981))
+                                                    .border(2.dp, Color(0xFF0F0B18), CircleShape)
+                                                    .align(Alignment.TopEnd)
+                                                    .offset(x = 1.dp, y = (-1).dp)
+                                            )
+                                        }
+
+                                        IconButton(
+                                            onClick = { if (!isUploadingPhoto) showLuxuryAvatarModal = true },
+                                            enabled = !isUploadingPhoto,
+                                            modifier = Modifier
+                                                .size(26.dp)
+                                                .align(Alignment.BottomEnd)
+                                                .offset(x = 3.dp, y = 3.dp)
+                                                .background(Color(0xFF7E22CE), CircleShape)
+                                                .border(1.5.dp, Color.White, CircleShape)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.CameraAlt,
+                                                contentDescription = "Upload Photo",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(13.dp)
                                             )
                                         }
                                     }
                                 }
-                                Spacer(modifier = Modifier.width(6.dp))
-                                // Gender & Age Pill
-                                Surface(
-                                    color = if (gender.contains("woman", ignoreCase = true) || gender.contains("female", ignoreCase = true)) Color(0xFFFCE7F3) else Color(0xFFE0F2FE),
-                                    shape = RoundedCornerShape(12.dp)
+                            }
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            // C. USER IDENTITY, BADGES & COUNTERS
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                // User Name in Radiant Gold
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
                                 ) {
                                     Text(
-                                        text = "${if (gender.contains("woman", ignoreCase = true)) "♀" else "♂"} $age",
-                                        color = if (gender.contains("woman", ignoreCase = true)) Color(0xFFDB2777) else Color(0xFF0284C7),
-                                        fontSize = 10.5.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                        text = name,
+                                        color = if (vipLvl > 0) Color(0xFFFFD700) else Color.White,
+                                        fontSize = 19.sp,
+                                        fontWeight = FontWeight.Black
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    if (isVoiceVerified) {
+                                        Surface(
+                                            color = Color(0xFFFEF3C7),
+                                            shape = RoundedCornerShape(8.dp),
+                                            border = BorderStroke(1.dp, Color(0xFFF59E0B)),
+                                            shadowElevation = 1.dp
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text("🛡️", fontSize = 10.sp)
+                                                Spacer(modifier = Modifier.width(2.dp))
+                                                Text(
+                                                    text = "Verified",
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Black,
+                                                    color = Color(0xFFB45309)
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Surface(
+                                        color = if (gender.contains("woman", ignoreCase = true) || gender.contains("female", ignoreCase = true)) Color(0xFFFCE7F3) else Color(0xFFE0F2FE),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ) {
+                                        Text(
+                                            text = "${if (gender.contains("woman", ignoreCase = true)) "♀" else "♂"} $age",
+                                            color = if (gender.contains("woman", ignoreCase = true)) Color(0xFFDB2777) else Color(0xFF0284C7),
+                                            fontSize = 10.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                // 8-digit User ID Chip with Click-to-Copy
+                                val displayProfileUserId = remember(currentUser.userId, currentUser.uid) {
+                                    val uidVal = currentUser.uid.ifBlank { currentUserId }
+                                    if (currentUser.userId.isNotBlank() && currentUser.userId.length == 8 && currentUser.userId.all { it.isDigit() }) {
+                                        currentUser.userId
+                                    } else {
+                                        (10000000 + kotlin.math.abs(uidVal.hashCode()) % 90000000).toString()
+                                    }
+                                }
+
+                                Surface(
+                                    color = Color(0xFF1E1728).copy(alpha = 0.85f),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(0.8.dp, Color(0xFF4C3666)),
+                                    modifier = Modifier.clickable {
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                        val clip = android.content.ClipData.newPlainText("User ID", displayProfileUserId)
+                                        clipboard.setPrimaryClip(clip)
+                                        Toast.makeText(context, "User ID $displayProfileUserId copied! 📋", Toast.LENGTH_SHORT).show()
+                                    }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("ID: $displayProfileUserId", color = Color.White.copy(alpha = 0.85f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = Color(0xFFFFD700), modifier = Modifier.size(11.dp))
+                                    }
+                                }
+
+                                if (currentUser.isFounder() || currentUser.officialRole.isNotBlank()) {
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Image(
+                                        painter = painterResource(id = R.drawable.badge_livetogather_founder),
+                                        contentDescription = "Role",
+                                        modifier = Modifier
+                                            .size(80.dp, 28.dp)
+                                            .clickable { Toast.makeText(context, "${currentUser.getOfficialRoleTitle()} 👑", Toast.LENGTH_SHORT).show() },
+                                        contentScale = ContentScale.Fit
                                     )
                                 }
-                            }
 
-                            Spacer(modifier = Modifier.height(6.dp))
+                                Spacer(modifier = Modifier.height(10.dp))
 
-                            // 8-digit User ID Chip with Click-to-Copy
-                            val displayProfileUserId = remember(currentUser.userId, currentUser.uid) {
-                                val uidVal = currentUser.uid.ifBlank { currentUserId }
-                                if (currentUser.userId.isNotBlank() && currentUser.userId.length == 8 && currentUser.userId.all { it.isDigit() }) {
-                                    currentUser.userId
-                                } else {
-                                    (10000000 + kotlin.math.abs(uidVal.hashCode()) % 90000000).toString()
-                                }
-                            }
+                                // 4 3D Badges (Wealth, Charm, PK, VIP)
+                                val effWealthLvlVal = currentUser.getEffectiveWealthLevel()
+                                val effCharmLvlVal = currentUser.getEffectiveCharmLevel()
+                                val pkLvlVal = currentUser.getEffectivePkLevel()
+                                val vipLvlVal = currentUser.getVipLevel()
 
-                            Surface(
-                                color = Color(0xFF1E1728),
-                                shape = RoundedCornerShape(8.dp),
-                                border = BorderStroke(0.8.dp, Color(0xFF4C3666)),
-                                modifier = Modifier.clickable {
-                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                    val clip = android.content.ClipData.newPlainText("User ID", displayProfileUserId)
-                                    clipboard.setPrimaryClip(clip)
-                                    Toast.makeText(context, "User ID $displayProfileUserId copied! 📋", Toast.LENGTH_SHORT).show()
-                                }
-                            ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    Text("ID: $displayProfileUserId", color = Color.White.copy(alpha = 0.85f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = Color(0xFFFFD700), modifier = Modifier.size(11.dp))
-                                }
-                            }
-
-                            if (currentUser.isFounder() || currentUser.officialRole.isNotBlank()) {
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Image(
-                                    painter = painterResource(id = R.drawable.badge_livetogather_founder),
-                                    contentDescription = "Role",
-                                    modifier = Modifier
-                                        .size(80.dp, 28.dp)
-                                        .clickable { Toast.makeText(context, "${currentUser.getOfficialRoleTitle()} 👑", Toast.LENGTH_SHORT).show() },
-                                    contentScale = ContentScale.Fit
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            // 4 3D Badges
-                            val effWealthLvlVal = currentUser.getEffectiveWealthLevel()
-                            val effCharmLvlVal = currentUser.getEffectiveCharmLevel()
-                            val pkLvlVal = currentUser.getEffectivePkLevel()
-                            val vipLvlVal = currentUser.getVipLevel()
-
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Surface(
-                                    color = Color.Transparent,
-                                    shape = RoundedCornerShape(8.dp),
-                                    border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(Color(0xFFFFD700), Color(0xFFFFA000)))),
-                                    shadowElevation = 2.dp,
-                                    modifier = Modifier.clip(RoundedCornerShape(8.dp))
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .background(Brush.horizontalGradient(listOf(Color(0xFF7C3AED), Color(0xFF5B21B6))))
-                                            .padding(horizontal = 6.dp, vertical = 3.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Image(painter = painterResource(id = R.drawable.ic_wealth_shield_3d), contentDescription = null, modifier = Modifier.size(15.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Lv.$effWealthLvlVal", color = Color(0xFFFFD700), fontSize = 10.sp, fontWeight = FontWeight.Black)
-                                    }
-                                }
-
-                                Surface(
-                                    color = Color.Transparent,
-                                    shape = RoundedCornerShape(8.dp),
-                                    border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(Color(0xFFF472B6), Color(0xFFEC4899)))),
-                                    shadowElevation = 2.dp,
-                                    modifier = Modifier.clip(RoundedCornerShape(8.dp))
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .background(Brush.horizontalGradient(listOf(Color(0xFFDB2777), Color(0xFF9D174D))))
-                                            .padding(horizontal = 6.dp, vertical = 3.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Image(painter = painterResource(id = R.drawable.ic_charm_heart_3d), contentDescription = null, modifier = Modifier.size(15.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Lv.$effCharmLvlVal", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Black)
-                                    }
-                                }
-
-                                Surface(
-                                    color = Color.Transparent,
-                                    shape = RoundedCornerShape(8.dp),
-                                    border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(Color(0xFFF59E0B), Color(0xFFD97706)))),
-                                    shadowElevation = 2.dp,
-                                    modifier = Modifier.clip(RoundedCornerShape(8.dp))
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .background(Brush.horizontalGradient(listOf(Color(0xFF1E293B), Color(0xFF0F172A))))
-                                            .padding(horizontal = 6.dp, vertical = 3.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Image(painter = painterResource(id = R.drawable.ic_pk_flame_vs), contentDescription = null, modifier = Modifier.size(14.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Lv.$pkLvlVal", color = Color(0xFFFDE68A), fontSize = 10.sp, fontWeight = FontWeight.Black)
-                                    }
-                                }
-
-                                if (vipLvlVal > 0) {
                                     Surface(
                                         color = Color.Transparent,
                                         shape = RoundedCornerShape(8.dp),
-                                        border = BorderStroke(1.2.dp, Color(0xFFFFD700)),
+                                        border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(Color(0xFFFFD700), Color(0xFFFFA000)))),
                                         shadowElevation = 2.dp,
                                         modifier = Modifier.clip(RoundedCornerShape(8.dp))
                                     ) {
                                         Row(
                                             modifier = Modifier
-                                                .background(Brush.horizontalGradient(listOf(Color(0xFF78350F), Color(0xFF451A03))))
+                                                .background(Brush.horizontalGradient(listOf(Color(0xFF7C3AED), Color(0xFF5B21B6))))
                                                 .padding(horizontal = 6.dp, vertical = 3.dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Text("👑", fontSize = 10.sp)
-                                            Spacer(modifier = Modifier.width(3.dp))
-                                            Text("VIP $vipLvlVal", color = Color(0xFFFFD700), fontSize = 10.sp, fontWeight = FontWeight.Black)
+                                            Image(painter = painterResource(id = R.drawable.ic_wealth_shield_3d), contentDescription = null, modifier = Modifier.size(15.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Lv.$effWealthLvlVal", color = Color(0xFFFFD700), fontSize = 10.sp, fontWeight = FontWeight.Black)
+                                        }
+                                    }
+
+                                    Surface(
+                                        color = Color.Transparent,
+                                        shape = RoundedCornerShape(8.dp),
+                                        border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(Color(0xFFF472B6), Color(0xFFEC4899)))),
+                                        shadowElevation = 2.dp,
+                                        modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .background(Brush.horizontalGradient(listOf(Color(0xFFDB2777), Color(0xFF9D174D))))
+                                                .padding(horizontal = 6.dp, vertical = 3.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Image(painter = painterResource(id = R.drawable.ic_charm_heart_3d), contentDescription = null, modifier = Modifier.size(15.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Lv.$effCharmLvlVal", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                                        }
+                                    }
+
+                                    Surface(
+                                        color = Color.Transparent,
+                                        shape = RoundedCornerShape(8.dp),
+                                        border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(Color(0xFFF59E0B), Color(0xFFD97706)))),
+                                        shadowElevation = 2.dp,
+                                        modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .background(Brush.horizontalGradient(listOf(Color(0xFF1E293B), Color(0xFF0F172A))))
+                                                .padding(horizontal = 6.dp, vertical = 3.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Image(painter = painterResource(id = R.drawable.ic_pk_flame_vs), contentDescription = null, modifier = Modifier.size(14.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Lv.$pkLvlVal", color = Color(0xFFFDE68A), fontSize = 10.sp, fontWeight = FontWeight.Black)
+                                        }
+                                    }
+
+                                    if (vipLvlVal > 0) {
+                                        Surface(
+                                            color = Color.Transparent,
+                                            shape = RoundedCornerShape(8.dp),
+                                            border = BorderStroke(1.2.dp, Color(0xFFFFD700)),
+                                            shadowElevation = 2.dp,
+                                            modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                                        ) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .background(Brush.horizontalGradient(listOf(Color(0xFF78350F), Color(0xFF451A03))))
+                                                    .padding(horizontal = 6.dp, vertical = 3.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text("👑", fontSize = 10.sp)
+                                                Spacer(modifier = Modifier.width(3.dp))
+                                                Text("VIP $vipLvlVal", color = Color(0xFFFFD700), fontSize = 10.sp, fontWeight = FontWeight.Black)
+                                            }
                                         }
                                     }
                                 }
-                            }
 
-                            Spacer(modifier = Modifier.height(12.dp))
+                                Spacer(modifier = Modifier.height(14.dp))
 
-                            // Counters Row: Following, Followers, Moments
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(Color(0xFF181324), RoundedCornerShape(16.dp))
-                                    .padding(vertical = 10.dp),
-                                horizontalArrangement = Arrangement.SpaceAround,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(text = "${currentUser.followingCount}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black)
-                                    Text(text = "Following", color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp, fontWeight = FontWeight.Medium)
-                                }
-                                Box(modifier = Modifier.width(1.dp).height(20.dp).background(Color(0xFF33264A)))
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(text = "${currentUser.followerCount}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black)
-                                    Text(text = "Followers", color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp, fontWeight = FontWeight.Medium)
-                                }
-                                Box(modifier = Modifier.width(1.dp).height(20.dp).background(Color(0xFF33264A)))
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(text = "${userMoments.size}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black)
-                                    Text(text = "Moments", color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                                // Counters Row: Following, Followers, Moments
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color(0xFF181324).copy(alpha = 0.85f), RoundedCornerShape(16.dp))
+                                        .padding(vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.SpaceAround,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(text = "${currentUser.followingCount}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black)
+                                        Text(text = "Following", color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                                    }
+                                    Box(modifier = Modifier.width(1.dp).height(20.dp).background(Color(0xFF33264A)))
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(text = "${currentUser.followerCount}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black)
+                                        Text(text = "Followers", color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                                    }
+                                    Box(modifier = Modifier.width(1.dp).height(20.dp).background(Color(0xFF33264A)))
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(text = "${userMoments.size}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black)
+                                        Text(text = "Moments", color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                                    }
                                 }
                             }
                         }
