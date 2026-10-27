@@ -6618,7 +6618,7 @@ fun AudioHangoutRoomDialog(
                                         else 11
 
                                     val isCommentFounder = comment.isFounder || commenterProfile?.isFounder() == true || (comment.userId == currentUser.uid && currentUser.isFounder())
-                                    val commentVipLevel = if (comment.vipLevel > 0) comment.vipLevel else (commenterProfile?.getVipLevel() ?: if (comment.userId == currentUser.uid) currentUser.getVipLevel() else 0)
+                                    val commentVipLevel = if (comment.vipLevel in 1..4) comment.vipLevel else (commenterProfile?.getVipLevel() ?: if (comment.userId == currentUser.uid) currentUser.getVipLevel() else 0)
                                     val isEntranceMessage = comment.message.contains("entered the room") || comment.message.startsWith("✨ Welcome") || comment.message.contains("to the room!")
 
                                     if (isEntranceMessage) {
@@ -6652,13 +6652,15 @@ fun AudioHangoutRoomDialog(
                                                 .padding(vertical = 4.dp),
                                             verticalAlignment = Alignment.Top
                                         ) {
-                                            // 1. User Avatar with Flowing Frame
-                                            FlowingAvatarFrame(
-                                                photoUrl = comment.userPhoto.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
-                                                frameId = commenterAvatarFrame,
-                                                avatarSize = 34.dp,
-                                                frameSize = 52.dp,
-                                                showMicEffect = false
+                                            // 1. User Avatar (Clean circular photo only, no frame in comments)
+                                            AsyncImage(
+                                                model = comment.userPhoto.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                                                contentDescription = "User Avatar",
+                                                modifier = Modifier
+                                                    .size(34.dp)
+                                                    .clip(CircleShape)
+                                                    .border(1.dp, Color(0x33FFFFFF), CircleShape),
+                                                contentScale = ContentScale.Crop
                                             )
                                             Spacer(modifier = Modifier.width(8.dp))
 
@@ -6731,16 +6733,15 @@ fun AudioHangoutRoomDialog(
 
                                                 // Line 3: Ornate Luxury Chat Bubble Container
                                                 val commentFrameId = comment.chatFrameId.ifEmpty { commenterProfile?.activeChatFrame ?: if (comment.userId == currentUser.uid) currentUser.activeChatFrame else "" }
-                                                val hasActiveVipFrame = commentFrameId.isNotBlank() || commentVipLevel in 1..4
-                                                val isActualFounderComment = isCommentFounder && (comment.isFounder || commenterProfile?.isFounder() == true || comment.userId == currentUser.uid)
+                                                val vipChatFrameItem = getVipChatFrame(commentFrameId, commentVipLevel, isCommentFounder)
 
-                                                if (hasActiveVipFrame || isActualFounderComment) {
+                                                if (vipChatFrameItem != null) {
                                                     VipStyledChatBubble(
                                                         messageText = comment.message,
                                                         isMe = comment.userId == currentUser.uid,
                                                         chatFrameId = commentFrameId,
                                                         vipLevel = commentVipLevel,
-                                                        isFounder = isActualFounderComment
+                                                        isFounder = isCommentFounder && !vipChatFrameItem.id.startsWith("chat_frame_")
                                                     )
                                                 } else {
                                                     Box(
@@ -8143,7 +8144,7 @@ fun AudioHangoutRoomDialog(
                                                     message = msg,
                                                     timestamp = System.currentTimeMillis(),
                                                     chatFrameId = currentUser.activeChatFrame,
-                                                    vipLevel = currentUser.getEffectiveWealthLevel(),
+                                                    vipLevel = currentUser.getVipLevel(),
                                                     isFounder = currentUser.isFounder()
                                                 )
                                                 db.collection("rooms").document(room.id)
@@ -8192,7 +8193,7 @@ fun AudioHangoutRoomDialog(
                                                 message = msg,
                                                 timestamp = System.currentTimeMillis(),
                                                 chatFrameId = currentUser.activeChatFrame,
-                                                vipLevel = currentUser.getEffectiveWealthLevel(),
+                                                vipLevel = currentUser.getVipLevel(),
                                                 isFounder = currentUser.isFounder()
                                             )
                                             db.collection("rooms").document(room.id)

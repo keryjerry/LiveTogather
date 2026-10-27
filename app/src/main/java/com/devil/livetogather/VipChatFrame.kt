@@ -184,18 +184,27 @@ val VIP_CHAT_FRAMES_CATALOG: List<VipChatFrameItem> = listOf(
 )
 
 fun getVipChatFrame(frameId: String?, vipLevel: Int = 0, isFounder: Boolean = false): VipChatFrameItem? {
-    if (isFounder) return VIP_CHAT_FRAMES_CATALOG.find { it.id == "chat_frame_founder_supreme" }
     if (!frameId.isNullOrBlank()) {
         val found = VIP_CHAT_FRAMES_CATALOG.find { it.id == frameId }
         if (found != null) return found
     }
-    return when {
-        vipLevel >= 4 -> VIP_CHAT_FRAMES_CATALOG.find { it.id == "chat_frame_celestial_dragon" }
-        vipLevel == 3 -> VIP_CHAT_FRAMES_CATALOG.find { it.id == "chat_frame_imperial_amethyst" }
-        vipLevel == 2 -> VIP_CHAT_FRAMES_CATALOG.find { it.id == "chat_frame_golden_paladin" }
-        vipLevel == 1 -> VIP_CHAT_FRAMES_CATALOG.find { it.id == "chat_frame_silver_knight" }
-        else -> null
+    if (vipLevel in 1..4) {
+        val tierFrameId = when (vipLevel) {
+            4 -> "chat_frame_celestial_dragon"
+            3 -> "chat_frame_imperial_amethyst"
+            2 -> "chat_frame_golden_paladin"
+            1 -> "chat_frame_silver_knight"
+            else -> null
+        }
+        if (tierFrameId != null) {
+            val found = VIP_CHAT_FRAMES_CATALOG.find { it.id == tierFrameId }
+            if (found != null) return found
+        }
     }
+    if (isFounder) {
+        return VIP_CHAT_FRAMES_CATALOG.find { it.id == "chat_frame_founder_supreme" }
+    }
+    return null
 }
 
 // -------------------------------------------------------------
@@ -481,15 +490,35 @@ fun VipStyledChatBubble(
                 }
             }
 
-            // Top Center Ornate Winged Crest
-            OrnateTopCrest(
-                primaryColor = frameItem.secondaryAccentColor,
-                accentColor = frameItem.accentColor,
-                gemColor = frameItem.gemColor,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .offset(y = (-4).dp)
-            )
+            val swordRes = when (frameItem.vipLevel) {
+                1 -> R.drawable.vip1_chat_sword_master
+                2 -> R.drawable.vip2_chat_sword_master
+                3 -> R.drawable.vip3_chat_sword_master
+                4 -> R.drawable.vip4_chat_sword_master
+                else -> 0
+            }
+
+            if (swordRes != 0) {
+                Image(
+                    painter = painterResource(id = swordRes),
+                    contentDescription = "VIP Sword Crest",
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .offset(x = 6.dp, y = (-12).dp)
+                        .size(96.dp, 26.dp),
+                    contentScale = ContentScale.Fit
+                )
+            } else {
+                // Top Center Ornate Winged Crest
+                OrnateTopCrest(
+                    primaryColor = frameItem.secondaryAccentColor,
+                    accentColor = frameItem.accentColor,
+                    gemColor = frameItem.gemColor,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .offset(y = (-4).dp)
+                )
+            }
 
             // Bottom Center Ornate Seal
             OrnateBottomSeal(

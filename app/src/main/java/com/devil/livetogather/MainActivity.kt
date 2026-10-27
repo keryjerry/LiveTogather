@@ -4482,7 +4482,7 @@ fun ProfileScreenContent(
                                     photoUrl = photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80" },
                                     frameId = currentUser.activeFrame,
                                     avatarSize = 74.dp,
-                                    frameSize = 132.dp,
+                                    frameSize = 185.dp,
                                     vipLevel = currentUser.getVipLevel(),
                                     showMicEffect = false,
                                     onClick = { showLuxuryAvatarModal = true }
@@ -4504,35 +4504,42 @@ fun ProfileScreenContent(
                                     }
                                 }
 
-                                // Online Green Dot (Only when online!)
-                                if (currentUser.isUserOnline()) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(13.dp)
-                                            .clip(CircleShape)
-                                            .background(Color(0xFF10B981))
-                                            .border(2.dp, Color(0xFF0F0B18), CircleShape)
-                                            .align(Alignment.TopEnd)
-                                            .offset(x = (-8).dp, y = 8.dp)
-                                    )
-                                }
-
-                                // Photo Change Camera Button
-                                IconButton(
-                                    onClick = { if (!isUploadingPhoto) showLuxuryAvatarModal = true },
-                                    enabled = !isUploadingPhoto,
-                                    modifier = Modifier
-                                        .size(26.dp)
-                                        .align(Alignment.BottomEnd)
-                                        .background(Color(0xFF7E22CE), CircleShape)
-                                        .border(1.5.dp, Color.White, CircleShape)
+                                // 74dp Avatar Anchor Box so Online dot and Camera button sit cleanly on the photo edge
+                                Box(
+                                    modifier = Modifier.size(74.dp),
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(
-                                        Icons.Default.CameraAlt,
-                                        contentDescription = "Upload Photo",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(13.dp)
-                                    )
+                                    // Online Green Dot (Only when online!)
+                                    if (currentUser.isUserOnline()) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(13.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(0xFF10B981))
+                                                .border(2.dp, Color(0xFF0F0B18), CircleShape)
+                                                .align(Alignment.TopEnd)
+                                                .offset(x = 1.dp, y = (-1).dp)
+                                        )
+                                    }
+
+                                    // Photo Change Camera Button
+                                    IconButton(
+                                        onClick = { if (!isUploadingPhoto) showLuxuryAvatarModal = true },
+                                        enabled = !isUploadingPhoto,
+                                        modifier = Modifier
+                                            .size(26.dp)
+                                            .align(Alignment.BottomEnd)
+                                            .offset(x = 3.dp, y = 3.dp)
+                                            .background(Color(0xFF7E22CE), CircleShape)
+                                            .border(1.5.dp, Color.White, CircleShape)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.CameraAlt,
+                                            contentDescription = "Upload Photo",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                    }
                                 }
                             }
                         }

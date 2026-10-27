@@ -130,9 +130,11 @@ fun FlowingAvatarFrame(
         BrandGold
     )
 
-    // Calibrated Golden Ratio: Ensures the inner hole (53.52% of frame) always clears the avatar completely
+    // Calibrated Golden Ratio: Ensures the inner hole clears the avatar completely
+    val isVipSuiteFrame = frameId.startsWith("vip_suite_frame_") || frameId in listOf("vip1_avatar_master", "vip2_avatar_master", "vip3_avatar_master", "vip4_avatar_master")
+    val minScale = if (isVipSuiteFrame) 2.5f else 1.95f
     val effectiveFrameSize = if (frameId.isNotBlank()) {
-        if (frameSize >= avatarSize * 1.95f) frameSize else (avatarSize * 1.95f)
+        if (frameSize >= avatarSize * minScale) frameSize else (avatarSize * minScale)
     } else if (micEffectId.isNotBlank() && isSpeaking) {
         avatarSize + 24.dp
     } else {

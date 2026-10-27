@@ -1222,13 +1222,15 @@ fun VideoHangoutRoomDialog(
                                     .padding(vertical = 2.dp),
                                 verticalAlignment = Alignment.Top
                             ) {
-                                // 1. User Avatar with Flowing Frame
-                                FlowingAvatarFrame(
-                                    photoUrl = avatarUrl,
-                                    frameId = commenterAvatarFrame,
-                                    avatarSize = 34.dp,
-                                    frameSize = 52.dp,
-                                    showMicEffect = false
+                                // 1. User Avatar (Clean circular photo only, no frame in comments)
+                                AsyncImage(
+                                    model = avatarUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                                    contentDescription = "User Avatar",
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .clip(CircleShape)
+                                        .border(1.dp, Color(0x33FFFFFF), CircleShape),
+                                    contentScale = ContentScale.Crop
                                 )
                                 Spacer(modifier = Modifier.width(7.dp))
 
@@ -1304,14 +1306,15 @@ fun VideoHangoutRoomDialog(
 
                                     // Line 3: Ornate Luxury Chat Bubble Container
                                     val commentFrameId = comment.chatFrameId.ifEmpty { commenterProfile?.activeChatFrame ?: "" }
+                                    val vipChatFrameItem = getVipChatFrame(commentFrameId, commentVipLevel, isCommentFounder)
 
-                                    if (commentFrameId.isNotBlank() || isCommentFounder || commentVipLevel >= 1) {
+                                    if (vipChatFrameItem != null) {
                                         VipStyledChatBubble(
                                             messageText = comment.message,
                                             isMe = comment.userId == currentUser.uid,
                                             chatFrameId = commentFrameId,
                                             vipLevel = commentVipLevel,
-                                            isFounder = isCommentFounder
+                                            isFounder = isCommentFounder && !vipChatFrameItem.id.startsWith("chat_frame_")
                                         )
                                     } else {
                                         Box(

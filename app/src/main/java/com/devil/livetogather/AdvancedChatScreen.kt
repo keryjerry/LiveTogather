@@ -757,7 +757,7 @@ fun Advanced1v1ChatScreen(
                                 val effectiveFrameId = msg.chatFrameId.ifEmpty {
                                     if (isMe) currentUser.activeChatFrame else partner.activeChatFrame
                                 }
-                                val effectiveVipLvl = if (msg.vipLevel > 0) msg.vipLevel else if (isMe) currentUser.getEffectiveWealthLevel() else partner.getEffectiveWealthLevel()
+                                val effectiveVipLvl = if (msg.vipLevel in 1..4) msg.vipLevel else if (isMe) currentUser.getVipLevel() else partner.getVipLevel()
                                 val effectiveIsFounder = msg.isFounder || (if (isMe) currentUser.isFounder() else partner.isFounder())
                                 val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(msg.timestamp))
 
@@ -815,7 +815,7 @@ fun Advanced1v1ChatScreen(
                             text = rawText,
                             type = "text",
                             chatFrameId = currentUser.activeChatFrame,
-                            vipLevel = currentUser.getEffectiveWealthLevel(),
+                            vipLevel = currentUser.getVipLevel(),
                             isFounder = currentUser.isFounder()
                         )
                         db.collection("matches").document(matchId).collection("messages").add(newMsg)
