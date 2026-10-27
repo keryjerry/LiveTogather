@@ -822,6 +822,28 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                 Log.d("Firestore", "Loaded ${fetchedRooms.size} real-time rooms from Firestore")
             }
         }
+
+        // Initial scrub of stale room comments across Firestore for offline/ended rooms
+        db.collection("rooms").get().addOnSuccessListener { rSnaps ->
+            if (rSnaps != null) {
+                for (rDoc in rSnaps.documents) {
+                    val isHostLive = rDoc.getBoolean("isHostLive") ?: false
+                    val isLive = rDoc.getBoolean("isLive") ?: false
+                    val isEnded = rDoc.getBoolean("isEnded") ?: false
+                    if (isEnded || !isHostLive || !isLive) {
+                        rDoc.reference.collection("live_comments").limit(100).get().addOnSuccessListener { cSnaps ->
+                            if (cSnaps != null && !cSnaps.isEmpty) {
+                                val batch = db.batch()
+                                for (cDoc in cSnaps.documents) {
+                                    batch.delete(cDoc.reference)
+                                }
+                                batch.commit()
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // --- Real-Time Firestore Listeners ---

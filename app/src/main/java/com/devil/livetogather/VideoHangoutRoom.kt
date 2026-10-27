@@ -386,7 +386,27 @@ fun VideoHangoutRoomDialog(
 
         // If host, store hostAgoraUid in room document for remote video mapping
         if (isUserHost) {
-            db.collection("rooms").document(room.id).update("hostAgoraUid", localAgoraUid)
+            db.collection("rooms").document(room.id).update(
+                mapOf(
+                    "hostAgoraUid" to localAgoraUid,
+                    "isLive" to true,
+                    "isHostLive" to true,
+                    "isEnded" to false,
+                    "endedAt" to 0L,
+                    "statusMessage" to "LIVE NOW"
+                )
+            )
+            // Wipe stale live comments from previous sessions
+            db.collection("rooms").document(room.id).collection("live_comments").get()
+                .addOnSuccessListener { snaps ->
+                    if (snaps != null && !snaps.isEmpty) {
+                        val batch = db.batch()
+                        for (doc in snaps.documents) {
+                            batch.delete(doc.reference)
+                        }
+                        batch.commit()
+                    }
+                }
         }
 
         onDispose {
@@ -394,6 +414,8 @@ fun VideoHangoutRoomDialog(
             membersListener.remove()
         }
     }
+
+    val roomSessionStartMs = remember(room.id) { System.currentTimeMillis() - 2000L }
 
     // 4. Real-Time Live Comments Listener (rooms/{roomId}/live_comments)
     DisposableEffect(room.id) {
@@ -406,6 +428,9 @@ fun VideoHangoutRoomDialog(
                 if (error != null) return@addSnapshotListener
                 if (snapshot != null) {
                     val list = snapshot.documents.mapNotNull { it.toObject(LiveRoomComment::class.java) }
+                        .filter { comment ->
+                            if (isUserHost) comment.timestamp >= roomSessionStartMs else true
+                        }
                     liveComments.clear()
                     liveComments.addAll(list)
                     if (list.isNotEmpty()) {
@@ -415,7 +440,21 @@ fun VideoHangoutRoomDialog(
                     }
                 }
             }
-        onDispose { commentsListener.remove() }
+        onDispose {
+            commentsListener.remove()
+            if (isUserHost && room.id.isNotBlank()) {
+                db.collection("rooms").document(room.id).collection("live_comments").get()
+                    .addOnSuccessListener { snaps ->
+                        if (snaps != null && !snaps.isEmpty) {
+                            val batch = db.batch()
+                            for (doc in snaps.documents) {
+                                batch.delete(doc.reference)
+                            }
+                            batch.commit()
+                        }
+                    }
+            }
+        }
     }
 
     // 5. Real-Time Gift Events Listener (rooms/{roomId}/gift_events)
@@ -642,10 +681,10 @@ fun VideoHangoutRoomDialog(
         if (isUserHost || (currentUserId.isNotBlank() && targetHost == currentUserId)) {
             val updates = mapOf<String, Any>(
                 "isHostLive" to false,
-                "isLive" to true,
+                "isLive" to false,
                 "statusMessage" to "OFFLINE",
-                "isEnded" to false,
-                "endedAt" to 0L,
+                "isEnded" to true,
+                "endedAt" to System.currentTimeMillis(),
                 "isPlaying" to false
             )
             db.collection("rooms").document(room.id).update(updates)
@@ -653,7 +692,17 @@ fun VideoHangoutRoomDialog(
                 db.collection("intent_categories").document(room.category)
                     .collection("rooms").document(room.id).update(updates)
             }
-            // Room is permanently preserved in Firestore (NEVER deleted)
+            // Wipe live comments so no history remains when room is closed
+            db.collection("rooms").document(room.id).collection("live_comments").get()
+                .addOnSuccessListener { snaps ->
+                    if (snaps != null && !snaps.isEmpty) {
+                        val batch = db.batch()
+                        for (doc in snaps.documents) {
+                            batch.delete(doc.reference)
+                        }
+                        batch.commit()
+                    }
+                }
         } else if (isUserCoHost) {
             // Revert co-host role in members back to viewer
             db.collection("rooms").document(room.id)

@@ -211,17 +211,45 @@ class FirestoreRefreshEngine(
                 }
             }
 
+            // 8. Wipe stale live comments from closed/ended/offline rooms across Firestore
+            try {
+                val roomsSnap = db.collection("rooms").get().await()
+                val oneHourAgo = System.currentTimeMillis() - 3600_000L
+                for (rDoc in roomsSnap.documents) {
+                    val isHostLive = rDoc.getBoolean("isHostLive") ?: false
+                    val isLive = rDoc.getBoolean("isLive") ?: false
+                    val isEnded = rDoc.getBoolean("isEnded") ?: false
+                    val query = if (isEnded || !isHostLive || !isLive) {
+                        rDoc.reference.collection("live_comments").limit(100)
+                    } else {
+                        // In live rooms, delete historical comments older than 1 hour
+                        rDoc.reference.collection("live_comments")
+                            .whereLessThan("timestamp", oneHourAgo).limit(100)
+                    }
+                    val staleCommentsSnap = query.get().await()
+                    if (!staleCommentsSnap.isEmpty) {
+                        val batch = db.batch()
+                        for (cDoc in staleCommentsSnap.documents) {
+                            batch.delete(cDoc.reference)
+                        }
+                        batch.commit().await()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Comments cleanup error: ${e.message}")
+            }
+
             success = true
             val now = System.currentTimeMillis()
             withContext(Dispatchers.Main) {
                 lastRefreshTimestamp = now
-                statusMessage = "Synced with Cloud Firestore: $userCount users, $roomCount rooms, $momentCount moments"
-                Toast.makeText(context, "🔄 Firestore Synced: $userCount users, $roomCount rooms, $momentCount moments! ✅", Toast.LENGTH_SHORT).show()
+                statusMessage = "Your page is refreshed/updated"
+                Toast.makeText(context, "Your page is refreshed/updated", Toast.LENGTH_SHORT).show()
             }
         } catch (e: Throwable) {
             Log.e(TAG, "RefreshEngine exception: ${e.message}", e)
             withContext(Dispatchers.Main) {
-                Toast.makeText(context, "Refresh completed (Offline cache active)", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Your page is refreshed/updated", Toast.LENGTH_SHORT).show()
             }
         } finally {
             withContext(Dispatchers.Main) {

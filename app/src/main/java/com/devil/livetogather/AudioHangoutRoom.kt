@@ -5207,6 +5207,17 @@ fun AudioHangoutRoomDialog(
                             doc.reference.delete()
                         }
                     }
+                // Clear live_comments so comments are wiped completely on room close
+                db.collection("rooms").document(room.id).collection("live_comments").get()
+                    .addOnSuccessListener { snaps ->
+                        if (snaps != null && !snaps.isEmpty) {
+                            val batch = db.batch()
+                            for (doc in snaps.documents) {
+                                batch.delete(doc.reference)
+                            }
+                            batch.commit()
+                        }
+                    }
                 Toast.makeText(context, "Room session closed. 👋", Toast.LENGTH_SHORT).show()
                 onDismiss()
             }
@@ -5255,12 +5266,26 @@ fun AudioHangoutRoomDialog(
                         }
                     }
                 }
+            // Purge stale live comments from previous sessions when host starts/re-opens room
+            db.collection("rooms").document(room.id).collection("live_comments").get()
+                .addOnSuccessListener { snaps ->
+                    if (snaps != null && !snaps.isEmpty) {
+                        val batch = db.batch()
+                        for (doc in snaps.documents) {
+                            batch.delete(doc.reference)
+                        }
+                        batch.commit()
+                    }
+                }
         }
     }
 
     // Automated Room Entry Welcome Message in Live Comments
     LaunchedEffect(room.id, currentUser.uid) {
         if (room.id.isBlank()) return@LaunchedEffect
+        if (isUserHost) {
+            delay(500)
+        }
         val isFounder = currentUser.isFounder()
         val isCeo = currentUser.isCeo()
         val welcomeDoc = LiveRoomComment(
@@ -5520,6 +5545,7 @@ fun AudioHangoutRoomDialog(
 
     var commentInputText by remember { mutableStateOf("") }
     val liveComments = remember { mutableStateListOf<LiveRoomComment>() }
+    val roomSessionStartMs = remember(room.id) { System.currentTimeMillis() - 2000L }
 
     // 3. Real-Time Live Comments Listener (Rooms/{roomId}/live_comments)
     DisposableEffect(room.id) {
@@ -5532,12 +5558,27 @@ fun AudioHangoutRoomDialog(
                 if (error != null) return@addSnapshotListener
                 if (snapshot != null) {
                     val list = snapshot.documents.mapNotNull { it.toObject(LiveRoomComment::class.java) }
+                        .filter { comment ->
+                            if (isUserHost) comment.timestamp >= roomSessionStartMs else true
+                        }
                     liveComments.clear()
                     liveComments.addAll(list)
                 }
             }
         onDispose {
             commentsListener.remove()
+            if (isUserHost && room.id.isNotBlank()) {
+                db.collection("rooms").document(room.id).collection("live_comments").get()
+                    .addOnSuccessListener { snaps ->
+                        if (snaps != null && !snaps.isEmpty) {
+                            val batch = db.batch()
+                            for (doc in snaps.documents) {
+                                batch.delete(doc.reference)
+                            }
+                            batch.commit()
+                        }
+                    }
+            }
         }
     }
 
