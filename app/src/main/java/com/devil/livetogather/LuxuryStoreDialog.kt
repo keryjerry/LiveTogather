@@ -709,16 +709,21 @@ fun StoreItemCard(
                         )
                     }
                     "mic_effect" -> {
-                        FlowingAvatarFrame(
-                            photoUrl = currentUser.photo,
-                            frameId = "",
-                            avatarSize = 34.dp,
-                            frameSize = 58.dp,
-                            showAnimation = true,
-                            showVipBadge = false,
-                            showMicEffect = true,
-                            micEffectId = item.id
-                        )
+                        val thumb = if (item.drawableRes != 0) item.drawableRes else R.drawable.thumb_mic_effect_golden_amber_aura
+                        Box(
+                            modifier = Modifier
+                                .size(52.dp)
+                                .clip(CircleShape)
+                                .border(1.5.dp, Color(item.primaryColor), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Image(
+                                painter = painterResource(id = thumb),
+                                contentDescription = item.name,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
                     }
                     "mic_link" -> {
                         MicLinkPreviewVisual(
@@ -1134,14 +1139,21 @@ fun InventoryBackpackDialog(
                                     modifier = Modifier.padding(10.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
-                                    val thumb = if (item.drawableRes != 0) item.drawableRes else R.drawable.thumb_diamond_ring_proposal
+                                    val thumb = if (item.drawableRes != 0) {
+                                        item.drawableRes
+                                    } else if (isMicEffect) {
+                                        R.drawable.thumb_mic_effect_golden_amber_aura
+                                    } else {
+                                        R.drawable.thumb_diamond_ring_proposal
+                                    }
                                     Image(
                                         painter = painterResource(id = thumb),
                                         contentDescription = item.name,
                                         modifier = Modifier
                                             .size(46.dp)
-                                            .clip(RoundedCornerShape(8.dp)),
-                                        contentScale = ContentScale.Fit
+                                            .clip(if (isMicEffect) CircleShape else RoundedCornerShape(8.dp))
+                                            .border(1.dp, if (isEquipped) Color(0xFFFFD700) else Color(0xFF382B59), if (isMicEffect) CircleShape else RoundedCornerShape(8.dp)),
+                                        contentScale = ContentScale.Crop
                                     )
                                     Spacer(modifier = Modifier.height(6.dp))
                                     Text(

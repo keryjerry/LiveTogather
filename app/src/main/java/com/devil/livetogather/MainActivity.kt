@@ -4389,7 +4389,7 @@ fun ProfileScreenContent(
                                         avatarSize = 58.dp,
                                         frameSize = 104.dp,
                                         vipLevel = currentUser.getVipLevel(),
-                                        showMicEffect = true,
+                                        showMicEffect = false,
                                         onClick = { showLuxuryAvatarModal = true }
                                     )
                                     // Camera edit pill
@@ -4457,7 +4457,7 @@ fun ProfileScreenContent(
                                     avatarSize = 72.dp,
                                     frameSize = 128.dp,
                                     vipLevel = currentUser.getVipLevel(),
-                                    showMicEffect = true,
+                                    showMicEffect = false,
                                     onClick = { showLuxuryAvatarModal = true }
                                 )
 

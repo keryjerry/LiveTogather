@@ -4309,6 +4309,7 @@ fun AdminStaffAndPowerHubSection(
                             ) {
                                 rowEffects.forEach { (mid, label) ->
                                     val isSelected = selectedMicEffectId == mid
+                                    val tRes = getMicEffectThumbRes(mid)
                                     OutlinedButton(
                                         onClick = { selectedMicEffectId = mid },
                                         border = BorderStroke(1.2.dp, if (isSelected) Color(0xFF00E5FF) else Color(0xFF3B2F50)),
@@ -4317,9 +4318,20 @@ fun AdminStaffAndPowerHubSection(
                                         ),
                                         shape = RoundedCornerShape(8.dp),
                                         contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                                        modifier = Modifier.weight(1f).height(36.dp)
+                                        modifier = Modifier.weight(1f).height(40.dp)
                                     ) {
-                                        Text(label, fontSize = 9.sp, color = if (isSelected) Color.White else Color.Gray, maxLines = 1)
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Image(
+                                                painter = painterResource(id = tRes),
+                                                contentDescription = label,
+                                                modifier = Modifier.size(22.dp).clip(CircleShape),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                            Text(label, fontSize = 8.5.sp, color = if (isSelected) Color.White else Color.Gray, maxLines = 1)
+                                        }
                                     }
                                 }
                             }

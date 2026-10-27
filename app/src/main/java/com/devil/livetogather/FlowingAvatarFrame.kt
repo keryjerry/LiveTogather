@@ -145,8 +145,15 @@ fun FlowingAvatarFrame(
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
         contentAlignment = Alignment.Center
     ) {
+        // 3D Transparent Video Magic Mic Effect (Strictly ONLY when actively equipped AND user is actively speaking)
+        val activeVideoRes = if (micEffectId.isNotBlank() && isSpeaking) {
+            getMicEffectVideoRes(micEffectId)
+        } else {
+            0
+        }
+
         // Speech Pulsing Wave (used when actively speaking without video mic effect)
-        if (isSpeaking && (micEffectId.isBlank() || !showMicEffect)) {
+        if (isSpeaking && activeVideoRes == 0) {
             Box(
                 modifier = Modifier
                     .size(avatarSize + 12.dp)
@@ -154,13 +161,6 @@ fun FlowingAvatarFrame(
                     .background(BrandGreen.copy(alpha = 0.3f))
                     .border(1.5.dp, BrandGreen, CircleShape)
             )
-        }
-
-        // 3D Transparent Video Magic Mic Effect (Only when actively equipped AND user is actively speaking)
-        val activeVideoRes = if (micEffectId.isNotBlank() && (isSpeaking || showMicEffect)) {
-            getMicEffectVideoRes(micEffectId)
-        } else {
-            0
         }
 
         if (activeVideoRes != 0) {
@@ -664,6 +664,19 @@ fun getMicEffectVideoRes(effectId: String): Int {
         "mic_effect_sovereign_gold_wings" -> R.raw.mic_effect_sovereign_gold_wings
         "mic_effect_emerald_celestial_wave" -> R.raw.mic_effect_emerald_celestial_wave
         else -> 0
+    }
+}
+
+fun getMicEffectThumbRes(effectId: String): Int {
+    return when (effectId) {
+        "mic_effect_golden_amber_aura" -> R.drawable.thumb_mic_effect_golden_amber_aura
+        "mic_effect_solar_particle_ring" -> R.drawable.thumb_mic_effect_solar_particle_ring
+        "mic_effect_ruby_energy_flame" -> R.drawable.thumb_mic_effect_ruby_energy_flame
+        "mic_effect_cyber_neon_electric" -> R.drawable.thumb_mic_effect_cyber_neon_electric
+        "mic_effect_diamond_crystal_vortex" -> R.drawable.thumb_mic_effect_diamond_crystal_vortex
+        "mic_effect_sovereign_gold_wings" -> R.drawable.thumb_mic_effect_sovereign_gold_wings
+        "mic_effect_emerald_celestial_wave" -> R.drawable.thumb_mic_effect_emerald_celestial_wave
+        else -> R.drawable.thumb_mic_effect_golden_amber_aura
     }
 }
 
