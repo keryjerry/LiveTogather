@@ -32,6 +32,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
 import com.google.firebase.firestore.FirebaseFirestore
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -49,6 +54,9 @@ data class VipChatFrameItem(
     val backgroundBrush: Brush,
     val textColor: Color = Color.White,
     val accentColor: Color,
+    val secondaryAccentColor: Color = Color(0xFFFFD700),
+    val gemColor: Color = Color(0xFFFFD700),
+    val cornerWingColor: Color = Color(0xFFFFD700),
     val badgeLabel: String,
     val badgeBgColor: Color,
     val badgeTextColor: Color = Color.White,
@@ -68,6 +76,9 @@ val VIP_CHAT_FRAMES_CATALOG: List<VipChatFrameItem> = listOf(
             listOf(Color(0xFF131D2E), Color(0xFF0D1420))
         ),
         accentColor = Color(0xFF00E5FF),
+        secondaryAccentColor = Color(0xFFE2E8F0),
+        gemColor = Color(0xFF00E5FF),
+        cornerWingColor = Color(0xFF94A3B8),
         badgeLabel = "VIP 1",
         badgeBgColor = Color(0xFF0284C7),
         cornerGemEmoji = "💎",
@@ -84,10 +95,13 @@ val VIP_CHAT_FRAMES_CATALOG: List<VipChatFrameItem> = listOf(
             listOf(Color(0xFF2E1C07), Color(0xFF1A0F03))
         ),
         accentColor = Color(0xFFFFD700),
+        secondaryAccentColor = Color(0xFFFF8F00),
+        gemColor = Color(0xFFFFEA00),
+        cornerWingColor = Color(0xFFFFD700),
         badgeLabel = "VIP 2",
         badgeBgColor = Color(0xFFB45309),
         cornerGemEmoji = "⭐",
-        description = "Regal golden rimmed bubble with amber glow"
+        description = "Regal golden baroque frame with imperial amber glow"
     ),
     VipChatFrameItem(
         id = "chat_frame_imperial_amethyst",
@@ -100,6 +114,9 @@ val VIP_CHAT_FRAMES_CATALOG: List<VipChatFrameItem> = listOf(
             listOf(Color(0xFF2C103A), Color(0xFF160820))
         ),
         accentColor = Color(0xFFE879F9),
+        secondaryAccentColor = Color(0xFFFFD700),
+        gemColor = Color(0xFFA855F7),
+        cornerWingColor = Color(0xFFE879F9),
         badgeLabel = "VIP 3",
         badgeBgColor = Color(0xFF7E22CE),
         cornerGemEmoji = "🔮",
@@ -116,6 +133,9 @@ val VIP_CHAT_FRAMES_CATALOG: List<VipChatFrameItem> = listOf(
             listOf(Color(0xFF102636), Color(0xFF1F0D2E))
         ),
         accentColor = Color(0xFF00F5FF),
+        secondaryAccentColor = Color(0xFFFFD700),
+        gemColor = Color(0xFF00F5FF),
+        cornerWingColor = Color(0xFFFFD700),
         badgeLabel = "VIP 👑",
         badgeBgColor = Color(0xFFDC2626),
         cornerGemEmoji = "🐉",
@@ -126,16 +146,19 @@ val VIP_CHAT_FRAMES_CATALOG: List<VipChatFrameItem> = listOf(
         name = "Mystic Scorpio (Monthly Card)",
         vipLevel = 1,
         borderBrush = Brush.linearGradient(
-            listOf(Color(0xFF818CF8), Color(0xFF4F46E5), Color(0xFFC084FC), Color(0xFF818CF8))
+            listOf(Color(0xFF00E5FF), Color(0xFF4F46E5), Color(0xFFFFD700), Color(0xFF00E5FF))
         ),
         backgroundBrush = Brush.linearGradient(
-            listOf(Color(0xFF151226), Color(0xFF0B0914))
+            listOf(Color(0xFF0A1D2E), Color(0xFF050E17))
         ),
-        accentColor = Color(0xFFA5B4FC),
+        accentColor = Color(0xFF00E5FF),
+        secondaryAccentColor = Color(0xFFFFD700),
+        gemColor = Color(0xFF00E5FF),
+        cornerWingColor = Color(0xFF00E5FF),
         badgeLabel = "SCORPIO 🦂",
-        badgeBgColor = Color(0xFF4338CA),
+        badgeBgColor = Color(0xFF0284C7),
         cornerGemEmoji = "✨",
-        description = "Seasonal Monthly Card exclusive constellation frame"
+        description = "Seasonal Monthly Card exclusive cyan & gold baroque frame"
     ),
     VipChatFrameItem(
         id = "chat_frame_founder_supreme",
@@ -143,17 +166,20 @@ val VIP_CHAT_FRAMES_CATALOG: List<VipChatFrameItem> = listOf(
         vipLevel = 10,
         isFounder = true,
         borderBrush = Brush.sweepGradient(
-            listOf(Color(0xFFFFD700), Color(0xFFFF1744), Color(0xFFA855F7), Color(0xFF00E5FF), Color(0xFFFFD700))
+            listOf(Color(0xFFFFD700), Color(0xFFFF1744), Color(0xFFA855F7), Color(0xFFFFEA00), Color(0xFFFFD700))
         ),
         backgroundBrush = Brush.linearGradient(
-            listOf(Color(0xFF250E3A), Color(0xFF130620), Color(0xFF2E1206))
+            listOf(Color(0xFF2E0938), Color(0xFF1B0522), Color(0xFF330C16))
         ),
-        textColor = Color(0xFFFFF9E6),
+        textColor = Color(0xFFFFFDF5),
         accentColor = Color(0xFFFFD700),
+        secondaryAccentColor = Color(0xFFFF1744),
+        gemColor = Color(0xFFFFEA00),
+        cornerWingColor = Color(0xFFFFD700),
         badgeLabel = "FOUNDER 👑",
         badgeBgColor = Color(0xFF8B1838),
         cornerGemEmoji = "⚡",
-        description = "Supreme Founder & CEO Exclusive Masterpiece with animated glow"
+        description = "Supreme Founder & CEO Exclusive Masterpiece with baroque gold wings & glowing ruby gems"
     )
 )
 
@@ -173,7 +199,209 @@ fun getVipChatFrame(frameId: String?, vipLevel: Int = 0, isFounder: Boolean = fa
 }
 
 // -------------------------------------------------------------
-// VIP CHAT BUBBLE COMPOSABLE (For 1v1 Chat & Room Public Chat)
+// ORNATE LUXURY DECORATIVE EMBELLISHMENTS (Reference UI Match)
+// -------------------------------------------------------------
+@Composable
+fun OrnateCornerFlourish(
+    isTop: Boolean,
+    isLeft: Boolean,
+    primaryColor: Color,
+    accentColor: Color,
+    gemColor: Color,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier.size(16.dp)) {
+        val w = size.width
+        val h = size.height
+
+        val path = Path().apply {
+            if (isTop && isLeft) {
+                moveTo(0f, h)
+                quadraticBezierTo(0f, 0f, w, 0f)
+                lineTo(w * 0.7f, h * 0.25f)
+                quadraticBezierTo(w * 0.25f, h * 0.25f, w * 0.25f, h * 0.7f)
+                close()
+            } else if (isTop && !isLeft) {
+                moveTo(w, h)
+                quadraticBezierTo(w, 0f, 0f, 0f)
+                lineTo(w * 0.3f, h * 0.25f)
+                quadraticBezierTo(w * 0.75f, h * 0.25f, w * 0.75f, h * 0.7f)
+                close()
+            } else if (!isTop && isLeft) {
+                moveTo(0f, 0f)
+                quadraticBezierTo(0f, h, w, h)
+                lineTo(w * 0.7f, h * 0.75f)
+                quadraticBezierTo(w * 0.25f, h * 0.75f, w * 0.25f, h * 0.3f)
+                close()
+            } else {
+                moveTo(w, 0f)
+                quadraticBezierTo(w, h, 0f, h)
+                lineTo(w * 0.3f, h * 0.75f)
+                quadraticBezierTo(w * 0.75f, h * 0.75f, w * 0.75f, h * 0.3f)
+                close()
+            }
+        }
+        drawPath(path = path, brush = Brush.linearGradient(listOf(primaryColor, accentColor)))
+
+        val gemCenter = Offset(
+            x = if (isLeft) w * 0.38f else w * 0.62f,
+            y = if (isTop) h * 0.38f else h * 0.62f
+        )
+        drawCircle(
+            brush = Brush.radialGradient(
+                listOf(Color.White, gemColor, accentColor),
+                center = gemCenter,
+                radius = w * 0.2f
+            ),
+            radius = w * 0.2f,
+            center = gemCenter
+        )
+    }
+}
+
+@Composable
+fun OrnateTopCrest(
+    primaryColor: Color,
+    accentColor: Color,
+    gemColor: Color,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier.size(width = 36.dp, height = 10.dp)) {
+        val w = size.width
+        val h = size.height
+        val cx = w / 2f
+        val cy = h / 2f
+
+        val wingPath = Path().apply {
+            moveTo(cx, cy)
+            quadraticBezierTo(cx - w * 0.25f, 0f, 0f, cy * 0.6f)
+            quadraticBezierTo(cx - w * 0.2f, cy * 1.2f, cx, cy)
+            quadraticBezierTo(cx + w * 0.25f, 0f, w, cy * 0.6f)
+            quadraticBezierTo(cx + w * 0.2f, cy * 1.2f, cx, cy)
+            close()
+        }
+        drawPath(wingPath, brush = Brush.horizontalGradient(listOf(primaryColor, accentColor, primaryColor)))
+
+        val gemPath = Path().apply {
+            moveTo(cx, 0f)
+            lineTo(cx + 4.dp.toPx(), cy)
+            lineTo(cx, h)
+            lineTo(cx - 4.dp.toPx(), cy)
+            close()
+        }
+        drawPath(gemPath, brush = Brush.radialGradient(listOf(Color.White, gemColor, accentColor), center = Offset(cx, cy), radius = 6.dp.toPx()))
+    }
+}
+
+@Composable
+fun OrnateBottomSeal(
+    primaryColor: Color,
+    accentColor: Color,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier.size(width = 24.dp, height = 6.dp)) {
+        val w = size.width
+        val h = size.height
+        val cx = w / 2f
+
+        val path = Path().apply {
+            moveTo(cx - w * 0.45f, 0f)
+            quadraticBezierTo(cx, h, cx + w * 0.45f, 0f)
+            quadraticBezierTo(cx, h * 0.4f, cx - w * 0.45f, 0f)
+            close()
+        }
+        drawPath(path, brush = Brush.horizontalGradient(listOf(primaryColor, accentColor, primaryColor)))
+    }
+}
+
+@Composable
+fun EntranceBannerTopCrest(
+    emblemText: String,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.size(width = 64.dp, height = 18.dp)) {
+            val w = size.width
+            val h = size.height
+            val cx = w / 2f
+
+            val path = Path().apply {
+                moveTo(cx, h)
+                quadraticBezierTo(cx - w * 0.25f, 0f, 0f, h * 0.5f)
+                quadraticBezierTo(cx - w * 0.2f, h * 1.2f, cx, h)
+                quadraticBezierTo(cx + w * 0.2f, h * 1.2f, w, h * 0.5f)
+                quadraticBezierTo(w, 0f, cx, h)
+                close()
+            }
+            drawPath(path, brush = Brush.horizontalGradient(listOf(Color(0xFFFFD700), Color(0xFFFFEA00), Color(0xFFFF8F00), Color(0xFFFFD700))))
+        }
+
+        Box(
+            modifier = Modifier
+                .size(20.dp)
+                .clip(CircleShape)
+                .background(Brush.radialGradient(listOf(Color(0xFFFFEA00), Color(0xFFFF8F00), Color(0xFFB45309))))
+                .border(1.dp, Color(0xFFFFF9E6), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = emblemText,
+                color = Color.White,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Black
+            )
+        }
+    }
+}
+
+@Composable
+fun EntranceBannerBottomCrest(
+    emblemText: String,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.size(width = 54.dp, height = 16.dp)) {
+            val w = size.width
+            val h = size.height
+            val cx = w / 2f
+
+            val path = Path().apply {
+                moveTo(cx, 0f)
+                cubicTo(cx - w * 0.25f, h, 0f, h, 0f, h * 0.5f)
+                quadraticBezierTo(cx - w * 0.2f, 0f, cx, 0f)
+                quadraticBezierTo(cx + w * 0.2f, 0f, w, h * 0.5f)
+                quadraticBezierTo(w, h, cx, 0f)
+                close()
+            }
+            drawPath(path, brush = Brush.horizontalGradient(listOf(Color(0xFFFFD700), Color(0xFFFFEA00), Color(0xFFFF8F00), Color(0xFFFFD700))))
+        }
+
+        Box(
+            modifier = Modifier
+                .size(18.dp)
+                .clip(CircleShape)
+                .background(Brush.radialGradient(listOf(Color(0xFFFFEA00), Color(0xFFFF8F00), Color(0xFFB45309))))
+                .border(1.dp, Color(0xFFFFF9E6), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = emblemText,
+                color = Color.White,
+                fontSize = 8.5.sp,
+                fontWeight = FontWeight.Black
+            )
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// VIP CHAT BUBBLE COMPOSABLE (With Ornate Luxury Corners & Styling)
 // -------------------------------------------------------------
 @Composable
 fun VipStyledChatBubble(
@@ -188,10 +416,9 @@ fun VipStyledChatBubble(
     val frameItem = getVipChatFrame(chatFrameId, vipLevel, isFounder)
 
     if (frameItem != null) {
-        // Luxury Framed VIP Chat Bubble (Matches Reference UI)
         val infiniteTransition = rememberInfiniteTransition(label = "VipBubbleGlow")
         val glowAlpha by infiniteTransition.animateFloat(
-            initialValue = 0.75f,
+            initialValue = 0.85f,
             targetValue = 1.0f,
             animationSpec = infiniteRepeatable(
                 animation = tween(1200, easing = FastOutSlowInEasing),
@@ -202,83 +429,121 @@ fun VipStyledChatBubble(
 
         Box(
             modifier = modifier
-                .padding(vertical = 3.dp)
-                .shadow(elevation = 6.dp, shape = RoundedCornerShape(16.dp))
+                .padding(vertical = 4.dp, horizontal = 2.dp)
+                .shadow(
+                    elevation = if (frameItem.isFounder) 10.dp else 6.dp,
+                    shape = RoundedCornerShape(14.dp),
+                    ambientColor = frameItem.accentColor,
+                    spotColor = frameItem.accentColor
+                )
         ) {
-            // Main Framed Container
+            // Main Framed Container with Dual Metallic Border & Rich Gradient
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(16.dp))
+                    .clip(RoundedCornerShape(14.dp))
                     .background(frameItem.backgroundBrush)
                     .border(
                         BorderStroke(
-                            width = if (frameItem.isFounder) 2.dp else 1.5.dp,
+                            width = if (frameItem.isFounder) 2.2.dp else 1.8.dp,
                             brush = frameItem.borderBrush
                         ),
-                        shape = RoundedCornerShape(16.dp)
+                        shape = RoundedCornerShape(14.dp)
                     )
-                    .padding(horizontal = 14.dp, vertical = 9.dp)
+                    .padding(1.dp)
+                    .border(
+                        BorderStroke(
+                            width = 0.75.dp,
+                            color = Color.White.copy(alpha = 0.15f)
+                        ),
+                        shape = RoundedCornerShape(13.dp)
+                    )
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
             ) {
                 Column {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
+                    Text(
+                        text = messageText,
+                        color = frameItem.textColor,
+                        fontSize = 13.5.sp,
+                        fontWeight = if (frameItem.isFounder) FontWeight.SemiBold else FontWeight.Medium,
+                        lineHeight = 18.sp
+                    )
+
+                    if (timestampText.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(3.dp))
                         Text(
-                            text = messageText,
-                            color = frameItem.textColor,
-                            fontSize = 13.5.sp,
-                            fontWeight = if (frameItem.isFounder) FontWeight.SemiBold else FontWeight.Normal
+                            text = timestampText,
+                            fontSize = 8.5.sp,
+                            color = Color.White.copy(alpha = 0.5f),
+                            textAlign = if (isMe) TextAlign.End else TextAlign.Start,
+                            modifier = Modifier.fillMaxWidth()
                         )
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    // Bottom Pill: VIP Badge + Ambient Gem + Timestamp
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start,
-                        modifier = Modifier.padding(top = 2.dp)
-                    ) {
-                        // 3D Mini VIP Badge Pill
-                        Surface(
-                            color = frameItem.badgeBgColor,
-                            shape = RoundedCornerShape(50),
-                            border = BorderStroke(0.8.dp, frameItem.accentColor.copy(alpha = glowAlpha)),
-                            modifier = Modifier.height(16.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = frameItem.badgeLabel,
-                                    fontSize = 8.5.sp,
-                                    fontWeight = FontWeight.Black,
-                                    color = frameItem.badgeTextColor,
-                                    letterSpacing = 0.5.sp
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.width(6.dp))
-
-                        Text(
-                            text = frameItem.cornerGemEmoji,
-                            fontSize = 9.sp
-                        )
-
-                        if (timestampText.isNotBlank()) {
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = timestampText,
-                                fontSize = 9.sp,
-                                color = Color.White.copy(alpha = 0.5f)
-                            )
-                        }
                     }
                 }
             }
+
+            // Top Center Ornate Winged Crest
+            OrnateTopCrest(
+                primaryColor = frameItem.secondaryAccentColor,
+                accentColor = frameItem.accentColor,
+                gemColor = frameItem.gemColor,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .offset(y = (-4).dp)
+            )
+
+            // Bottom Center Ornate Seal
+            OrnateBottomSeal(
+                primaryColor = frameItem.secondaryAccentColor,
+                accentColor = frameItem.accentColor,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .offset(y = 3.dp)
+            )
+
+            // 4 Sculpted Baroque Corner Wings with Gemstones
+            OrnateCornerFlourish(
+                isTop = true,
+                isLeft = true,
+                primaryColor = frameItem.secondaryAccentColor,
+                accentColor = frameItem.accentColor,
+                gemColor = frameItem.gemColor,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .offset(x = (-2).dp, y = (-2).dp)
+            )
+
+            OrnateCornerFlourish(
+                isTop = true,
+                isLeft = false,
+                primaryColor = frameItem.secondaryAccentColor,
+                accentColor = frameItem.accentColor,
+                gemColor = frameItem.gemColor,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 2.dp, y = (-2).dp)
+            )
+
+            OrnateCornerFlourish(
+                isTop = false,
+                isLeft = true,
+                primaryColor = frameItem.secondaryAccentColor,
+                accentColor = frameItem.accentColor,
+                gemColor = frameItem.gemColor,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .offset(x = (-2).dp, y = 2.dp)
+            )
+
+            OrnateCornerFlourish(
+                isTop = false,
+                isLeft = false,
+                primaryColor = frameItem.secondaryAccentColor,
+                accentColor = frameItem.accentColor,
+                gemColor = frameItem.gemColor,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .offset(x = 2.dp, y = 2.dp)
+            )
         }
     } else {
         // Standard Chat Bubble (Fallback for non-VIP)
@@ -300,6 +565,357 @@ fun VipStyledChatBubble(
                 }
             }
         }
+    }
+}
+
+// -------------------------------------------------------------
+// USER CHAT BADGES ROW (Displays 3D Founder, CEO, Tier, VIP Badges)
+// -------------------------------------------------------------
+@Composable
+fun UserChatBadgesRow(
+    userProfile: UserProfile?,
+    level: Int,
+    charm: Int,
+    pkLevel: Int,
+    medal: Int,
+    isFounder: Boolean = false,
+    isCeo: Boolean = false,
+    vipLevel: Int = 0,
+    modifier: Modifier = Modifier
+) {
+    val tierInfo = LevelBadgeSystem.getLevelTierInfo(level)
+    val isApexFounder = isFounder || userProfile?.isFounder() == true
+    val isApexCeo = !isApexFounder && (isCeo || userProfile?.isCeo() == true)
+    val officialBadgeRes = userProfile?.getOfficialRoleBadgeRes()
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = modifier
+    ) {
+        // 1. 👑 Supreme Founder 3D Winged Golden Badge (Large 3D Official)
+        if (isApexFounder) {
+            Image(
+                painter = painterResource(id = R.drawable.badge_livetogather_founder),
+                contentDescription = "LiveTogather Founder 3D Badge",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .height(26.dp)
+                    .shadow(4.dp, shape = RoundedCornerShape(4.dp))
+            )
+        } else if (isApexCeo) {
+            // 2. ⚡ LiveTogather CEO 3D Badge
+            Image(
+                painter = painterResource(id = R.drawable.badge_livetogather_ceo),
+                contentDescription = "LiveTogather CEO 3D Badge",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .height(24.dp)
+                    .shadow(4.dp, shape = RoundedCornerShape(4.dp))
+            )
+        } else if (officialBadgeRes != null) {
+            // 3. 🛡️ Official Appointed Staff 3D Badge (Analyzer, Patrol, Volunteer)
+            Image(
+                painter = painterResource(id = officialBadgeRes),
+                contentDescription = "Official Staff Badge",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .height(20.dp)
+                    .shadow(3.dp, shape = RoundedCornerShape(4.dp))
+            )
+        }
+
+        // 4. 🏆 Wealth/Level 3D Crest Badge (Emperor, Diamond, Dragon, Royal, Sapphire, Bronze)
+        Image(
+            painter = painterResource(id = tierInfo.badgeDrawableRes),
+            contentDescription = tierInfo.tierName,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.height(20.dp)
+        )
+
+        // 5. 💎 VIP Badge Pill (If VIP Level > 0)
+        val effVip = if (vipLevel > 0) vipLevel else (userProfile?.getVipLevel() ?: 0)
+        if (effVip > 0 || isApexFounder) {
+            Surface(
+                color = if (isApexFounder) Color(0xFF8B1838) else Color(0xFFB45309),
+                shape = RoundedCornerShape(50),
+                border = BorderStroke(0.8.dp, BrandGold),
+                modifier = Modifier.height(17.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        text = if (isApexFounder) "👑 VIP 10" else "👑 VIP $effVip",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color.White
+                    )
+                }
+            }
+        }
+
+        // 6. ⚔️ Crossed Swords Rank Badge (PK Level)
+        SilverSwordsRankBadge(rank = pkLevel)
+
+        // 7. 🌟 Level Badge Pill
+        BlueLevelBadgePill(level = level)
+
+        // 8. 💖 Sapphire Charm Gem Pill
+        SapphireCharmBadgePill(level = charm)
+
+        // 9. 🏅 Golden Medal Follower Pill
+        GoldenMedalBadgePill(level = medal)
+    }
+}
+
+// -------------------------------------------------------------
+// GRAND ORNATE LUXURY ENTRANCE CARD (Matches Image 2 Hacker Banner)
+// -------------------------------------------------------------
+@Composable
+fun OrnateLuxuryEntranceCard(
+    userName: String,
+    avatarUrl: String,
+    userProfile: UserProfile?,
+    level: Int,
+    charm: Int,
+    pkLevel: Int,
+    medal: Int,
+    isFounder: Boolean = false,
+    vipLevel: Int = 0,
+    modifier: Modifier = Modifier
+) {
+    val isApexFounder = isFounder || userProfile?.isFounder() == true
+    val isApexCeo = !isApexFounder && userProfile?.isCeo() == true
+    val effVip = if (vipLevel > 0) vipLevel else if (isApexFounder) 10 else 1
+    val tierInfo = LevelBadgeSystem.getLevelTierInfo(level)
+
+    val infiniteTransition = rememberInfiniteTransition(label = "EntranceCardGlow")
+    val borderGlow by infiniteTransition.animateFloat(
+        initialValue = 0.85f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(tween(1000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "BorderGlow"
+    )
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp, horizontal = 2.dp)
+            .shadow(
+                elevation = 12.dp,
+                shape = RoundedCornerShape(16.dp),
+                ambientColor = if (isApexFounder) Color(0xFFFF1744) else Color(0xFFFFD700),
+                spotColor = Color(0xFFFFD700)
+            )
+    ) {
+        // Main Container Card with Golden Filigree Metallic Border
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(
+                    Brush.linearGradient(
+                        if (isApexFounder) listOf(Color(0xFF2E0938), Color(0xFF1B0522), Color(0xFF330C16))
+                        else listOf(Color(0xFF3B2207), Color(0xFF241403), Color(0xFF1A0E02))
+                    )
+                )
+                .border(
+                    BorderStroke(
+                        width = 2.2.dp,
+                        brush = Brush.linearGradient(
+                            if (isApexFounder) listOf(Color(0xFFFFD700), Color(0xFFFF1744), Color(0xFFFFEA00), Color(0xFFFFD700))
+                            else listOf(Color(0xFFFFE082), Color(0xFFFFB300), Color(0xFFFFD700), Color(0xFFFF8F00))
+                        )
+                    ),
+                    shape = RoundedCornerShape(16.dp)
+                )
+                .padding(horizontal = 12.dp, vertical = 12.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // 1. User Avatar with Ornate Frame
+                FlowingAvatarFrame(
+                    photoUrl = avatarUrl,
+                    frameId = if (isApexFounder) "frame_livetogather_founder" else (userProfile?.activeFrame ?: "frame_imperial_gold"),
+                    avatarSize = 36.dp,
+                    frameSize = 54.dp,
+                    showMicEffect = false
+                )
+
+                Spacer(modifier = Modifier.width(10.dp))
+
+                // 2. Identity Column
+                Column(modifier = Modifier.weight(1f)) {
+                    // Line 1: Username with sparkles & crown
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "★ ${userName.uppercase()} ★",
+                            color = if (isApexFounder) Color(0xFFFFEA00) else Color(0xFFFFD700),
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.Black,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (isApexFounder) {
+                            Text(text = "👑", fontSize = 12.sp)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(3.dp))
+
+                    // Line 2: 3D Badges Row (Founder, CEO, Tier, VIP)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        if (isApexFounder) {
+                            Image(
+                                painter = painterResource(id = R.drawable.badge_livetogather_founder),
+                                contentDescription = "Founder Badge",
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.height(26.dp)
+                            )
+                        }
+                        if (isApexCeo || isApexFounder) {
+                            Image(
+                                painter = painterResource(id = R.drawable.badge_livetogather_ceo),
+                                contentDescription = "CEO Badge",
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.height(24.dp)
+                            )
+                        }
+                        Image(
+                            painter = painterResource(id = tierInfo.badgeDrawableRes),
+                            contentDescription = tierInfo.tierName,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.height(22.dp)
+                        )
+                        Surface(
+                            color = if (isApexFounder) Color(0xFF8B1838) else Color(0xFFB45309),
+                            shape = RoundedCornerShape(50),
+                            border = BorderStroke(0.8.dp, BrandGold),
+                            modifier = Modifier.height(18.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (isApexFounder) "👑 VIP 10" else "👑 VIP $effVip",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = Color.White
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(3.dp))
+
+                    // Line 3: "entered the room" action subtitle
+                    Text(
+                        text = if (isApexFounder) "LiveTogather Founder has entered the room. Supreme Authority Active."
+                               else if (isApexCeo) "LiveTogather CEO has entered the room. Supreme Leadership Active."
+                               else "entered the room",
+                        color = if (isApexFounder) Color(0xFFFFD700) else Color(0xFFFFE082).copy(alpha = 0.9f),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                // 3. Right Icon: Audio / Mic wave button (matching Image 2)
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(
+                            Brush.linearGradient(
+                                if (isApexFounder) listOf(Color(0xFFFF1744), Color(0xFF8B1838))
+                                else listOf(Color(0xFF7C3AED), Color(0xFF4F46E5))
+                            )
+                        )
+                        .border(1.dp, BrandGold.copy(alpha = 0.8f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Mic,
+                        contentDescription = "Voice",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
+
+        // Top Golden Winged Crest with Emblem Number
+        EntranceBannerTopCrest(
+            emblemText = if (isApexFounder) "👑" else "$effVip",
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .offset(y = (-8).dp)
+        )
+
+        // Bottom Golden Winged Crest with Emblem Number
+        EntranceBannerBottomCrest(
+            emblemText = if (isApexFounder) "👑" else "$effVip",
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .offset(y = 8.dp)
+        )
+
+        // 4 Golden Corner Ornaments
+        OrnateCornerFlourish(
+            isTop = true,
+            isLeft = true,
+            primaryColor = Color(0xFFFFD700),
+            accentColor = Color(0xFFFF8F00),
+            gemColor = Color(0xFFFFEA00),
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .offset(x = (-3).dp, y = (-3).dp)
+        )
+        OrnateCornerFlourish(
+            isTop = true,
+            isLeft = false,
+            primaryColor = Color(0xFFFFD700),
+            accentColor = Color(0xFFFF8F00),
+            gemColor = Color(0xFFFFEA00),
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .offset(x = 3.dp, y = (-3).dp)
+        )
+        OrnateCornerFlourish(
+            isTop = false,
+            isLeft = true,
+            primaryColor = Color(0xFFFFD700),
+            accentColor = Color(0xFFFF8F00),
+            gemColor = Color(0xFFFFEA00),
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .offset(x = (-3).dp, y = 3.dp)
+        )
+        OrnateCornerFlourish(
+            isTop = false,
+            isLeft = false,
+            primaryColor = Color(0xFFFFD700),
+            accentColor = Color(0xFFFF8F00),
+            gemColor = Color(0xFFFFEA00),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .offset(x = 3.dp, y = 3.dp)
+        )
     }
 }
 

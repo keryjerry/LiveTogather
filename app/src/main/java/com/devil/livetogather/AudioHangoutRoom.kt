@@ -339,162 +339,21 @@ fun GrandBroadEntranceBanner(
     userProfile: UserProfile? = null,
     modifier: Modifier = Modifier
 ) {
-    val officialBadgeRes = userProfile?.getOfficialRoleBadgeRes()
-    val isApex = userProfile?.isFounder() == true || userProfile?.isCeo() == true
-    val isHighTier = level >= 20 || LevelBadgeSystem.isSpecialHighTierUser(userName)
-    val tierInfo = LevelBadgeSystem.getLevelTierInfo(level)
+    val isApexFounder = userProfile?.isFounder() == true
+    val effVip = if (isApexFounder) 10 else (userProfile?.getVipLevel() ?: if (level >= 70) 5 else 1)
 
-    val infiniteTransition = rememberInfiniteTransition(label = "entrance_pulse")
-    val glowAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.6f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(600, easing = LinearEasing), RepeatMode.Reverse),
-        label = "glow"
+    OrnateLuxuryEntranceCard(
+        userName = userName,
+        avatarUrl = userProfile?.photo ?: "",
+        userProfile = userProfile,
+        level = level,
+        charm = userProfile?.getEffectiveCharmLevel() ?: 50,
+        pkLevel = userProfile?.getEffectivePkLevel() ?: 1,
+        medal = userProfile?.followerCount ?: 50,
+        isFounder = isApexFounder,
+        vipLevel = effVip,
+        modifier = modifier
     )
-
-    if (officialBadgeRes != null) {
-        val officialTitle = userProfile?.getOfficialRoleTitle() ?: "LiveTogather Official"
-        val officialReason = userProfile?.getOfficialEntranceReason() ?: "Entered room as LiveTogather Appointed Staff."
-
-        Card(
-            shape = RoundedCornerShape(18.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = if (isApex) Color(0xFF1B0A1C).copy(alpha = 0.98f) else Color(0xFF0F172A).copy(alpha = 0.96f)
-            ),
-            border = BorderStroke(
-                2.dp,
-                Brush.horizontalGradient(
-                    if (isApex) listOf(Color(0xFFFFD700), Color(0xFFFF1744), Color(0xFFFFEA00), Color(0xFFFFD700))
-                    else listOf(Color(0xFF00E5FF), Color(0xFF00E676), Color(0xFF00E5FF))
-                )
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 20.dp),
-            modifier = modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp)
-                .graphicsLayer(scaleX = 0.98f + glowAlpha * 0.04f, scaleY = 0.98f + glowAlpha * 0.04f)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Image(
-                    painter = painterResource(id = officialBadgeRes),
-                    contentDescription = officialTitle,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .height(if (isApex) 58.dp else 46.dp)
-                        .fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Text(
-                        text = if (isApex) "👑 ${userName.uppercase()} ($officialTitle)" else "🛡️ ${userName.uppercase()} ($officialTitle)",
-                        color = if (isApex) Color(0xFFFFD700) else Color(0xFF00E5FF),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Black,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                Spacer(modifier = Modifier.height(3.dp))
-                Text(
-                    text = "✨ $officialReason",
-                    color = if (isApex) Color(0xFFFFEA00) else Color(0xFFE2E8F0),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(horizontal = 4.dp)
-                )
-            }
-        }
-    } else if (isHighTier) {
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF140D18).copy(alpha = 0.95f)),
-            border = BorderStroke(1.5.dp, Brush.horizontalGradient(listOf(BrandGold, Color(0xFFFF1744), BrandGold))),
-            elevation = CardDefaults.cardElevation(defaultElevation = 14.dp),
-            modifier = modifier
-                .fillMaxWidth()
-                .padding(horizontal = 10.dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(6.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                // Luxury Gold Hypercar
-                Image(
-                    painter = painterResource(id = R.drawable.grand_entrance_gold_car),
-                    contentDescription = "Grand Entrance Hypercar",
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(84.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Image(
-                        painter = painterResource(id = tierInfo.badgeDrawableRes),
-                        contentDescription = "Badge",
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "👑 ${userName.uppercase()} [LV.$level] ENTERED THE ROOM!",
-                        color = BrandGold,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Black,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-        }
-    } else {
-        Box(
-            modifier = modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(50))
-                .background(Brush.horizontalGradient(listOf(BrandCoral.copy(alpha = 0.95f), BrandGold.copy(alpha = 0.95f))))
-                .border(1.dp, Color.White.copy(alpha = 0.4f), RoundedCornerShape(50))
-                .padding(horizontal = 14.dp, vertical = 6.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("✨", fontSize = 13.sp)
-                Spacer(modifier = Modifier.width(6.dp))
-                Row(
-                    modifier = Modifier.weight(1f),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    LevelBadgePill(level = level)
-                    Spacer(modifier = Modifier.width(5.dp))
-                    Text(
-                        text = "$userName joined the live room! Welcome! 👋",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-        }
-    }
 }
 
 // -------------------------------------------------------------
@@ -5402,6 +5261,8 @@ fun AudioHangoutRoomDialog(
     // Automated Room Entry Welcome Message in Live Comments
     LaunchedEffect(room.id, currentUser.uid) {
         if (room.id.isBlank()) return@LaunchedEffect
+        val isFounder = currentUser.isFounder()
+        val isCeo = currentUser.isCeo()
         val welcomeDoc = LiveRoomComment(
             id = UUID.randomUUID().toString(),
             roomId = room.id,
@@ -5409,8 +5270,13 @@ fun AudioHangoutRoomDialog(
             userName = currentUser.name,
             userPhoto = currentUser.photo,
             tier = if (currentUser.getVipLevel() > 0) "VIP" else if (currentUser.isVipOrPlatinum()) "Platinum" else "Standard",
-            message = "✨ Welcome ${currentUser.name} to the room! Have fun! 🎉",
-            timestamp = System.currentTimeMillis()
+            message = if (isFounder) "LiveTogather Founder has entered the room. Supreme Authority Active."
+                      else if (isCeo) "LiveTogather CEO has entered the room. Supreme Leadership Active."
+                      else "entered the room",
+            timestamp = System.currentTimeMillis(),
+            chatFrameId = currentUser.activeChatFrame,
+            vipLevel = currentUser.getEffectiveWealthLevel(),
+            isFounder = isFounder
         )
         db.collection("rooms").document(room.id)
             .collection("live_comments").document(welcomeDoc.id)
@@ -6703,127 +6569,143 @@ fun AudioHangoutRoomDialog(
                                         else if (commenterLevel >= 35) 28
                                         else 11
 
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable {
-                                                selectedMemberForSheet = RoomMember(
-                                                    uid = comment.userId,
-                                                    name = comment.userName,
-                                                    photoUrl = comment.userPhoto,
-                                                    tier = comment.tier
-                                                )
-                                            }
-                                            .padding(vertical = 4.dp),
-                                        verticalAlignment = Alignment.Top
-                                    ) {
-                                        // 1. User Avatar (36.dp circular)
-                                        AsyncImage(
-                                            model = comment.userPhoto.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
-                                            contentDescription = null,
-                                            modifier = Modifier
-                                                .size(36.dp)
-                                                .clip(CircleShape)
-                                                .border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape),
-                                            contentScale = ContentScale.Crop
+                                    val isCommentFounder = comment.isFounder || commenterProfile?.isFounder() == true || (comment.userId == currentUser.uid && currentUser.isFounder())
+                                    val commentVipLevel = if (comment.vipLevel > 0) comment.vipLevel else commenterLevel
+                                    val isEntranceMessage = comment.message.contains("entered the room") || comment.message.startsWith("✨ Welcome") || comment.message.contains("to the room!")
+
+                                    if (isEntranceMessage) {
+                                        OrnateLuxuryEntranceCard(
+                                            userName = comment.userName,
+                                            avatarUrl = comment.userPhoto.ifEmpty { commenterProfile?.photo ?: "" },
+                                            userProfile = commenterProfile,
+                                            level = commenterLevel,
+                                            charm = commenterCharm,
+                                            pkLevel = commenterPkLevel,
+                                            medal = commenterMedal,
+                                            isFounder = isCommentFounder,
+                                            vipLevel = commentVipLevel,
+                                            modifier = Modifier.padding(vertical = 4.dp)
                                         )
-                                        Spacer(modifier = Modifier.width(8.dp))
+                                    } else {
+                                        val commenterAvatarFrame = commenterProfile?.activeFrame?.ifEmpty {
+                                            if (isCommentFounder) "frame_livetogather_founder" else ""
+                                        } ?: if (isCommentFounder) "frame_livetogather_founder" else ""
 
-                                        Column(
-                                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                                        ) {
-                                            // Line 1: User Display Name & Host/Admin Badge
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                            ) {
-                                                Text(
-                                                    text = comment.userName,
-                                                    color = Color.White,
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 13.sp
-                                                )
-                                                if (isCommenterHost) {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .size(17.dp)
-                                                            .clip(RoundedCornerShape(4.dp))
-                                                            .background(
-                                                                Brush.linearGradient(
-                                                                    listOf(Color(0xFFFF9800), Color(0xFFFFB74D))
-                                                                )
-                                                            ),
-                                                        contentAlignment = Alignment.Center
-                                                    ) {
-                                                        Icon(
-                                                            imageVector = Icons.Default.Home,
-                                                            contentDescription = "Host",
-                                                            tint = Color.White,
-                                                            modifier = Modifier.size(12.dp)
-                                                        )
-                                                    }
-                                                } else if (isCommenterAdmin) {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .size(17.dp)
-                                                            .clip(RoundedCornerShape(4.dp))
-                                                            .background(
-                                                                Brush.linearGradient(
-                                                                    listOf(Color(0xFF1E88E5), Color(0xFF42A5F5))
-                                                                )
-                                                            ),
-                                                        contentAlignment = Alignment.Center
-                                                    ) {
-                                                        Icon(
-                                                            imageVector = Icons.Default.Shield,
-                                                            contentDescription = "Admin",
-                                                            tint = Color.White,
-                                                            modifier = Modifier.size(12.dp)
-                                                        )
-                                                    }
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    selectedMemberForSheet = RoomMember(
+                                                        uid = comment.userId,
+                                                        name = comment.userName,
+                                                        photoUrl = comment.userPhoto,
+                                                        tier = comment.tier
+                                                    )
                                                 }
-                                            }
+                                                .padding(vertical = 4.dp),
+                                            verticalAlignment = Alignment.Top
+                                        ) {
+                                            // 1. User Avatar with Flowing Frame
+                                            FlowingAvatarFrame(
+                                                photoUrl = comment.userPhoto.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                                                frameId = commenterAvatarFrame,
+                                                avatarSize = 34.dp,
+                                                frameSize = 52.dp,
+                                                showMicEffect = false
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
 
-                                            // Line 2: 4 Badges Row (Swords Rank, Blue Level Pill, Sapphire Charm Pill, Golden Medal Pill)
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                            Column(
+                                                verticalArrangement = Arrangement.spacedBy(4.dp)
                                             ) {
-                                                // 1. Silver Crossed Swords Rank Badge (Real PK Level)
-                                                SilverSwordsRankBadge(rank = commenterPkLevel)
-                                                // 2. Light Blue Level Pill
-                                                BlueLevelBadgePill(level = commenterLevel)
-                                                // 3. Sapphire Charm Gem Pill
-                                                SapphireCharmBadgePill(level = commenterCharm)
-                                                // 4. Golden Leaf Medal Pill
-                                                GoldenMedalBadgePill(level = commenterMedal)
-                                            }
-
-                                            // Line 3: Comment Speech Bubble Container
-                                            val commentFrameId = comment.chatFrameId.ifEmpty { commenterProfile?.activeChatFrame ?: "" }
-                                            val isCommentFounder = comment.isFounder || commenterProfile?.isFounder() == true || (comment.userId == currentUser.uid && currentUser.isFounder())
-                                            val commentVipLevel = if (comment.vipLevel > 0) comment.vipLevel else commenterLevel
-
-                                            if (commentFrameId.isNotBlank() || isCommentFounder || commentVipLevel >= 1) {
-                                                VipStyledChatBubble(
-                                                    messageText = comment.message,
-                                                    isMe = comment.userId == currentUser.uid,
-                                                    chatFrameId = commentFrameId,
-                                                    vipLevel = commentVipLevel,
-                                                    isFounder = isCommentFounder
-                                                )
-                                            } else {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .clip(RoundedCornerShape(10.dp))
-                                                        .background(Color.Black.copy(alpha = 0.55f))
-                                                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                                                // Line 1: User Display Name & Host/Admin Badge
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                                                 ) {
                                                     Text(
-                                                        text = comment.message,
+                                                        text = comment.userName,
                                                         color = Color.White,
+                                                        fontWeight = FontWeight.Bold,
                                                         fontSize = 13.sp
                                                     )
+                                                    if (isCommenterHost) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .size(17.dp)
+                                                                .clip(RoundedCornerShape(4.dp))
+                                                                .background(
+                                                                    Brush.linearGradient(
+                                                                        listOf(Color(0xFFFF9800), Color(0xFFFFB74D))
+                                                                    )
+                                                                ),
+                                                            contentAlignment = Alignment.Center
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.Home,
+                                                                contentDescription = "Host",
+                                                                tint = Color.White,
+                                                                modifier = Modifier.size(12.dp)
+                                                            )
+                                                        }
+                                                    } else if (isCommenterAdmin) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .size(17.dp)
+                                                                .clip(RoundedCornerShape(4.dp))
+                                                                .background(
+                                                                    Brush.linearGradient(
+                                                                        listOf(Color(0xFF1E88E5), Color(0xFF42A5F5))
+                                                                    )
+                                                                ),
+                                                            contentAlignment = Alignment.Center
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.Shield,
+                                                                contentDescription = "Admin",
+                                                                tint = Color.White,
+                                                                modifier = Modifier.size(12.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+
+                                                // Line 2: 3D Badges Row (Founder, CEO, Official, Tier, VIP, Swords, Level, Charm, Medal)
+                                                UserChatBadgesRow(
+                                                    userProfile = commenterProfile,
+                                                    level = commenterLevel,
+                                                    charm = commenterCharm,
+                                                    pkLevel = commenterPkLevel,
+                                                    medal = commenterMedal,
+                                                    isFounder = isCommentFounder,
+                                                    isCeo = commenterProfile?.isCeo() == true,
+                                                    vipLevel = commentVipLevel
+                                                )
+
+                                                // Line 3: Ornate Luxury Chat Bubble Container
+                                                val commentFrameId = comment.chatFrameId.ifEmpty { commenterProfile?.activeChatFrame ?: "" }
+
+                                                if (commentFrameId.isNotBlank() || isCommentFounder || commentVipLevel >= 1) {
+                                                    VipStyledChatBubble(
+                                                        messageText = comment.message,
+                                                        isMe = comment.userId == currentUser.uid,
+                                                        chatFrameId = commentFrameId,
+                                                        vipLevel = commentVipLevel,
+                                                        isFounder = isCommentFounder
+                                                    )
+                                                } else {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .clip(RoundedCornerShape(10.dp))
+                                                            .background(Color.Black.copy(alpha = 0.55f))
+                                                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = comment.message,
+                                                            color = Color.White,
+                                                            fontSize = 13.sp
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }
