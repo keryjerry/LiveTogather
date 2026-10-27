@@ -794,9 +794,11 @@ data class UserProfile(
     val coins: Long = 0L,
     val nameLower: String = "",
     val activeFrame: String = "",
+    val activeChatFrame: String = "",
     val activeMicEffect: String = "",
     val ownedMicEffects: List<String> = emptyList(),
     val ownedFrames: List<String> = emptyList(),
+    val ownedChatFrames: List<String> = emptyList(),
     val frameExpiries: Map<String, Long> = emptyMap(),
     val micEffectExpiries: Map<String, Long> = emptyMap(),
     val totalRoomTimeSeconds: Long = 0L,
@@ -1097,8 +1099,11 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
     val coins = doc.getLong("coins") ?: diamonds
     val nameLower = doc.getString("nameLower") ?: name.lowercase().trim()
     val activeFrame = doc.getString("activeFrame") ?: ""
+    val activeChatFrame = doc.getString("activeChatFrame") ?: ""
     @Suppress("UNCHECKED_CAST")
     val ownedFrames = (doc.get("ownedFrames") as? List<String>) ?: emptyList()
+    @Suppress("UNCHECKED_CAST")
+    val ownedChatFrames = (doc.get("ownedChatFrames") as? List<String>) ?: emptyList()
     val activeMicEffect = doc.getString("activeMicEffect") ?: ""
     @Suppress("UNCHECKED_CAST")
     val ownedMicEffects = (doc.get("ownedMicEffects") as? List<String>) ?: emptyList()
@@ -1207,7 +1212,9 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
         coins = coins,
         nameLower = nameLower,
         activeFrame = activeFrame,
+        activeChatFrame = activeChatFrame,
         ownedFrames = ownedFrames,
+        ownedChatFrames = ownedChatFrames,
         activeMicEffect = activeMicEffect,
         ownedMicEffects = ownedMicEffects,
         frameExpiries = frameExpiries,
@@ -1277,7 +1284,9 @@ fun saveProfileToPrefs(prefs: SharedPreferences, user: UserProfile) {
         .putString("profile_last_swipe_date", user.lastSwipeDate)
         .putLong("profile_host_trial_start", user.hostTrialStartDate)
         .putString("profile_active_frame", user.activeFrame)
+        .putString("profile_active_chat_frame", user.activeChatFrame)
         .putStringSet("profile_owned_frames", user.ownedFrames.toSet())
+        .putStringSet("profile_owned_chat_frames", user.ownedChatFrames.toSet())
         .putLong("profile_diamonds", user.diamonds)
         .putLong("profile_coins", user.coins)
         .putLong("profile_vip_trial_start", user.vipTrialStartDate)
@@ -1468,7 +1477,10 @@ data class ChatMessage(
     val audioDurationSec: Int = 0,
     val giftAmount: Long = 0L,
     val proposalBondType: String = "",
-    val proposalStatus: String = "" // "pending", "accepted", "declined"
+    val proposalStatus: String = "", // "pending", "accepted", "declined"
+    val chatFrameId: String = "",
+    val vipLevel: Int = 0,
+    val isFounder: Boolean = false
 )
 
 data class IntimacyBond(
@@ -1587,7 +1599,10 @@ data class LiveRoomComment(
     val userPhoto: String = "",
     val tier: String = "Standard",
     val message: String = "",
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val chatFrameId: String = "",
+    val vipLevel: Int = 0,
+    val isFounder: Boolean = false
 )
 
 data class HangoutTrack(

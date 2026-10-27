@@ -4122,6 +4122,8 @@ fun ProfileScreenContent(
     var showLuxuryStoreModal by remember { mutableStateOf(false) }
     var showLuxuryAvatarModal by remember { mutableStateOf(false) }
     var showVoiceVerificationModal by remember { mutableStateOf(false) }
+    var showVipCenterModal by remember { mutableStateOf(false) }
+    var showMonthlyCardModal by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
@@ -5078,20 +5080,38 @@ fun ProfileScreenContent(
 
                             Spacer(modifier = Modifier.width(8.dp))
 
-                            // VIP STATUS BUTTON
+                            // MONTHLY CARD BUTTON (MYSTIC SCORPIO SEASONAL DRAW)
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(Color(0xFFEEF2FF))
+                                    .border(1.dp, Color(0xFF818CF8), RoundedCornerShape(14.dp))
+                                    .clickable { showMonthlyCardModal = true }
+                                    .padding(vertical = 10.dp)
+                            ) {
+                                Text("🦂", fontSize = 22.sp)
+                                Spacer(modifier = Modifier.height(3.dp))
+                                Text("Monthly", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4338CA))
+                            }
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            // VIP CENTER BUTTON (4-PIECE SUITE & CHAT FRAME)
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 modifier = Modifier
                                     .weight(1f)
                                     .clip(RoundedCornerShape(14.dp))
                                     .background(Color(0xFFFDF2F8))
-                                    .border(1.dp, Color(0xFFFBCFE8), RoundedCornerShape(14.dp))
-                                    .clickable { showVipStatusDialog = true }
+                                    .border(1.dp, Color(0xFFF43F5E), RoundedCornerShape(14.dp))
+                                    .clickable { showVipCenterModal = true }
                                     .padding(vertical = 10.dp)
                             ) {
                                 Text("👑", fontSize = 22.sp)
                                 Spacer(modifier = Modifier.height(3.dp))
-                                Text("VIP Club", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFBE185D))
+                                Text("VIP Center", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFBE185D))
                             }
 
                             Spacer(modifier = Modifier.width(8.dp))
@@ -5931,6 +5951,27 @@ fun ProfileScreenContent(
             onDismiss = { showLuxuryStoreModal = false },
             onOpenTopUp = { showCoinStoreModal = true },
             onProfileUpdated = { updated -> onUpdateProfile(updated) }
+        )
+    }
+
+    if (showVipCenterModal) {
+        VipCenterDialog(
+            currentUser = currentUser,
+            db = db,
+            onDismiss = { showVipCenterModal = false },
+            onOpenTopUp = {
+                showVipCenterModal = false
+                showCoinStoreModal = true
+            },
+            onProfileUpdated = { updated -> onUpdateProfile(updated) }
+        )
+    }
+
+    if (showMonthlyCardModal) {
+        MonthlyCardDialog(
+            currentUser = currentUser,
+            db = db,
+            onDismiss = { showMonthlyCardModal = false }
         )
     }
 

@@ -749,19 +749,26 @@ fun Advanced1v1ChatScreen(
                         }
 
                         else -> {
-                            // Standard Text Bubble
+                            // VIP Styled Text Bubble (Crystal beveled border & VIP badge pill)
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(14.dp))
-                                        .background(if (isMe) BrandCoral else BrandCard)
-                                        .padding(horizontal = 14.dp, vertical = 9.dp)
-                                ) {
-                                    Text(msg.text, color = Color.White, fontSize = 13.sp)
+                                val effectiveFrameId = msg.chatFrameId.ifEmpty {
+                                    if (isMe) currentUser.activeChatFrame else partner.activeChatFrame
                                 }
+                                val effectiveVipLvl = if (msg.vipLevel > 0) msg.vipLevel else if (isMe) currentUser.getEffectiveWealthLevel() else partner.getEffectiveWealthLevel()
+                                val effectiveIsFounder = msg.isFounder || (if (isMe) currentUser.isFounder() else partner.isFounder())
+                                val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(msg.timestamp))
+
+                                VipStyledChatBubble(
+                                    messageText = msg.text,
+                                    isMe = isMe,
+                                    chatFrameId = effectiveFrameId,
+                                    vipLevel = effectiveVipLvl,
+                                    isFounder = effectiveIsFounder,
+                                    timestampText = timeStr
+                                )
                             }
                         }
                     }
@@ -803,7 +810,14 @@ fun Advanced1v1ChatScreen(
                         val newXp = (matchItem?.intimacyXp ?: 0L) + (if (isNewDay) 50L else 5L)
                         val newLevel = (1 + (newXp / 100).toInt()).coerceAtLeast(1)
 
-                        val newMsg = ChatMessage(senderId = currentUserId, text = rawText, type = "text")
+                        val newMsg = ChatMessage(
+                            senderId = currentUserId,
+                            text = rawText,
+                            type = "text",
+                            chatFrameId = currentUser.activeChatFrame,
+                            vipLevel = currentUser.getEffectiveWealthLevel(),
+                            isFounder = currentUser.isFounder()
+                        )
                         db.collection("matches").document(matchId).collection("messages").add(newMsg)
 
                         db.collection("matches").document(matchId).set(

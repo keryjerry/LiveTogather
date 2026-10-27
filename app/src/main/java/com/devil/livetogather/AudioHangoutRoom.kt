@@ -2750,12 +2750,12 @@ fun RoomMemberProfileSheet(
     }
 
     Dialog(onDismissRequest = onDismiss) {
-        Card(
-            colors = CardDefaults.cardColors(containerColor = BrandCard),
-            shape = RoundedCornerShape(24.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .border(1.dp, BrandBorder, RoundedCornerShape(24.dp))
+        val isMemberFounder = userProfile?.isFounder() == true || (isSelf && currentUser.isFounder()) || member.name.contains("Devil", ignoreCase = true)
+        val memberVipLvlForCard = if (isSelf) currentUser.getVipLevel() else (userProfile?.getVipLevel() ?: if (isMemberVip) 1 else 0)
+
+        VipMiniCardFrame(
+            isFounder = isMemberFounder,
+            vipLevel = memberVipLvlForCard
         ) {
             Column(
                 modifier = Modifier
@@ -6800,17 +6800,31 @@ fun AudioHangoutRoomDialog(
                                             }
 
                                             // Line 3: Comment Speech Bubble Container
-                                            Box(
-                                                modifier = Modifier
-                                                    .clip(RoundedCornerShape(10.dp))
-                                                    .background(Color.Black.copy(alpha = 0.55f))
-                                                    .padding(horizontal = 12.dp, vertical = 6.dp)
-                                            ) {
-                                                Text(
-                                                    text = comment.message,
-                                                    color = Color.White,
-                                                    fontSize = 13.sp
+                                            val commentFrameId = comment.chatFrameId.ifEmpty { commenterProfile?.activeChatFrame ?: "" }
+                                            val isCommentFounder = comment.isFounder || commenterProfile?.isFounder() == true || (comment.userId == currentUser.uid && currentUser.isFounder())
+                                            val commentVipLevel = if (comment.vipLevel > 0) comment.vipLevel else commenterLevel
+
+                                            if (commentFrameId.isNotBlank() || isCommentFounder || commentVipLevel >= 1) {
+                                                VipStyledChatBubble(
+                                                    messageText = comment.message,
+                                                    isMe = comment.userId == currentUser.uid,
+                                                    chatFrameId = commentFrameId,
+                                                    vipLevel = commentVipLevel,
+                                                    isFounder = isCommentFounder
                                                 )
+                                            } else {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(10.dp))
+                                                        .background(Color.Black.copy(alpha = 0.55f))
+                                                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                                                ) {
+                                                    Text(
+                                                        text = comment.message,
+                                                        color = Color.White,
+                                                        fontSize = 13.sp
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -8196,7 +8210,10 @@ fun AudioHangoutRoomDialog(
                                                     userPhoto = currentUser.photo,
                                                     tier = if (currentUser.getVipLevel() > 0) "VIP" else if (currentUser.isVipOrPlatinum()) "Platinum" else "Standard",
                                                     message = msg,
-                                                    timestamp = System.currentTimeMillis()
+                                                    timestamp = System.currentTimeMillis(),
+                                                    chatFrameId = currentUser.activeChatFrame,
+                                                    vipLevel = currentUser.getEffectiveWealthLevel(),
+                                                    isFounder = currentUser.isFounder()
                                                 )
                                                 db.collection("rooms").document(room.id)
                                                     .collection("live_comments").document(commentDoc.id)
@@ -8242,7 +8259,10 @@ fun AudioHangoutRoomDialog(
                                                 userPhoto = currentUser.photo,
                                                 tier = if (currentUser.getVipLevel() > 0) "VIP" else if (currentUser.isVipOrPlatinum()) "Platinum" else "Standard",
                                                 message = msg,
-                                                timestamp = System.currentTimeMillis()
+                                                timestamp = System.currentTimeMillis(),
+                                                chatFrameId = currentUser.activeChatFrame,
+                                                vipLevel = currentUser.getEffectiveWealthLevel(),
+                                                isFounder = currentUser.isFounder()
                                             )
                                             db.collection("rooms").document(room.id)
                                                 .collection("live_comments").document(commentDoc.id)
