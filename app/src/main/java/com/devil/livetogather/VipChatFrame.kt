@@ -741,7 +741,10 @@ fun OrnateLuxuryEntranceCard(
                 // 1. User Avatar with Ornate Frame
                 FlowingAvatarFrame(
                     photoUrl = avatarUrl,
-                    frameId = if (isApexFounder) "frame_livetogather_founder" else (userProfile?.activeFrame ?: "frame_imperial_gold"),
+                    frameId = run {
+                        val af = userProfile?.activeFrame ?: ""
+                        if (af.isNotBlank()) af else if (isApexFounder) "frame_livetogather_founder" else "frame_imperial_gold"
+                    },
                     avatarSize = 36.dp,
                     frameSize = 54.dp,
                     showMicEffect = false
@@ -1280,18 +1283,18 @@ fun VipCenterDialog(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        // 2A. Hero 3D Badge & Spotlight Platform
-                        Box(
+                        // 2A. Hero 3D Badge & Spotlight Platform (Spacious & Clean)
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(190.dp),
-                            contentAlignment = Alignment.Center
+                                .padding(vertical = 4.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
                         ) {
                             // Spotlight Glow
                             Box(
                                 modifier = Modifier
                                     .size(180.dp, 80.dp)
-                                    .align(Alignment.BottomCenter)
                                     .background(
                                         Brush.radialGradient(
                                             listOf(
@@ -1312,7 +1315,7 @@ fun VipCenterDialog(
                                     contentDescription = currentTier.name,
                                     contentScale = ContentScale.Fit,
                                     modifier = Modifier
-                                        .size(125.dp)
+                                        .size(118.dp)
                                         .clickable { showEnlargedPreview = true }
                                 )
 
@@ -1579,117 +1582,156 @@ fun VipCenterDialog(
                     }
                 }
 
-                // 3. Fixed Bottom Action Bar (Direct Purchase Button + 1-Tap Equip)
+                // 3. Fixed Bottom Action Bar:
+                // Strictly ONLY Purchase button if not purchased!
+                // Once purchased, shows Wear (वियर) and Unwear (अनवियर) button!
+                val hasPurchasedTier = currentUser.plan.contains("VIP ${currentTier.level}", ignoreCase = true) ||
+                    currentUser.ownedFrames.contains(currentTier.frameId) ||
+                    currentUser.ownedChatFrames.contains(currentTier.chatFrameId)
+
+                val isWorn = currentUser.activeFrame == currentTier.frameId &&
+                    currentUser.activeChatFrame == currentTier.chatFrameId
+
                 Surface(
                     color = Color(0xFF08060D),
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 10.dp)
+                        .padding(horizontal = 20.dp, vertical = 12.dp)
                 ) {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        // PRIMARY ACTION: Direct Purchase Button (Opens Payment Section)
-                        Button(
-                            onClick = {
-                                checkoutPackage = CoinPackageItem(
-                                    id = "vip_package_${currentTier.level}",
-                                    coins = 0L,
-                                    priceInr = currentTier.formattedPrice,
-                                    numericPrice = currentTier.inrPrice.toString(),
-                                    title = "LiveTogather ${currentTier.name} Dressing Up Suite (30 Days)",
-                                    badge = currentTier.name
-                                )
-                                showPaymentModal = true
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFC107)),
-                            shape = RoundedCornerShape(26.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(50.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                Text("💳", fontSize = 16.sp)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "Purchase ${currentTier.name} • ${currentTier.formattedPrice} / 30 Days",
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 15.sp,
-                                    color = Color(0xFF1B1433)
-                                )
-                            }
-                        }
-
-                        // SECONDARY ACTION: 1-Tap Equip Suite (Available for Founder or owned tier)
-                        if (isOwned || isFounder) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            OutlinedButton(
+                        if (!hasPurchasedTier) {
+                            // NOT PURCHASED YET: Show ONLY the Purchase Button!
+                            Button(
                                 onClick = {
-                                    val newPlan = "VIP ${currentTier.level}"
-                                    val newFrame = currentTier.frameId
-                                    val newChatFrame = currentTier.chatFrameId
-                                    val newChatBar = "chat_sword_vip_${currentTier.level}"
-                                    val newArch = "arch_vip_${currentTier.level}"
-                                    val newCover = "cover_vip_${currentTier.level}"
-                                    val newEntrance = "entrance_vip_${currentTier.level}"
-
-                                    val updates = mapOf(
-                                        "plan" to newPlan,
-                                        "vipLevel" to currentTier.level,
-                                        "activeFrame" to newFrame,
-                                        "activeChatFrame" to newChatFrame,
-                                        "activeChatBar" to newChatBar,
-                                        "activeProfileArch" to newArch,
-                                        "activeProfileCover" to newCover,
-                                        "activeEntranceEffect" to newEntrance,
-                                        "ownedFrames" to (currentUser.ownedFrames + newFrame).distinct(),
-                                        "ownedChatFrames" to (currentUser.ownedChatFrames + newChatFrame).distinct()
+                                    checkoutPackage = CoinPackageItem(
+                                        id = "vip_package_${currentTier.level}",
+                                        coins = 0L,
+                                        priceInr = currentTier.formattedPrice,
+                                        numericPrice = currentTier.inrPrice.toString(),
+                                        title = "LiveTogather ${currentTier.name} Dressing Up Suite (30 Days)",
+                                        badge = currentTier.name
                                     )
-                                    db.collection("users").document(currentUser.uid).update(updates)
-
-                                    val prefs = context.getSharedPreferences("livetogather_user_prefs", Context.MODE_PRIVATE)
-                                    prefs.edit()
-                                        .putString("profile_active_frame", newFrame)
-                                        .putString("profile_active_chat_frame", newChatFrame)
-                                        .putString("profile_active_plan", newPlan)
-                                        .apply()
-
-                                    val updatedUser = currentUser.copy(
-                                        plan = newPlan,
-                                        activeFrame = newFrame,
-                                        activeChatFrame = newChatFrame,
-                                        ownedFrames = (currentUser.ownedFrames + newFrame).distinct(),
-                                        ownedChatFrames = (currentUser.ownedChatFrames + newChatFrame).distinct()
-                                    )
-                                    onProfileUpdated(updatedUser)
-
-                                    Toast.makeText(
-                                        context,
-                                        "👑 ${currentTier.name} Suite Equipped Everywhere!",
-                                        Toast.LENGTH_LONG
-                                    ).show()
+                                    showPaymentModal = true
                                 },
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    contentColor = if (isEquipped) Color(0xFF4ADE80) else Color(0xFFFFD700)
-                                ),
-                                border = BorderStroke(
-                                    1.5.dp,
-                                    if (isEquipped) Color(0xFF4ADE80) else Color(0xFFFFD700)
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFC107)),
+                                shape = RoundedCornerShape(26.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(52.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Text("💳", fontSize = 16.sp)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Purchase ${currentTier.name} • ${currentTier.formattedPrice} / 30 Days",
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 15.sp,
+                                        color = Color(0xFF1B1433)
+                                    )
+                                }
+                            }
+                        } else {
+                            // PURCHASED: Show Wear (वियर) / Unwear (अनवियर) Toggle Button!
+                            Button(
+                                onClick = {
+                                    if (isWorn) {
+                                        // Unwear: Remove VIP dressing up suite
+                                        val updates = mapOf(
+                                            "activeFrame" to "",
+                                            "activeChatFrame" to "",
+                                            "activeChatBar" to "",
+                                            "activeProfileArch" to "",
+                                            "activeProfileCover" to "",
+                                            "activeEntranceEffect" to ""
+                                        )
+                                        db.collection("users").document(currentUser.uid).update(updates)
+                                        val updatedUser = currentUser.copy(
+                                            activeFrame = "",
+                                            activeChatFrame = ""
+                                        )
+                                        onProfileUpdated(updatedUser)
+                                        Toast.makeText(context, "VIP Suite Unworn (हटा दिया गया)", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        // Wear: Equip entire VIP suite
+                                        val newPlan = "VIP ${currentTier.level}"
+                                        val newFrame = currentTier.frameId
+                                        val newChatFrame = currentTier.chatFrameId
+                                        val newChatBar = "chat_sword_vip_${currentTier.level}"
+                                        val newArch = "arch_vip_${currentTier.level}"
+                                        val newCover = "cover_vip_${currentTier.level}"
+                                        val newEntrance = "entrance_vip_${currentTier.level}"
+
+                                        val updates = mapOf(
+                                            "plan" to newPlan,
+                                            "vipLevel" to currentTier.level,
+                                            "activeFrame" to newFrame,
+                                            "activeChatFrame" to newChatFrame,
+                                            "activeChatBar" to newChatBar,
+                                            "activeProfileArch" to newArch,
+                                            "activeProfileCover" to newCover,
+                                            "activeEntranceEffect" to newEntrance,
+                                            "ownedFrames" to (currentUser.ownedFrames + newFrame).distinct(),
+                                            "ownedChatFrames" to (currentUser.ownedChatFrames + newChatFrame).distinct()
+                                        )
+                                        db.collection("users").document(currentUser.uid).update(updates)
+                                        val updatedUser = currentUser.copy(
+                                            plan = newPlan,
+                                            activeFrame = newFrame,
+                                            activeChatFrame = newChatFrame,
+                                            ownedFrames = (currentUser.ownedFrames + newFrame).distinct(),
+                                            ownedChatFrames = (currentUser.ownedChatFrames + newChatFrame).distinct()
+                                        )
+                                        onProfileUpdated(updatedUser)
+                                        Toast.makeText(context, "👑 ${currentTier.name} Suite Worn (वियर हो गया)!", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isWorn) Color(0xFFEF4444) else Color(0xFF16A34A)
                                 ),
                                 shape = RoundedCornerShape(26.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(42.dp)
+                                    .height(50.dp)
                             ) {
                                 Text(
-                                    text = if (isEquipped) "✓ Suite Currently Equipped (Tap to Re-Apply)" else "⚡ 1-Tap Equip ${currentTier.name} Suite",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
+                                    text = if (isWorn) "✕ Unwear (अनवियर करें)" else "👑 Wear (वियर करें)",
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 15.sp,
+                                    color = Color.White
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            // Small secondary renew button
+                            OutlinedButton(
+                                onClick = {
+                                    checkoutPackage = CoinPackageItem(
+                                        id = "vip_package_${currentTier.level}",
+                                        coins = 0L,
+                                        priceInr = currentTier.formattedPrice,
+                                        numericPrice = currentTier.inrPrice.toString(),
+                                        title = "LiveTogather ${currentTier.name} Dressing Up Suite (30 Days)",
+                                        badge = currentTier.name
+                                    )
+                                    showPaymentModal = true
+                                },
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFFD700)),
+                                border = BorderStroke(1.dp, Color(0xFFFFD700).copy(alpha = 0.6f)),
+                                shape = RoundedCornerShape(20.dp),
+                                modifier = Modifier.height(34.dp)
+                            ) {
+                                Text(
+                                    text = "Renew Subscription • ${currentTier.formattedPrice}",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold
                                 )
                             }
                         }

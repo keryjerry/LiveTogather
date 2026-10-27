@@ -5297,12 +5297,12 @@ fun AudioHangoutRoomDialog(
             userPhoto = currentUser.photo,
             tier = if (currentVipLvl > 0) "VIP $currentVipLvl" else if (currentUser.isVipOrPlatinum()) "Platinum" else "Standard",
             message = when {
-                isFounder -> "LiveTogather Founder has entered the room. Supreme Authority Active."
-                isCeo -> "LiveTogather CEO has entered the room. Supreme Leadership Active."
                 currentVipLvl == 4 -> "VIP 4 Celestial Dragon Sovereign has arrived in Celestial Chariot! 🐉✨"
                 currentVipLvl == 3 -> "VIP 3 Imperial Amethyst Monarch has arrived in Royal Carriage! 🔮✨"
                 currentVipLvl == 2 -> "VIP 2 Solar Phoenix Paladin has arrived in Golden Chariot! ☀️✨"
                 currentVipLvl == 1 -> "VIP 1 Frost Silver Knight has arrived in Platinum Chariot! ❄️✨"
+                isFounder -> "LiveTogather Founder has entered the room. Supreme Authority Active."
+                isCeo -> "LiveTogather CEO has entered the room. Supreme Leadership Active."
                 else -> "entered the room"
             },
             timestamp = System.currentTimeMillis(),
@@ -6635,9 +6635,8 @@ fun AudioHangoutRoomDialog(
                                             modifier = Modifier.padding(vertical = 4.dp)
                                         )
                                     } else {
-                                        val commenterAvatarFrame = commenterProfile?.activeFrame?.ifEmpty {
-                                            if (isCommentFounder) "frame_livetogather_founder" else ""
-                                        } ?: if (isCommentFounder) "frame_livetogather_founder" else ""
+                                        val activeF = commenterProfile?.activeFrame ?: ""
+                                        val commenterAvatarFrame = if (activeF.isNotBlank()) activeF else if (isCommentFounder) "frame_livetogather_founder" else ""
 
                                         Row(
                                             modifier = Modifier

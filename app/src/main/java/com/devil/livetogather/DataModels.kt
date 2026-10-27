@@ -815,6 +815,8 @@ data class UserProfile(
 
     // Administration & Role Control
     val isAdmin: Boolean = false,
+    val isOnline: Boolean = false,
+    val lastActive: Long = 0L,
     val bestFriends: List<String> = emptyList(),
     val adminInRoomIds: List<String> = emptyList(),
 
@@ -1003,6 +1005,12 @@ data class UserProfile(
         return dailySwipeCount < 15
     }
 
+    fun isUserOnline(): Boolean {
+        if (!isOnline) return false
+        val now = System.currentTimeMillis()
+        return (now - lastActive) < 3 * 60 * 1000L
+    }
+
     fun getVipLevel(): Int {
         val isTrialActive = isVipTrialActive()
         val frame = AVATAR_FRAMES_CATALOG.find { it.id == activeFrame }
@@ -1112,6 +1120,8 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
     val hasClaimedWelcomeBonus = doc.getBoolean("hasClaimedWelcomeBonus") ?: false
     val signupIpAddress = doc.getString("signupIpAddress") ?: ""
     val isAdmin = doc.getBoolean("isAdmin") ?: false
+    val isOnline = doc.getBoolean("isOnline") ?: false
+    val lastActive = doc.getLong("lastActive") ?: 0L
 
     @Suppress("UNCHECKED_CAST")
     val rawExpiries = doc.get("frameExpiries") as? Map<String, Any>
@@ -1228,6 +1238,8 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
         hasClaimedWelcomeBonus = hasClaimedWelcomeBonus,
         signupIpAddress = signupIpAddress,
         isAdmin = isAdmin,
+        isOnline = isOnline,
+        lastActive = lastActive,
         isSuspended = isSuspended,
         suspensionExpiry = suspensionExpiry,
         suspensionReason = suspensionReason,
