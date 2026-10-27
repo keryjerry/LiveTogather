@@ -356,6 +356,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                 hostTrialStartDate = prefs.getLong("profile_host_trial_start", 0L),
                 activeFrame = prefs.getString("profile_active_frame", "") ?: "",
                 ownedFrames = prefs.getStringSet("profile_owned_frames", emptySet())?.toList() ?: emptyList(),
+                officialRole = prefs.getString("profile_official_role", "") ?: "",
                 diamonds = prefs.getLong("profile_diamonds", 0L),
                 coins = prefs.getLong("profile_coins", prefs.getLong("profile_diamonds", 0L)),
                 vipTrialStartDate = prefs.getLong("profile_vip_trial_start", 0L),
@@ -405,6 +406,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                         val updatedEmailPrivacy = snapshot.getString("emailPrivacy") ?: currentUser.emailPrivacy
                         val updatedHasPasswordSet = snapshot.getBoolean("hasPasswordSet") ?: currentUser.hasPasswordSet
                         val updatedActiveFrame = snapshot.getString("activeFrame") ?: currentUser.activeFrame
+                        val updatedOfficialRole = snapshot.getString("officialRole") ?: currentUser.officialRole
 
                         if (isWhitelisted && snapshot.getBoolean("isAdmin") != true) {
                             db.collection("users").document(currentUserId).update("isAdmin", true)
@@ -416,7 +418,8 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                             currentUser.userId != finalUserId || currentUser.wealthLevel != updatedWealthLvl || currentUser.wealthXp != updatedWealthXp ||
                             currentUser.charmLevel != updatedCharmLvl || currentUser.charmXp != updatedCharmXp ||
                             currentUser.pkLevel != updatedPkLvl || currentUser.pkWins != updatedPkWins || currentUser.pkScore != updatedPkScore ||
-                            currentUser.email != updatedEmail || currentUser.emailPrivacy != updatedEmailPrivacy || currentUser.hasPasswordSet != updatedHasPasswordSet || currentUser.activeFrame != updatedActiveFrame) {
+                            currentUser.email != updatedEmail || currentUser.emailPrivacy != updatedEmailPrivacy || currentUser.hasPasswordSet != updatedHasPasswordSet ||
+                            currentUser.activeFrame != updatedActiveFrame || currentUser.officialRole != updatedOfficialRole) {
                             currentUser = currentUser.copy(
                                 isAdmin = adminFlag,
                                 coins = updatedCoins,
@@ -432,10 +435,12 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                                 email = updatedEmail,
                                 emailPrivacy = updatedEmailPrivacy,
                                 hasPasswordSet = updatedHasPasswordSet,
-                                activeFrame = updatedActiveFrame
+                                activeFrame = updatedActiveFrame,
+                                officialRole = updatedOfficialRole
                             )
                             prefs.edit()
                                 .putString("profile_active_frame", updatedActiveFrame)
+                                .putString("profile_official_role", updatedOfficialRole)
                                 .putBoolean("profile_is_admin", adminFlag)
                                 .putLong("profile_coins", updatedCoins)
                                 .putLong("profile_diamonds", updatedDiamonds)
@@ -631,6 +636,24 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
     var showSettingsDialog by remember { mutableStateOf(false) }
     var showLocationSetupDialog by remember { mutableStateOf(false) }
     var showPrivacyPolicy by remember { mutableStateOf(false) }
+
+    // Runtime Notification Permission Engine (Ensures sound + heads-up pop-up alerts on Android 13+)
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            AppNotificationHelper.ensureChannels(context)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        AppNotificationHelper.ensureChannels(context)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
 
     // Background GPS Auto-Detect Engine (silent background update like Tinder without blocking UI or dialog popups)
     val backgroundLocationPermissionLauncher = rememberLauncherForActivityResult(
@@ -1862,7 +1885,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                                         likes = updatedList.size
                                     )
                                 }
-                                toggleMomentLike(db, moment, currentUserId)
+                                toggleMomentLike(db, moment, currentUserId, currentUser)
                             },
                             onCommentMoment = { moment ->
                                 showCommentsMoment = moment
@@ -2464,6 +2487,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
             AdminApprovalDashboardModal(
                 adminUser = currentUser.copy(isAdmin = true),
                 initialTab = adminDashboardInitialTab,
+                onUpdateCurrentUser = { updated -> currentUser = updated },
                 onDismiss = { showAdminDashboardModal = false }
             )
         }
@@ -5507,9 +5531,9 @@ fun ProfileScreenContent(
                         val totalPending = pendingPayments + pendingReports
 
                         Surface(
-                            color = BrandCardSubtle,
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.2.dp, BrandGold),
+                            color = Color(0xFF1E172F),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, Color(0xFF3B2F50)),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
@@ -5526,8 +5550,8 @@ fun ProfileScreenContent(
                                     modifier = Modifier
                                         .size(38.dp)
                                         .clip(CircleShape)
-                                        .background(BrandGold.copy(alpha = 0.2f))
-                                        .border(1.2.dp, BrandGold, CircleShape),
+                                        .background(Color(0xFF31214B))
+                                        .border(1.dp, Color(0xFF6D28D9), CircleShape),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text("🛡️", fontSize = 18.sp)
@@ -5539,23 +5563,24 @@ fun ProfileScreenContent(
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
                                             text = "Admin Approvals Dashboard",
-                                            color = BrandGold,
+                                            color = Color.White,
                                             fontSize = 14.sp,
-                                            fontWeight = FontWeight.ExtraBold
+                                            fontWeight = FontWeight.Bold
                                         )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Surface(
-                                            color = if (totalPending > 0) BrandCoral else BrandGold.copy(alpha = 0.2f),
-                                            shape = RoundedCornerShape(4.dp),
-                                            border = BorderStroke(0.6.dp, if (totalPending > 0) BrandCoral else BrandGold)
-                                        ) {
-                                            Text(
-                                                text = if (totalPending > 0) "$totalPending PENDING" else "ADMIN",
-                                                color = if (totalPending > 0) Color.White else BrandGold,
-                                                fontSize = 9.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                                            )
+                                        if (totalPending > 0) {
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Surface(
+                                                color = BrandCoral,
+                                                shape = RoundedCornerShape(4.dp)
+                                            ) {
+                                                Text(
+                                                    text = "$totalPending PENDING",
+                                                    color = Color.White,
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                                )
+                                            }
                                         }
                                     }
                                     Spacer(modifier = Modifier.height(2.dp))
@@ -5563,19 +5588,18 @@ fun ProfileScreenContent(
                                         text = if (totalPending > 0) {
                                             "🚨 $pendingPayments payments & $pendingReports reports pending"
                                         } else {
-                                            "Review & approve pending UPI top-up requests"
+                                            "Founder & Staff Hub • User Management"
                                         },
-                                        color = if (totalPending > 0) BrandCoral else Color.LightGray,
+                                        color = if (totalPending > 0) BrandCoral else Color(0xFFA78BFA),
                                         fontSize = 11.sp,
-                                        lineHeight = 15.sp,
-                                        fontWeight = if (totalPending > 0) FontWeight.SemiBold else FontWeight.Normal
+                                        fontWeight = FontWeight.Normal
                                     )
                                 }
 
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
                                     contentDescription = null,
-                                    tint = BrandGold,
+                                    tint = Color(0xFFA78BFA),
                                     modifier = Modifier.size(14.dp)
                                 )
                             }
@@ -5967,6 +5991,7 @@ fun ProfileScreenContent(
     if (showAdminDashboardModal && currentUser.isOfficialAdmin(com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.email)) {
         AdminApprovalDashboardModal(
             adminUser = currentUser.copy(isAdmin = true),
+            onUpdateCurrentUser = { updated -> onUpdateProfile(updated) },
             onDismiss = { showAdminDashboardModal = false }
         )
     }
@@ -9162,7 +9187,7 @@ fun sendHostLiveNotification(
         }
 }
 
-fun toggleMomentLike(db: FirebaseFirestore, moment: MomentItem, currentUserId: String) {
+fun toggleMomentLike(db: FirebaseFirestore, moment: MomentItem, currentUserId: String, currentUser: UserProfile? = null) {
     val isLiked = moment.likedByUsers.contains(currentUserId)
     val updatedList = if (isLiked) moment.likedByUsers - currentUserId else moment.likedByUsers + currentUserId
     val newLikesCount = updatedList.size
@@ -9172,6 +9197,16 @@ fun toggleMomentLike(db: FirebaseFirestore, moment: MomentItem, currentUserId: S
             "likes" to newLikesCount
         )
     )
+    if (!isLiked && moment.userId.isNotBlank() && moment.userId != currentUserId && currentUser != null) {
+        sendNotification(
+            db = db,
+            targetUserId = moment.userId,
+            sender = currentUser,
+            type = "like",
+            title = "LiveTogather • New Like ❤️",
+            message = "Greetings from LiveTogather! ${currentUser.name} liked your moment! ✨"
+        )
+    }
 }
 
 fun formatRelativeTime(timestamp: Long): String {

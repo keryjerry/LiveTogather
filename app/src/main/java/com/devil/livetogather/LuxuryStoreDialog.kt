@@ -49,6 +49,7 @@ import kotlinx.coroutines.withContext
 fun LuxuryStoreDialog(
     currentUser: UserProfile,
     db: FirebaseFirestore,
+    roomId: String = "",
     onDismiss: () -> Unit,
     onOpenTopUp: () -> Unit = {},
     onProfileUpdated: (UserProfile) -> Unit = {}
@@ -514,6 +515,19 @@ fun LuxuryStoreDialog(
                                             prefs.edit().putString("profile_active_mic_effect", targetItem.id).apply()
                                         } else if (targetItem.category == "avatar_frame") {
                                             prefs.edit().putString("profile_active_frame", targetItem.id).apply()
+                                        }
+
+                                        if (roomId.isNotBlank()) {
+                                            val purchaseComment = mapOf(
+                                                "id" to java.util.UUID.randomUUID().toString(),
+                                                "userName" to currentUser.name,
+                                                "userPhoto" to (currentUser.photo ?: ""),
+                                                "message" to "💎 Just unlocked ${targetItem.name}! ✨",
+                                                "timestamp" to System.currentTimeMillis(),
+                                                "isSystem" to true,
+                                                "wealthLevel" to currentUser.getEffectiveWealthLevel()
+                                            )
+                                            db.collection("rooms").document(roomId).collection("live_comments").add(purchaseComment)
                                         }
 
                                         withContext(Dispatchers.Main) {

@@ -5335,14 +5335,21 @@ fun AudioHangoutRoomDialog(
                     db.collection("intent_categories").document(room.category)
                         .collection("rooms").document(room.id).update(closeUpdates)
                 }
-                // Clear members from room so no ghost viewers persist across sessions
+                // Clear members & all mic seats so no ghost viewers or speakers persist across sessions
                 db.collection("rooms").document(room.id).collection("members").get()
                     .addOnSuccessListener { snaps ->
                         for (doc in snaps.documents) {
                             doc.reference.delete()
                         }
                     }
+                db.collection("rooms").document(room.id).collection("mic_seats").get()
+                    .addOnSuccessListener { snaps ->
+                        for (doc in snaps.documents) {
+                            doc.reference.delete()
+                        }
+                    }
                 Toast.makeText(context, "Room session closed. 👋", Toast.LENGTH_SHORT).show()
+                onDismiss()
             }
         } else {
             val mySeat = micSeats.find { it.uid == currentUser.uid }
@@ -5568,6 +5575,12 @@ fun AudioHangoutRoomDialog(
                         onDismiss()
                         return@addSnapshotListener
                     }
+                    if (!isUserHost && (updated.isEnded || !updated.isLive)) {
+                        Toast.makeText(context, "Room session has ended 👋", Toast.LENGTH_SHORT).show()
+                        AudioPlayerManager.pause()
+                        onDismiss()
+                        return@addSnapshotListener
+                    }
                     room = updated
 
                     // Audio Sync: If room has track and is playing
@@ -5691,10 +5704,22 @@ fun AudioHangoutRoomDialog(
                         )
                     }
 
-                    // In-memory deduplication (NEVER write to Firestore inside snapshot listener!)
+                    // Real-time seat validation: instant cleanup for departed, offline, or dummy users
                     val seenUids = mutableSetOf<String>()
                     val cleanedList = fullList.map { seat ->
-                        if (seat.uid.isNotBlank()) {
+                        val isDummy = seat.uid.startsWith("companion_") || seat.uid == "companion_maya_vip" || seat.name.contains("Maya (Bestie", true)
+                        val isOccupantActive = seat.uid.isBlank() || (!isDummy && (
+                            seat.uid == targetHostId ||
+                            seat.uid == currentUser.uid ||
+                            activeMembers.any { it.uid == seat.uid }
+                        ))
+                        if (seat.uid.isNotBlank() && (!isOccupantActive || isDummy)) {
+                            // Seat occupant is offline, departed, or dummy -> immediately clear and free mic seat
+                            if (isUserHost || isUserAdmin || seat.uid == currentUser.uid || isDummy) {
+                                vacateMicSeat(db, room.id, seat.seatIndex, seat.isLocked)
+                            }
+                            seat.copy(uid = "", name = "", photo = "", isTalking = false, isMuted = false)
+                        } else if (seat.uid.isNotBlank()) {
                             if (seenUids.contains(seat.uid)) {
                                 seat.copy(uid = "", name = "", photo = "", isTalking = false, isMuted = false)
                             } else {
@@ -5713,7 +5738,7 @@ fun AudioHangoutRoomDialog(
 
         onDispose {
             micListener.remove()
-            val mySeat = micSeats.find { it.uid == currentUser.uid && it.role != "host" }
+            val mySeat = micSeats.find { it.uid == currentUser.uid }
             if (mySeat != null) {
                 micSeatsRef.document(mySeat.seatIndex.toString()).set(
                     MicSeat(
@@ -6565,77 +6590,7 @@ fun AudioHangoutRoomDialog(
                         }
                     }
 
-                    // Live Stage Mic Link Controls Bar (Visible in all room types)
-                    androidx.compose.foundation.layout.Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 2.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        androidx.compose.material3.Surface(
-                            color = Color(0xFF1E1435).copy(alpha = 0.90f),
-                            shape = RoundedCornerShape(12.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFD700).copy(alpha = 0.70f)),
-                            modifier = Modifier.clickable { showMicLinkSelectorDialog = true }
-                        ) {
-                            androidx.compose.foundation.layout.Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("⚡ Link: ", fontSize = 11.sp, color = Color.White.copy(alpha = 0.85f))
-                                val title = when (activeMicLinkDesignId) {
-                                    "mic_link_twin_besties" -> "Twin Besties 🌸"
-                                    "mic_link_cyberpunk_reactor" -> "Cyber Reactor ⚡"
-                                    "mic_link_celestial_wings" -> "Celestial Wings ✨"
-                                    "mic_link_emerald_infinity" -> "Emerald Infinity 💚"
-                                    else -> "Ruby Crown 👑"
-                                }
-                                Text(title, fontSize = 11.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, color = Color(0xFFFFD700))
-                                Text(" ▼", fontSize = 9.sp, color = Color.White.copy(alpha = 0.6f))
-                            }
-                        }
 
-                        // MASTER AUDIO CONTROL: MUTE ALL / UNMUTE ALL (For Founder, CEO, Staff & Admin)
-                        if (canStaffModerate) {
-                            val occupiedSeats = micSeats.filter { it.uid.isNotEmpty() }
-                            val allOccupiedMuted = occupiedSeats.isNotEmpty() && occupiedSeats.all { it.isMuted }
-
-                            Surface(
-                                color = if (allOccupiedMuted) Color(0xFF1B5E20) else Color(0xFFB71C1C),
-                                shape = RoundedCornerShape(12.dp),
-                                border = BorderStroke(1.dp, if (allOccupiedMuted) Color(0xFF81C784) else Color(0xFFFF8A80)),
-                                modifier = Modifier.clickable {
-                                    val targetMuteState = !allOccupiedMuted
-                                    occupiedSeats.forEach { s ->
-                                        val occupant = allProfiles.find { it.uid == s.uid }
-                                        // Founder Supreme Immunity: Never mute Founder unless clicked by Founder
-                                        if (occupant?.isFounder() == true && s.uid != currentUser.uid) {
-                                            // Skip founder
-                                        } else {
-                                            toggleMuteMicSeat(db, room.id, s.seatIndex, targetMuteState)
-                                        }
-                                    }
-                                    val msg = if (targetMuteState) "🔇 All room stage microphones muted!" else "🎙️ All stage microphones unmuted!"
-                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = if (allOccupiedMuted) "🎙️ UNMUTE ALL" else "🔇 MUTE ALL",
-                                        color = Color.White,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(2.dp))
 
                     if (isVipRoom) {
                         VipRoyalStageCanvas(
@@ -6664,69 +6619,6 @@ fun AudioHangoutRoomDialog(
                             categorySeatLabel = "Mic",
                             activeMicLinkId = activeMicLinkDesignId,
                             onOpenMicLinkSelector = { showMicLinkSelectorDialog = true },
-                            onToggleCompanionMaya = {
-                                val companionUid = "companion_maya_vip"
-                                val currentSeat1 = micSeats.find { it.seatIndex == 1 }
-                                if (currentSeat1 != null && currentSeat1.uid == companionUid) {
-                                    vacateMicSeat(db, room.id, 1, false)
-                                    android.widget.Toast.makeText(context, "Maya vacated Mic 2", android.widget.Toast.LENGTH_SHORT).show()
-                                } else {
-                                    val mayaSeat = MicSeat(
-                                        seatIndex = 1,
-                                        label = "Mic 2",
-                                        uid = companionUid,
-                                        name = "Maya (Bestie 🌸)",
-                                        photo = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80",
-                                        role = "speaker",
-                                        isTalking = true
-                                    )
-                                    db.collection("rooms").document(room.id).collection("mic_seats").document("1").set(mayaSeat)
-                                    // Also ensure user document exists for Maya
-                                    val mayaProfile = mapOf<String, Any>(
-                                        "uid" to companionUid,
-                                        "userId" to "maya_bestie_vip",
-                                        "name" to "Maya (Bestie 🌸)",
-                                        "photo" to "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80",
-                                        "gender" to "female",
-                                        "wealthLevel" to 35,
-                                        "charmLevel" to 42,
-                                        "diamonds" to 500000L,
-                                        "coins" to 1000000L,
-                                        "location" to "Mumbai",
-                                        "locationPrivacy" to "public",
-                                        "voiceVerificationStatus" to "verified"
-                                    )
-                                    db.collection("users").document(companionUid).set(mayaProfile)
-
-                                    // Record mutual Intimacy Bond for Stage & 1v1 Chat
-                                    val bondDocId = if (currentUser.uid < companionUid) "${currentUser.uid}_${companionUid}" else "${companionUid}_${currentUser.uid}"
-                                    val mayaBond = mapOf(
-                                        "bondId" to bondDocId,
-                                        "user1Id" to currentUser.uid,
-                                        "user2Id" to companionUid,
-                                        "user1Name" to currentUser.name,
-                                        "user2Name" to "Maya (Bestie 🌸)",
-                                        "user1Photo" to (currentUser.photo ?: ""),
-                                        "user2Photo" to "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80",
-                                        "bondType" to "bestie",
-                                        "intimacyLevel" to 5,
-                                        "intimacyXp" to 1500L,
-                                        "streakDays" to 7,
-                                        "activeMicLinkId" to "mic_link_twin_besties",
-                                        "status" to "active",
-                                        "createdAt" to System.currentTimeMillis()
-                                    )
-                                    db.collection("intimacy_bonds").document(bondDocId).set(mayaBond, com.google.firebase.firestore.SetOptions.merge())
-
-                                    // Ensure mutual follow for 1v1 chat access
-                                    db.collection("users").document(currentUser.uid).collection("followers").document(companionUid)
-                                        .set(mapOf("followedAt" to System.currentTimeMillis()), com.google.firebase.firestore.SetOptions.merge())
-                                    db.collection("users").document(companionUid).collection("followers").document(currentUser.uid)
-                                        .set(mapOf("followedAt" to System.currentTimeMillis()), com.google.firebase.firestore.SetOptions.merge())
-
-                                    android.widget.Toast.makeText(context, "🌸 Maya joined Mic 2! ⚡ 3D Mic Link Active!", android.widget.Toast.LENGTH_SHORT).show()
-                                }
-                            },
                             onSeatClick = handleSeatClick,
                             onQuickToggleMute = {
                                 myCurrentMicSeat?.let { seat ->
@@ -7839,6 +7731,7 @@ fun AudioHangoutRoomDialog(
                     diamonds = userDiamonds
                 ),
                 db = db,
+                roomId = room.id,
                 onDismiss = { showLuxuryStoreDialog = false },
                 onProfileUpdated = { updated ->
                     activeUserFrame = updated.activeFrame
@@ -7880,6 +7773,18 @@ fun AudioHangoutRoomDialog(
                     val newTotal = userDiamonds + addedDiamonds
                     db.collection("users").document(currentUser.uid).update("diamonds", newTotal)
                     userDiamonds = newTotal
+                    if (room.id.isNotBlank()) {
+                        val rechargeComment = mapOf(
+                            "id" to java.util.UUID.randomUUID().toString(),
+                            "userName" to currentUser.name,
+                            "userPhoto" to (currentUser.photo ?: ""),
+                            "message" to "💎 Recharged $addedDiamonds Diamonds! ✨",
+                            "timestamp" to System.currentTimeMillis(),
+                            "isSystem" to true,
+                            "wealthLevel" to currentUser.getEffectiveWealthLevel()
+                        )
+                        db.collection("rooms").document(room.id).collection("live_comments").add(rechargeComment)
+                    }
                     Toast.makeText(context, "🎉 Recharged $addedDiamonds Diamonds!", Toast.LENGTH_SHORT).show()
                 },
                 onBuyFrame = { frameId, cost ->
@@ -7904,6 +7809,18 @@ fun AudioHangoutRoomDialog(
                             .putStringSet("profile_owned_frames", newOwned.toSet())
                             .putString("profile_active_frame", frameId)
                             .apply()
+                        if (room.id.isNotBlank()) {
+                            val frameComment = mapOf(
+                                "id" to java.util.UUID.randomUUID().toString(),
+                                "userName" to currentUser.name,
+                                "userPhoto" to (currentUser.photo ?: ""),
+                                "message" to "👑 Just acquired & equipped a Luxury Avatar Frame! ✨",
+                                "timestamp" to System.currentTimeMillis(),
+                                "isSystem" to true,
+                                "wealthLevel" to currentUser.getEffectiveWealthLevel()
+                            )
+                            db.collection("rooms").document(room.id).collection("live_comments").add(frameComment)
+                        }
                         Toast.makeText(context, "👑 Frame Purchased & Equipped for 1 Month (30 Days)!", Toast.LENGTH_SHORT).show()
                         AppNotificationHelper.showSystemNotification(
                             context = context,
@@ -9989,7 +9906,6 @@ fun TenMicStageSection(
     categorySeatLabel: String = "Seat",
     activeMicLinkId: String = "mic_link_ruby_crown",
     onOpenMicLinkSelector: () -> Unit = {},
-    onToggleCompanionMaya: () -> Unit = {},
     onSeatClick: (MicSeat) -> Unit,
     onQuickToggleMute: () -> Unit,
     onQuickLeaveStage: () -> Unit
@@ -10470,7 +10386,7 @@ fun MicSeatView(
                     isSpeaking = isSpeaking,
                     vipLevel = seatVipLvl,
                     showVipBadge = false,
-                    showMicEffect = true,
+                    showMicEffect = seatMicEffectId.isNotBlank() && isSpeaking,
                     micEffectId = seatMicEffectId
                 )
 

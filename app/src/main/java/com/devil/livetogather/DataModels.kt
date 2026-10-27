@@ -74,6 +74,7 @@ data class RoomItem(
     @get:PropertyName("roomName") @set:PropertyName("roomName") var roomName: String = "",
     @get:PropertyName("hostUid") @set:PropertyName("hostUid") var hostUid: String = "",
     @get:PropertyName("isLive") @set:PropertyName("isLive") var isLive: Boolean = true,
+    @get:PropertyName("isEnded") @set:PropertyName("isEnded") var isEnded: Boolean = false,
     @get:PropertyName("announcement") @set:PropertyName("announcement") var announcement: String = "",
     @get:PropertyName("isLocked") @set:PropertyName("isLocked") var isLocked: Boolean = false,
     @get:PropertyName("trackStartedAt") @set:PropertyName("trackStartedAt") var trackStartedAt: Long = 0L,

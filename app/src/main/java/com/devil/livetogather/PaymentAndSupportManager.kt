@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
@@ -1666,6 +1667,7 @@ private fun TicketCard(ticket: PaymentRequestTicket) {
 fun AdminApprovalDashboardModal(
     adminUser: UserProfile,
     initialTab: Int = 0,
+    onUpdateCurrentUser: (UserProfile) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -1715,24 +1717,24 @@ fun AdminApprovalDashboardModal(
 
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
         Surface(
             modifier = Modifier
                 .fillMaxWidth(0.96f)
-                .fillMaxHeight(0.92f)
+                .fillMaxHeight(0.94f)
                 .imePadding(),
-            shape = RoundedCornerShape(24.dp),
-            color = BrandDark,
-            border = BorderStroke(1.5.dp, BrandGold)
+            shape = RoundedCornerShape(20.dp),
+            color = Color(0xFF140F20),
+            border = BorderStroke(1.dp, Color(0xFF3B2F50))
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Header
+                // Header (Sleek dark amethyst, clean styling)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(BrandCard)
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                        .background(Color(0xFF1E172F))
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -1741,7 +1743,8 @@ fun AdminApprovalDashboardModal(
                             modifier = Modifier
                                 .size(36.dp)
                                 .clip(CircleShape)
-                                .background(BrandGold.copy(alpha = 0.2f)),
+                                .background(Color(0xFF31214B))
+                                .border(1.dp, Color(0xFF6D28D9), CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             Text("🛡️", fontSize = 18.sp)
@@ -1750,15 +1753,17 @@ fun AdminApprovalDashboardModal(
                         Column {
                             Text(
                                 text = "Admin Approvals Dashboard",
-                                color = BrandGold,
+                                color = Color.White,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = if (selectedAdminTab == 0) "${pendingRequests.size} Pending Payment Approvals" else "${pendingReports.size} Pending User Reports",
-                                color = if ((if (selectedAdminTab == 0) pendingRequests.size else pendingReports.size) > 0) BrandCoral else Color.Gray,
+                                text = if (selectedAdminTab == 0) "${pendingRequests.size} Pending Payment Approvals"
+                                       else if (selectedAdminTab == 1) "${pendingReports.size} Pending User Reports"
+                                       else "Founder, CEO & Staff Power Hub",
+                                color = Color(0xFFA78BFA),
                                 fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold
+                                fontWeight = FontWeight.Medium
                             )
                         }
                     }
@@ -1767,17 +1772,17 @@ fun AdminApprovalDashboardModal(
                         onClick = onDismiss,
                         modifier = Modifier
                             .size(32.dp)
-                            .background(BrandDark, CircleShape)
+                            .background(Color(0xFF261D3A), CircleShape)
                     ) {
                         Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(16.dp))
                     }
                 }
 
-                // Dual Navigation Tabs: Payments vs User Reports
+                // Navigation Tabs
                 TabRow(
                     selectedTabIndex = selectedAdminTab,
-                    containerColor = BrandDark,
-                    contentColor = BrandGold
+                    containerColor = Color(0xFF161024),
+                    contentColor = Color(0xFFA78BFA)
                 ) {
                     Tab(
                         selected = selectedAdminTab == 0,
@@ -1933,7 +1938,7 @@ fun AdminApprovalDashboardModal(
                     }
                 } else if (selectedAdminTab == 2) {
                     // TAB 2: FOUNDER, CEO & OFFICIAL STAFF POWER HUB
-                    AdminStaffAndPowerHubSection(adminUser = adminUser)
+                    AdminStaffAndPowerHubSection(adminUser = adminUser, onUpdateCurrentUser = onUpdateCurrentUser)
                 }
             }
         }
@@ -3551,15 +3556,18 @@ private fun CountdownUnitBlock(value: String, label: String) {
 // ---------------------------------------------------------------------
 
 @Composable
-fun AdminStaffAndPowerHubSection(adminUser: UserProfile) {
+fun AdminStaffAndPowerHubSection(
+    adminUser: UserProfile,
+    onUpdateCurrentUser: (UserProfile) -> Unit = {}
+) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val db = remember { com.google.firebase.firestore.FirebaseFirestore.getInstance() }
-    var searchQuery by remember { mutableStateOf("") }
+    var searchQuery by remember { mutableStateOf(adminUser.email.ifBlank { adminUser.userId }) }
     var isSearching by remember { mutableStateOf(false) }
-    var searchedUser by remember { mutableStateOf<UserProfile?>(null) }
+    // Default immediately to the logged-in adminUser so founder profile is ready instantly!
+    var searchedUser by remember { mutableStateOf<UserProfile?>(adminUser) }
     var searchError by remember { mutableStateOf<String?>(null) }
     var diamondDelta by remember { mutableStateOf("20000") }
-    var coinDelta by remember { mutableStateOf("20000") }
     var isProcessing by remember { mutableStateOf(false) }
 
     val frameOptions = remember {
@@ -3589,6 +3597,24 @@ fun AdminStaffAndPowerHubSection(adminUser: UserProfile) {
     val validityOptions = listOf(7 to "7 Days", 10 to "10 Days", 30 to "30 Days", 90 to "90 Days", 0 to "Lifetime")
     var selectedValidityDays by remember { mutableIntStateOf(30) }
 
+    // REAL-TIME FIRESTORE LISTENER ON SEARCHED USER:
+    // The exact millisecond Firestore updates, searchedUser is updated in real time!
+    DisposableEffect(searchedUser?.uid) {
+        val targetUid = searchedUser?.uid
+        if (targetUid.isNullOrBlank()) return@DisposableEffect onDispose {}
+
+        val listener = db.collection("users").document(targetUid).addSnapshotListener { snap, err ->
+            if (snap != null && snap.exists()) {
+                val fresh = parseUserProfileFromDoc(snap).copy(uid = snap.id)
+                searchedUser = fresh
+                if (snap.id == adminUser.uid) {
+                    onUpdateCurrentUser(fresh)
+                }
+            }
+        }
+        onDispose { listener.remove() }
+    }
+
     fun executeSearch(query: String) {
         val q = query.trim()
         if (q.isBlank()) {
@@ -3610,14 +3636,17 @@ fun AdminStaffAndPowerHubSection(adminUser: UserProfile) {
             isSearching = false
             if (result is com.google.firebase.firestore.QuerySnapshot) {
                 if (!result.isEmpty) {
-                    searchedUser = parseUserProfileFromDoc(result.documents[0])
+                    val doc = result.documents[0]
+                    val parsed = parseUserProfileFromDoc(doc).copy(uid = doc.id)
+                    searchedUser = parsed
                 } else {
                     searchedUser = null
                     searchError = "No user found with '$q'"
                 }
             } else if (result is com.google.firebase.firestore.DocumentSnapshot) {
                 if (result.exists()) {
-                    searchedUser = parseUserProfileFromDoc(result)
+                    val parsed = parseUserProfileFromDoc(result).copy(uid = result.id)
+                    searchedUser = parsed
                 } else {
                     searchedUser = null
                     searchError = "No user found with '$q'"
@@ -3633,58 +3662,60 @@ fun AdminStaffAndPowerHubSection(adminUser: UserProfile) {
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(14.dp),
+            .imePadding(),
+        contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 150.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Quick Founders Shortcuts Row
+        // Quick Founders Shortcuts Row (No yellow borders)
         item {
             Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1F152E)),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1B142B)),
                 shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.5f))
+                border = BorderStroke(1.dp, Color(0xFF3B2F50))
             ) {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("👑 Quick Founder Access", color = BrandGold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("👑 Quick Load Account", color = Color(0xFFA78BFA), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Button(
                             onClick = {
-                                searchQuery = "service.secure822@gmail.com"
-                                executeSearch("service.secure822@gmail.com")
+                                searchedUser = adminUser
+                                searchQuery = adminUser.email.ifBlank { adminUser.userId }
+                                Toast.makeText(context, "Loaded your Account (${adminUser.name})", Toast.LENGTH_SHORT).show()
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7E57C2)),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6D28D9)),
                             shape = RoundedCornerShape(10.dp),
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                            modifier = Modifier.weight(1f).height(36.dp)
+                            modifier = Modifier.weight(1f).height(38.dp)
                         ) {
-                            Text("👑 service.secure822", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            Text("👤 Load My Account (${adminUser.name.ifBlank { "Founder" }})", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
                         }
 
                         Button(
                             onClick = {
-                                searchQuery = "servicesecure822@gmail.com"
-                                executeSearch("servicesecure822@gmail.com")
+                                searchQuery = "service.secure822@gmail.com"
+                                executeSearch("service.secure822@gmail.com")
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4527A0)),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4C1D95)),
                             shape = RoundedCornerShape(10.dp),
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                            modifier = Modifier.weight(1f).height(36.dp)
+                            modifier = Modifier.weight(1f).height(38.dp)
                         ) {
-                            Text("👑 servicesecure822", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            Text("👑 Founder Email", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
                         }
                     }
                 }
             }
         }
 
-        // Search Input Bar
+        // Search Input Bar (No yellow borders)
         item {
             Card(
-                colors = CardDefaults.cardColors(containerColor = BrandCard),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1B142B)),
                 shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.dp, BrandBorder)
+                border = BorderStroke(1.dp, Color(0xFF3B2F50))
             ) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("🔍 Search User by 8-Digit ID or Email", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
@@ -3701,21 +3732,21 @@ fun AdminStaffAndPowerHubSection(adminUser: UserProfile) {
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = Color.White,
                                 unfocusedTextColor = Color.White,
-                                focusedBorderColor = BrandGold,
-                                unfocusedBorderColor = BrandBorder
+                                focusedBorderColor = Color(0xFFA78BFA),
+                                unfocusedBorderColor = Color(0xFF3B2F50)
                             ),
                             modifier = Modifier.weight(1f)
                         )
                         Button(
                             onClick = { executeSearch(searchQuery) },
-                            colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED)),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.height(52.dp)
                         ) {
                             if (isSearching) {
-                                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = BrandDark, strokeWidth = 2.dp)
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
                             } else {
-                                Text("Search", color = BrandDark, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Text("Search", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                             }
                         }
                     }
@@ -3731,12 +3762,12 @@ fun AdminStaffAndPowerHubSection(adminUser: UserProfile) {
         if (searchedUser != null) {
             val target = searchedUser!!
 
-            // User Identity Card
+            // User Identity Card (Sleek dark design, no yellow borders)
             item {
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF141024)),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF140F20)),
                     shape = RoundedCornerShape(18.dp),
-                    border = BorderStroke(1.5.dp, if (target.isFounder()) BrandGold else if (target.isCeo()) Color(0xFF00E5FF) else BrandBorder)
+                    border = BorderStroke(1.dp, Color(0xFF4C3A66))
                 ) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(
@@ -3755,7 +3786,7 @@ fun AdminStaffAndPowerHubSection(adminUser: UserProfile) {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Text(target.name, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Black)
                                     if (target.isFounder()) {
-                                        Text("👑 Founder", color = BrandGold, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        Text("👑 Founder", color = Color(0xFFFFD700), fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                     } else if (target.isCeo()) {
                                         Text("💎 CEO", color = Color(0xFF00E5FF), fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                     }
@@ -3763,8 +3794,8 @@ fun AdminStaffAndPowerHubSection(adminUser: UserProfile) {
                                 Text("ID: ${target.userId} | ${target.email}", color = Color.LightGray, fontSize = 11.sp)
                                 Spacer(modifier = Modifier.height(3.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    Text("💎 %,d".format(target.diamonds), color = Color(0xFF00E5FF), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                    Text("🪙 %,d".format(target.coins), color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text("💎 %,d Diamonds".format(target.diamonds), color = Color(0xFF00E5FF), fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                    Text("🪙 %,d Coins".format(target.coins), color = Color(0xFFFFB74D), fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -3773,9 +3804,9 @@ fun AdminStaffAndPowerHubSection(adminUser: UserProfile) {
                         val roleBadgeRes = target.getOfficialRoleBadgeRes()
                         if (roleBadgeRes != null) {
                             Surface(
-                                color = Color.Black.copy(alpha = 0.4f),
+                                color = Color.Black.copy(alpha = 0.5f),
                                 shape = RoundedCornerShape(12.dp),
-                                border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.5f)),
+                                border = BorderStroke(1.dp, Color(0xFF4C3A66)),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(
@@ -3789,9 +3820,9 @@ fun AdminStaffAndPowerHubSection(adminUser: UserProfile) {
                                             contentDescription = "Badge",
                                             modifier = Modifier.height(28.dp)
                                         )
-                                        Text(target.getOfficialRoleTitle(), color = BrandGold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Text(target.getOfficialRoleTitle(), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                     }
-                                    Text("● ACTIVE", color = Color(0xFF00E676), fontSize = 9.sp, fontWeight = FontWeight.Black)
+                                    Text("● REAL-TIME ACTIVE", color = Color(0xFF00E676), fontSize = 9.sp, fontWeight = FontWeight.Black)
                                 }
                             }
                         }
@@ -3799,16 +3830,16 @@ fun AdminStaffAndPowerHubSection(adminUser: UserProfile) {
                 }
             }
 
-            // 1-Click Official Appointments Panel
+            // 1-Click Official Appointments Panel (Instant Real-time)
             item {
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = BrandCard),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1B142B)),
                     shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, BrandBorder)
+                    border = BorderStroke(1.dp, Color(0xFF3B2F50))
                 ) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("👑 1-Click Leadership & Staff Appointments", color = BrandGold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                        Text("Clicking automatically assigns the official role, unlocks 3D winged badges and frames in real time.", color = Color.Gray, fontSize = 10.5.sp)
+                        Text("👑 1-Click Leadership & Staff Appointments", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Text("Clicking instantly assigns official role, 3D winged badges and frames in real time.", color = Color.LightGray, fontSize = 10.5.sp)
 
                         // Founder & CEO Row
                         Row(
@@ -3818,45 +3849,57 @@ fun AdminStaffAndPowerHubSection(adminUser: UserProfile) {
                             Button(
                                 onClick = {
                                     isProcessing = true
-                                    db.collection("users").document(target.uid).update(
-                                        mapOf(
-                                            "officialRole" to "founder",
-                                            "activeFrame" to "frame_livetogather_founder",
-                                            "ownedFrames" to FieldValue.arrayUnion("frame_livetogather_founder"),
-                                            "isAdmin" to true
-                                        )
-                                    ).addOnSuccessListener {
-                                        isProcessing = false
-                                        searchedUser = target.copy(officialRole = "founder", activeFrame = "frame_livetogather_founder", isAdmin = true)
-                                        Toast.makeText(context, "👑 ${target.name} appointed as LiveTogather Founder! Wings Frame & Badge activated.", Toast.LENGTH_SHORT).show()
-                                    }.addOnFailureListener { isProcessing = false }
+                                    val updates = mapOf(
+                                        "officialRole" to "founder",
+                                        "activeFrame" to "frame_livetogather_founder",
+                                        "ownedFrames" to FieldValue.arrayUnion("frame_livetogather_founder"),
+                                        "isAdmin" to true
+                                    )
+                                    db.collection("users").document(target.uid).set(updates, SetOptions.merge())
+                                        .addOnSuccessListener {
+                                            isProcessing = false
+                                            val updated = target.copy(officialRole = "founder", activeFrame = "frame_livetogather_founder", isAdmin = true)
+                                            searchedUser = updated
+                                            if (target.uid == adminUser.uid) onUpdateCurrentUser(updated)
+                                            Toast.makeText(context, "👑 Appointed as LiveTogather Founder! Badge & Wings Frame active.", Toast.LENGTH_SHORT).show()
+                                        }
+                                        .addOnFailureListener { e ->
+                                            isProcessing = false
+                                            Toast.makeText(context, "❌ Error: ${e.message}", Toast.LENGTH_LONG).show()
+                                        }
                                 },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB300)),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED)),
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.weight(1f).height(42.dp)
                             ) {
-                                Text("👑 Appoint Founder", color = BrandDark, fontWeight = FontWeight.Black, fontSize = 11.sp)
+                                Text("👑 Appoint Founder", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                             }
 
                             Button(
                                 onClick = {
                                     isProcessing = true
-                                    db.collection("users").document(target.uid).update(
-                                        mapOf(
-                                            "officialRole" to "ceo",
-                                            "isAdmin" to true
-                                        )
-                                    ).addOnSuccessListener {
-                                        isProcessing = false
-                                        searchedUser = target.copy(officialRole = "ceo", isAdmin = true)
-                                        Toast.makeText(context, "💎 ${target.name} appointed as LiveTogather CEO! Badge activated.", Toast.LENGTH_SHORT).show()
-                                    }.addOnFailureListener { isProcessing = false }
+                                    val updates = mapOf(
+                                        "officialRole" to "ceo",
+                                        "isAdmin" to true
+                                    )
+                                    db.collection("users").document(target.uid).set(updates, SetOptions.merge())
+                                        .addOnSuccessListener {
+                                            isProcessing = false
+                                            val updated = target.copy(officialRole = "ceo", isAdmin = true)
+                                            searchedUser = updated
+                                            if (target.uid == adminUser.uid) onUpdateCurrentUser(updated)
+                                            Toast.makeText(context, "💎 Appointed as LiveTogather CEO! Badge active.", Toast.LENGTH_SHORT).show()
+                                        }
+                                        .addOnFailureListener { e ->
+                                            isProcessing = false
+                                            Toast.makeText(context, "❌ Error: ${e.message}", Toast.LENGTH_LONG).show()
+                                        }
                                 },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00B0FF)),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.weight(1f).height(42.dp)
                             ) {
-                                Text("💎 Appoint CEO", color = BrandDark, fontWeight = FontWeight.Black, fontSize = 11.sp)
+                                Text("💎 Appoint CEO", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                             }
                         }
 
@@ -3868,12 +3911,18 @@ fun AdminStaffAndPowerHubSection(adminUser: UserProfile) {
                             OutlinedButton(
                                 onClick = {
                                     isProcessing = true
-                                    db.collection("users").document(target.uid).update("officialRole", "analyzer")
+                                    db.collection("users").document(target.uid).set(mapOf("officialRole" to "analyzer"), SetOptions.merge())
                                         .addOnSuccessListener {
                                             isProcessing = false
-                                            searchedUser = target.copy(officialRole = "analyzer")
+                                            val updated = target.copy(officialRole = "analyzer")
+                                            searchedUser = updated
+                                            if (target.uid == adminUser.uid) onUpdateCurrentUser(updated)
                                             Toast.makeText(context, "🔍 Appointed Official Analyzer! Badge activated.", Toast.LENGTH_SHORT).show()
-                                        }.addOnFailureListener { isProcessing = false }
+                                        }
+                                        .addOnFailureListener { e ->
+                                            isProcessing = false
+                                            Toast.makeText(context, "❌ Error: ${e.message}", Toast.LENGTH_LONG).show()
+                                        }
                                 },
                                 border = BorderStroke(1.dp, Color(0xFF00F0FF)),
                                 shape = RoundedCornerShape(10.dp),
@@ -3886,12 +3935,18 @@ fun AdminStaffAndPowerHubSection(adminUser: UserProfile) {
                             OutlinedButton(
                                 onClick = {
                                     isProcessing = true
-                                    db.collection("users").document(target.uid).update("officialRole", "volunteer")
+                                    db.collection("users").document(target.uid).set(mapOf("officialRole" to "volunteer"), SetOptions.merge())
                                         .addOnSuccessListener {
                                             isProcessing = false
-                                            searchedUser = target.copy(officialRole = "volunteer")
+                                            val updated = target.copy(officialRole = "volunteer")
+                                            searchedUser = updated
+                                            if (target.uid == adminUser.uid) onUpdateCurrentUser(updated)
                                             Toast.makeText(context, "🤝 Appointed Community Volunteer! Badge activated.", Toast.LENGTH_SHORT).show()
-                                        }.addOnFailureListener { isProcessing = false }
+                                        }
+                                        .addOnFailureListener { e ->
+                                            isProcessing = false
+                                            Toast.makeText(context, "❌ Error: ${e.message}", Toast.LENGTH_LONG).show()
+                                        }
                                 },
                                 border = BorderStroke(1.dp, Color(0xFF00FFA3)),
                                 shape = RoundedCornerShape(10.dp),
@@ -3904,19 +3959,25 @@ fun AdminStaffAndPowerHubSection(adminUser: UserProfile) {
                             OutlinedButton(
                                 onClick = {
                                     isProcessing = true
-                                    db.collection("users").document(target.uid).update("officialRole", "safety_patrol")
+                                    db.collection("users").document(target.uid).set(mapOf("officialRole" to "safety_patrol"), SetOptions.merge())
                                         .addOnSuccessListener {
                                             isProcessing = false
-                                            searchedUser = target.copy(officialRole = "safety_patrol")
+                                            val updated = target.copy(officialRole = "safety_patrol")
+                                            searchedUser = updated
+                                            if (target.uid == adminUser.uid) onUpdateCurrentUser(updated)
                                             Toast.makeText(context, "🛡️ Appointed Safety Patrol! Badge activated.", Toast.LENGTH_SHORT).show()
-                                        }.addOnFailureListener { isProcessing = false }
+                                        }
+                                        .addOnFailureListener { e ->
+                                            isProcessing = false
+                                            Toast.makeText(context, "❌ Error: ${e.message}", Toast.LENGTH_LONG).show()
+                                        }
                                 },
-                                border = BorderStroke(1.dp, Color(0xFFFFD700)),
+                                border = BorderStroke(1.dp, Color(0xFFFF5252)),
                                 shape = RoundedCornerShape(10.dp),
                                 contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
                                 modifier = Modifier.weight(1f).height(38.dp)
                             ) {
-                                Text("🛡️ Safety", color = Color(0xFFFFD700), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text("🛡️ Safety", color = Color(0xFFFF5252), fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
                         }
 
@@ -3925,18 +3986,24 @@ fun AdminStaffAndPowerHubSection(adminUser: UserProfile) {
                             onClick = {
                                 isProcessing = true
                                 val newFrame = if (target.activeFrame == "frame_livetogather_founder") "" else target.activeFrame
-                                db.collection("users").document(target.uid).update(
-                                    mapOf(
-                                        "officialRole" to "",
-                                        "activeFrame" to newFrame
-                                    )
-                                ).addOnSuccessListener {
-                                    isProcessing = false
-                                    searchedUser = target.copy(officialRole = "", activeFrame = newFrame)
-                                    Toast.makeText(context, "⚠️ Position dismissed! Badges revoked.", Toast.LENGTH_SHORT).show()
-                                }.addOnFailureListener { isProcessing = false }
+                                val updates = mapOf(
+                                    "officialRole" to "",
+                                    "activeFrame" to newFrame
+                                )
+                                db.collection("users").document(target.uid).set(updates, SetOptions.merge())
+                                    .addOnSuccessListener {
+                                        isProcessing = false
+                                        val updated = target.copy(officialRole = "", activeFrame = newFrame)
+                                        searchedUser = updated
+                                        if (target.uid == adminUser.uid) onUpdateCurrentUser(updated)
+                                        Toast.makeText(context, "⚠️ Position dismissed! Badges revoked.", Toast.LENGTH_SHORT).show()
+                                    }
+                                    .addOnFailureListener { e ->
+                                        isProcessing = false
+                                        Toast.makeText(context, "❌ Error: ${e.message}", Toast.LENGTH_LONG).show()
+                                    }
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB71C1C)),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF991B1B)),
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth().height(38.dp)
                         ) {
@@ -3946,12 +4013,12 @@ fun AdminStaffAndPowerHubSection(adminUser: UserProfile) {
                 }
             }
 
-            // Wallet Super Power (Inject / Deduct Diamonds & Coins)
+            // Wallet Super Power (Inject / Deduct Diamonds & Coins - Instant Real-Time)
             item {
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = BrandCard),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1B142B)),
                     shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, BrandBorder)
+                    border = BorderStroke(1.dp, Color(0xFF3B2F50))
                 ) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text("💎 Wallet Power (Direct Diamonds & Coins Injection)", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
@@ -3965,14 +4032,13 @@ fun AdminStaffAndPowerHubSection(adminUser: UserProfile) {
                                 OutlinedButton(
                                     onClick = {
                                         diamondDelta = preset
-                                        coinDelta = preset
                                     },
-                                    border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.5f)),
+                                    border = BorderStroke(1.dp, Color(0xFF4C3A66)),
                                     shape = RoundedCornerShape(8.dp),
                                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
                                     modifier = Modifier.weight(1f).height(32.dp)
                                 ) {
-                                    Text("+$preset", fontSize = 10.sp, color = BrandGold)
+                                    Text("+$preset", fontSize = 10.sp, color = Color(0xFFA78BFA))
                                 }
                             }
                         }
@@ -3986,8 +4052,8 @@ fun AdminStaffAndPowerHubSection(adminUser: UserProfile) {
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = Color.White,
                                 unfocusedTextColor = Color.White,
-                                focusedBorderColor = BrandGold,
-                                unfocusedBorderColor = BrandBorder
+                                focusedBorderColor = Color(0xFFA78BFA),
+                                unfocusedBorderColor = Color(0xFF3B2F50)
                             ),
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -4002,19 +4068,26 @@ fun AdminStaffAndPowerHubSection(adminUser: UserProfile) {
                                     val amt = diamondDelta.toLongOrNull() ?: 0L
                                     if (amt <= 0) return@Button
                                     isProcessing = true
+                                    val newDiamonds = target.diamonds + amt
                                     db.collection("users").document(target.uid)
-                                        .update("diamonds", FieldValue.increment(amt))
+                                        .set(mapOf("diamonds" to newDiamonds), SetOptions.merge())
                                         .addOnSuccessListener {
                                             isProcessing = false
-                                            searchedUser = target.copy(diamonds = target.diamonds + amt)
+                                            val updated = target.copy(diamonds = newDiamonds)
+                                            searchedUser = updated
+                                            if (target.uid == adminUser.uid) onUpdateCurrentUser(updated)
                                             Toast.makeText(context, "💎 Added %,d Diamonds!".format(amt), Toast.LENGTH_SHORT).show()
-                                        }.addOnFailureListener { isProcessing = false }
+                                        }
+                                        .addOnFailureListener { e ->
+                                            isProcessing = false
+                                            Toast.makeText(context, "❌ Error: ${e.message}", Toast.LENGTH_LONG).show()
+                                        }
                                 },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF)),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.weight(1f).height(38.dp)
                             ) {
-                                Text("+ Inject 💎", color = BrandDark, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                Text("+ Inject 💎", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                             }
 
                             Button(
@@ -4022,15 +4095,22 @@ fun AdminStaffAndPowerHubSection(adminUser: UserProfile) {
                                     val amt = diamondDelta.toLongOrNull() ?: 0L
                                     if (amt <= 0) return@Button
                                     isProcessing = true
+                                    val newDiamonds = maxOf(0L, target.diamonds - amt)
                                     db.collection("users").document(target.uid)
-                                        .update("diamonds", FieldValue.increment(-amt))
+                                        .set(mapOf("diamonds" to newDiamonds), SetOptions.merge())
                                         .addOnSuccessListener {
                                             isProcessing = false
-                                            searchedUser = target.copy(diamonds = maxOf(0L, target.diamonds - amt))
+                                            val updated = target.copy(diamonds = newDiamonds)
+                                            searchedUser = updated
+                                            if (target.uid == adminUser.uid) onUpdateCurrentUser(updated)
                                             Toast.makeText(context, "💎 Deducted %,d Diamonds!".format(amt), Toast.LENGTH_SHORT).show()
-                                        }.addOnFailureListener { isProcessing = false }
+                                        }
+                                        .addOnFailureListener { e ->
+                                            isProcessing = false
+                                            Toast.makeText(context, "❌ Error: ${e.message}", Toast.LENGTH_LONG).show()
+                                        }
                                 },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF37474F)),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155)),
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.weight(1f).height(38.dp)
                             ) {
@@ -4048,19 +4128,26 @@ fun AdminStaffAndPowerHubSection(adminUser: UserProfile) {
                                     val amt = diamondDelta.toLongOrNull() ?: 0L
                                     if (amt <= 0) return@Button
                                     isProcessing = true
+                                    val newCoins = target.coins + amt
                                     db.collection("users").document(target.uid)
-                                        .update("coins", FieldValue.increment(amt))
+                                        .set(mapOf("coins" to newCoins), SetOptions.merge())
                                         .addOnSuccessListener {
                                             isProcessing = false
-                                            searchedUser = target.copy(coins = target.coins + amt)
+                                            val updated = target.copy(coins = newCoins)
+                                            searchedUser = updated
+                                            if (target.uid == adminUser.uid) onUpdateCurrentUser(updated)
                                             Toast.makeText(context, "🪙 Added %,d Coins!".format(amt), Toast.LENGTH_SHORT).show()
-                                        }.addOnFailureListener { isProcessing = false }
+                                        }
+                                        .addOnFailureListener { e ->
+                                            isProcessing = false
+                                            Toast.makeText(context, "❌ Error: ${e.message}", Toast.LENGTH_LONG).show()
+                                        }
                                 },
-                                colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706)),
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.weight(1f).height(38.dp)
                             ) {
-                                Text("+ Inject 🪙", color = BrandDark, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                Text("+ Inject 🪙", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                             }
 
                             Button(
@@ -4068,15 +4155,22 @@ fun AdminStaffAndPowerHubSection(adminUser: UserProfile) {
                                     val amt = diamondDelta.toLongOrNull() ?: 0L
                                     if (amt <= 0) return@Button
                                     isProcessing = true
+                                    val newCoins = maxOf(0L, target.coins - amt)
                                     db.collection("users").document(target.uid)
-                                        .update("coins", FieldValue.increment(-amt))
+                                        .set(mapOf("coins" to newCoins), SetOptions.merge())
                                         .addOnSuccessListener {
                                             isProcessing = false
-                                            searchedUser = target.copy(coins = maxOf(0L, target.coins - amt))
+                                            val updated = target.copy(coins = newCoins)
+                                            searchedUser = updated
+                                            if (target.uid == adminUser.uid) onUpdateCurrentUser(updated)
                                             Toast.makeText(context, "🪙 Deducted %,d Coins!".format(amt), Toast.LENGTH_SHORT).show()
-                                        }.addOnFailureListener { isProcessing = false }
+                                        }
+                                        .addOnFailureListener { e ->
+                                            isProcessing = false
+                                            Toast.makeText(context, "❌ Error: ${e.message}", Toast.LENGTH_LONG).show()
+                                        }
                                 },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF37474F)),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155)),
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.weight(1f).height(38.dp)
                             ) {
@@ -4087,35 +4181,61 @@ fun AdminStaffAndPowerHubSection(adminUser: UserProfile) {
                 }
             }
 
-            // Avatar Frames & 3D Mic Effects Granter & Revoke
+            // Frame & 3D Video Mic Effect Power Panel
             item {
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = BrandCard),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1B142B)),
                     shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, BrandBorder)
+                    border = BorderStroke(1.dp, Color(0xFF3B2F50))
                 ) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("🖼️ Avatar Frames & 3D Video Mic Effects", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Text("🪽 Avatar Frame & 3D Video Mic Effect Granter", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
 
-                        // Validity Days Selector
+                        // Frame Selection
+                        Text("Select Profile Frame:", color = Color(0xFFA78BFA), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        frameOptions.chunked(2).forEach { rowFrames ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                rowFrames.forEach { (fid, label) ->
+                                    val isSelected = selectedFrameId == fid
+                                    OutlinedButton(
+                                        onClick = { selectedFrameId = fid },
+                                        border = BorderStroke(1.2.dp, if (isSelected) Color(0xFF8B5CF6) else Color(0xFF3B2F50)),
+                                        colors = ButtonDefaults.outlinedButtonColors(
+                                            containerColor = if (isSelected) Color(0xFF6D28D9).copy(alpha = 0.25f) else Color.Transparent
+                                        ),
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                        modifier = Modifier.weight(1f).height(36.dp)
+                                    ) {
+                                        Text(label, fontSize = 9.5.sp, color = if (isSelected) Color.White else Color.Gray, maxLines = 1)
+                                    }
+                                }
+                            }
+                        }
+
+                        // Validity Days Selection
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("Validity Period:", color = Color(0xFFA78BFA), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             validityOptions.forEach { (days, label) ->
-                                val isSel = selectedValidityDays == days
+                                val isSelected = selectedValidityDays == days
                                 OutlinedButton(
                                     onClick = { selectedValidityDays = days },
+                                    border = BorderStroke(1.dp, if (isSelected) Color(0xFF8B5CF6) else Color(0xFF3B2F50)),
                                     colors = ButtonDefaults.outlinedButtonColors(
-                                        containerColor = if (isSel) BrandGold.copy(alpha = 0.2f) else Color.Transparent,
-                                        contentColor = if (isSel) BrandGold else Color.Gray
+                                        containerColor = if (isSelected) Color(0xFF6D28D9) else Color.Transparent
                                     ),
-                                    border = BorderStroke(1.dp, if (isSel) BrandGold else BrandBorder),
                                     shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
-                                    modifier = Modifier.weight(1f).height(32.dp)
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                    modifier = Modifier.weight(1f).height(30.dp)
                                 ) {
-                                    Text(label, fontSize = 9.sp, fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal)
+                                    Text(label, fontSize = 9.sp, color = if (isSelected) Color.White else Color.Gray)
                                 }
                             }
                         }
@@ -4135,14 +4255,20 @@ fun AdminStaffAndPowerHubSection(adminUser: UserProfile) {
                                         "ownedFrames" to FieldValue.arrayUnion(selectedFrameId),
                                         "frameExpiries.$selectedFrameId" to expiry
                                     )
-                                    db.collection("users").document(target.uid).update(updates)
+                                    db.collection("users").document(target.uid).set(updates, SetOptions.merge())
                                         .addOnSuccessListener {
                                             isProcessing = false
-                                            searchedUser = target.copy(activeFrame = selectedFrameId)
-                                            Toast.makeText(context, "🎁 Frame granted and equipped!", Toast.LENGTH_SHORT).show()
-                                        }.addOnFailureListener { isProcessing = false }
+                                            val updated = target.copy(activeFrame = selectedFrameId)
+                                            searchedUser = updated
+                                            if (target.uid == adminUser.uid) onUpdateCurrentUser(updated)
+                                            Toast.makeText(context, "🎁 Frame granted and equipped in real time!", Toast.LENGTH_SHORT).show()
+                                        }
+                                        .addOnFailureListener { e ->
+                                            isProcessing = false
+                                            Toast.makeText(context, "❌ Error: ${e.message}", Toast.LENGTH_LONG).show()
+                                        }
                                 },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6A1B9A)),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED)),
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.weight(1f).height(38.dp)
                             ) {
@@ -4152,19 +4278,50 @@ fun AdminStaffAndPowerHubSection(adminUser: UserProfile) {
                             OutlinedButton(
                                 onClick = {
                                     isProcessing = true
-                                    db.collection("users").document(target.uid).update(
-                                        mapOf("activeFrame" to "")
-                                    ).addOnSuccessListener {
-                                        isProcessing = false
-                                        searchedUser = target.copy(activeFrame = "")
-                                        Toast.makeText(context, "❌ Frame revoked", Toast.LENGTH_SHORT).show()
-                                    }.addOnFailureListener { isProcessing = false }
+                                    db.collection("users").document(target.uid).set(mapOf("activeFrame" to ""), SetOptions.merge())
+                                        .addOnSuccessListener {
+                                            isProcessing = false
+                                            val updated = target.copy(activeFrame = "")
+                                            searchedUser = updated
+                                            if (target.uid == adminUser.uid) onUpdateCurrentUser(updated)
+                                            Toast.makeText(context, "❌ Frame revoked", Toast.LENGTH_SHORT).show()
+                                        }
+                                        .addOnFailureListener { e ->
+                                            isProcessing = false
+                                            Toast.makeText(context, "❌ Error: ${e.message}", Toast.LENGTH_LONG).show()
+                                        }
                                 },
                                 border = BorderStroke(1.dp, Color(0xFFFF5252)),
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.weight(1f).height(38.dp)
                             ) {
                                 Text("❌ Revoke Frame", color = Color(0xFFFF5252), fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            }
+                        }
+
+                        // Mic Effect Selection
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("Select 3D Video Mic Effect:", color = Color(0xFFA78BFA), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        micEffectOptions.chunked(2).forEach { rowEffects ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                rowEffects.forEach { (mid, label) ->
+                                    val isSelected = selectedMicEffectId == mid
+                                    OutlinedButton(
+                                        onClick = { selectedMicEffectId = mid },
+                                        border = BorderStroke(1.2.dp, if (isSelected) Color(0xFF00E5FF) else Color(0xFF3B2F50)),
+                                        colors = ButtonDefaults.outlinedButtonColors(
+                                            containerColor = if (isSelected) Color(0xFF00E5FF).copy(alpha = 0.2f) else Color.Transparent
+                                        ),
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                        modifier = Modifier.weight(1f).height(36.dp)
+                                    ) {
+                                        Text(label, fontSize = 9.sp, color = if (isSelected) Color.White else Color.Gray, maxLines = 1)
+                                    }
+                                }
                             }
                         }
 
@@ -4183,12 +4340,18 @@ fun AdminStaffAndPowerHubSection(adminUser: UserProfile) {
                                         "ownedMicEffects" to FieldValue.arrayUnion(selectedMicEffectId),
                                         "micEffectExpiries.$selectedMicEffectId" to expiry
                                     )
-                                    db.collection("users").document(target.uid).update(updates)
+                                    db.collection("users").document(target.uid).set(updates, SetOptions.merge())
                                         .addOnSuccessListener {
                                             isProcessing = false
-                                            searchedUser = target.copy(activeMicEffect = selectedMicEffectId)
+                                            val updated = target.copy(activeMicEffect = selectedMicEffectId)
+                                            searchedUser = updated
+                                            if (target.uid == adminUser.uid) onUpdateCurrentUser(updated)
                                             Toast.makeText(context, "✨ 3D Mic Effect granted and equipped!", Toast.LENGTH_SHORT).show()
-                                        }.addOnFailureListener { isProcessing = false }
+                                        }
+                                        .addOnFailureListener { e ->
+                                            isProcessing = false
+                                            Toast.makeText(context, "❌ Error: ${e.message}", Toast.LENGTH_LONG).show()
+                                        }
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B)),
                                 shape = RoundedCornerShape(10.dp),
@@ -4200,13 +4363,18 @@ fun AdminStaffAndPowerHubSection(adminUser: UserProfile) {
                             OutlinedButton(
                                 onClick = {
                                     isProcessing = true
-                                    db.collection("users").document(target.uid).update(
-                                        mapOf("activeMicEffect" to "")
-                                    ).addOnSuccessListener {
-                                        isProcessing = false
-                                        searchedUser = target.copy(activeMicEffect = "")
-                                        Toast.makeText(context, "❌ Mic Effect revoked", Toast.LENGTH_SHORT).show()
-                                    }.addOnFailureListener { isProcessing = false }
+                                    db.collection("users").document(target.uid).set(mapOf("activeMicEffect" to ""), SetOptions.merge())
+                                        .addOnSuccessListener {
+                                            isProcessing = false
+                                            val updated = target.copy(activeMicEffect = "")
+                                            searchedUser = updated
+                                            if (target.uid == adminUser.uid) onUpdateCurrentUser(updated)
+                                            Toast.makeText(context, "❌ Mic Effect revoked", Toast.LENGTH_SHORT).show()
+                                        }
+                                        .addOnFailureListener { e ->
+                                            isProcessing = false
+                                            Toast.makeText(context, "❌ Error: ${e.message}", Toast.LENGTH_LONG).show()
+                                        }
                                 },
                                 border = BorderStroke(1.dp, Color(0xFFFF5252)),
                                 shape = RoundedCornerShape(10.dp),

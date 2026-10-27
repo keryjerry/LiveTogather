@@ -8,8 +8,13 @@ rules_version = '2';
 //
 // 1. users/{userId}
 //    - Document ID: Firebase Auth UID
-//    - Fields: uid (string), name (string), email (string), isAdmin (bool, restricted),
-//              age (int), gender (string), diamonds (int/float), coins (int/float), etc.
+//    - Fields: uid (string), userId (8-digit string), name (string), email (string),
+//              isAdmin (bool, privileged/restricted), officialRole (string, privileged/restricted),
+//              activeFrame (string), ownedFrames (list), activeMicEffect (string), ownedMicEffects (list),
+//              diamonds (int/float), coins (int/float), wealthLevel (int), wealthXp (int),
+//              charmLevel (int), charmXp (int), pkLevel (int), pkWins (int), pkScore (int),
+//              isSuspended (bool, privileged/restricted), suspensionExpiry (int), suspensionReason (string), etc.
+//    - Whitelisted Admin & Founder Emails: 'service.secure822@gmail.com', 'servicesecure822@gmail.com', 'devilgroupcontact@gmail.com'
 //
 // 2. users/{userId}/followers/{followerId}
 //    - Document ID: Follower user UID
@@ -95,12 +100,35 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    // Helper function checking if user's verified token email matches the founder/admin whitelist
+    function isWhitelistedAdminEmail() {
+      return isAuthenticated() &&
+        'email' in request.auth.token &&
+        request.auth.token.email != null &&
+        (
+          request.auth.token.email in [
+            'service.secure822@gmail.com',
+            'servicesecure822@gmail.com',
+            'devilgroupcontact@gmail.com',
+            'Service.secure822@gmail.com',
+            'Servicesecure822@gmail.com',
+            'Devilgroupcontact@gmail.com',
+            'SERVICE.SECURE822@GMAIL.COM',
+            'SERVICESECURE822@GMAIL.COM',
+            'DEVILGROUPCONTACT@GMAIL.COM'
+          ]
+        );
+    }
+
     // Check if user has administrative rights via:
-    // 1. Firebase Auth custom claim `admin == true`
-    // 2. Existence and flag in `admin_whitelists` collection (with @ replaced with _at_)
-    // 3. User document flag `isAdmin == true`
+    // 1. Explicit hardcoded founder/admin emails whitelist:
+    //    'service.secure822@gmail.com', 'servicesecure822@gmail.com', 'devilgroupcontact@gmail.com'
+    // 2. Firebase Auth custom claim `admin == true`
+    // 3. Existence and flag in `admin_whitelists` collection (with @ replaced with _at_)
+    // 4. User document flag `isAdmin == true` or official leadership role ('founder', 'ceo')
     function isAdmin() {
       return isAuthenticated() && (
+        isWhitelistedAdminEmail() ||
         (request.auth.token.get('admin', false) == true) ||
         (
           'email' in request.auth.token &&
@@ -110,7 +138,21 @@ service cloud.firestore {
         ) ||
         (
           exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAdmin', false) == true
+          (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAdmin', false) == true ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('officialRole', '') in ['founder', 'ceo']
+          )
+        )
+      );
+    }
+
+    // Check if the current user has official administrative rights either globally via isAdmin(),
+    // or as the owner of this profile having administrative / leadership flags (isAdmin == true, officialRole in ['founder', 'ceo'])
+    function hasOfficialAdminRights(userId) {
+      return isAdmin() || (
+        isOwner(userId) && resource != null && (
+          resource.data.get('isAdmin', false) == true ||
+          resource.data.get('officialRole', '') in ['founder', 'ceo']
         )
       );
     }
@@ -147,12 +189,43 @@ service cloud.firestore {
       // Authenticated users can view profiles
       allow read: if isAuthenticated();
 
-      // Only the user themselves can create their profile doc, and non-admins cannot self-promote to admin
-      allow create: if isOwner(userId) &&
-        (!('isAdmin' in request.resource.data) || request.resource.data.isAdmin == false || isAdmin());
+      // Only the user themselves can create their profile doc (or an admin), and non-admins cannot self-promote to admin or official leadership role
+      allow create: if (isOwner(userId) || isAdmin()) && (
+        hasOfficialAdminRights(userId) ||
+        (
+          (!('isAdmin' in request.resource.data) || request.resource.data.isAdmin == false) &&
+          (!('officialRole' in request.resource.data) || request.resource.data.officialRole == '')
+        )
+      );
 
-      // Owner can update their profile as long as they don't modify the isAdmin flag; Admins can update anything
-      allow update: if (isOwner(userId) && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin']))) || isAdmin();
+      // Admins or users with official administrative rights can update any fields
+      // (such as diamonds, coins, officialRole, activeFrame, ownedFrames, isAdmin);
+      // Profile owners can update their own profile as long as non-admins do not modify privileged administrative/moderation fields;
+      // Other authenticated users can update social metrics & gift reward stats (followerCount, charmXp, charmLevel, earnings, pk stats)
+      allow update: if hasOfficialAdminRights(userId) ||
+        (
+          isOwner(userId) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'isAdmin',
+            'officialRole',
+            'isSuspended',
+            'suspensionExpiry',
+            'suspensionReason'
+          ])
+        ) ||
+        (
+          isAuthenticated() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'followerCount',
+            'charmXp',
+            'charmLevel',
+            'earningsInr',
+            'totalEarningsInr',
+            'pkWins',
+            'pkScore',
+            'pkLevel'
+          ])
+        );
 
       // Deletion of user profile requires admin privileges
       allow delete: if isAdmin();
@@ -183,7 +256,8 @@ service cloud.firestore {
 
       match /earning_transactions/{txId} {
         allow read: if isOwner(userId) || isAdmin();
-        allow write: if isOwner(userId) || isAdmin();
+        allow create: if isAuthenticated();
+        allow update, delete: if isOwner(userId) || isAdmin();
       }
     }
 

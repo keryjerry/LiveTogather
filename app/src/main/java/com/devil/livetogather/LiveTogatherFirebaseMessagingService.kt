@@ -1,13 +1,7 @@
 package com.devil.livetogather
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
-import android.os.Build
 import android.util.Log
-import androidx.core.app.NotificationCompat
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 
@@ -20,15 +14,26 @@ class LiveTogatherFirebaseMessagingService : FirebaseMessagingService() {
         val data = remoteMessage.data
         val roomId = data["roomId"] ?: data["room_id"] ?: ""
 
-        val title = remoteMessage.notification?.title
+        val rawTitle = remoteMessage.notification?.title
             ?: data["title"]
-            ?: "🔴 Live Room Alert!"
-        val body = remoteMessage.notification?.body
+            ?: "Live Room Alert!"
+        val rawBody = remoteMessage.notification?.body
             ?: data["body"]
             ?: data["message"]
-            ?: "A host you follow is now live! Tap to join."
+            ?: "Greetings from LiveTogather! A host you follow is now live. Tap to join!"
 
-        sendSystemNotification(title, body, roomId)
+        val isLive = rawTitle.contains("LIVE", ignoreCase = true) || rawBody.contains("LIVE", ignoreCase = true)
+        val isPurchase = rawTitle.contains("Diamond", ignoreCase = true) || rawTitle.contains("Coin", ignoreCase = true)
+
+        // Show loud sound + vibrating pop-up notification even when app is closed / in background
+        AppNotificationHelper.showSystemNotification(
+            context = applicationContext,
+            title = rawTitle,
+            message = rawBody,
+            roomId = roomId.ifBlank { null },
+            isLiveAlert = isLive,
+            isPurchaseAlert = isPurchase
+        )
     }
 
     override fun onNewToken(token: String) {
@@ -46,47 +51,6 @@ class LiveTogatherFirebaseMessagingService : FirebaseMessagingService() {
                 Log.e(TAG, "Failed to upload new FCM token: " + e.message)
             }
         }
-    }
-
-    private fun sendSystemNotification(title: String, body: String, roomId: String) {
-        val channelId = "livetogather_live_alerts"
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                channelId,
-                "Live Room Alerts",
-                NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                description = "Notifications when followed hosts go live"
-                enableVibration(true)
-            }
-            notificationManager.createNotificationChannel(channel)
-        }
-
-        val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra("ROOM_ID", roomId)
-            putExtra("extra_room_id", roomId)
-        }
-
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            System.currentTimeMillis().toInt(),
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val notification = NotificationCompat.Builder(this, channelId)
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle(title)
-            .setContentText(body)
-            .setAutoCancel(true)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setContentIntent(pendingIntent)
-            .build()
-
-        notificationManager.notify((System.currentTimeMillis() % 100000).toInt(), notification)
     }
 
     companion object {

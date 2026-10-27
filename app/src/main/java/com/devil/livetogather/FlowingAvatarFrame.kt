@@ -133,7 +133,7 @@ fun FlowingAvatarFrame(
     // Calibrated Golden Ratio: Ensures the inner hole (53.52% of frame) always clears the avatar completely
     val effectiveFrameSize = if (frameId.isNotBlank()) {
         if (frameSize >= avatarSize * 1.95f) frameSize else (avatarSize * 1.95f)
-    } else if (showMicEffect || micEffectId.isNotBlank()) {
+    } else if (micEffectId.isNotBlank() && isSpeaking) {
         avatarSize + 24.dp
     } else {
         avatarSize
@@ -145,8 +145,8 @@ fun FlowingAvatarFrame(
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
         contentAlignment = Alignment.Center
     ) {
-        // Speech Pulsing Wave (used if not showing the full 360 mic effect)
-        if (isSpeaking && !(showMicEffect && frameId.isBlank())) {
+        // Speech Pulsing Wave (used when actively speaking without video mic effect)
+        if (isSpeaking && (micEffectId.isBlank() || !showMicEffect)) {
             Box(
                 modifier = Modifier
                     .size(avatarSize + 12.dp)
@@ -156,11 +156,9 @@ fun FlowingAvatarFrame(
             )
         }
 
-        // 3D Transparent Video Magic Mic Effect (7 Real HD Video Effects)
-        val activeVideoRes = if (micEffectId.isNotBlank()) {
+        // 3D Transparent Video Magic Mic Effect (Only when actively equipped AND user is actively speaking)
+        val activeVideoRes = if (micEffectId.isNotBlank() && (isSpeaking || showMicEffect)) {
             getMicEffectVideoRes(micEffectId)
-        } else if (showMicEffect) {
-            R.raw.mic_effect_cyber_neon_electric
         } else {
             0
         }
@@ -170,12 +168,6 @@ fun FlowingAvatarFrame(
                 videoRes = activeVideoRes,
                 avatarSize = avatarSize,
                 effectSize = effectiveFrameSize + 14.dp
-            )
-        } else if (showMicEffect && frameId.isBlank()) {
-            CosmicGalaxyVortexEffect(
-                avatarSize = avatarSize,
-                size = effectiveFrameSize,
-                isSpeaking = isSpeaking
             )
         }
 
