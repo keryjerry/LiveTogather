@@ -1203,17 +1203,13 @@ fun VideoHangoutRoomDialog(
                         val isEntranceMessage = comment.message.contains("entered the room") || comment.message.startsWith("âœ¨ Welcome") || comment.message.contains("to the room!")
 
                         if (isEntranceMessage) {
-                            OrnateLuxuryEntranceCard(
+                            VipRoomChatBarEntry(
                                 userName = comment.userName,
                                 avatarUrl = avatarUrl,
-                                userProfile = commenterProfile,
-                                level = commenterLevel,
-                                charm = commenterCharm,
-                                pkLevel = commenterPkLevel,
-                                medal = commenterMedal,
-                                isFounder = isCommentFounder,
                                 vipLevel = commentVipLevel,
-                                modifier = Modifier.padding(vertical = 3.dp)
+                                isFounder = isCommentFounder,
+                                actionText = comment.message,
+                                modifier = Modifier.padding(vertical = 2.dp)
                             )
                         } else {
                             val commenterAvatarFrame = commenterProfile?.activeFrame?.ifEmpty {

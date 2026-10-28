@@ -418,6 +418,134 @@ fun EntranceBannerBottomCrest(
 }
 
 // -------------------------------------------------------------
+// VIP ROOM CHAT BAR ENTRANCE COMPOSABLE (Matches Master 3D VIP Chat Frame Asset)
+// -------------------------------------------------------------
+@Composable
+fun VipRoomChatBarEntry(
+    userName: String,
+    avatarUrl: String,
+    vipLevel: Int,
+    isFounder: Boolean = false,
+    actionText: String = "",
+    modifier: Modifier = Modifier
+) {
+    val effVip = when {
+        vipLevel in 1..4 -> vipLevel
+        isFounder -> 4
+        else -> 1
+    }
+
+    val bubbleFrameRes = when (effVip) {
+        1 -> R.drawable.vip1_chat_bubble_frame
+        2 -> R.drawable.vip2_chat_bubble_frame
+        3 -> R.drawable.vip3_chat_bubble_frame
+        4 -> R.drawable.vip4_chat_bubble_frame
+        else -> R.drawable.vip2_chat_bubble_frame
+    }
+
+    val vipBadgeLabel = when (effVip) {
+        1 -> "VIP 1"
+        2 -> "VIP 2"
+        3 -> "VIP 3"
+        4 -> "VIP 4"
+        else -> "VIP"
+    }
+
+    val vipBadgeColor = when (effVip) {
+        1 -> Color(0xFF94A3B8)
+        2 -> Color(0xFFFFB300)
+        3 -> Color(0xFFA855F7)
+        4 -> Color(0xFFFF1744)
+        else -> Color(0xFFFFB300)
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp)
+            .height(52.dp),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        // Safe translucent backdrop matching chat bar bounds
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .padding(horizontal = 10.dp, vertical = 3.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color.Black.copy(alpha = 0.65f))
+        )
+
+        // Master 3D VIP Chat Frame Asset
+        Image(
+            painter = painterResource(id = bubbleFrameRes),
+            contentDescription = "VIP Chat Bar",
+            modifier = Modifier.matchParentSize(),
+            contentScale = ContentScale.FillBounds
+        )
+
+        // Content Row: Avatar + Name & VIP Badge + Action Text
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 22.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // User Avatar
+            AsyncImage(
+                model = avatarUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                contentDescription = userName,
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .border(1.dp, vipBadgeColor, CircleShape),
+                contentScale = ContentScale.Crop
+            )
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.Center
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = userName,
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Surface(
+                        color = vipBadgeColor.copy(alpha = 0.85f),
+                        shape = RoundedCornerShape(50),
+                        border = BorderStroke(0.5.dp, Color(0xFFFFD700))
+                    ) {
+                        Text(
+                            text = vipBadgeLabel,
+                            color = Color.White,
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Black,
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                        )
+                    }
+                }
+
+                Text(
+                    text = actionText,
+                    color = Color(0xFFFFD700),
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
 // VIP CHAT BUBBLE COMPOSABLE (Exact Master VIP 1-4 Luxury Chat Frames)
 // -------------------------------------------------------------
 @Composable
@@ -1780,14 +1908,28 @@ fun VipCenterDialog(
                                     else -> currentTier.bubbleRes
                                 }
 
-                                Image(
-                                    painter = painterResource(id = previewRes),
-                                    contentDescription = "Preview",
-                                    contentScale = ContentScale.Fit,
+                                Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(200.dp)
-                                )
+                                        .height(180.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (selectedSuitePiece == 2) {
+                                        FlowingAvatarFrame(
+                                            photoUrl = currentUser.photo,
+                                            frameId = currentTier.frameId,
+                                            avatarSize = 60.dp,
+                                            vipLevel = currentTier.level
+                                        )
+                                    } else {
+                                        Image(
+                                            painter = painterResource(id = previewRes),
+                                            contentDescription = "Preview",
+                                            contentScale = ContentScale.Fit,
+                                            modifier = Modifier.size(160.dp)
+                                        )
+                                    }
+                                }
 
                                 Spacer(modifier = Modifier.height(16.dp))
 

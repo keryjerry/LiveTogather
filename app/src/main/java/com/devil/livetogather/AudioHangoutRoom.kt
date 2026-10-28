@@ -6653,18 +6653,13 @@ fun AudioHangoutRoomDialog(
                                     val isEntranceMessage = comment.message.contains("entered the room") || comment.message.startsWith("✨ Welcome") || comment.message.contains("to the room!") || comment.message.contains("has arrived in")
 
                                     if (isEntranceMessage) {
-                                        OrnateLuxuryEntranceCard(
+                                        VipRoomChatBarEntry(
                                             userName = comment.userName,
                                             avatarUrl = comment.userPhoto.ifEmpty { commenterProfile?.photo ?: "" },
-                                            userProfile = commenterProfile,
-                                            level = commenterLevel,
-                                            charm = commenterCharm,
-                                            pkLevel = commenterPkLevel,
-                                            medal = commenterMedal,
-                                            isFounder = isCommentFounder,
                                             vipLevel = commentVipLevel,
+                                            isFounder = isCommentFounder,
                                             actionText = comment.message,
-                                            modifier = Modifier.padding(vertical = 4.dp)
+                                            modifier = Modifier.padding(vertical = 2.dp)
                                         )
                                     } else {
                                         val activeF = commenterProfile?.activeFrame ?: ""
@@ -8220,7 +8215,7 @@ fun AudioHangoutRoomDialog(
                                                     && currentUser.getVipLevel() == 0 && !currentUser.isVipOrPlatinum()
                                                     && !currentUser.isFounder() && !currentUser.isCeo() && !currentUser.isStaffMember()
                                                     && room.hostId != currentUser.uid && room.hostUid != currentUser.uid
-                                                if (isFirstTimeFreeGuest && userTotalRoomTimeSeconds >= 3600L) {
+                                            if (isFirstTimeFreeGuest && userTotalRoomTimeSeconds >= 3600L) {
                                                 android.widget.Toast.makeText(context, "🚫 1-hour free room access expired. Recharge ₹59 to chat.", android.widget.Toast.LENGTH_LONG).show()
                                                 showGuestLimitExpiredDialog = true
                                                 return@IconButton
@@ -10373,12 +10368,13 @@ fun MicSeatView(
                     photoUrl = seat.photo.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
                     frameId = seatFrameId,
                     avatarSize = avatarSize,
-                    frameSize = 74.dp,
+                    frameSize = seatBoxSize,
                     isSpeaking = isSpeaking,
                     vipLevel = seatVipLvl,
                     showVipBadge = false,
                     showMicEffect = seatMicEffectId.isNotBlank() && isSpeaking,
-                    micEffectId = seatMicEffectId
+                    micEffectId = seatMicEffectId,
+                    modifier = Modifier.size(seatBoxSize)
                 )
 
                 // Mic Mute / Unmute Status Badge at bottom-right with subtle voice pulse animation
