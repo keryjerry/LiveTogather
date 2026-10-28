@@ -191,6 +191,10 @@ fun getVipChatFrame(frameId: String?, vipLevel: Int = 0, isFounder: Boolean = fa
     if (!frameId.isNullOrBlank()) {
         val found = VIP_CHAT_FRAMES_CATALOG.find { it.id == frameId }
         if (found != null) return found
+        if (frameId.contains("vip4") || frameId.contains("dragon")) return VIP_CHAT_FRAMES_CATALOG.find { it.vipLevel == 4 }
+        if (frameId.contains("vip3") || frameId.contains("amethyst")) return VIP_CHAT_FRAMES_CATALOG.find { it.vipLevel == 3 }
+        if (frameId.contains("vip2") || frameId.contains("paladin")) return VIP_CHAT_FRAMES_CATALOG.find { it.vipLevel == 2 }
+        if (frameId.contains("vip1") || frameId.contains("silver")) return VIP_CHAT_FRAMES_CATALOG.find { it.vipLevel == 1 }
     }
     if (vipLevel in 1..4) {
         val tierFrameId = when (vipLevel) {
@@ -414,7 +418,7 @@ fun EntranceBannerBottomCrest(
 }
 
 // -------------------------------------------------------------
-// VIP CHAT BUBBLE COMPOSABLE (With Ornate Luxury Corners & Styling)
+// VIP CHAT BUBBLE COMPOSABLE (Exact Master VIP 1-4 Luxury Chat Frames)
 // -------------------------------------------------------------
 @Composable
 fun VipStyledChatBubble(
@@ -427,180 +431,94 @@ fun VipStyledChatBubble(
     modifier: Modifier = Modifier
 ) {
     val frameItem = getVipChatFrame(chatFrameId, vipLevel, isFounder)
+    val hasVipFrame = frameItem != null || vipLevel in 1..4 || isFounder
 
-    if (frameItem != null) {
-        val infiniteTransition = rememberInfiniteTransition(label = "VipBubbleGlow")
-        val glowAlpha by infiniteTransition.animateFloat(
-            initialValue = 0.85f,
-            targetValue = 1.0f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(1200, easing = FastOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "GlowAlpha"
-        )
+    if (hasVipFrame) {
+        val effVip = when {
+            frameItem?.vipLevel in 1..4 -> frameItem!!.vipLevel
+            vipLevel in 1..4 -> vipLevel
+            frameItem?.id == "chat_frame_celestial_dragon" -> 4
+            frameItem?.id == "chat_frame_imperial_amethyst" -> 3
+            frameItem?.id == "chat_frame_golden_paladin" -> 2
+            frameItem?.id == "chat_frame_silver_knight" -> 1
+            else -> 2
+        }
 
-        val swordRes = when (frameItem.vipLevel) {
-            1 -> R.drawable.vip1_chat_sword_master
-            2 -> R.drawable.vip2_chat_sword_master
-            3 -> R.drawable.vip3_chat_sword_master
-            4 -> R.drawable.vip4_chat_sword_master
-            else -> 0
+        val bubbleFrameRes = when (effVip) {
+            1 -> R.drawable.vip1_chat_bubble_frame
+            2 -> R.drawable.vip2_chat_bubble_frame
+            3 -> R.drawable.vip3_chat_bubble_frame
+            4 -> R.drawable.vip4_chat_bubble_frame
+            else -> R.drawable.vip2_chat_bubble_frame
         }
 
         Box(
             modifier = modifier
-                .padding(start = 2.dp, end = 2.dp, top = if (swordRes != 0) 8.dp else 4.dp, bottom = 4.dp)
-                .shadow(
-                    elevation = if (frameItem.isFounder) 10.dp else 6.dp,
-                    shape = RoundedCornerShape(14.dp),
-                    ambientColor = frameItem.accentColor,
-                    spotColor = frameItem.accentColor
-                )
+                .padding(vertical = 2.dp)
+                .widthIn(min = 140.dp, max = 290.dp),
+            contentAlignment = Alignment.CenterStart
         ) {
-            // Main Framed Container with Dual Metallic Border & Rich Gradient
-            Box(
+            // Master 3D Luxury VIP Chat Frame Image (Exact Art Match)
+            Image(
+                painter = painterResource(id = bubbleFrameRes),
+                contentDescription = "VIP Chat Frame",
+                modifier = Modifier.matchParentSize(),
+                contentScale = ContentScale.FillBounds
+            )
+
+            // Message text container safely padded inside the inner glass area
+            Column(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(frameItem.backgroundBrush)
-                    .border(
-                        BorderStroke(
-                            width = if (frameItem.isFounder) 2.2.dp else 1.8.dp,
-                            brush = frameItem.borderBrush
-                        ),
-                        shape = RoundedCornerShape(14.dp)
-                    )
-                    .padding(1.dp)
-                    .border(
-                        BorderStroke(
-                            width = 0.75.dp,
-                            color = Color.White.copy(alpha = 0.15f)
-                        ),
-                        shape = RoundedCornerShape(13.dp)
-                    )
                     .padding(
-                        start = 14.dp,
-                        end = 14.dp,
-                        top = if (swordRes != 0) 12.dp else 10.dp,
-                        bottom = 10.dp
+                        start = 34.dp, // Clears the bottom-left VIP ribbon
+                        end = 22.dp,
+                        top = 10.dp,
+                        bottom = 12.dp
                     )
             ) {
-                Column {
-                    Text(
-                        text = messageText,
-                        color = frameItem.textColor,
-                        fontSize = 13.5.sp,
-                        fontWeight = if (frameItem.isFounder) FontWeight.SemiBold else FontWeight.Medium,
-                        lineHeight = 18.sp
-                    )
-
-                    if (timestampText.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(3.dp))
-                        Text(
-                            text = timestampText,
-                            fontSize = 8.5.sp,
-                            color = Color.White.copy(alpha = 0.5f),
-                            textAlign = if (isMe) TextAlign.End else TextAlign.Start,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                }
-            }
-
-            if (swordRes != 0) {
-                Image(
-                    painter = painterResource(id = swordRes),
-                    contentDescription = "VIP Sword Crest",
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .offset(x = 8.dp, y = (-8).dp)
-                        .size(76.dp, 20.dp),
-                    contentScale = ContentScale.Fit
-                )
-            } else {
-                // Top Center Ornate Winged Crest
-                OrnateTopCrest(
-                    primaryColor = frameItem.secondaryAccentColor,
-                    accentColor = frameItem.accentColor,
-                    gemColor = frameItem.gemColor,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .offset(y = (-4).dp)
-                )
-            }
-
-            if (swordRes == 0) {
-                // Bottom Center Ornate Seal
-                OrnateBottomSeal(
-                    primaryColor = frameItem.secondaryAccentColor,
-                    accentColor = frameItem.accentColor,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .offset(y = 3.dp)
+                Text(
+                    text = messageText,
+                    color = Color.White,
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    lineHeight = 18.sp
                 )
 
-                // 4 Sculpted Baroque Corner Wings with Gemstones
-                OrnateCornerFlourish(
-                    isTop = true,
-                    isLeft = true,
-                    primaryColor = frameItem.secondaryAccentColor,
-                    accentColor = frameItem.accentColor,
-                    gemColor = frameItem.gemColor,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .offset(x = (-2).dp, y = (-2).dp)
-                )
-
-                OrnateCornerFlourish(
-                    isTop = true,
-                    isLeft = false,
-                    primaryColor = frameItem.secondaryAccentColor,
-                    accentColor = frameItem.accentColor,
-                    gemColor = frameItem.gemColor,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .offset(x = 2.dp, y = (-2).dp)
-                )
-
-                OrnateCornerFlourish(
-                    isTop = false,
-                    isLeft = true,
-                    primaryColor = frameItem.secondaryAccentColor,
-                    accentColor = frameItem.accentColor,
-                    gemColor = frameItem.gemColor,
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .offset(x = (-2).dp, y = 2.dp)
-                )
-
-                OrnateCornerFlourish(
-                    isTop = false,
-                    isLeft = false,
-                    primaryColor = frameItem.secondaryAccentColor,
-                    accentColor = frameItem.accentColor,
-                    gemColor = frameItem.gemColor,
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .offset(x = 2.dp, y = 2.dp)
-                )
-            }
-        }
-    } else {
-        // Standard Chat Bubble (Fallback for non-VIP)
-        Box(
-            modifier = modifier
-                .clip(RoundedCornerShape(14.dp))
-                .background(if (isMe) BrandCoral else BrandCard)
-                .padding(horizontal = 14.dp, vertical = 9.dp)
-        ) {
-            Column {
-                Text(messageText, color = Color.White, fontSize = 13.sp)
                 if (timestampText.isNotBlank()) {
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        timestampText,
+                        text = timestampText,
                         fontSize = 8.5.sp,
-                        color = Color.White.copy(alpha = 0.5f)
+                        color = Color.White.copy(alpha = 0.6f),
+                        textAlign = if (isMe) TextAlign.End else TextAlign.Start,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        }
+    } else {
+        // Standard Chat Bubble for Non-VIP / unequipped
+        Box(
+            modifier = modifier
+                .clip(RoundedCornerShape(14.dp))
+                .background(if (isMe) BrandCoral else Color.Black.copy(alpha = 0.55f))
+                .padding(horizontal = 14.dp, vertical = 9.dp)
+        ) {
+            Column {
+                Text(
+                    text = messageText,
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp
+                )
+                if (timestampText.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = timestampText,
+                        fontSize = 8.5.sp,
+                        color = Color.White.copy(alpha = 0.5f),
+                        textAlign = if (isMe) TextAlign.End else TextAlign.Start,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }
@@ -673,15 +591,15 @@ fun UserChatBadgesRow(
             modifier = Modifier.height(20.dp)
         )
 
-        // 5. 💎 VIP Badge Pill (If VIP Level > 0)
+        // 5. 💎 VIP Badge Pill (Dynamic VIP 1-4, NO hardcoded VIP 10)
         val effVip = if (vipLevel > 0) vipLevel else (userProfile?.getVipLevel() ?: 0)
-        if (effVip > 0 || isApexFounder) {
+        if (effVip in 1..4) {
             val badgeBgColor = when (effVip) {
                 4 -> Color(0xFF991B1B)
                 3 -> Color(0xFF7E22CE)
                 2 -> Color(0xFFB45309)
                 1 -> Color(0xFF334155)
-                else -> if (isApexFounder) Color(0xFF8B1838) else Color(0xFFB45309)
+                else -> Color(0xFFB45309)
             }
             Surface(
                 color = badgeBgColor,
@@ -695,7 +613,7 @@ fun UserChatBadgesRow(
                     horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     Text(
-                        text = if (effVip in 1..4) "👑 VIP $effVip" else if (isApexFounder) "👑 VIP 10" else "👑 VIP $effVip",
+                        text = "👑 VIP $effVip",
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Black,
                         color = Color.White

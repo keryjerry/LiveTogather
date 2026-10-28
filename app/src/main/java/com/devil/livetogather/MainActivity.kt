@@ -2331,8 +2331,14 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
             CreateRoomDialog(
                 currentUser = currentUser,
                 initialCategory = createRoomInitialCategory,
+                existingRoomTitles = roomsList.map { it.title.ifBlank { it.roomName } },
                 onDismiss = { showCreateRoomDialog = false },
                 onCreate = { title, categoryId, themeUrl, roomType ->
+                    val isDuplicateRoomName = roomsList.any { (it.title.ifBlank { it.roomName }).trim().equals(title.trim(), ignoreCase = true) }
+                    if (isDuplicateRoomName) {
+                        Toast.makeText(context, "This name is already in use, try different.", Toast.LENGTH_LONG).show()
+                        return@CreateRoomDialog
+                    }
                     val existingHostRoom = roomsList.firstOrNull { r ->
                         val rHost = r.hostUid.ifBlank { r.hostId }
                         rHost == currentUserId && (r.category == categoryId || (categoryId == "video_stream" && (r.category == "video_stream" || r.roomType == "video" || r.isVideoRoom)))

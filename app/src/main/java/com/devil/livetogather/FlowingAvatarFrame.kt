@@ -130,13 +130,21 @@ fun FlowingAvatarFrame(
         BrandGold
     )
 
-    // Calibrated Golden Ratio: Ensures the inner hole clears the avatar completely
-    val isVipSuiteFrame = frameId.startsWith("vip_suite_frame_") || frameId in listOf("vip1_avatar_master", "vip2_avatar_master", "vip3_avatar_master", "vip4_avatar_master")
-    val minScale = if (isVipSuiteFrame) 2.85f else 1.95f
+    // Calibrated Golden Ratio: Precisely matched to the inner hole diameter of each frame
+    val isVipSuiteFrame = frameId.startsWith("vip_suite_frame_") || frameId.startsWith("vip") || frameId.startsWith("frame_vip") || frameId in listOf("vip1_avatar_master", "vip2_avatar_master", "vip3_avatar_master", "vip4_avatar_master")
+    val minScale = when (frameId) {
+        "vip1_avatar_master" -> 2.34f
+        "vip2_avatar_master" -> 2.57f
+        "vip3_avatar_master" -> 2.86f
+        "vip4_avatar_master" -> 2.83f
+        else -> if (isVipSuiteFrame) 2.57f else 1.95f
+    }
+    val activeWingLift = if (isVipSuiteFrame) 0f else wingLift
+    val activePulseScale = if (isVipSuiteFrame) 1.0f else pulseScale
     val effectiveFrameSize = if (frameId.isNotBlank()) {
         if (frameSize >= avatarSize * minScale) frameSize else (avatarSize * minScale)
     } else if (micEffectId.isNotBlank() && isSpeaking) {
-        avatarSize + 24.dp
+        avatarSize + 16.dp
     } else {
         avatarSize
     }
@@ -169,12 +177,12 @@ fun FlowingAvatarFrame(
             VideoMicMagicEffectOverlay(
                 videoRes = activeVideoRes,
                 avatarSize = avatarSize,
-                effectSize = effectiveFrameSize + 14.dp
+                effectSize = avatarSize + 16.dp
             )
         }
 
-        // Flowing Rotating Aura Ring (Subtle behind frame)
-        if (isAnimated && frameId.isNotBlank()) {
+        // Flowing Rotating Aura Ring (Subtle behind frame, omitted for master VIP frames to preserve pristine handcrafted border)
+        if (isAnimated && frameId.isNotBlank() && !isVipSuiteFrame) {
             Box(
                 modifier = Modifier
                     .size(avatarSize + 6.dp)
@@ -188,22 +196,26 @@ fun FlowingAvatarFrame(
             )
         }
 
-        // BASE LAYER: Uncropped, Clear Profile Picture
+        // BASE LAYER: Uncropped, Clear Profile Picture (Fits snugly into frame hole without double border)
         Box(
             modifier = Modifier
                 .size(avatarSize)
                 .clip(CircleShape)
                 .background(Color.Black.copy(alpha = 0.2f))
-                .border(
-                    width = 1.5.dp,
-                    color = if (isSpeaking) {
-                        if (frameId.isBlank()) Color(0xFF00E5FF) else BrandGreen
-                    } else if (frameId.isNotBlank()) {
-                        auraColorList.first().copy(alpha = 0.8f)
-                    } else {
-                        Color(0x5500E5FF)
-                    },
-                    shape = CircleShape
+                .then(
+                    if (!isVipSuiteFrame) {
+                        Modifier.border(
+                            width = 1.5.dp,
+                            color = if (isSpeaking) {
+                                if (frameId.isBlank()) Color(0xFF00E5FF) else BrandGreen
+                            } else if (frameId.isNotBlank()) {
+                                auraColorList.first().copy(alpha = 0.8f)
+                            } else {
+                                Color(0x5500E5FF)
+                            },
+                            shape = CircleShape
+                        )
+                    } else Modifier
                 )
         ) {
             AsyncImage(
@@ -214,7 +226,7 @@ fun FlowingAvatarFrame(
             )
         }
 
-        // OVERLAY LAYER: Outer Winged Frame
+        // OVERLAY LAYER: Outer Winged Frame (100% Rock-Solid Stable Centering)
         if (frameId.isNotBlank()) {
             Image(
                 painter = painterResource(id = drawableRes),
@@ -222,16 +234,16 @@ fun FlowingAvatarFrame(
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer(
-                        translationY = wingLift,
-                        scaleX = pulseScale,
-                        scaleY = pulseScale
+                        translationY = activeWingLift,
+                        scaleX = activePulseScale,
+                        scaleY = activePulseScale
                     ),
                 contentScale = ContentScale.Fit
             )
         }
 
         // VIP Level Badge (if user has VIP level and showVipBadge is true)
-        val isVipSuiteFrame = frameId.startsWith("vip_suite_frame_") || frameId.startsWith("frame_vip")
+        val isVipSuiteFrame = frameId.startsWith("vip_suite_frame_") || frameId.startsWith("frame_vip") || frameId.startsWith("vip")
         if (showVipBadge && effectiveVip > 0 && !isVipSuiteFrame) {
             val (badgeText, badgeBg) = when (effectiveVip) {
                 1 -> "VIP 1" to Color(0xFFC0C0C0) // Silver

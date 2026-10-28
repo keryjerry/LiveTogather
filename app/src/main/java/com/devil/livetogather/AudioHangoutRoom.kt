@@ -739,6 +739,7 @@ fun LiveRoomPkBattleArena(
 fun CreateRoomDialog(
     currentUser: UserProfile,
     initialCategory: String = "free_tonight",
+    existingRoomTitles: List<String> = emptyList(),
     onDismiss: () -> Unit,
     onCreate: (title: String, categoryId: String, themeUrl: String, roomType: String) -> Unit
 ) {
@@ -868,6 +869,17 @@ fun CreateRoomDialog(
                             }
                         }
                     )
+
+                    val isDuplicateTitle = roomTitle.trim().isNotEmpty() && existingRoomTitles.any { it.trim().equals(roomTitle.trim(), ignoreCase = true) }
+                    if (isDuplicateTitle) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "⚠️ This name is already in use, try different.",
+                            color = Color(0xFFFF5252),
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
 
                 Spacer(modifier = Modifier.height(14.dp))
 
@@ -1040,6 +1052,11 @@ fun CreateRoomDialog(
                         } else {
                             val finalCategory = selectedCategory
                             val finalTitle = roomTitle.trim().ifEmpty { "${currentUser.name}'s Hangout" }
+                            val isDup = existingRoomTitles.any { it.trim().equals(finalTitle, ignoreCase = true) }
+                            if (isDup) {
+                                Toast.makeText(context, "This name is already in use, try different.", Toast.LENGTH_LONG).show()
+                                return@Button
+                            }
                             onCreate(finalTitle, finalCategory, selectedTheme, selectedRoomType)
                         }
                     },
@@ -4804,8 +4821,8 @@ fun AudioHangoutRoomDialog(
     val knownMemberIds = remember { mutableStateListOf<String>() }
 
     // Floating Draggable Music Player PIP State
-    var musicPlayerOffset by remember { mutableStateOf(Offset(0f, 0f)) }
-    var isMusicPlayerMinimized by remember { mutableStateOf(false) }
+    var musicPlayerOffset by remember { mutableStateOf(Offset(0f, 420f)) }
+    var isMusicPlayerMinimized by remember { mutableStateOf(true) }
 
     val displayRoomId = remember(room.roomId, room.id) {
         val raw = room.roomId
@@ -5929,30 +5946,31 @@ fun AudioHangoutRoomDialog(
                                 modifier = Modifier.weight(1f, fill = false),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                // Host Avatar Pill (Clean, Live streaming standard)
+                                // Host Avatar Pill (Enhanced with Square Avatar, Follower Count & Prominent Follow Button)
                                 Surface(
-                                    color = Color.Black.copy(alpha = 0.6f),
-                                    shape = RoundedCornerShape(50),
-                                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+                                    color = Color.Black.copy(alpha = 0.65f),
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.22f)),
                                     modifier = Modifier.clickable { selectedMemberForSheet = hostMemberObj }
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(start = 2.dp, top = 2.dp, bottom = 2.dp, end = if (!isUserHost) 6.dp else 8.dp),
+                                        modifier = Modifier.padding(start = 4.dp, top = 3.dp, bottom = 3.dp, end = 5.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
+                                        // Square Host Profile with rounded corners
                                         Box(contentAlignment = Alignment.Center) {
                                             AsyncImage(
                                                 model = hostPhoto.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
                                                 contentDescription = hostName,
                                                 modifier = Modifier
-                                                    .size(32.dp)
-                                                    .clip(CircleShape)
-                                                    .border(1.2.dp, BrandGold, CircleShape),
+                                                    .size(36.dp)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .border(1.2.dp, BrandGold, RoundedCornerShape(8.dp)),
                                                 contentScale = ContentScale.Crop
                                             )
                                         }
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Column(modifier = Modifier.widthIn(max = 95.dp)) {
+                                        Column(modifier = Modifier.widthIn(max = 110.dp)) {
                                             Text(
                                                 text = hostName,
                                                 color = Color.White,
@@ -5962,19 +5980,23 @@ fun AudioHangoutRoomDialog(
                                                 overflow = TextOverflow.Ellipsis
                                             )
                                             Text(
-                                                text = "ID: $displayRoomId",
+                                                text = "👥 $hostFollowerCount • ID: $displayRoomId",
                                                 color = BrandGold,
-                                                fontSize = 9.sp,
-                                                fontWeight = FontWeight.SemiBold
+                                                fontSize = 8.5.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
                                             )
                                         }
-                                        if (!isUserHost) {
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Surface(
-                                                color = if (isFollowingHost) Color.Transparent else BrandCoral,
-                                                shape = RoundedCornerShape(50),
-                                                border = if (isFollowingHost) BorderStroke(1.dp, BrandGold.copy(alpha = 0.6f)) else null,
-                                                modifier = Modifier.clickable {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Surface(
+                                            color = if (isFollowingHost) Color(0x334CAF50) else if (isUserHost) Color(0x33FFB300) else BrandCoral,
+                                            shape = RoundedCornerShape(8.dp),
+                                            border = if (isFollowingHost) BorderStroke(1.dp, Color(0xFF4CAF50)) else if (isUserHost) BorderStroke(0.8.dp, BrandGold.copy(alpha = 0.6f)) else null,
+                                            modifier = Modifier.clickable {
+                                                if (isUserHost) {
+                                                    Toast.makeText(context, "👑 You are the Host ($hostFollowerCount followers)", Toast.LENGTH_SHORT).show()
+                                                } else {
                                                     val newFollowing = !isFollowingHost
                                                     isFollowingHost = newFollowing
                                                     if (newFollowing) {
@@ -6004,13 +6026,26 @@ fun AudioHangoutRoomDialog(
                                                         }
                                                     }
                                                 }
+                                            }
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                             ) {
+                                                if (!isFollowingHost && !isUserHost) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Add,
+                                                        contentDescription = null,
+                                                        tint = Color.White,
+                                                        modifier = Modifier.size(10.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(2.dp))
+                                                }
                                                 Text(
-                                                    text = if (isFollowingHost) "✓" else "+",
-                                                    color = if (isFollowingHost) BrandGold else Color.White,
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.ExtraBold,
-                                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                                    text = if (isFollowingHost) "✓ Following" else if (isUserHost) "👑 Host" else "Follow",
+                                                    color = if (isFollowingHost) Color(0xFF81C784) else if (isUserHost) BrandGold else Color.White,
+                                                    fontSize = 9.5.sp,
+                                                    fontWeight = FontWeight.Bold
                                                 )
                                             }
                                         }
@@ -10097,8 +10132,8 @@ fun FloatingMusicEqualizerPlayer(
     onOpenSearch: () -> Unit,
     onStopMusic: () -> Unit
 ) {
-    var offsetX by remember { mutableFloatStateOf(16f) }
-    var offsetY by remember { mutableFloatStateOf(65f) }
+    var offsetX by remember { mutableFloatStateOf(24f) }
+    var offsetY by remember { mutableFloatStateOf(580f) }
 
     // Live Animated Equalizer Rhythm Bars
     val infiniteTransition = rememberInfiniteTransition(label = "eq_bars_transition")
@@ -10304,8 +10339,8 @@ fun MicSeatView(
             .clickable { onClick() }
             .padding(vertical = 1.dp)
     ) {
-        val seatBoxSize = if (shouldShowFrame) 66.dp else 56.dp
-        val avatarSize = 38.dp
+        val seatBoxSize = if (shouldShowFrame) 74.dp else 56.dp
+        val avatarSize = 52.dp
 
         Box(
             modifier = Modifier.size(seatBoxSize),
