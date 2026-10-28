@@ -178,24 +178,18 @@ fun FlowingAvatarFrame(
         avatarSize
     }
 
-    BoxWithConstraints(
+    Box(
         modifier = modifier
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
         contentAlignment = Alignment.Center
     ) {
-        // Dynamic scaling: Capped at effectiveFrameSize so it never expands out of bounds,
-        // and scales down proportionally if parent maxWidth is constrained (e.g. mic slot)
-        val maxAllowedFrameSize = if (maxWidth != Dp.Infinity && maxWidth > 0.dp) {
-            minOf(effectiveFrameSize, maxWidth)
+        // Dynamic scaling: Wraps completely around the outside of mic circle bounds
+        val targetFrameSize = if (frameSize > 0.dp && frameSize >= avatarSize) {
+            maxOf(frameSize, effectiveFrameSize)
         } else {
             effectiveFrameSize
         }
-        val targetFrameSize = maxAllowedFrameSize
-        val targetAvatarSize = if (effectiveFrameSize > 0.dp) {
-            avatarSize * (targetFrameSize / effectiveFrameSize)
-        } else {
-            avatarSize
-        }
+        val targetAvatarSize = avatarSize
 
         Box(
             modifier = Modifier.size(targetFrameSize),
@@ -289,7 +283,7 @@ fun FlowingAvatarFrame(
                 )
             }
 
-            // OVERLAY LAYER: Outer Winged Frame (100% Rock-Solid Stable Centering & Smooth Flowing Wings)
+            // OVERLAY LAYER: Outer Winged Frame (100% Solid, Opaque 1.0f Alpha, Shining Visual Look)
             if (frameId.isNotBlank()) {
                 Image(
                     painter = painterResource(id = drawableRes),
@@ -297,12 +291,14 @@ fun FlowingAvatarFrame(
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer(
+                            alpha = 1.0f,
                             translationY = wingLift,
                             rotationZ = wingSkew * 0.4f,
                             scaleX = pulseScale,
                             scaleY = pulseScale
                         ),
-                    contentScale = ContentScale.Fit
+                    contentScale = ContentScale.Fit,
+                    alpha = 1.0f
                 )
             }
 

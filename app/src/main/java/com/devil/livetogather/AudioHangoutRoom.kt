@@ -6488,7 +6488,7 @@ fun AudioHangoutRoomDialog(
                         else MicSeat(seatIndex = idx, label = "Mic ${idx + 1}", uid = "", name = "", photo = "", role = "speaker")
                     }
 
-                    val canStaffModerate = isUserAdmin || currentUser.isStaffMember() || currentUser.isFounder() || currentUser.isCeo()
+                    val canStaffModerate = isUserAdmin || currentUser.isStaffMember() || currentUser.isFounder() || currentUser.isCeo() || isUserHost
                     val handleSeatClick: (MicSeat) -> Unit = { seat ->
                         val currentSeat = micSeats.find { it.uid == currentUser.uid }
                         if (seat.uid == currentUser.uid) {

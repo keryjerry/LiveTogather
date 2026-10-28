@@ -202,17 +202,19 @@ object PaymentAndSupportManager {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
 
-            // Direct App Launch (PhonePe, GPay, Paytm)
+            // Direct App Launch with Seamless Fallback to System UPI Chooser
             if (!packageName.isNullOrBlank()) {
-                intent.setPackage(packageName)
+                val directIntent = Intent(Intent.ACTION_VIEW, upiUri).apply {
+                    setPackage(packageName)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
                 try {
-                    context.startActivity(intent)
+                    context.startActivity(directIntent)
                     onOpened()
                     return true
                 } catch (e: Exception) {
-                    android.util.Log.e("UPI", "Direct app launch failed for $packageName: ${e.message}")
-                    onError("APP_NOT_INSTALLED")
-                    return false
+                    android.util.Log.w("UPI", "Direct package $packageName failed, falling back to general UPI intent chooser: ${e.message}")
+                    // Fall back to general ACTION_VIEW chooser below so user can select any installed UPI app
                 }
             }
 
