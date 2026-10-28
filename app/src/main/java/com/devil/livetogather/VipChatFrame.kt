@@ -452,12 +452,51 @@ fun VipStyledChatBubble(
             else -> R.drawable.vip2_chat_bubble_frame
         }
 
+        val startPad = when (effVip) {
+            4 -> 48.dp
+            3 -> 44.dp
+            2 -> 40.dp
+            else -> 36.dp
+        }
+        val endPad = when (effVip) {
+            4 -> 42.dp
+            3 -> 38.dp
+            2 -> 34.dp
+            else -> 30.dp
+        }
+        val topPad = when (effVip) {
+            4 -> 20.dp
+            3 -> 18.dp
+            2 -> 16.dp
+            else -> 14.dp
+        }
+        val bottomPad = when (effVip) {
+            4 -> 24.dp
+            3 -> 22.dp
+            2 -> 18.dp
+            else -> 16.dp
+        }
+
         Box(
             modifier = modifier
-                .padding(vertical = 2.dp)
-                .widthIn(min = 140.dp, max = 290.dp),
+                .padding(vertical = 4.dp)
+                .widthIn(min = 140.dp, max = 310.dp),
             contentAlignment = Alignment.CenterStart
         ) {
+            // Inner safe translucent backdrop ensuring crystal clarity & contrast behind text
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .padding(
+                        start = startPad - 4.dp,
+                        end = endPad - 4.dp,
+                        top = topPad - 3.dp,
+                        bottom = bottomPad - 3.dp
+                    )
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.Black.copy(alpha = 0.65f))
+            )
+
             // Master 3D Luxury VIP Chat Frame Image (Exact Art Match)
             Image(
                 painter = painterResource(id = bubbleFrameRes),
@@ -466,22 +505,24 @@ fun VipStyledChatBubble(
                 contentScale = ContentScale.FillBounds
             )
 
-            // Message text container safely padded inside the inner glass area
+            // Message text container strictly padded inside decorative borders
             Column(
                 modifier = Modifier
                     .padding(
-                        start = 34.dp, // Clears the bottom-left VIP ribbon
-                        end = 22.dp,
-                        top = 10.dp,
-                        bottom = 12.dp
+                        start = startPad,
+                        end = endPad,
+                        top = topPad,
+                        bottom = bottomPad
                     )
             ) {
                 Text(
                     text = messageText,
                     color = Color.White,
-                    fontSize = 13.5.sp,
+                    fontSize = if (messageText.length > 55) 12.sp else if (messageText.length > 30) 13.sp else 13.5.sp,
                     fontWeight = FontWeight.Bold,
-                    lineHeight = 18.sp
+                    lineHeight = if (messageText.length > 55) 16.sp else if (messageText.length > 30) 17.sp else 19.sp,
+                    softWrap = true,
+                    overflow = TextOverflow.Ellipsis
                 )
 
                 if (timestampText.isNotBlank()) {
@@ -650,6 +691,7 @@ fun OrnateLuxuryEntranceCard(
     medal: Int,
     isFounder: Boolean = false,
     vipLevel: Int = 0,
+    actionText: String = "",
     modifier: Modifier = Modifier
 ) {
     val isApexFounder = isFounder || userProfile?.isFounder() == true
@@ -788,15 +830,18 @@ fun OrnateLuxuryEntranceCard(
 
                     Spacer(modifier = Modifier.height(3.dp))
 
-                    // Line 3: "entered the room" action subtitle
+                    // Line 3: "entered the room" or custom broadcast arrival action subtitle
                     Text(
-                        text = if (isApexFounder) "LiveTogather Founder has entered the room. Supreme Authority Active."
+                        text = if (actionText.isNotBlank()) actionText
+                               else if (isApexFounder) "LiveTogather Founder has entered the room. Supreme Authority Active."
                                else if (isApexCeo) "LiveTogather CEO has entered the room. Supreme Leadership Active."
                                else "entered the room",
-                        color = if (isApexFounder) Color(0xFFFFD700) else Color(0xFFFFE082).copy(alpha = 0.9f),
-                        fontSize = 11.sp,
+                        color = if (isApexFounder) Color(0xFFFFD700) else Color(0xFFFFE082).copy(alpha = 0.95f),
+                        fontSize = if (actionText.length > 50) 10.5.sp else 11.sp,
                         fontWeight = FontWeight.Bold,
-                        maxLines = 1,
+                        lineHeight = 14.sp,
+                        softWrap = true,
+                        maxLines = 3,
                         overflow = TextOverflow.Ellipsis
                     )
                 }

@@ -2029,7 +2029,15 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
         // 0. Advanced Real-time Audio or Video Hangout Room Dialog
         if (activeAudioRoom != null) {
             val room = activeAudioRoom!!
-            val isExpiredGuest = (!currentUser.hasRecharged && currentUser.rechargeCount == 0 && currentUser.totalRoomTimeSeconds >= 3600L)
+            val isExpiredGuest = (!currentUser.hasRecharged
+                && currentUser.rechargeCount == 0
+                && currentUser.diamonds <= 0L
+                && currentUser.getVipLevel() == 0
+                && !currentUser.isVipOrPlatinum()
+                && !currentUser.isFounder()
+                && !currentUser.isCeo()
+                && !currentUser.isStaffMember()
+                && currentUser.totalRoomTimeSeconds >= 3600L)
             if (isExpiredGuest) {
                 RoomRechargePaywallModal(
                     onDismiss = {

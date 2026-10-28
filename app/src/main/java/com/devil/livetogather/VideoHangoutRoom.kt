@@ -293,7 +293,7 @@ fun VideoHangoutRoomDialog(
             if (error != null) return@addSnapshotListener
             if (snapshot == null || !snapshot.exists()) {
                 if (!isUserHost) {
-                    Toast.makeText(context, "🔴 The host has closed this live room.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "ðŸ”´ The host has closed this live room.", Toast.LENGTH_LONG).show()
                     AgoraVideoManager.leaveRoom()
                     onDismiss()
                 }
@@ -309,7 +309,7 @@ fun VideoHangoutRoomDialog(
             // Real-Time Room Close Check: When host goes OFFLINE or exits, dismiss viewers from the live stage
             if (!updated.isLive || updated.statusMessage.equals("CLOSED", ignoreCase = true) || updated.statusMessage.equals("ENDED", ignoreCase = true) || (!updated.isHostLive && !isUserHost)) {
                 if (!isUserHost) {
-                    Toast.makeText(context, "🔴 The host has ended this live broadcast.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "ðŸ”´ The host has ended this live broadcast.", Toast.LENGTH_LONG).show()
                     AgoraVideoManager.leaveRoom()
                     onDismiss()
                 }
@@ -497,8 +497,14 @@ fun VideoHangoutRoomDialog(
     }
 
     // Live Room Time Tracking & Free 1-Hour Guest Limit for Unrecharged Users
-    LaunchedEffect(currentUser.uid, userHasRecharged, userRechargeCount) {
-        if (userHasRecharged || userRechargeCount > 0) return@LaunchedEffect
+    LaunchedEffect(currentUser.uid, userHasRecharged, userRechargeCount, userDiamonds, currentUser.diamonds) {
+        val isFirstTimeFreeGuest = !userHasRecharged && !currentUser.hasRecharged
+            && userRechargeCount == 0 && currentUser.rechargeCount == 0
+            && userDiamonds <= 0L && currentUser.diamonds <= 0L
+            && currentUser.getVipLevel() == 0 && !currentUser.isVipOrPlatinum()
+            && !currentUser.isFounder() && !currentUser.isCeo() && !currentUser.isStaffMember()
+            && room.hostId != currentUser.uid && room.hostUid != currentUser.uid
+
         while (true) {
             delay(10000L) // every 10 seconds
             val newTime = userTotalRoomTimeSeconds + 10L
@@ -515,7 +521,8 @@ fun VideoHangoutRoomDialog(
                 onUpdateProfile = { userDiamonds = it.diamonds }
             )
 
-            if (newTime >= 3600L && !currentUser.isFounder() && !currentUser.isCeo() && !currentUser.isStaffMember()) {
+            // STRICTLY apply 1-hour limit ONLY to first-time free guests with 0 coins, 0 recharge, no VIP
+            if (isFirstTimeFreeGuest && newTime >= 3600L) {
                 showGuestLimitExpiredDialog = true
                 break
             }
@@ -588,8 +595,14 @@ fun VideoHangoutRoomDialog(
     // Helper functions for sending comments & PK controls
     fun sendComment(message: String) {
         if (message.isBlank()) return
-        if (!userHasRecharged && userRechargeCount == 0 && userTotalRoomTimeSeconds >= 3600L && !currentUser.isFounder() && !currentUser.isCeo() && !currentUser.isStaffMember()) {
-            Toast.makeText(context, "🚫 1-hour free room access expired. Recharge ₹59 to chat.", Toast.LENGTH_LONG).show()
+        val isFirstTimeFreeGuest = !userHasRecharged && !currentUser.hasRecharged
+            && userRechargeCount == 0 && currentUser.rechargeCount == 0
+            && userDiamonds <= 0L && currentUser.diamonds <= 0L
+            && currentUser.getVipLevel() == 0 && !currentUser.isVipOrPlatinum()
+            && !currentUser.isFounder() && !currentUser.isCeo() && !currentUser.isStaffMember()
+            && room.hostId != currentUser.uid && room.hostUid != currentUser.uid
+        if (isFirstTimeFreeGuest && userTotalRoomTimeSeconds >= 3600L) {
+            Toast.makeText(context, "ðŸš« 1-hour free room access expired. Recharge â‚¹59 to chat.", Toast.LENGTH_LONG).show()
             showGuestLimitExpiredDialog = true
             return
         }
@@ -642,7 +655,7 @@ fun VideoHangoutRoomDialog(
             "pkWinnerUid" to ""
         )
         db.collection("rooms").document(room.id).update(updates)
-        Toast.makeText(context, "⚔️ 5-Minute Live PK Battle Commenced! Let's Go! 🔥", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, "âš”ï¸ 5-Minute Live PK Battle Commenced! Let's Go! ðŸ”¥", Toast.LENGTH_SHORT).show()
     }
 
     fun endPkBattle() {
@@ -676,7 +689,7 @@ fun VideoHangoutRoomDialog(
                 }
             }
         }
-        Toast.makeText(context, "⚔️ PK Battle Concluded!", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, "âš”ï¸ PK Battle Concluded!", Toast.LENGTH_SHORT).show()
     }
 
     fun executeExit() {
@@ -738,7 +751,7 @@ fun VideoHangoutRoomDialog(
             followDoc.set(followerData).addOnSuccessListener {
                 isFollowingHost = true
                 showFollowCelebrationDialog = true
-                Toast.makeText(context, "⭐ Followed ${room.hostName}!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "â­ Followed ${room.hostName}!", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -789,7 +802,7 @@ fun VideoHangoutRoomDialog(
                         ) {
                             Box(modifier = Modifier.size(5.dp).clip(CircleShape).background(Color.White))
                             Spacer(modifier = Modifier.width(3.dp))
-                            Text("📹 LIVE", color = Color.White, fontSize = 7.sp, fontWeight = FontWeight.Black)
+                            Text("ðŸ“¹ LIVE", color = Color.White, fontSize = 7.sp, fontWeight = FontWeight.Black)
                         }
                         IconButton(
                             onClick = {
@@ -809,7 +822,7 @@ fun VideoHangoutRoomDialog(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = "👥 ${activeMembers.size} viewers",
+                        text = "ðŸ‘¥ ${activeMembers.size} viewers",
                         color = BrandGold,
                         fontSize = 9.sp
                     )
@@ -878,7 +891,7 @@ fun VideoHangoutRoomDialog(
                                     "pkHost2Photo" to currentUser.photo
                                 )
                             )
-                            Toast.makeText(context, "⚔️ Joined PK Battle Stage!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "âš”ï¸ Joined PK Battle Stage!", Toast.LENGTH_SHORT).show()
                         }
                     },
                     onStartPk = { startPkBattle() },
@@ -896,7 +909,7 @@ fun VideoHangoutRoomDialog(
                             db.collection("rooms").document(room.id)
                                 .collection("members").document(guest.uid)
                                 .update("role", "viewer")
-                            Toast.makeText(context, "📹 ${guest.name} removed from video stage", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "ðŸ“¹ ${guest.name} removed from video stage", Toast.LENGTH_SHORT).show()
                         }
                     }
                 )
@@ -967,7 +980,7 @@ fun VideoHangoutRoomDialog(
                                 )
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        text = "👑 ${room.hostName.ifBlank { "Host" }}",
+                                        text = "ðŸ‘‘ ${room.hostName.ifBlank { "Host" }}",
                                         color = Color.LightGray,
                                         fontSize = 9.sp,
                                         fontWeight = FontWeight.Medium,
@@ -976,7 +989,7 @@ fun VideoHangoutRoomDialog(
                                         modifier = Modifier.weight(1f, fill = false)
                                     )
                                     Text(
-                                        text = " • ID: $displayRoomId",
+                                        text = " â€¢ ID: $displayRoomId",
                                         color = BrandGold,
                                         fontSize = 8.5.sp,
                                         fontWeight = FontWeight.SemiBold
@@ -992,7 +1005,7 @@ fun VideoHangoutRoomDialog(
                                     modifier = Modifier.clickable { toggleFollowHost() }
                                 ) {
                                     Text(
-                                        text = if (isFollowingHost) "✓ Following" else "+ Follow",
+                                        text = if (isFollowingHost) "âœ“ Following" else "+ Follow",
                                         color = Color.White,
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.ExtraBold,
@@ -1187,7 +1200,7 @@ fun VideoHangoutRoomDialog(
 
                         val isCommentFounder = comment.isFounder || commenterProfile?.isFounder() == true || (comment.userId == currentUser.uid && currentUser.isFounder())
                         val commentVipLevel = if (comment.vipLevel > 0) comment.vipLevel else (commenterProfile?.getVipLevel() ?: if (comment.userId == currentUser.uid) currentUser.getVipLevel() else 0)
-                        val isEntranceMessage = comment.message.contains("entered the room") || comment.message.startsWith("✨ Welcome") || comment.message.contains("to the room!")
+                        val isEntranceMessage = comment.message.contains("entered the room") || comment.message.startsWith("âœ¨ Welcome") || comment.message.contains("to the room!")
 
                         if (isEntranceMessage) {
                             OrnateLuxuryEntranceCard(
@@ -1420,7 +1433,7 @@ fun VideoHangoutRoomDialog(
                             )
                         }
                     } else {
-                        // Audience Viewer: "✋ Request Stage" Button
+                        // Audience Viewer: "âœ‹ Request Stage" Button
                         Box(
                             modifier = Modifier
                                 .size(38.dp)
@@ -1439,11 +1452,11 @@ fun VideoHangoutRoomDialog(
                                                 "timestamp" to System.currentTimeMillis()
                                             )
                                         )
-                                    Toast.makeText(context, "✋ Request to join stage sent to Host!", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "âœ‹ Request to join stage sent to Host!", Toast.LENGTH_SHORT).show()
                                 },
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("✋", fontSize = 17.sp)
+                            Text("âœ‹", fontSize = 17.sp)
                         }
                     }
 
@@ -1485,7 +1498,7 @@ fun VideoHangoutRoomDialog(
                                 },
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("⚔️", fontSize = 17.sp)
+                            Text("âš”ï¸", fontSize = 17.sp)
                         }
 
                         // 5. HOST: Room Settings Sheet
@@ -1524,7 +1537,7 @@ fun VideoHangoutRoomDialog(
                                 .clickable { showLuxuryStoreDialog = true },
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("🛍️", fontSize = 18.sp)
+                            Text("ðŸ›ï¸", fontSize = 18.sp)
                         }
 
                         // 7. HOST: Luxury Gift Store Button (Host can gift co-hosts & viewers)
@@ -1546,7 +1559,7 @@ fun VideoHangoutRoomDialog(
                                 .clickable { showGiftStoreDialog = true },
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("🎁", fontSize = 19.sp)
+                            Text("ðŸŽ", fontSize = 19.sp)
                         }
                     } else {
                         // 4. VIEWER: Floating Hearts / Like Reaction Button
@@ -1557,11 +1570,11 @@ fun VideoHangoutRoomDialog(
                                 .background(Color(0xFFFF1744).copy(alpha = 0.15f))
                                 .border(1.dp, Color(0xFFFF1744).copy(alpha = 0.5f), CircleShape)
                                 .clickable {
-                                    floatingEmojis.add(Pair("❤️", System.currentTimeMillis()))
+                                    floatingEmojis.add(Pair("â¤ï¸", System.currentTimeMillis()))
                                 },
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("❤️", fontSize = 17.sp)
+                            Text("â¤ï¸", fontSize = 17.sp)
                         }
 
                         // 5. VIEWER: Share Stream Button
@@ -1594,7 +1607,7 @@ fun VideoHangoutRoomDialog(
                                 .clickable { showLuxuryStoreDialog = true },
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("🛍️", fontSize = 17.sp)
+                            Text("ðŸ›ï¸", fontSize = 17.sp)
                         }
 
                         // 6. VIEWER: Luxury Gift Store Button
@@ -1616,7 +1629,7 @@ fun VideoHangoutRoomDialog(
                                 .clickable { showGiftStoreDialog = true },
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("🎁", fontSize = 20.sp)
+                            Text("ðŸŽ", fontSize = 20.sp)
                         }
                     }
                 }
@@ -1635,7 +1648,7 @@ fun VideoHangoutRoomDialog(
                     isHostOrAdmin = isUserHost || currentUser.isOfficialAdmin(),
                     onTogglePlay = {
                         if (!isUserHost && !currentUser.isOfficialAdmin()) {
-                            Toast.makeText(context, "Only room host or admin can control music 🎵", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Only room host or admin can control music ðŸŽµ", Toast.LENGTH_SHORT).show()
                         } else {
                             val willPlay = !AudioPlayerManager.isPlayingState.value
                             val now = System.currentTimeMillis()
@@ -1670,14 +1683,14 @@ fun VideoHangoutRoomDialog(
                     },
                     onOpenSearch = {
                         if (!isUserHost && !currentUser.isOfficialAdmin()) {
-                            Toast.makeText(context, "Only room host or admin can select music 🎵", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Only room host or admin can select music ðŸŽµ", Toast.LENGTH_SHORT).show()
                         } else {
                             showTrackSelectorDialog = true
                         }
                     },
                     onStopMusic = {
                         if (!isUserHost && !currentUser.isOfficialAdmin()) {
-                            Toast.makeText(context, "Only room host or admin can stop music 🛑", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Only room host or admin can stop music ðŸ›‘", Toast.LENGTH_SHORT).show()
                         } else {
                             AudioPlayerManager.stop()
                             room = room.copy(isPlaying = false, nowPlayingUrl = "", nowPlayingTitle = "")
@@ -1719,14 +1732,14 @@ fun VideoHangoutRoomDialog(
                     .border(1.2.dp, BrandGold, CircleShape)
                     .clickable {
                         if (!isUserHost && !currentUser.isOfficialAdmin()) {
-                            Toast.makeText(context, "Only room host or admin can select music 🎵", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Only room host or admin can select music ðŸŽµ", Toast.LENGTH_SHORT).show()
                         } else {
                             showTrackSelectorDialog = true
                         }
                     },
                 contentAlignment = Alignment.Center
             ) {
-                Text("🎵", fontSize = 19.sp)
+                Text("ðŸŽµ", fontSize = 19.sp)
             }
 
             // -------------------------------------------------------------
@@ -1775,7 +1788,7 @@ fun VideoHangoutRoomDialog(
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val reactionList = listOf("❤️", "🔥", "👑", "🚀", "💎", "⚔️", "👏", "🎉")
+                        val reactionList = listOf("â¤ï¸", "ðŸ”¥", "ðŸ‘‘", "ðŸš€", "ðŸ’Ž", "âš”ï¸", "ðŸ‘", "ðŸŽ‰")
                         reactionList.forEach { emo ->
                             Text(
                                 text = emo,
@@ -1797,11 +1810,11 @@ fun VideoHangoutRoomDialog(
                                 .size(28.dp)
                                 .clickable {
                                     floatingEmojis.clear()
-                                    Toast.makeText(context, "Cleared reaction emojis 🧹", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Cleared reaction emojis ðŸ§¹", Toast.LENGTH_SHORT).show()
                                 }
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                Text("❌", fontSize = 12.sp)
+                                Text("âŒ", fontSize = 12.sp)
                             }
                         }
                     }
@@ -1843,7 +1856,7 @@ fun VideoHangoutRoomDialog(
                         Spacer(modifier = Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "✋ $reqName",
+                                text = "âœ‹ $reqName",
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp
@@ -1864,7 +1877,7 @@ fun VideoHangoutRoomDialog(
                             },
                             modifier = Modifier.size(36.dp)
                         ) {
-                            Text("❌", fontSize = 14.sp)
+                            Text("âŒ", fontSize = 14.sp)
                         }
                         Spacer(modifier = Modifier.width(4.dp))
                         // Accept Button
@@ -1875,7 +1888,7 @@ fun VideoHangoutRoomDialog(
                                 db.collection("rooms").document(room.id)
                                     .collection("stage_requests").document(reqUid).delete()
                                 pendingStageRequests.removeAll { (it["uid"] as? String) == reqUid }
-                                Toast.makeText(context, "Accepted $reqName to video stage! 📹", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Accepted $reqName to video stage! ðŸ“¹", Toast.LENGTH_SHORT).show()
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
                             shape = RoundedCornerShape(20.dp),
@@ -1917,32 +1930,19 @@ fun VideoHangoutRoomDialog(
                     keyboardController?.show()
                 }
 
-                Dialog(
-                    onDismissRequest = { showCommentInputDialog = false },
-                    properties = DialogProperties(usePlatformDefaultWidth = false)
-                ) {
-                    val view = LocalView.current
-                    SideEffect {
-                        var parent = view.parent
-                        while (parent != null && parent !is android.app.Dialog && parent !is DialogWindowProvider) {
-                            parent = parent.parent
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.5f))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {
+                            showCommentInputDialog = false
+                            keyboardController?.hide()
                         }
-                        (parent as? DialogWindowProvider)?.window?.setSoftInputMode(
-                            WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
-                        )
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null
-                            ) {
-                                showCommentInputDialog = false
-                                keyboardController?.hide()
-                            }
-                    ) {
+                        .imePadding()
+                ) {
                         Surface(
                             color = BrandCard,
                             shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
@@ -2058,7 +2058,7 @@ fun VideoHangoutRoomDialog(
                         val newTotal = userDiamonds + added
                         db.collection("users").document(currentUser.uid).update("diamonds", newTotal)
                         userDiamonds = newTotal
-                        Toast.makeText(context, "🎉 Recharged $added Diamonds!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "ðŸŽ‰ Recharged $added Diamonds!", Toast.LENGTH_SHORT).show()
                     },
                     onBuyFrame = { frameId, cost ->
                         if (userDiamonds >= cost) {
@@ -2074,9 +2074,9 @@ fun VideoHangoutRoomDialog(
                             userDiamonds = newDiamonds
                             userOwnedFrames = newOwned
                             activeUserFrame = frameId
-                            Toast.makeText(context, "👑 Frame Purchased & Equipped!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "ðŸ‘‘ Frame Purchased & Equipped!", Toast.LENGTH_SHORT).show()
                         } else {
-                            Toast.makeText(context, "⚠️ Insufficient Diamonds!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "âš ï¸ Insufficient Diamonds!", Toast.LENGTH_SHORT).show()
                         }
                     },
                     onApplyFrame = { frameId ->
@@ -2166,28 +2166,28 @@ fun VideoHangoutRoomDialog(
                                 userName = currentUser.name,
                                 userPhoto = currentUser.photo,
                                 tier = "VIP",
-                                message = "sent ${giftItem.name} 🎁 (${giftItem.cost} 💎)",
+                                message = "sent ${giftItem.name} ðŸŽ (${giftItem.cost} ðŸ’Ž)",
                                 timestamp = System.currentTimeMillis()
                             )
                             db.collection("rooms").document(room.id).collection("live_comments")
                                 .document(giftComment.id).set(giftComment)
 
                             showGiftStoreDialog = false
-                            Toast.makeText(context, "🎁 Sent ${giftItem.name}!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "ðŸŽ Sent ${giftItem.name}!", Toast.LENGTH_SHORT).show()
                         } else {
-                            Toast.makeText(context, "⚠️ Insufficient Diamonds! Needed: %,d 💎".format(giftItem.cost), Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "âš ï¸ Insufficient Diamonds! Needed: %,d ðŸ’Ž".format(giftItem.cost), Toast.LENGTH_SHORT).show()
                         }
                     },
                     micSeats = remember(room, activeMembers) {
                         val list = mutableListOf(
-                            MicSeat(seatIndex = 0, label = "Host 👑", uid = room.hostUid.ifBlank { room.hostId }, name = room.hostName.ifBlank { "Host" }, photo = room.hostPhotoUrl)
+                            MicSeat(seatIndex = 0, label = "Host ðŸ‘‘", uid = room.hostUid.ifBlank { room.hostId }, name = room.hostName.ifBlank { "Host" }, photo = room.hostPhotoUrl)
                         )
                         val otherBroadcasters = activeMembers.filter { (it.role == "co_host" || it.role == "host") && it.uid != (room.hostUid.ifBlank { room.hostId }) }
                         otherBroadcasters.forEachIndexed { idx, m ->
-                            list.add(MicSeat(seatIndex = idx + 1, label = "Co-Host 🎙️", uid = m.uid, name = m.name, photo = m.photoUrl))
+                            list.add(MicSeat(seatIndex = idx + 1, label = "Co-Host ðŸŽ™ï¸", uid = m.uid, name = m.name, photo = m.photoUrl))
                         }
                         if (list.size == 1 && room.isPkActive && room.pkHost2Uid.isNotBlank()) {
-                            list.add(MicSeat(seatIndex = 1, label = "PK Challenger ⚔️", uid = room.pkHost2Uid, name = room.pkHost2Name.ifBlank { "Challenger" }, photo = room.pkHost2Photo))
+                            list.add(MicSeat(seatIndex = 1, label = "PK Challenger âš”ï¸", uid = room.pkHost2Uid, name = room.pkHost2Name.ifBlank { "Challenger" }, photo = room.pkHost2Photo))
                         }
                         list
                     },
@@ -2250,7 +2250,7 @@ fun VideoHangoutRoomDialog(
                                 userName = currentUser.name,
                                 userPhoto = currentUser.photo,
                                 tier = "VIP",
-                                message = "sent ${giftItem.name} x$quantity ${giftItem.emoji} (${if (fromBackpack) "Backpack" else "$totalCost 💎"})",
+                                message = "sent ${giftItem.name} x$quantity ${giftItem.emoji} (${if (fromBackpack) "Backpack" else "$totalCost ðŸ’Ž"})",
                                 timestamp = System.currentTimeMillis()
                             )
                             db.collection("rooms").document(room.id).collection("live_comments")
@@ -2261,9 +2261,9 @@ fun VideoHangoutRoomDialog(
                             }
 
                             showGiftStoreDialog = false
-                            Toast.makeText(context, "🎁 Sent ${giftItem.name} x$quantity!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "ðŸŽ Sent ${giftItem.name} x$quantity!", Toast.LENGTH_SHORT).show()
                         } else {
-                            Toast.makeText(context, "⚠️ Insufficient Diamonds! Needed: %,d 💎".format(totalCost), Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "âš ï¸ Insufficient Diamonds! Needed: %,d ðŸ’Ž".format(totalCost), Toast.LENGTH_SHORT).show()
                         }
                     },
                     onClaimStarterGifts = {
@@ -2272,7 +2272,7 @@ fun VideoHangoutRoomDialog(
                             "gift_firecracker_bomb" to 1
                         )
                         db.collection("users").document(currentUser.uid).update("backpack", starterPack)
-                        Toast.makeText(context, "🎉 Starter Gifts Claimed! 5x Roses & 1x Firecracker Bomb added to your Backpack!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "ðŸŽ‰ Starter Gifts Claimed! 5x Roses & 1x Firecracker Bomb added to your Backpack!", Toast.LENGTH_SHORT).show()
                     }
                 )
             }
@@ -2306,7 +2306,7 @@ fun VideoHangoutRoomDialog(
                         )
                         AudioPlayerManager.play(context, url, title, artworkUrl, initialSeekMs = 0)
                         showTrackSelectorDialog = false
-                        Toast.makeText(context, "Streaming: $title by $artist 🎵", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Streaming: $title by $artist ðŸŽµ", Toast.LENGTH_SHORT).show()
                     }
                 )
             }
@@ -2357,7 +2357,7 @@ fun VideoHangoutRoomDialog(
                                         "timestamp" to System.currentTimeMillis()
                                     )
                                 )
-                            Toast.makeText(context, "✋ Request to join stage sent to Host!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "âœ‹ Request to join stage sent to Host!", Toast.LENGTH_SHORT).show()
                             showRoomSettingsDialog = false
                         },
                         onLeaveStage = {
@@ -2367,7 +2367,7 @@ fun VideoHangoutRoomDialog(
                             db.collection("rooms").document(room.id)
                                 .collection("members").document(currentUser.uid)
                                 .update("role", "viewer")
-                            Toast.makeText(context, "📹 You stepped down from the video stage", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "ðŸ“¹ You stepped down from the video stage", Toast.LENGTH_SHORT).show()
                             showRoomSettingsDialog = false
                         },
                         onShareRoom = {
@@ -2394,7 +2394,7 @@ fun VideoHangoutRoomDialog(
                                 timestamp = System.currentTimeMillis()
                             )
                             db.collection("reports").document(report.reportId).set(report)
-                            Toast.makeText(context, "🚩 Report submitted. Moderation team notified.", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "ðŸš© Report submitted. Moderation team notified.", Toast.LENGTH_SHORT).show()
                             showRoomSettingsDialog = false
                         },
                         onLeaveRoom = {
@@ -2422,7 +2422,7 @@ fun VideoHangoutRoomDialog(
                         onDismiss()
                     },
                     onLike = {
-                        Toast.makeText(context, "Liked ${selectedMemberForProfile?.name}! ❤️", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Liked ${selectedMemberForProfile?.name}! â¤ï¸", Toast.LENGTH_SHORT).show()
                     },
                     onDirectMessage = {
                         val profile = targetProfile
@@ -2438,29 +2438,29 @@ fun VideoHangoutRoomDialog(
                             onDirectChat(profile)
                         }
                     },
-                    onKickOut = { m ->
+                    onKickOut = { m: RoomMember ->
                         db.collection("rooms").document(room.id)
                             .collection("members").document(m.uid).delete()
                         selectedMemberForProfile = null
                     },
-                    onBan = { m ->
+                    onBan = { m: RoomMember ->
                         db.collection("rooms").document(room.id)
                             .update("bannedUserIds", FieldValue.arrayUnion(m.uid))
                         selectedMemberForProfile = null
                     },
-                    onBlock = { m ->
+                    onBlock = { m: RoomMember ->
                         db.collection("users").document(currentUser.uid)
                             .update("blockedUsers", FieldValue.arrayUnion(m.uid))
                         selectedMemberForProfile = null
                     },
-                    onTagMember = { name ->
+                    onTagMember = { name: String ->
                         commentInputText = "@$name "
                         showCommentInputDialog = true
                         selectedMemberForProfile = null
                     },
                     roomAdminUserIds = room.adminUserIds,
                     onToggleAdmin = null,
-                    onInviteToVideo = { target ->
+                    onInviteToVideo = { target: RoomMember ->
                         db.collection("rooms").document(room.id)
                             .collection("video_invites").document(target.uid)
                             .set(
@@ -2472,7 +2472,7 @@ fun VideoHangoutRoomDialog(
                                     "timestamp" to System.currentTimeMillis()
                                 )
                             )
-                        Toast.makeText(context, "📹 Invitation sent to ${target.name}!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "ðŸ“¹ Invitation sent to ${target.name}!", Toast.LENGTH_SHORT).show()
                     }
                 )
             }
@@ -2483,11 +2483,11 @@ fun VideoHangoutRoomDialog(
                     currentUser = currentUser,
                     isHost = isUserHost,
                     isVideoRoom = true,
-                    onSelectMember = { member ->
+                    onSelectMember = { member: RoomMember ->
                         selectedMemberForProfile = member
                         showAllViewersDialog = false
                     },
-                    onInviteToVideo = { member ->
+                    onInviteToVideo = { member: RoomMember ->
                         db.collection("rooms").document(room.id)
                             .collection("video_invites").document(member.uid)
                             .set(
@@ -2499,13 +2499,13 @@ fun VideoHangoutRoomDialog(
                                     "timestamp" to System.currentTimeMillis()
                                 )
                             )
-                        Toast.makeText(context, "📹 Invitation sent to ${member.name}!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "ðŸ“¹ Invitation sent to ${member.name}!", Toast.LENGTH_SHORT).show()
                     },
-                    onKickOut = { targetMember ->
+                    onKickOut = { targetMember: RoomMember ->
                         db.collection("rooms").document(room.id)
                             .collection("members").document(targetMember.uid).delete()
                     },
-                    onBan = { targetMember ->
+                    onBan = { targetMember: RoomMember ->
                         db.collection("rooms").document(room.id)
                             .update("bannedUserIds", FieldValue.arrayUnion(targetMember.uid))
                         db.collection("rooms").document(room.id)
@@ -2525,7 +2525,7 @@ fun VideoHangoutRoomDialog(
                     },
                     containerColor = BrandCard,
                     title = {
-                        Text("📹 Video Stage Invitation", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text("ðŸ“¹ Video Stage Invitation", color = Color.White, fontWeight = FontWeight.Bold)
                     },
                     text = {
                         Text(
@@ -2556,7 +2556,7 @@ fun VideoHangoutRoomDialog(
                                 db.collection("rooms").document(room.id)
                                     .collection("video_invites").document(currentUser.uid).delete()
                                 pendingVideoInvite = null
-                                Toast.makeText(context, "📹 Joined video stage!", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "ðŸ“¹ Joined video stage!", Toast.LENGTH_SHORT).show()
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = BrandCoral)
                         ) {
@@ -2578,7 +2578,6 @@ fun VideoHangoutRoomDialog(
             }
         }
     }
-}
 
 // -------------------------------------------------------------
 // DYNAMIC MULTI-GUEST VIDEO LAYOUT (1P, 2P, 3P, 4P AUTOMATIC)
@@ -2612,7 +2611,7 @@ fun VideoStreamCell(
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = "⏳ Stream Paused",
+                        text = "â³ Stream Paused",
                         color = Color.White,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
@@ -2696,7 +2695,7 @@ fun VideoStreamCell(
                 .padding(6.dp)
         ) {
             Text(
-                text = if (isHostSlot) "👑 ${member.name}" else "📹 ${member.name}",
+                text = if (isHostSlot) "ðŸ‘‘ ${member.name}" else "ðŸ“¹ ${member.name}",
                 color = if (isHostSlot) BrandGold else Color.White,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
@@ -2951,7 +2950,7 @@ fun VideoLayout1P(
                         )
                         Spacer(modifier = Modifier.height(14.dp))
                         Text(
-                            text = "${room.hostName} is Live 📹",
+                            text = "${room.hostName} is Live ðŸ“¹",
                             color = Color.White,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold
@@ -3120,7 +3119,7 @@ fun VideoLayout2P(
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("👑 BLUE: ", color = Color(0xFF00E5FF), fontSize = 10.sp, fontWeight = FontWeight.Black)
+                            Text("ðŸ‘‘ BLUE: ", color = Color(0xFF00E5FF), fontSize = 10.sp, fontWeight = FontWeight.Black)
                             Text("${room.pkHost1Score}", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
                     }
@@ -3217,7 +3216,7 @@ fun VideoLayout2P(
                                     modifier = Modifier.size(52.dp)
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
-                                        Text("⚔️", fontSize = 24.sp)
+                                        Text("âš”ï¸", fontSize = 24.sp)
                                     }
                                 }
                                 Spacer(modifier = Modifier.height(8.dp))
@@ -3255,7 +3254,7 @@ fun VideoLayout2P(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text("${room.pkHost2Score} ", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            Text("🔥 RED", color = Color(0xFFFF5252), fontSize = 10.sp, fontWeight = FontWeight.Black)
+                            Text("ðŸ”¥ RED", color = Color(0xFFFF5252), fontSize = 10.sp, fontWeight = FontWeight.Black)
                         }
                     }
                 }
@@ -3285,14 +3284,14 @@ fun VideoLayout2P(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("⚔️ LIVE PK BATTLE", color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                            Text("âš”ï¸ LIVE PK BATTLE", color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Black)
                             Surface(
                                 color = Color(0xFFFF1744).copy(alpha = 0.3f),
                                 shape = RoundedCornerShape(50),
                                 border = BorderStroke(0.8.dp, Color(0xFFFF1744))
                             ) {
                                 Text(
-                                    text = "⏱️ $timerFormatted",
+                                    text = "â±ï¸ $timerFormatted",
                                     color = Color.White,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.ExtraBold,
@@ -3326,7 +3325,7 @@ fun VideoLayout2P(
                                 )
                             }
                             Text(
-                                text = "⚡ VS ⚡",
+                                text = "âš¡ VS âš¡",
                                 color = Color.White,
                                 fontSize = 8.sp,
                                 fontWeight = FontWeight.Black,
@@ -3403,7 +3402,7 @@ fun VideoLayout3P(
                     modifier = Modifier.align(Alignment.BottomStart).padding(6.dp)
                 ) {
                     Text(
-                        text = "👑 ${room.hostName} (Host)",
+                        text = "ðŸ‘‘ ${room.hostName} (Host)",
                         color = BrandGold,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
@@ -3539,7 +3538,7 @@ fun VideoLayout4P(
                         modifier = Modifier.align(Alignment.BottomStart).padding(6.dp)
                     ) {
                         Text(
-                            text = "👑 ${room.hostName}",
+                            text = "ðŸ‘‘ ${room.hostName}",
                             color = BrandGold,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
@@ -3648,7 +3647,7 @@ fun EmptyCoHostSeat(onRequestJoin: () -> Unit) {
                     .border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                Text("➕", fontSize = 18.sp)
+                Text("âž•", fontSize = 18.sp)
             }
             Spacer(modifier = Modifier.height(6.dp))
             Text("Tap to Join", color = Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
@@ -3741,7 +3740,7 @@ fun ViewerRoomMenuDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "📹 Viewer Options",
+                        text = "ðŸ“¹ Viewer Options",
                         color = Color.White,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
@@ -3779,7 +3778,7 @@ fun ViewerRoomMenuDialog(
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Text(
-                                    text = "Leave Video Stage 📹",
+                                    text = "Leave Video Stage ðŸ“¹",
                                     color = Color(0xFFFF8A80),
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold
@@ -3818,7 +3817,7 @@ fun ViewerRoomMenuDialog(
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Text(
-                                    text = "Request to Join Broadcast 📹",
+                                    text = "Request to Join Broadcast ðŸ“¹",
                                     color = Color.White,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold
@@ -3860,7 +3859,7 @@ fun ViewerRoomMenuDialog(
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = "Share Live Stream 🔗",
+                                text = "Share Live Stream ðŸ”—",
                                 color = Color.White,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold
@@ -3901,7 +3900,7 @@ fun ViewerRoomMenuDialog(
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = "Report Stream / Room 🚩",
+                                text = "Report Stream / Room ðŸš©",
                                 color = Color.White,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold
@@ -3942,7 +3941,7 @@ fun ViewerRoomMenuDialog(
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = "Leave Live Room 🚪",
+                                text = "Leave Live Room ðŸšª",
                                 color = Color.White,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold
@@ -4031,7 +4030,7 @@ fun VideoRoomSettingsSheet(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("⚙️ Video Room Settings", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text("âš™ï¸ Video Room Settings", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray)
                     }
@@ -4054,7 +4053,7 @@ fun VideoRoomSettingsSheet(
                                 border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f))
                             ) {
                                 Column(modifier = Modifier.padding(14.dp)) {
-                                    Text("🎙️ Room Mode Conversion", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+                                    Text("ðŸŽ™ï¸ Room Mode Conversion", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text("Switch broadcast mode to multi-mic Audio Lounge. All viewers and stage participants transition seamlessly.", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
                                     Spacer(modifier = Modifier.height(10.dp))
@@ -4075,12 +4074,12 @@ fun VideoRoomSettingsSheet(
                                                 id = UUID.randomUUID().toString(),
                                                 roomId = room.id,
                                                 userId = currentUser.uid,
-                                                userName = "🔄 SYSTEM",
+                                                userName = "ðŸ”„ SYSTEM",
                                                 message = "Room mode converted to Audio Lounge by ${currentUser.name}",
                                                 timestamp = System.currentTimeMillis()
                                             )
                                             db.collection("rooms").document(room.id).collection("live_comments").document(sysComment.id).set(sysComment)
-                                            Toast.makeText(context, "🎙️ Converting room to Audio Lounge...", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, "ðŸŽ™ï¸ Converting room to Audio Lounge...", Toast.LENGTH_SHORT).show()
                                             onDismiss()
                                             onConvertToAudio?.invoke(room.copy(roomType = "audio", title = finalTitle))
                                         },
@@ -4089,7 +4088,7 @@ fun VideoRoomSettingsSheet(
                                         shape = RoundedCornerShape(10.dp),
                                         modifier = Modifier.fillMaxWidth().height(40.dp)
                                     ) {
-                                        Text("🔄 Convert to Audio Lounge 🎙️", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        Text("ðŸ”„ Convert to Audio Lounge ðŸŽ™ï¸", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                     }
                                 }
                             }
@@ -4104,7 +4103,7 @@ fun VideoRoomSettingsSheet(
                                 border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f))
                             ) {
                                 Column(modifier = Modifier.padding(14.dp)) {
-                                    Text("⚔️ Live Room PK Battle Controls", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+                                    Text("âš”ï¸ Live Room PK Battle Controls", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text("Challenge a co-host or guest to a 5-minute Tug-of-War battle.", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
                                     Spacer(modifier = Modifier.height(10.dp))
@@ -4120,7 +4119,7 @@ fun VideoRoomSettingsSheet(
                                             shape = RoundedCornerShape(10.dp),
                                             modifier = Modifier.fillMaxWidth().height(40.dp)
                                         ) {
-                                            Text("⚔️ Start 5-Minute PK Battle", color = Color(0xFFFF859E), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                            Text("âš”ï¸ Start 5-Minute PK Battle", color = Color(0xFFFF859E), fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                         }
                                     } else {
                                         Button(
@@ -4133,7 +4132,7 @@ fun VideoRoomSettingsSheet(
                                             shape = RoundedCornerShape(10.dp),
                                             modifier = Modifier.fillMaxWidth().height(40.dp)
                                         ) {
-                                            Text("⏹️ Conclude Active PK Battle", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                            Text("â¹ï¸ Conclude Active PK Battle", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                         }
                                     }
                                 }
@@ -4154,7 +4153,7 @@ fun VideoRoomSettingsSheet(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("📢 Room Announcement", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+                                    Text("ðŸ“¢ Room Announcement", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                                     if (isHost && announcementText.isNotBlank()) {
                                         Text(
                                             text = "Clear",
@@ -4176,7 +4175,7 @@ fun VideoRoomSettingsSheet(
                                     OutlinedTextField(
                                         value = announcementText,
                                         onValueChange = { announcementText = it },
-                                        placeholder = { Text("Write announcement (e.g. Welcome to our live stream! 🎉)", color = Color.Gray, fontSize = 11.sp) },
+                                        placeholder = { Text("Write announcement (e.g. Welcome to our live stream! ðŸŽ‰)", color = Color.Gray, fontSize = 11.sp) },
                                         colors = OutlinedTextFieldDefaults.colors(
                                             focusedTextColor = Color.White,
                                             unfocusedTextColor = Color.White,
@@ -4197,13 +4196,13 @@ fun VideoRoomSettingsSheet(
                                                     id = UUID.randomUUID().toString(),
                                                     roomId = room.id,
                                                     userId = currentUser.uid,
-                                                    userName = "📢 ANNOUNCEMENT",
+                                                    userName = "ðŸ“¢ ANNOUNCEMENT",
                                                     message = announcementText.trim(),
                                                     timestamp = System.currentTimeMillis()
                                                 )
                                                 db.collection("rooms").document(room.id)
                                                     .collection("live_comments").document(comment.id).set(comment)
-                                                Toast.makeText(context, "Announcement broadcasted! 📢", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, "Announcement broadcasted! ðŸ“¢", Toast.LENGTH_SHORT).show()
                                             }
                                         },
                                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A281E)),
@@ -4211,7 +4210,7 @@ fun VideoRoomSettingsSheet(
                                         shape = RoundedCornerShape(10.dp),
                                         modifier = Modifier.fillMaxWidth().height(40.dp)
                                     ) {
-                                        Text("Broadcast Announcement 📢", color = Color(0xFFFFD54F), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        Text("Broadcast Announcement ðŸ“¢", color = Color(0xFFFFD54F), fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                     }
                                 } else {
                                     Text(
@@ -4233,7 +4232,7 @@ fun VideoRoomSettingsSheet(
                                 border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f))
                             ) {
                                 Column(modifier = Modifier.padding(14.dp)) {
-                                    Text("🔴 Live Broadcast Status", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+                                    Text("ðŸ”´ Live Broadcast Status", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text("Toggle your live room state for followers", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
                                     Spacer(modifier = Modifier.height(10.dp))
@@ -4278,7 +4277,7 @@ fun VideoRoomSettingsSheet(
                                             shape = RoundedCornerShape(10.dp),
                                             modifier = Modifier.weight(1f).height(40.dp)
                                         ) {
-                                            Text("🔴 Go Live", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (room.isHostLive) Color(0xFF69F0AE) else Color.LightGray)
+                                            Text("ðŸ”´ Go Live", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (room.isHostLive) Color(0xFF69F0AE) else Color.LightGray)
                                         }
 
                                         Button(
@@ -4302,7 +4301,7 @@ fun VideoRoomSettingsSheet(
                                             shape = RoundedCornerShape(10.dp),
                                             modifier = Modifier.weight(1f).height(40.dp)
                                         ) {
-                                            Text("⏳ Set Offline", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (!room.isHostLive) Color(0xFFFFD54F) else Color.LightGray)
+                                            Text("â³ Set Offline", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (!room.isHostLive) Color(0xFFFFD54F) else Color.LightGray)
                                         }
                                     }
                                 }
@@ -4319,7 +4318,7 @@ fun VideoRoomSettingsSheet(
                                 border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f))
                             ) {
                                 Column(modifier = Modifier.padding(14.dp)) {
-                                    Text("⏰ Live Timing Schedule", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+                                    Text("â° Live Timing Schedule", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text("Notify users when you will be live next (e.g. Tonight 9:00 PM)", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
                                     Spacer(modifier = Modifier.height(10.dp))
@@ -4369,12 +4368,12 @@ fun VideoRoomSettingsSheet(
                             border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f))
                         ) {
                             Column(modifier = Modifier.padding(14.dp)) {
-                                Text("🔒 Room Access & Privacy", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+                                Text("ðŸ”’ Room Access & Privacy", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                                 Spacer(modifier = Modifier.height(8.dp))
                                 listOf(
-                                    "public" to "🌐 Public (Open to everyone)",
-                                    "vip_only" to "⭐ VIP & Platinum Only",
-                                    "private" to "🔒 Invite Only"
+                                    "public" to "ðŸŒ Public (Open to everyone)",
+                                    "vip_only" to "â­ VIP & Platinum Only",
+                                    "private" to "ðŸ”’ Invite Only"
                                 ).forEach { (key, label) ->
                                     val isSelected = selectedPrivacy == key
                                     Row(
@@ -4424,9 +4423,9 @@ fun VideoRoomSettingsSheet(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Column(modifier = Modifier.weight(1f)) {
-                                            Text("🔒 Lock Room", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                            Text("ðŸ”’ Lock Room", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                             Text(
-                                                text = if (isRoomLocked) "Room is currently locked 🔒" else "Room is open for everyone",
+                                                text = if (isRoomLocked) "Room is currently locked ðŸ”’" else "Room is open for everyone",
                                                 color = if (isRoomLocked) Color(0xFFFF8A80) else Color.Gray,
                                                 fontSize = 10.sp
                                             )
@@ -4436,7 +4435,7 @@ fun VideoRoomSettingsSheet(
                                             onCheckedChange = { locked ->
                                                 isRoomLocked = locked
                                                 db.collection("rooms").document(room.id).update("isLocked", locked)
-                                                Toast.makeText(context, if (locked) "Room is now locked 🔒" else "Room is now unlocked 🔓", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, if (locked) "Room is now locked ðŸ”’" else "Room is now unlocked ðŸ”“", Toast.LENGTH_SHORT).show()
                                             },
                                             colors = SwitchDefaults.colors(
                                                 checkedThumbColor = Color.White,
@@ -4454,9 +4453,9 @@ fun VideoRoomSettingsSheet(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Column(modifier = Modifier.weight(1f)) {
-                                            Text("⭐ Room Premium (VIP)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                            Text("â­ Room Premium (VIP)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                             Text(
-                                                text = if (isRoomVip) "Exclusive VIP room mode enabled ⭐" else "Standard room mode",
+                                                text = if (isRoomVip) "Exclusive VIP room mode enabled â­" else "Standard room mode",
                                                 color = if (isRoomVip) BrandGold else Color.Gray,
                                                 fontSize = 10.sp
                                             )
@@ -4471,7 +4470,7 @@ fun VideoRoomSettingsSheet(
                                                         "privacy" to if (vip) "vip_only" else "public"
                                                     )
                                                 )
-                                                Toast.makeText(context, if (vip) "Room set to Premium VIP ⭐" else "Room set to Standard Mode", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, if (vip) "Room set to Premium VIP â­" else "Room set to Standard Mode", Toast.LENGTH_SHORT).show()
                                             },
                                             colors = SwitchDefaults.colors(
                                                 checkedThumbColor = Color.White,
@@ -4498,7 +4497,7 @@ fun VideoRoomSettingsSheet(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text("🎨 Room Theme & Background", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+                                        Text("ðŸŽ¨ Room Theme & Background", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                                         Button(
                                             onClick = { imagePickerLauncher.launch("image/*") },
                                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF262C3E)),
@@ -4561,7 +4560,7 @@ fun VideoRoomSettingsSheet(
                                 border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f))
                             ) {
                                 Column(modifier = Modifier.padding(14.dp)) {
-                                    Text("🛡️ Room Member Moderation", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+                                    Text("ðŸ›¡ï¸ Room Member Moderation", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text("Manage active members in your live room", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
                                     Spacer(modifier = Modifier.height(10.dp))

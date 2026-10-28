@@ -1,5 +1,6 @@
 package com.devil.livetogather
 
+import androidx.compose.animation.core.EaseInOutSine
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -12,6 +13,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -80,46 +82,66 @@ fun FlowingAvatarFrame(
     // Smooth Infinite Animation Controller for Flowing Effects
     val infiniteTransition = rememberInfiniteTransition(label = "FlowingFrameTransition")
 
-    // 1. Rotating Aura Sweep Gradient
+    // 1. Fast Dual-Speed Rotating Aura — outer slow, inner fast for depth illusion
     val rotateAngle by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 6500, easing = LinearEasing),
+            animation = tween(durationMillis = 5800, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "AuraRotation"
     )
-
-    // 2. Realistic 3D Wing Flap & Billow (Bird/Eagle Flight Kinematics)
-    val wingFlapY by infiniteTransition.animateFloat(
-        initialValue = if (isAnimated) -10f else 0f,
-        targetValue = if (isAnimated) 10f else 0f,
+    val rotateAngleInner by infiniteTransition.animateFloat(
+        initialValue = 360f,
+        targetValue = 0f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1600, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
+            animation = tween(durationMillis = 3200, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
         ),
-        label = "WingFlapY"
+        label = "AuraRotationInner"
     )
 
+    // 2. Smooth Organic Wing Flap — EaseInOutSine gives natural bird-flight feel
     val wingLift by infiniteTransition.animateFloat(
-        initialValue = if (isAnimated) 0f else 0f,
-        targetValue = if (isAnimated) -5f else 0f,
+        initialValue = if (isAnimated) -4.5f else 0f,
+        targetValue = if (isAnimated) 4.5f else 0f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 800, easing = FastOutSlowInEasing),
+            animation = tween(durationMillis = 1700, easing = EaseInOutSine),
             repeatMode = RepeatMode.Reverse
         ),
         label = "WingLift"
     )
+    val wingSkew by infiniteTransition.animateFloat(
+        initialValue = if (isAnimated) -1.5f else 0f,
+        targetValue = if (isAnimated) 1.5f else 0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 2200, easing = EaseInOutSine),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "WingSkew"
+    )
 
+    // 3. Gentle Living Pulse — shimmer-breathe effect on frame border
     val pulseScale by infiniteTransition.animateFloat(
         initialValue = 1.0f,
-        targetValue = if (isAnimated) 1.05f else 1.0f,
+        targetValue = if (isAnimated) 1.04f else 1.0f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1600, easing = FastOutSlowInEasing),
+            animation = tween(durationMillis = 1900, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "FramePulse"
+    )
+
+    // 4. Shimmering Alpha for aura ring — makes it truly "live"
+    val auraAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.65f,
+        targetValue = if (isAnimated) 1.0f else 0.65f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1400, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "AuraAlpha"
     )
 
     // Aura Color Palette derived from frame
@@ -130,147 +152,187 @@ fun FlowingAvatarFrame(
         BrandGold
     )
 
-    // Calibrated Golden Ratio: Precisely matched to the inner hole diameter of each frame
-    val isVipSuiteFrame = frameId.startsWith("vip_suite_frame_") || frameId.startsWith("vip") || frameId.startsWith("frame_vip") || frameId in listOf("vip1_avatar_master", "vip2_avatar_master", "vip3_avatar_master", "vip4_avatar_master")
-    val minScale = when (frameId) {
-        "vip1_avatar_master" -> 2.34f
-        "vip2_avatar_master" -> 2.57f
-        "vip3_avatar_master" -> 2.86f
-        "vip4_avatar_master" -> 2.83f
-        else -> if (isVipSuiteFrame) 2.57f else 1.95f
+    // Universal Dynamic Golden Ratio Calibration: Automatically matches inner hole bounds of any frame
+    val minScale = when (drawableRes) {
+        R.drawable.vip1_avatar_master -> 2.34f
+        R.drawable.vip2_avatar_master -> 2.57f
+        R.drawable.vip3_avatar_master -> 2.86f
+        R.drawable.vip4_avatar_master -> 2.83f
+        R.drawable.frame_livetogather_founder -> 2.27f
+        else -> 1.86f
     }
-    val activeWingLift = if (isVipSuiteFrame) 0f else wingLift
-    val activePulseScale = if (isVipSuiteFrame) 1.0f else pulseScale
+
+    // Identifies VIP Suite frames (these skip the avatar border ring and VIP badge, frame itself has VIP indicator)
+    val isVipSuiteFrame = drawableRes in listOf(
+        R.drawable.vip1_avatar_master,
+        R.drawable.vip2_avatar_master,
+        R.drawable.vip3_avatar_master,
+        R.drawable.vip4_avatar_master
+    )
+
     val effectiveFrameSize = if (frameId.isNotBlank()) {
-        if (frameSize >= avatarSize * minScale) frameSize else (avatarSize * minScale)
+        avatarSize * minScale
     } else if (micEffectId.isNotBlank() && isSpeaking) {
         avatarSize + 16.dp
     } else {
         avatarSize
     }
 
-    Box(
+    BoxWithConstraints(
         modifier = modifier
-            .size(effectiveFrameSize)
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
         contentAlignment = Alignment.Center
     ) {
-        // 3D Transparent Video Magic Mic Effect (Strictly ONLY when actively equipped AND user is actively speaking)
-        val activeVideoRes = if (micEffectId.isNotBlank() && isSpeaking) {
-            getMicEffectVideoRes(micEffectId)
+        val maxBound = if (maxWidth != Dp.Infinity && maxWidth > 0.dp) maxWidth else effectiveFrameSize
+        val targetFrameSize = if (frameId.isNotBlank()) {
+            if (maxBound > 0.dp && maxBound < effectiveFrameSize) maxBound else effectiveFrameSize
         } else {
-            0
+            effectiveFrameSize
+        }
+        val targetAvatarSize = if (frameId.isNotBlank()) {
+            (targetFrameSize / minScale).coerceAtLeast(28.dp)
+        } else {
+            avatarSize
         }
 
-        // Speech Pulsing Wave (used when actively speaking without video mic effect)
-        if (isSpeaking && activeVideoRes == 0) {
-            Box(
-                modifier = Modifier
-                    .size(avatarSize + 12.dp)
-                    .clip(CircleShape)
-                    .background(BrandGreen.copy(alpha = 0.3f))
-                    .border(1.5.dp, BrandGreen, CircleShape)
-            )
-        }
-
-        if (activeVideoRes != 0) {
-            VideoMicMagicEffectOverlay(
-                videoRes = activeVideoRes,
-                avatarSize = avatarSize,
-                effectSize = avatarSize + 16.dp
-            )
-        }
-
-        // Flowing Rotating Aura Ring (Subtle behind frame, omitted for master VIP frames to preserve pristine handcrafted border)
-        if (isAnimated && frameId.isNotBlank() && !isVipSuiteFrame) {
-            Box(
-                modifier = Modifier
-                    .size(avatarSize + 6.dp)
-                    .graphicsLayer(rotationZ = rotateAngle)
-                    .clip(CircleShape)
-                    .border(
-                        width = 2.dp,
-                        brush = Brush.sweepGradient(auraColorList),
-                        shape = CircleShape
-                    )
-            )
-        }
-
-        // BASE LAYER: Uncropped, Clear Profile Picture (Fits snugly into frame hole without double border)
         Box(
-            modifier = Modifier
-                .size(avatarSize)
-                .clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.2f))
-                .then(
-                    if (!isVipSuiteFrame) {
-                        Modifier.border(
-                            width = 1.5.dp,
-                            color = if (isSpeaking) {
-                                if (frameId.isBlank()) Color(0xFF00E5FF) else BrandGreen
-                            } else if (frameId.isNotBlank()) {
-                                auraColorList.first().copy(alpha = 0.8f)
-                            } else {
-                                Color(0x5500E5FF)
-                            },
-                            shape = CircleShape
-                        )
-                    } else Modifier
-                )
+            modifier = Modifier.size(targetFrameSize),
+            contentAlignment = Alignment.Center
         ) {
-            AsyncImage(
-                model = photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
-                contentDescription = "Avatar",
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
-            )
-        }
-
-        // OVERLAY LAYER: Outer Winged Frame (100% Rock-Solid Stable Centering)
-        if (frameId.isNotBlank()) {
-            Image(
-                painter = painterResource(id = drawableRes),
-                contentDescription = frameItem?.name ?: "Avatar Frame",
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer(
-                        translationY = activeWingLift,
-                        scaleX = activePulseScale,
-                        scaleY = activePulseScale
-                    ),
-                contentScale = ContentScale.Fit
-            )
-        }
-
-        // VIP Level Badge (if user has VIP level and showVipBadge is true)
-        val isVipSuiteFrame = frameId.startsWith("vip_suite_frame_") || frameId.startsWith("frame_vip") || frameId.startsWith("vip")
-        if (showVipBadge && effectiveVip > 0 && !isVipSuiteFrame) {
-            val (badgeText, badgeBg) = when (effectiveVip) {
-                1 -> "VIP 1" to Color(0xFFC0C0C0) // Silver
-                2 -> "VIP 2" to BrandGold        // Gold
-                3 -> "VIP 3" to Color(0xFF00D4FF) // Sapphire Blue
-                4 -> "VIP 4" to Color(0xFF00E5FF) // Cyan Blade
-                5 -> "VIP 5" to Color(0xFF00E676) // Emerald Knight
-                6 -> "VIP 6" to Color(0xFFFFD700) // Imperial Eagles
-                else -> "VIP $effectiveVip" to BrandGold
+            // 3D Transparent Video Magic Mic Effect (Strictly ONLY when actively equipped AND user is actively speaking)
+            val activeVideoRes = if (micEffectId.isNotBlank() && isSpeaking) {
+                getMicEffectVideoRes(micEffectId)
+            } else {
+                0
             }
 
+            // Speech Pulsing Wave (used when actively speaking without video mic effect)
+            if (isSpeaking && activeVideoRes == 0) {
+                Box(
+                    modifier = Modifier
+                        .size(targetAvatarSize + 12.dp)
+                        .clip(CircleShape)
+                        .background(BrandGreen.copy(alpha = 0.3f))
+                        .border(1.5.dp, BrandGreen, CircleShape)
+                )
+            }
+
+            if (activeVideoRes != 0) {
+                VideoMicMagicEffectOverlay(
+                    videoRes = activeVideoRes,
+                    avatarSize = targetAvatarSize,
+                    effectSize = targetAvatarSize + 16.dp
+                )
+            }
+
+            // Flowing Rotating Aura Ring (Living motion graphics shining behind frame)
+            if (isAnimated && frameId.isNotBlank()) {
+                Box(
+                    modifier = Modifier
+                        .size(targetAvatarSize + 7.dp)
+                        .graphicsLayer(
+                            rotationZ = rotateAngle,
+                            alpha = auraAlpha
+                        )
+                        .clip(CircleShape)
+                        .border(
+                            width = 2.dp,
+                            brush = Brush.sweepGradient(auraColorList),
+                            shape = CircleShape
+                        )
+                )
+                Box(
+                    modifier = Modifier
+                        .size(targetAvatarSize + 3.dp)
+                        .graphicsLayer(
+                            rotationZ = rotateAngleInner,
+                            alpha = auraAlpha * 0.55f
+                        )
+                        .clip(CircleShape)
+                        .border(
+                            width = 1.dp,
+                            brush = Brush.sweepGradient(auraColorList.reversed()),
+                            shape = CircleShape
+                        )
+                )
+            }
+
+            // BASE LAYER: Uncropped, Clear Profile Picture (Fits snugly into frame hole without double border)
             Box(
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .offset(y = 4.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color.Black.copy(alpha = 0.85f))
-                    .border(1.dp, badgeBg, RoundedCornerShape(8.dp))
-                    .padding(horizontal = 5.dp, vertical = 1.dp)
+                    .size(targetAvatarSize)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.2f))
+                    .then(
+                        if (!isVipSuiteFrame) {
+                            Modifier.border(
+                                width = 1.5.dp,
+                                color = if (isSpeaking) {
+                                    if (frameId.isBlank()) Color(0xFF00E5FF) else BrandGreen
+                                } else if (frameId.isNotBlank()) {
+                                    auraColorList.first().copy(alpha = 0.8f)
+                                } else {
+                                    Color(0x5500E5FF)
+                                },
+                                shape = CircleShape
+                            )
+                        } else Modifier
+                    )
             ) {
-                Text(
-                    text = "👑 $badgeText",
-                    color = badgeBg,
-                    fontSize = 8.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    letterSpacing = 0.5.sp
+                AsyncImage(
+                    model = photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                    contentDescription = "Avatar",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
                 )
+            }
+
+            // OVERLAY LAYER: Outer Winged Frame (100% Rock-Solid Stable Centering & Smooth Flowing Wings)
+            if (frameId.isNotBlank()) {
+                Image(
+                    painter = painterResource(id = drawableRes),
+                    contentDescription = frameItem?.name ?: "Avatar Frame",
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer(
+                            translationY = wingLift,
+                            rotationZ = wingSkew * 0.4f,
+                            scaleX = pulseScale,
+                            scaleY = pulseScale
+                        ),
+                    contentScale = ContentScale.Fit
+                )
+            }
+
+            // VIP Level Badge (if user has VIP level and showVipBadge is true)
+            if (showVipBadge && effectiveVip > 0 && !isVipSuiteFrame) {
+                val (badgeText, badgeBg) = when (effectiveVip) {
+                    1 -> "VIP 1" to Color(0xFFC0C0C0) // Silver
+                    2 -> "VIP 2" to BrandGold        // Gold
+                    3 -> "VIP 3" to Color(0xFF00D4FF) // Sapphire Blue
+                    4 -> "VIP 4" to Color(0xFF00E5FF) // Cyan Blade
+                    5 -> "VIP 5" to Color(0xFF00E676) // Emerald Knight
+                    6 -> "VIP 6" to Color(0xFFFFD700) // Imperial Eagles
+                    else -> "VIP $effectiveVip" to BrandGold
+                }
+
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .offset(y = 4.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.Black.copy(alpha = 0.85f))
+                        .border(1.dp, badgeBg, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 5.dp, vertical = 1.dp)
+                ) {
+                    Text(
+                        text = "👑 $badgeText",
+                        color = badgeBg,
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 0.5.sp
+                    )
+                }
             }
         }
     }
@@ -423,7 +485,7 @@ fun CompactFrameThumbnailBox(
                         .padding(horizontal = 4.dp, vertical = 2.dp)
                 ) {
                     Text(
-                        text = if (validityLabel.isNotBlank()) "✓ Applied ($validityLabel)" else "✓ Applied",
+                        text = if (validityLabel.isNotBlank()) "âœ“ Applied ($validityLabel)" else "âœ“ Applied",
                         color = BrandGreen,
                         fontSize = 8.5.sp,
                         fontWeight = FontWeight.Bold
@@ -452,7 +514,7 @@ fun CompactFrameThumbnailBox(
                         .border(0.8.dp, Color.Red.copy(alpha = 0.7f), RoundedCornerShape(6.dp))
                         .padding(horizontal = 4.dp, vertical = 2.dp)
                 ) {
-                    Text("Expired • Rebuy", color = Color(0xFFFF6B6B), fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                    Text("Expired â€¢ Rebuy", color = Color(0xFFFF6B6B), fontSize = 8.sp, fontWeight = FontWeight.Bold)
                 }
             } else {
                 val formattedCost = formatDiamondCost(frameItem.cost)
@@ -463,7 +525,7 @@ fun CompactFrameThumbnailBox(
                         .border(0.8.dp, BrandCoral.copy(alpha = 0.7f), RoundedCornerShape(6.dp))
                         .padding(horizontal = 4.dp, vertical = 2.dp)
                 ) {
-                    Text("💎 $formattedCost (1 Mo)", color = BrandCoral, fontSize = 8.5.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("ðŸ’Ž $formattedCost (1 Mo)", color = BrandCoral, fontSize = 8.5.sp, fontWeight = FontWeight.ExtraBold)
                 }
             }
         }
@@ -595,7 +657,7 @@ fun CompactVideoGiftThumbnailBox(
                                     .size(44.dp)
                                     .graphicsLayer(rotationZ = rotateAngle)
                             ) {
-                                Text(text = "🌀", fontSize = 32.sp)
+                                Text(text = "ðŸŒ€", fontSize = 32.sp)
                             }
                             Text(text = gift.emoji, fontSize = 24.sp)
                         }
@@ -642,7 +704,7 @@ fun CompactVideoGiftThumbnailBox(
                     .padding(horizontal = 6.dp, vertical = 2.dp)
             ) {
                 Text(
-                    text = "💎 $formattedCost",
+                    text = "ðŸ’Ž $formattedCost",
                     color = if (canAfford) BrandGold else Color.LightGray,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold

@@ -337,6 +337,7 @@ fun GrandBroadEntranceBanner(
     userName: String,
     level: Int,
     userProfile: UserProfile? = null,
+    actionText: String = "",
     modifier: Modifier = Modifier
 ) {
     val isApexFounder = userProfile?.isFounder() == true
@@ -352,6 +353,7 @@ fun GrandBroadEntranceBanner(
         medal = userProfile?.followerCount ?: 50,
         isFounder = isApexFounder,
         vipLevel = effVip,
+        actionText = actionText,
         modifier = modifier
     )
 }
@@ -2208,9 +2210,9 @@ fun TrackSelectorDialog(
                         }
                     }
                 }
-            }
         }
     }
+}
 }
 
 // -------------------------------------------------------------
@@ -4888,8 +4890,14 @@ fun AudioHangoutRoomDialog(
     }
 
     // Live Room Time Tracking & Free 1-Hour Guest Limit for Unrecharged Users
-    LaunchedEffect(currentUser.uid, userHasRecharged, userRechargeCount) {
-        if (userHasRecharged || userRechargeCount > 0) return@LaunchedEffect
+    LaunchedEffect(currentUser.uid, userHasRecharged, userRechargeCount, userDiamonds, currentUser.diamonds) {
+        val isFirstTimeFreeGuest = !userHasRecharged && !currentUser.hasRecharged
+            && userRechargeCount == 0 && currentUser.rechargeCount == 0
+            && userDiamonds <= 0L && currentUser.diamonds <= 0L
+            && currentUser.getVipLevel() == 0 && !currentUser.isVipOrPlatinum()
+            && !currentUser.isFounder() && !currentUser.isCeo() && !currentUser.isStaffMember()
+            && room.hostId != currentUser.uid && room.hostUid != currentUser.uid
+
         while (true) {
             delay(10000L) // every 10 seconds
             val newTime = userTotalRoomTimeSeconds + 10L
@@ -4906,7 +4914,8 @@ fun AudioHangoutRoomDialog(
                 onUpdateProfile = { userDiamonds = it.diamonds }
             )
 
-            if (newTime >= 3600L && !currentUser.isFounder() && !currentUser.isCeo() && !currentUser.isStaffMember()) {
+            // STRICTLY apply 1-hour limit ONLY to first-time free guests with 0 coins, 0 recharge, no VIP
+            if (isFirstTimeFreeGuest && newTime >= 3600L) {
                 showGuestLimitExpiredDialog = true
                 break
             }
@@ -6654,7 +6663,7 @@ fun AudioHangoutRoomDialog(
 
                                     val isCommentFounder = comment.isFounder || commenterProfile?.isFounder() == true || (comment.userId == currentUser.uid && currentUser.isFounder())
                                     val commentVipLevel = if (comment.vipLevel in 1..4) comment.vipLevel else (commenterProfile?.getVipLevel() ?: if (comment.userId == currentUser.uid) currentUser.getVipLevel() else 0)
-                                    val isEntranceMessage = comment.message.contains("entered the room") || comment.message.startsWith("✨ Welcome") || comment.message.contains("to the room!")
+                                    val isEntranceMessage = comment.message.contains("entered the room") || comment.message.startsWith("✨ Welcome") || comment.message.contains("to the room!") || comment.message.contains("has arrived in")
 
                                     if (isEntranceMessage) {
                                         OrnateLuxuryEntranceCard(
@@ -6667,6 +6676,7 @@ fun AudioHangoutRoomDialog(
                                             medal = commenterMedal,
                                             isFounder = isCommentFounder,
                                             vipLevel = commentVipLevel,
+                                            actionText = comment.message,
                                             modifier = Modifier.padding(vertical = 4.dp)
                                         )
                                     } else {
@@ -8047,7 +8057,7 @@ fun AudioHangoutRoomDialog(
         }
 
         // -------------------------------------------------------------
-        // IN-ROOM COMMENT INPUT DIALOG (Auto-Focused Keyboard & Quick Emojis)
+        // IN-ROOM COMMENT INPUT OVERLAY (Native imePadding auto-floating above keyboard)
         // -------------------------------------------------------------
         if (showCommentInputDialog) {
             Dialog(
@@ -8056,11 +8066,14 @@ fun AudioHangoutRoomDialog(
                     keyboardController?.hide()
                     focusManager.clearFocus()
                 },
-                properties = DialogProperties(usePlatformDefaultWidth = false)
+                properties = DialogProperties(
+                    usePlatformDefaultWidth = false,
+                    decorFitsSystemWindows = false
+                )
             ) {
-                val view = LocalView.current
+                val inputView = LocalView.current
                 SideEffect {
-                    var parent = view.parent
+                    var parent = inputView.parent
                     while (parent != null && parent !is android.app.Dialog && parent !is DialogWindowProvider) {
                         parent = parent.parent
                     }
@@ -8068,10 +8081,10 @@ fun AudioHangoutRoomDialog(
                         WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
                     )
                 }
-
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.5f))
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null
@@ -8080,6 +8093,7 @@ fun AudioHangoutRoomDialog(
                             keyboardController?.hide()
                             focusManager.clearFocus()
                         }
+                        .systemBarsPadding()
                         .imePadding(),
                     contentAlignment = Alignment.BottomCenter
                 ) {
@@ -8158,7 +8172,13 @@ fun AudioHangoutRoomDialog(
                                     keyboardActions = KeyboardActions(
                                         onSend = {
                                             if (commentInputText.isNotBlank()) {
-                                                if (!userHasRecharged && userRechargeCount == 0 && userTotalRoomTimeSeconds >= 3600L && !currentUser.isFounder() && !currentUser.isCeo() && !currentUser.isStaffMember()) {
+                                                val isFirstTimeFreeGuest = !userHasRecharged && !currentUser.hasRecharged
+                                                    && userRechargeCount == 0 && currentUser.rechargeCount == 0
+                                                    && userDiamonds <= 0L && currentUser.diamonds <= 0L
+                                                    && currentUser.getVipLevel() == 0 && !currentUser.isVipOrPlatinum()
+                                                    && !currentUser.isFounder() && !currentUser.isCeo() && !currentUser.isStaffMember()
+                                                    && room.hostId != currentUser.uid && room.hostUid != currentUser.uid
+                                                if (isFirstTimeFreeGuest && userTotalRoomTimeSeconds >= 3600L) {
                                                     android.widget.Toast.makeText(context, "🚫 1-hour free room access expired. Recharge ₹59 to chat.", android.widget.Toast.LENGTH_LONG).show()
                                                     showGuestLimitExpiredDialog = true
                                                     return@KeyboardActions
@@ -8207,7 +8227,13 @@ fun AudioHangoutRoomDialog(
                                 IconButton(
                                     onClick = {
                                         if (commentInputText.isNotBlank()) {
-                                            if (!userHasRecharged && userRechargeCount == 0 && userTotalRoomTimeSeconds >= 3600L && !currentUser.isFounder() && !currentUser.isCeo() && !currentUser.isStaffMember()) {
+                                            val isFirstTimeFreeGuest = !userHasRecharged && !currentUser.hasRecharged
+                                                    && userRechargeCount == 0 && currentUser.rechargeCount == 0
+                                                    && userDiamonds <= 0L && currentUser.diamonds <= 0L
+                                                    && currentUser.getVipLevel() == 0 && !currentUser.isVipOrPlatinum()
+                                                    && !currentUser.isFounder() && !currentUser.isCeo() && !currentUser.isStaffMember()
+                                                    && room.hostId != currentUser.uid && room.hostUid != currentUser.uid
+                                                if (isFirstTimeFreeGuest && userTotalRoomTimeSeconds >= 3600L) {
                                                 android.widget.Toast.makeText(context, "🚫 1-hour free room access expired. Recharge ₹59 to chat.", android.widget.Toast.LENGTH_LONG).show()
                                                 showGuestLimitExpiredDialog = true
                                                 return@IconButton
@@ -9967,7 +9993,7 @@ fun TenMicStageSection(
             }
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
         // Row 2 (5 Mic Seats: 5 to 9)
         Row(
@@ -10339,8 +10365,8 @@ fun MicSeatView(
             .clickable { onClick() }
             .padding(vertical = 1.dp)
     ) {
-        val seatBoxSize = if (shouldShowFrame) 74.dp else 56.dp
-        val avatarSize = 52.dp
+        val seatBoxSize = if (shouldShowFrame) 66.dp else 52.dp
+        val avatarSize = 38.dp
 
         Box(
             modifier = Modifier.size(seatBoxSize),
@@ -10437,7 +10463,7 @@ fun MicSeatView(
             }
         }
 
-        Spacer(modifier = Modifier.height(2.dp))
+        Spacer(modifier = Modifier.height(if (shouldShowFrame) 6.dp else 2.dp))
 
         // Label / Subtitle
         if (seat.uid.isNotEmpty()) {
