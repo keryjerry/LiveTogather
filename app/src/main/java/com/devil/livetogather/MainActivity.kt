@@ -2053,29 +2053,21 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                 isAudioRoomMinimized = false
                 if (room.id.isNotBlank()) {
                     // If leaving user is the room host, mark room offline (NEVER delete room document)
+                    // If leaving user is the room host, close room or mark offline
                     val targetHost = room.hostUid.ifBlank { room.hostId }
                     if (currentUserId.isNotBlank() && targetHost == currentUserId) {
-                        val isVideoType = room.isVideoRoom || room.roomType == "video" || room.roomType == "video_pk" || room.category == "video_stream" || room.category == "video_pk"
-                        val updateMap: Map<String, Any> = if (isVideoType) {
-                            mapOf(
-                                "isHostLive" to false,
-                                "isLive" to true,
-                                "statusMessage" to "OFFLINE",
-                                "isPlaying" to false,
-                                "isEnded" to false,
-                                "endedAt" to 0L
-                            )
-                        } else {
-                            mapOf(
-                                "isHostLive" to false,
-                                "statusMessage" to "Host Away • Open Hangout",
-                                "isPlaying" to false
-                            )
-                        }
-                        db.collection("rooms").document(room.id).update(updateMap)
+                        val closeUpdates = mapOf<String, Any>(
+                            "isLive" to false,
+                            "isHostLive" to false,
+                            "isEnded" to true,
+                            "endedAt" to System.currentTimeMillis(),
+                            "statusMessage" to "Room is closed • Host is offline",
+                            "isPlaying" to false
+                        )
+                        db.collection("rooms").document(room.id).update(closeUpdates)
                         if (room.category.isNotBlank()) {
                             db.collection("intent_categories").document(room.category)
-                                .collection("rooms").document(room.id).update(updateMap)
+                                .collection("rooms").document(room.id).update(closeUpdates)
                         }
                     }
 

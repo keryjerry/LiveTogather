@@ -183,17 +183,14 @@ fun FlowingAvatarFrame(
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
         contentAlignment = Alignment.Center
     ) {
-        val maxBound = if (maxWidth != Dp.Infinity && maxWidth > 0.dp) maxWidth else effectiveFrameSize
+        // If parent gives bounded constraints (e.g. from MicSeat Box), scale to fit
+        // otherwise use the full effectiveFrameSize
         val targetFrameSize = if (frameId.isNotBlank()) {
-            if (maxBound > 0.dp && maxBound < effectiveFrameSize) maxBound else effectiveFrameSize
+            if (maxWidth != Dp.Infinity && maxWidth > effectiveFrameSize) maxWidth else effectiveFrameSize
         } else {
             effectiveFrameSize
         }
-        val targetAvatarSize = if (frameId.isNotBlank()) {
-            (targetFrameSize / minScale).coerceAtLeast(28.dp)
-        } else {
-            avatarSize
-        }
+        val targetAvatarSize = avatarSize
 
         Box(
             modifier = Modifier.size(targetFrameSize),

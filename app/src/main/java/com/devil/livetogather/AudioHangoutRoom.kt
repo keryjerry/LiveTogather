@@ -5481,26 +5481,13 @@ fun AudioHangoutRoomDialog(
                     }
                     val isLive = snapshot.getBoolean("isLive") ?: (snapshot.getBoolean("isHostLive") ?: updated.isLive)
                     val isEnded = snapshot.getBoolean("isEnded") ?: false
+                    val isHostLive = snapshot.getBoolean("isHostLive") ?: updated.isHostLive
                     val endedAt = snapshot.getLong("endedAt") ?: 0L
-                    val isRoomOfficiallyEnded = !isLive && (isEnded || endedAt > 0L)
-                    if (isRoomOfficiallyEnded && !isUserHost) {
-                        Toast.makeText(context, "This room session has ended", Toast.LENGTH_SHORT).show()
-                        AudioPlayerManager.pause()
-                        onDismiss()
-                        return@addSnapshotListener
-                    }
-                    @Suppress("UNCHECKED_CAST")
-                    val bannedList = (snapshot.get("bannedUserIds") as? List<String>) ?: emptyList()
-                    @Suppress("UNCHECKED_CAST")
-                    val kickedList = (snapshot.get("kickedUserIds") as? List<String>) ?: emptyList()
-                    if ((currentUser.uid in bannedList || currentUser.uid in kickedList) && !isUserHost) {
-                        Toast.makeText(context, "You have been removed from this room by host/admin", Toast.LENGTH_SHORT).show()
-                        AudioPlayerManager.pause()
-                        onDismiss()
-                        return@addSnapshotListener
-                    }
-                    if (!isUserHost && (updated.isEnded || !updated.isLive)) {
-                        Toast.makeText(context, "Room session has ended 👋", Toast.LENGTH_SHORT).show()
+                    val hasAdminPresent = activeMembers.any { it.uid != room.hostId && it.uid in room.adminUserIds }
+                    val isRoomClosed = !isLive || isEnded || (!isHostLive && !hasAdminPresent)
+
+                    if (isRoomClosed && !isUserHost) {
+                        Toast.makeText(context, "Room is closed • Host is offline", Toast.LENGTH_LONG).show()
                         AudioPlayerManager.pause()
                         onDismiss()
                         return@addSnapshotListener
@@ -5591,16 +5578,16 @@ fun AudioHangoutRoomDialog(
                 if (error != null) return@addSnapshotListener
                 if (snapshot != null) {
                     val list = snapshot.documents.mapNotNull { it.toObject(LiveRoomComment::class.java) }
-                        .filter { comment ->
-                            if (isUserHost) comment.timestamp >= roomSessionStartMs else true
-                        }
+
+                        // Show all live comments in the active room
+
                     liveComments.clear()
                     liveComments.addAll(list)
                 }
             }
         onDispose {
             commentsListener.remove()
-            if (isUserHost && room.id.isNotBlank()) {
+            if (false) {
                 db.collection("rooms").document(room.id).collection("live_comments").get()
                     .addOnSuccessListener { snaps ->
                         if (snaps != null && !snaps.isEmpty) {
@@ -10365,7 +10352,7 @@ fun MicSeatView(
             .clickable { onClick() }
             .padding(vertical = 1.dp)
     ) {
-        val seatBoxSize = if (shouldShowFrame) 66.dp else 52.dp
+        val seatBoxSize = if (shouldShowFrame) 72.dp else 52.dp
         val avatarSize = 38.dp
 
         Box(
