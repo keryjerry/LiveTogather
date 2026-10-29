@@ -171,13 +171,15 @@ fun FlowingAvatarFrame(
         R.drawable.vip4_avatar_master
     )
 
-    val targetAvatarSize = avatarSize
+    val frameTrimFactor = 0.88f // Fine-tuned scale factor for neat, trimmed fitment around mic slots
+
+    val targetAvatarSize = avatarSize * frameTrimFactor
     val targetFrameSize = if (frameId.isNotBlank()) {
-        avatarSize * minScale
+        avatarSize * minScale * frameTrimFactor
     } else if (micEffectId.isNotBlank() && isSpeaking) {
-        avatarSize + 16.dp
+        (avatarSize + 16.dp) * frameTrimFactor
     } else {
-        avatarSize
+        avatarSize * frameTrimFactor
     }
 
     Box(
@@ -186,9 +188,8 @@ fun FlowingAvatarFrame(
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
         contentAlignment = Alignment.Center
     ) {
-        // Universal Dynamic Golden Ratio Fitment:
-        // targetAvatarSize = avatarSize (Profile photo circle fits inner hole 100% snugly with 0 gap),
-        // targetFrameSize = avatarSize * minScale (Outer winged frame wraps around profile circle, matching Main Profile style).
+        // Precise Fine-Tuned Golden Ratio Fitment (0.88x Trimmed Scale):
+        // Inner hole matches targetAvatarSize with 0 gap while outer frame is slightly trimmed to fit mic perimeter neatly.
 
         Box(
             modifier = Modifier.size(targetFrameSize),
