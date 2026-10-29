@@ -10347,11 +10347,10 @@ fun MicSeatView(
             .clickable { onClick() }
             .padding(vertical = 1.dp)
     ) {
-        val seatBoxSize = if (shouldShowFrame) 72.dp else 52.dp
-        val avatarSize = 38.dp
+        val avatarSize = 42.dp
 
         Box(
-            modifier = Modifier.size(seatBoxSize),
+            modifier = Modifier.size(52.dp),
             contentAlignment = Alignment.Center
         ) {
             if (seat.uid.isNotEmpty()) {
@@ -10368,13 +10367,11 @@ fun MicSeatView(
                     photoUrl = seat.photo.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
                     frameId = seatFrameId,
                     avatarSize = avatarSize,
-                    frameSize = seatBoxSize,
                     isSpeaking = isSpeaking,
                     vipLevel = seatVipLvl,
                     showVipBadge = false,
                     showMicEffect = seatMicEffectId.isNotBlank() && isSpeaking,
-                    micEffectId = seatMicEffectId,
-                    modifier = Modifier.size(seatBoxSize)
+                    micEffectId = seatMicEffectId
                 )
 
                 // Mic Mute / Unmute Status Badge at bottom-right with subtle voice pulse animation
