@@ -5005,6 +5005,23 @@ fun AudioHangoutRoomDialog(
             }
     }
 
+    // Real-Time Listener for Incoming Intimacy Gifting Proposals
+    var pendingIntimacyRequest by remember { mutableStateOf<Map<String, Any>?>(null) }
+    DisposableEffect(currentUser.uid, room.id) {
+        if (currentUser.uid.isBlank() || room.id.isBlank()) return@DisposableEffect onDispose {}
+        val listener = db.collection("intimacy_requests")
+            .whereEqualTo("recipientUid", currentUser.uid)
+            .whereEqualTo("status", "pending")
+            .addSnapshotListener { snapshot, err ->
+                if (err == null && snapshot != null && !snapshot.isEmpty) {
+                    pendingIntimacyRequest = snapshot.documents.firstOrNull()?.data
+                } else {
+                    pendingIntimacyRequest = null
+                }
+            }
+        onDispose { listener.remove() }
+    }
+
     fun triggerEmojiReaction(emoji: String) {
         if (room.id.isBlank() || currentUser.uid.isBlank()) return
         val reaction = LiveEmojiReaction(
@@ -7694,6 +7711,16 @@ fun AudioHangoutRoomDialog(
             }
         }
 
+        // Real-time Intimacy Gifting Proposal & Acceptance Modal
+        if (pendingIntimacyRequest != null) {
+            IntimacyGiftingAcceptanceDialog(
+                requestData = pendingIntimacyRequest!!,
+                currentUser = currentUser,
+                db = db,
+                onDismiss = { pendingIntimacyRequest = null }
+            )
+        }
+
         if (showLuxuryStoreDialog) {
             LuxuryStoreDialog(
                 currentUser = currentUser.copy(
@@ -7900,6 +7927,31 @@ fun AudioHangoutRoomDialog(
 
                         if (newWealthLevel > currentUser.getEffectiveWealthLevel()) {
                             Toast.makeText(context, "🎉 LEVEL UP! You reached Wealth Level $newWealthLevel! 👑", Toast.LENGTH_LONG).show()
+                        }
+
+                        // Real-Time Intimacy/Bestie Gifting Proposal Trigger
+                        val isIntimacyGift = giftItem.id.contains("ring", ignoreCase = true) || giftItem.id.contains("intimacy", ignoreCase = true) || giftItem.id.contains("bestie", ignoreCase = true) || giftItem.id.contains("couple", ignoreCase = true) || giftItem.id.contains("proposal", ignoreCase = true) || giftItem.id.contains("necklace", ignoreCase = true)
+                        if (isIntimacyGift) {
+                            val targetUid = recipientHostId.ifBlank { targetHostId.ifBlank { room.hostUid.ifBlank { room.hostId } } }
+                            if (targetUid.isNotBlank() && targetUid != currentUser.uid) {
+                                val reqId = "intimacy_req_${System.currentTimeMillis()}"
+                                val reqData = mapOf(
+                                    "id" to reqId,
+                                    "senderUid" to currentUser.uid,
+                                    "senderName" to currentUser.name,
+                                    "senderPhoto" to currentUser.photo,
+                                    "recipientUid" to targetUid,
+                                    "recipientName" to room.hostName,
+                                    "recipientPhoto" to room.hostPhotoUrl,
+                                    "giftId" to giftItem.id,
+                                    "giftName" to giftItem.name,
+                                    "giftEmoji" to giftItem.emoji,
+                                    "bondType" to (if (giftItem.id.contains("bestie")) "bestie" else if (giftItem.id.contains("soulmate")) "soulmate" else if (giftItem.id.contains("eternal")) "eternal" else "couple"),
+                                    "status" to "pending",
+                                    "timestamp" to System.currentTimeMillis()
+                                )
+                                db.collection("intimacy_requests").document(reqId).set(reqData)
+                            }
                         }
 
                         val giftEvent = GiftEvent(
@@ -10532,6 +10584,142 @@ fun MicSeatView(
                 maxLines = 1,
                 modifier = Modifier.width(60.dp)
             )
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// REAL-TIME INTIMACY GIFTING ACCEPTANCE MODAL
+// -------------------------------------------------------------
+@Composable
+fun IntimacyGiftingAcceptanceDialog(
+    requestData: Map<String, Any>,
+    currentUser: UserProfile,
+    db: FirebaseFirestore,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val reqId = requestData["id"] as? String ?: ""
+    val senderUid = requestData["senderUid"] as? String ?: ""
+    val senderName = requestData["senderName"] as? String ?: "A friend"
+    val senderPhoto = requestData["senderPhoto"] as? String ?: ""
+    val giftName = requestData["giftName"] as? String ?: "Intimacy Gift"
+    val giftEmoji = requestData["giftEmoji"] as? String ?: "💖"
+    val bondType = requestData["bondType"] as? String ?: "couple"
+
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(dismissOnBackPress = true, dismissOnClickOutside = true)
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1128)),
+            shape = RoundedCornerShape(24.dp),
+            border = BorderStroke(1.5.dp, Brush.horizontalGradient(listOf(Color(0xFFFF4081), BrandGold, Color(0xFFFF4081)))),
+            modifier = Modifier.fillMaxWidth().padding(16.dp)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Header Ring Emoji
+                Surface(
+                    shape = CircleShape,
+                    color = Color(0xFFFF4081).copy(alpha = 0.2f),
+                    border = BorderStroke(1.5.dp, BrandGold),
+                    modifier = Modifier.size(56.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(giftEmoji, fontSize = 28.sp)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "💖 Real-Time Intimacy Proposal",
+                    color = BrandGold,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "$senderName sent you a $giftName $giftEmoji! Accept to activate official $bondType intimacy bond and stage mic connector.",
+                    color = Color.White,
+                    fontSize = 12.5.sp,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 18.sp
+                )
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    // Decline
+                    Button(
+                        onClick = {
+                            db.collection("intimacy_requests").document(reqId).update("status", "declined")
+                            Toast.makeText(context, "Proposal declined.", Toast.LENGTH_SHORT).show()
+                            onDismiss()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF332040)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f).height(42.dp)
+                    ) {
+                        Text("Decline", color = Color.Gray, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+
+                    // Accept & Activate
+                    Button(
+                        onClick = {
+                            val bondId = listOf(senderUid, currentUser.uid).sorted().joinToString("_")
+                            val activeMicLink = when (bondType.lowercase()) {
+                                "bestie" -> "mic_link_twin_besties"
+                                "soulmate" -> "mic_link_celestial_wings"
+                                "eternal" -> "mic_link_emerald_infinity"
+                                else -> "mic_link_ruby_crown"
+                            }
+
+                            val newBond = IntimacyBond(
+                                bondId = bondId,
+                                user1Id = senderUid,
+                                user2Id = currentUser.uid,
+                                user1Name = senderName,
+                                user2Name = currentUser.name,
+                                user1Photo = senderPhoto,
+                                user2Photo = currentUser.photo,
+                                bondType = bondType,
+                                intimacyLevel = 2,
+                                intimacyXp = 500L,
+                                streakDays = 3,
+                                activeMicLinkId = activeMicLink,
+                                status = "active",
+                                createdAt = System.currentTimeMillis()
+                            )
+
+                            val batch = db.batch()
+                            batch.set(db.collection("intimacy_bonds").document(bondId), newBond)
+                            batch.update(db.collection("intimacy_requests").document(reqId), "status", "accepted")
+                            batch.update(db.collection("users").document(senderUid), mapOf("activeIntimacyBadge" to giftName, "activeMicLinkId" to activeMicLink))
+                            batch.update(db.collection("users").document(currentUser.uid), mapOf("activeIntimacyBadge" to giftName, "activeMicLinkId" to activeMicLink))
+
+                            batch.commit().addOnSuccessListener {
+                                Toast.makeText(context, "💖 Intimacy Bond Activated in Real-Time!", Toast.LENGTH_SHORT).show()
+                                onDismiss()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f).height(42.dp)
+                    ) {
+                        Text("Accept & Connect 💖", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                    }
+                }
+            }
         }
     }
 }
