@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -171,7 +172,7 @@ fun FlowingAvatarFrame(
     )
 
     val effectiveFrameSize = if (frameId.isNotBlank()) {
-        avatarSize * minScale
+        avatarSize * minScale * 1.35f
     } else if (micEffectId.isNotBlank() && isSpeaking) {
         avatarSize + 16.dp
     } else {
@@ -180,10 +181,11 @@ fun FlowingAvatarFrame(
 
     Box(
         modifier = modifier
+            .wrapContentSize(align = Alignment.Center, unbounded = true)
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
         contentAlignment = Alignment.Center
     ) {
-        // Dynamic scaling: Wraps completely around the outside of mic circle bounds
+        // Force Full Coverage & Oversized Frame Rendering (Unbounded 1.35x Scale)
         val targetFrameSize = if (frameSize > 0.dp && frameSize >= avatarSize) {
             maxOf(frameSize, effectiveFrameSize)
         } else {
@@ -294,8 +296,8 @@ fun FlowingAvatarFrame(
                             alpha = 1.0f,
                             translationY = wingLift,
                             rotationZ = wingSkew * 0.4f,
-                            scaleX = pulseScale,
-                            scaleY = pulseScale
+                            scaleX = pulseScale * 1.08f,
+                            scaleY = pulseScale * 1.08f
                         ),
                     contentScale = ContentScale.Fit,
                     alpha = 1.0f
