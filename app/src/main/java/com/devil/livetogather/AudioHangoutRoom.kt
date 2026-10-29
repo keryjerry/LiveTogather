@@ -5620,7 +5620,7 @@ fun AudioHangoutRoomDialog(
                         } else null
                     }
 
-                    val fullList = (0..9).map { idx ->
+                    val fullList = (0..11).map { idx ->
                         seats.find { it.seatIndex == idx } ?: MicSeat(
                             seatIndex = idx,
                             label = if (idx == 0) "Host 👑" else "Mic ${idx + 1}",
@@ -5684,14 +5684,14 @@ fun AudioHangoutRoomDialog(
         }
     }
 
-    // Host-only one-time initialization of 10 mic seats (Clean, outside of snapshot listener)
+    // Host-only one-time initialization of 12 mic seats (Clean, outside of snapshot listener)
     LaunchedEffect(isUserHost, room.id) {
         if (!isUserHost || room.id.isBlank()) return@LaunchedEffect
         try {
             val micSeatsRef = db.collection("rooms").document(room.id).collection("mic_seats")
             micSeatsRef.get().addOnSuccessListener { snap ->
                 if (snap != null && snap.isEmpty) {
-                    val defaultSeats = (0..9).map { idx ->
+                    val defaultSeats = (0..11).map { idx ->
                         if (idx == 0) {
                             MicSeat(seatIndex = 0, label = "Host 👑", uid = currentUser.uid, name = currentUser.name, photo = currentUser.photo, role = "host")
                         } else {
@@ -5703,7 +5703,7 @@ fun AudioHangoutRoomDialog(
                     }
                 } else if (snap != null) {
                     val existingIndices = snap.documents.mapNotNull { it.getLong("seatIndex")?.toInt() }.toSet()
-                    for (idx in 0..9) {
+                    for (idx in 0..11) {
                         if (!existingIndices.contains(idx)) {
                             val newSeat = if (idx == 0) {
                                 MicSeat(seatIndex = 0, label = "Host 👑", uid = currentUser.uid, name = currentUser.name, photo = currentUser.photo, role = "host")
@@ -9909,21 +9909,21 @@ fun TenMicStageSection(
     ) {
 
 
-        // Row 1 (5 Mic Seats: 0 to 4 with StageMicLinkOverlay between Seat 0 & 1)
+        // Row 1 (4 Mic Seats: 0 to 3 with StageMicLinkOverlay between Seat 0 & 1)
         androidx.compose.foundation.layout.BoxWithConstraints(
             modifier = Modifier.fillMaxWidth()
         ) {
             val totalW = maxWidth
-            val seat0X = totalW * 0.10f
-            val seat1X = totalW * 0.30f
+            val seat0X = totalW * 0.12f
+            val seat1X = totalW * 0.37f
             val centerY = 32.dp
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.SpaceAround,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                for (i in 0..4) {
+                for (i in 0..3) {
                     val seat = seats.find { it.seatIndex == i } ?: MicSeat(
                         seatIndex = i,
                         label = if (i == 0) "Host 👑" else "Mic ${i + 1}",
@@ -9975,15 +9975,48 @@ fun TenMicStageSection(
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
-        // Row 2 (5 Mic Seats: 5 to 9)
+        // Row 2 (4 Mic Seats: 4 to 7)
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            for (i in 5..9) {
+            for (i in 4..7) {
+                val seat = seats.find { it.seatIndex == i } ?: MicSeat(
+                    seatIndex = i,
+                    label = "Mic ${i + 1}",
+                    uid = "",
+                    name = "",
+                    photo = "",
+                    role = "speaker"
+                )
+                MicSeatView(
+                    seat = seat,
+                    isCurrentSelf = seat.uid.isNotEmpty() && seat.uid == currentUserId,
+                    isLocalTalking = isLocalTalking,
+                    isHost = isHost,
+                    allProfiles = allProfiles,
+                    userActiveFrame = userActiveFrame,
+                    userActiveMicEffect = userActiveMicEffect,
+                    reactionEmoji = activeEmojiReactions[seat.uid],
+                    categorySeatEmoji = "🎙️",
+                    categorySeatLabel = "Mic",
+                    onClick = { onSeatClick(seat) }
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Row 3 (4 Mic Seats: 8 to 11)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceAround,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            for (i in 8..11) {
                 val seat = seats.find { it.seatIndex == i } ?: MicSeat(
                     seatIndex = i,
                     label = "Mic ${i + 1}",
@@ -10347,10 +10380,10 @@ fun MicSeatView(
             .clickable { onClick() }
             .padding(vertical = 1.dp)
     ) {
-        val avatarSize = 42.dp
+        val seatBoxSize = if (shouldShowFrame) 62.dp else 52.dp
 
         Box(
-            modifier = Modifier.size(52.dp),
+            modifier = Modifier.size(seatBoxSize),
             contentAlignment = Alignment.Center
         ) {
             if (seat.uid.isNotEmpty()) {
@@ -10366,7 +10399,7 @@ fun MicSeatView(
                 FlowingAvatarFrame(
                     photoUrl = seat.photo.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
                     frameId = seatFrameId,
-                    avatarSize = avatarSize,
+                    avatarSize = 38.dp,
                     isSpeaking = isSpeaking,
                     vipLevel = seatVipLvl,
                     showVipBadge = false,

@@ -171,8 +171,9 @@ fun FlowingAvatarFrame(
         R.drawable.vip4_avatar_master
     )
 
-    val effectiveFrameSize = if (frameId.isNotBlank()) {
-        avatarSize * minScale * 1.35f
+    val targetAvatarSize = avatarSize
+    val targetFrameSize = if (frameId.isNotBlank()) {
+        avatarSize * minScale
     } else if (micEffectId.isNotBlank() && isSpeaking) {
         avatarSize + 16.dp
     } else {
@@ -185,13 +186,9 @@ fun FlowingAvatarFrame(
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
         contentAlignment = Alignment.Center
     ) {
-        // Force Full Coverage & Oversized Frame Rendering (Unbounded 1.35x Scale)
-        val targetFrameSize = if (frameSize > 0.dp && frameSize >= avatarSize) {
-            maxOf(frameSize, effectiveFrameSize)
-        } else {
-            effectiveFrameSize
-        }
-        val targetAvatarSize = avatarSize
+        // Universal Dynamic Golden Ratio Fitment:
+        // targetAvatarSize = avatarSize (Profile photo circle fits inner hole 100% snugly with 0 gap),
+        // targetFrameSize = avatarSize * minScale (Outer winged frame wraps around profile circle, matching Main Profile style).
 
         Box(
             modifier = Modifier.size(targetFrameSize),
