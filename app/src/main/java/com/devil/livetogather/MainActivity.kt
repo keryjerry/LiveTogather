@@ -4578,14 +4578,6 @@ fun ProfileScreenContent(
                     4 -> R.drawable.vip4_cover_master
                     else -> 0
                 }
-                val vipArchRes = when (vipLvl) {
-                    1 -> R.drawable.vip1_header_arch_master
-                    2 -> R.drawable.vip2_header_arch_master
-                    3 -> R.drawable.vip3_header_arch_master
-                    4 -> R.drawable.vip4_header_arch_master
-                    else -> 0
-                }
-
                 Surface(
                     color = Color(0xFF0F0B18),
                     shape = RoundedCornerShape(24.dp),
@@ -4700,20 +4692,8 @@ fun ProfileScreenContent(
 
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            // B. 3D Arch & Center Avatar with Solid VIP Frame
+                            // B. Center Avatar with its circular VIP profile frame
                             Box(contentAlignment = Alignment.Center) {
-                                if (vipArchRes != 0) {
-                                    Image(
-                                        painter = painterResource(id = vipArchRes),
-                                        contentDescription = "VIP Arch",
-                                        modifier = Modifier
-                                            .size(170.dp, 40.dp)
-                                            .align(Alignment.TopCenter)
-                                            .offset(y = (-18).dp),
-                                        contentScale = ContentScale.Fit
-                                    )
-                                }
-
                                 Box(contentAlignment = Alignment.Center) {
                                     FlowingAvatarFrame(
                                         photoUrl = photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80" },
