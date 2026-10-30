@@ -67,7 +67,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -10883,7 +10885,7 @@ fun MicSeatView(
                 FlowingAvatarFrame(
                     photoUrl = seat.photo.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
                     frameId = seatFrameId,
-                    avatarSize = 42.dp,
+                    avatarSize = 44.dp,
                     isSpeaking = isSpeaking,
                     vipLevel = seatVipLvl,
                     showVipBadge = false,
@@ -12501,7 +12503,7 @@ fun FullScreenGiftAnimationOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .graphicsLayer(alpha = animatedAlpha)
+            .then(if (isVideo) Modifier else Modifier.graphicsLayer(alpha = animatedAlpha))
             .background(Color.Transparent),
         contentAlignment = Alignment.Center
     ) {
@@ -12588,7 +12590,11 @@ fun FullScreenGiftAnimationOverlay(
                                     onFailure = { onDismiss() }
                                 )
                             },
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier.fillMaxSize().graphicsLayer(
+                                compositingStrategy = CompositingStrategy.Offscreen,
+                                blendMode = BlendMode.Screen
+                            ),
+                            update = { it.isOpaque = false },
                             onRelease = { it.release() }
                         )
                     }
