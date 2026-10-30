@@ -4,8 +4,11 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.util.Base64
+import android.widget.VideoView
 import android.widget.Toast
+import android.util.Log
+import android.widget.MediaController
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
@@ -43,12 +46,16 @@ import coil.compose.AsyncImage
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
+import com.google.firebase.storage.FirebaseStorage
+import com.google.firebase.storage.StorageMetadata
+import com.google.firebase.storage.StorageReference
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.io.InputStream
-import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
+import java.text.SimpleDateFormat
+import kotlinx.coroutines.tasks.await
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -83,36 +90,66 @@ fun Advanced1v1ChatScreen(
     var showReportConfirmDialog by remember { mutableStateOf(false) }
     var showProposalDialog by remember { mutableStateOf(false) }
     var showMediaTrustDialog by remember { mutableStateOf(false) }
+    var showPartnerProfile by remember { mutableStateOf(false) }
+    var playingVideoUrl by remember { mutableStateOf<String?>(null) }
 
     // Voice Note State
     var isRecordingVoice by remember { mutableStateOf(false) }
     var voiceRecordDuration by remember { mutableIntStateOf(0) }
     var currentlyPlayingUrl by remember { mutableStateOf<String?>(null) }
 
-    // Image Picker Launcher
-    val imagePickerLauncher = rememberLauncherForActivityResult(
+    // Image and video picker launcher
+    val mediaPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            try {
-                val inputStream: InputStream? = context.contentResolver.openInputStream(uri)
-                val bytes = inputStream?.readBytes()
-                if (bytes != null) {
-                    val base64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
-                    val dataUri = "data:image/jpeg;base64,$base64"
-                    val imgMsg = ChatMessage(
-                        senderId = currentUserId,
-                        text = "📷 Photo",
-                        type = "image",
-                        mediaUrl = dataUri,
-                        timestamp = System.currentTimeMillis()
-                    )
-                    db.collection("matches").document(matchId).collection("messages").add(imgMsg)
-                    db.collection("matches").document(matchId).update("lastMessage", "📷 Photo")
-                    Toast.makeText(context, "Photo sent! ✨", Toast.LENGTH_SHORT).show()
+            val mimeType = context.contentResolver.getType(uri)
+                ?: android.webkit.MimeTypeMap.getSingleton()
+                    .getMimeTypeFromExtension(android.webkit.MimeTypeMap.getFileExtensionFromUrl(uri.toString()))
+                ?: ""
+            if (!mimeType.startsWith("image/") && !mimeType.startsWith("video/")) {
+                Toast.makeText(context, "Choose an image or video to share.", Toast.LENGTH_SHORT).show()
+            } else {
+                coroutineScope.launch {
+                    var uploadedStorageRef: StorageReference? = null
+                    try {
+                        Toast.makeText(context, "Uploading media…", Toast.LENGTH_SHORT).show()
+                        val extension = when {
+                            mimeType.startsWith("image/") -> mimeType.substringAfter('/').substringBefore(';').ifBlank { "jpg" }
+                            else -> mimeType.substringAfter('/').substringBefore(';').ifBlank { "mp4" }
+                        }
+                        val storageRef = FirebaseStorage.getInstance().reference
+                            .child("matches/$matchId/messages/${UUID.randomUUID()}.$extension")
+                        val metadata = StorageMetadata.Builder().setContentType(mimeType).build()
+                        val uploadedMedia = storageRef.putFile(uri, metadata).await()
+                        uploadedStorageRef = storageRef
+                        val downloadUrl = uploadedMedia.storage.downloadUrl.await().toString()
+                        val isImage = mimeType.startsWith("image/")
+                        val messageText = if (isImage) "📷 Photo" else "🎥 Video"
+                        val mediaMsg = ChatMessage(
+                            senderId = currentUserId,
+                            text = messageText,
+                            type = if (isImage) "image" else "video",
+                            mediaUrl = downloadUrl,
+                            timestamp = System.currentTimeMillis(),
+                            mediaMimeType = mimeType
+                        )
+                        val matchRef = db.collection("matches").document(matchId)
+                        val batch = db.batch()
+                        batch.set(matchRef.collection("messages").document(), mediaMsg)
+                        batch.set(matchRef, mapOf("lastMessage" to messageText, "timestamp" to mediaMsg.timestamp), SetOptions.merge())
+                        batch.commit().await()
+                        Toast.makeText(context, "Media sent! ✨", Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) {
+                        Log.e("AdvancedChat", "Failed to upload or send chat media", e)
+                        try {
+                            uploadedStorageRef?.delete()?.await()
+                        } catch (cleanupError: Exception) {
+                            Log.w("AdvancedChat", "Failed to remove unsent chat media", cleanupError)
+                        }
+                        Toast.makeText(context, "Failed to send media: ${e.localizedMessage ?: "Please try again."}", Toast.LENGTH_LONG).show()
+                    }
                 }
-            } catch (e: Exception) {
-                Toast.makeText(context, "Failed to load photo: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -142,27 +179,30 @@ fun Advanced1v1ChatScreen(
         }
     }
 
-    // 1. Listen to Match Document (Permissions, Intimacy XP, Unlock status)
-    LaunchedEffect(matchId) {
-        db.collection("matches").document(matchId)
-            .addSnapshotListener { snap, _ ->
-                if (snap != null && snap.exists()) {
+    DisposableEffect(matchId) {
+        val matchListener = db.collection("matches").document(matchId)
+            .addSnapshotListener { snap, error ->
+                if (error != null) {
+                    Log.e("AdvancedChat", "Failed to listen for match updates", error)
+                } else if (snap != null && snap.exists()) {
                     matchItem = snap.toObject(MatchItem::class.java)
                 }
             }
-    }
-
-    // 2. Listen to Chat Messages in real-time
-    LaunchedEffect(matchId) {
-        db.collection("matches").document(matchId).collection("messages")
+        val messagesListener = db.collection("matches").document(matchId).collection("messages")
             .orderBy("timestamp", Query.Direction.ASCENDING)
-            .addSnapshotListener { snap, _ ->
-                if (snap != null) {
+            .addSnapshotListener { snap, error ->
+                if (error != null) {
+                    Log.e("AdvancedChat", "Failed to listen for chat messages", error)
+                } else if (snap != null) {
                     val msgs = snap.documents.mapNotNull { it.toObject(ChatMessage::class.java) }
                     chatMessages.clear()
                     chatMessages.addAll(msgs)
                 }
             }
+        onDispose {
+            matchListener.remove()
+            messagesListener.remove()
+        }
     }
 
     // 3. Check Mutual Follow Status
@@ -247,7 +287,10 @@ fun Advanced1v1ChatScreen(
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
                 }
 
-                Box(contentAlignment = Alignment.BottomEnd) {
+                Box(
+                    modifier = Modifier.clickable { showPartnerProfile = true },
+                    contentAlignment = Alignment.BottomEnd
+                ) {
                     AsyncImage(
                         model = partner.photo.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
                         contentDescription = partner.name,
@@ -267,7 +310,11 @@ fun Advanced1v1ChatScreen(
 
                 Spacer(modifier = Modifier.width(10.dp))
 
-                Column(modifier = Modifier.weight(1f)) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { showPartnerProfile = true }
+                ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = partner.name,
@@ -667,6 +714,48 @@ fun Advanced1v1ChatScreen(
                             }
                         }
 
+                        "video" -> {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start
+                            ) {
+                                val videoView = remember(msg.mediaUrl) { mutableStateOf<VideoView?>(null) }
+                                Box(
+                                    modifier = Modifier
+                                        .size(width = 240.dp, height = 190.dp)
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(Color.Black)
+                                        .border(1.dp, if (isMe) BrandCoral else Color.White.copy(alpha = 0.2f), RoundedCornerShape(14.dp))
+                                ) {
+                                    if (playingVideoUrl == msg.mediaUrl) {
+                                        AndroidView(
+                                            factory = { viewContext ->
+                                                VideoView(viewContext).also { view ->
+                                                    videoView.value = view
+                                                    val controller = MediaController(viewContext)
+                                                    controller.setAnchorView(view)
+                                                    view.setMediaController(controller)
+                                                    view.setVideoURI(Uri.parse(msg.mediaUrl))
+                                                    view.setOnPreparedListener { it.start() }
+                                                }
+                                            },
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                        DisposableEffect(msg.mediaUrl) {
+                                            onDispose { videoView.value?.stopPlayback() }
+                                        }
+                                    } else {
+                                        IconButton(
+                                            onClick = { playingVideoUrl = msg.mediaUrl },
+                                            modifier = Modifier.align(Alignment.Center)
+                                        ) {
+                                            Icon(Icons.Default.PlayArrow, contentDescription = "Play video", tint = Color.White, modifier = Modifier.size(52.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         "audio" -> {
                             // Voice Note Audio Bubble
                             val isPlaying = currentlyPlayingUrl == msg.audioUrl
@@ -948,7 +1037,7 @@ fun Advanced1v1ChatScreen(
                         IconButton(
                             onClick = {
                                 if (canSendMedia) {
-                                    imagePickerLauncher.launch("image/*")
+                                    mediaPickerLauncher.launch("*/*")
                                 } else {
                                     showMediaTrustDialog = true
                                 }
@@ -1223,6 +1312,38 @@ fun Advanced1v1ChatScreen(
                         Text("Cancel", color = Color.Gray)
                     }
                 }
+            )
+        }
+
+        if (showPartnerProfile) {
+            RoomMemberProfileSheet(
+                member = RoomMember(
+                    uid = partner.uid,
+                    userId = partner.userId,
+                    name = partner.name,
+                    photoUrl = partner.photo,
+                    tier = if (partner.isVipOrPlatinum()) "VIP" else "Standard"
+                ),
+                userProfile = partner,
+                currentUser = currentUser,
+                isHost = false,
+                roomId = "",
+                db = db,
+                onDismiss = { showPartnerProfile = false },
+                onLeaveRoom = { showPartnerProfile = false },
+                onLike = { recordSwipe(db, currentUserId, partner.uid, "like") },
+                onDirectMessage = { showPartnerProfile = false },
+                onRequestMessage = { showPartnerProfile = false },
+                onKickOut = {},
+                onBan = {},
+                onBlock = {
+                    val updated = currentUser.copy(blockedUserIds = currentUser.blockedUserIds + partner.uid)
+                    onUpdateCurrentUser(updated)
+                    db.collection("users").document(currentUserId)
+                        .update("blockedUserIds", updated.blockedUserIds)
+                },
+                onTagMember = {},
+                showRoomActions = false
             )
         }
     }

@@ -720,6 +720,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
     var momentToEdit by remember { mutableStateOf<MomentItem?>(null) }
     var momentToDelete by remember { mutableStateOf<MomentItem?>(null) }
     var showDirectMessageDialog by remember { mutableStateOf<UserProfile?>(null) }
+    var selectedUserProfile by remember { mutableStateOf<UserProfile?>(null) }
     var showCommentsMoment by remember { mutableStateOf<MomentItem?>(null) }
     var activeRoomDeck by remember { mutableStateOf<RoomItem?>(null) }
     var activeAudioRoom by remember { mutableStateOf<RoomItem?>(null) }
@@ -1524,7 +1525,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                                                             .clip(RoundedCornerShape(8.dp))
                                                             .clickable {
                                                                 isSearchExpanded = false
-                                                                showDirectMessageDialog = user
+                                                                selectedUserProfile = user
                                                             }
                                                             .padding(horizontal = 10.dp, vertical = 8.dp),
                                                         verticalAlignment = Alignment.CenterVertically
@@ -1554,7 +1555,7 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                                                         Button(
                                                             onClick = {
                                                                 isSearchExpanded = false
-                                                                showDirectMessageDialog = user
+                                                                selectedUserProfile = user
                                                             },
                                                             colors = ButtonDefaults.buttonColors(containerColor = BrandCardSubtle),
                                                             border = BorderStroke(1.dp, BrandBorder),
@@ -2648,6 +2649,48 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
         }
 
         // 5. Direct Message Routing to Advanced 1-on-1 Chat Screen
+        if (selectedUserProfile != null) {
+            val profile = selectedUserProfile!!
+            RoomMemberProfileSheet(
+                member = RoomMember(
+                    uid = profile.uid,
+                    userId = profile.userId,
+                    name = profile.name,
+                    photoUrl = profile.photo,
+                    tier = if (profile.isVipOrPlatinum()) "VIP" else "Standard"
+                ),
+                userProfile = profile,
+                currentUser = currentUser,
+                isHost = false,
+                roomId = "",
+                db = db,
+                onDismiss = { selectedUserProfile = null },
+                onLeaveRoom = { selectedUserProfile = null },
+                onLike = {
+                    recordSwipe(db, currentUserId, profile.uid, "like")
+                    Toast.makeText(context, "Liked ${profile.name}!", Toast.LENGTH_SHORT).show()
+                },
+                onDirectMessage = {
+                    selectedUserProfile = null
+                    activeChatPartner = profile
+                },
+                onRequestMessage = {
+                    selectedUserProfile = null
+                    activeChatPartner = profile
+                },
+                onKickOut = {},
+                onBan = {},
+                onBlock = {
+                    val blocked = currentUser.blockedUserIds + profile.uid
+                    currentUser = currentUser.copy(blockedUserIds = blocked)
+                    saveProfileToPrefs(prefs, currentUser)
+                    db.collection("users").document(currentUserId).update("blockedUserIds", blocked)
+                },
+                onTagMember = {},
+                showRoomActions = false
+            )
+        }
+
         if (showDirectMessageDialog != null) {
             val target = showDirectMessageDialog!!
             showDirectMessageDialog = null
@@ -3703,6 +3746,7 @@ fun ChatsScreenContent(
     val context = LocalContext.current
     val partnerMap = remember { mutableStateMapOf<String, UserProfile>() }
     var selectedActionMatch by remember { mutableStateOf<Pair<MatchItem, UserProfile>?>(null) }
+    var selectedProfilePartner by remember { mutableStateOf<UserProfile?>(null) }
     val archivedMatchIds = remember { mutableStateListOf<String>() }
 
     LaunchedEffect(matches) {
@@ -3765,7 +3809,10 @@ fun ChatsScreenContent(
                                     AsyncImage(
                                         model = partner.photo,
                                         contentDescription = null,
-                                        modifier = Modifier.size(46.dp).clip(CircleShape),
+                                        modifier = Modifier
+                                            .size(46.dp)
+                                            .clip(CircleShape)
+                                            .clickable { selectedProfilePartner = partner },
                                         contentScale = ContentScale.Crop
                                     )
                                     if (partner.isUserOnline()) {
@@ -3782,7 +3829,13 @@ fun ChatsScreenContent(
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(partner.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                        Text(
+                                            partner.name,
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp,
+                                            modifier = Modifier.clickable { selectedProfilePartner = partner }
+                                        )
                                         if (isBlocked) {
                                             Spacer(modifier = Modifier.width(6.dp))
                                             Text(
@@ -3893,6 +3946,46 @@ fun ChatsScreenContent(
                                 if (isBlocked) "Unblock User" else "Block User",
                                 color = if (isBlocked) BrandGreen else Color(0xFFFF5252),
                                 fontSize = 14.sp
+                            )
+                        }
+
+                        if (selectedProfilePartner != null) {
+                            val profile = selectedProfilePartner!!
+                            RoomMemberProfileSheet(
+                                member = RoomMember(
+                                    uid = profile.uid,
+                                    userId = profile.userId,
+                                    name = profile.name,
+                                    photoUrl = profile.photo,
+                                    tier = if (profile.isVipOrPlatinum()) "VIP" else "Standard"
+                                ),
+                                userProfile = profile,
+                                currentUser = currentUser,
+                                isHost = false,
+                                roomId = "",
+                                db = db,
+                                onDismiss = { selectedProfilePartner = null },
+                                onLeaveRoom = { selectedProfilePartner = null },
+                                onLike = {
+                                    recordSwipe(db, currentUserId, profile.uid, "like")
+                                    Toast.makeText(context, "Liked ${profile.name}!", Toast.LENGTH_SHORT).show()
+                                },
+                                onDirectMessage = {
+                                    selectedProfilePartner = null
+                                    onOpenChat(profile)
+                                },
+                                onRequestMessage = {
+                                    selectedProfilePartner = null
+                                    onOpenChat(profile)
+                                },
+                                onKickOut = {},
+                                onBan = {},
+                                onBlock = {
+                                    onToggleBlock(profile)
+                                    selectedProfilePartner = null
+                                },
+                                onTagMember = {},
+                                showRoomActions = false
                             )
                         }
                     }
@@ -4175,6 +4268,9 @@ fun ProfileScreenContent(
     var photoUrl by remember(currentUser) { mutableStateOf(currentUser.photo) }
     var gender by remember(currentUser) { mutableStateOf(currentUser.gender) }
     var interestedIn by remember(currentUser) { mutableStateOf(currentUser.interestedIn) }
+    val normalizedGender = gender.trim().lowercase()
+    val isFemale = normalizedGender in listOf("woman", "women", "female")
+    val isMale = normalizedGender in listOf("man", "men", "male")
 
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
     var showSubscriptionModal by remember { mutableStateOf(false) }
@@ -4558,12 +4654,24 @@ fun ProfileScreenContent(
                                             )
                                             Spacer(modifier = Modifier.width(4.dp))
                                             Surface(
-                                                color = if (gender.contains("woman", ignoreCase = true) || gender.contains("female", ignoreCase = true)) Color(0xFFFCE7F3) else Color(0xFFE0F2FE),
+                                                color = when {
+                                                    isFemale -> Color(0xFFFCE7F3)
+                                                    isMale -> Color(0xFFE0F2FE)
+                                                    else -> Color(0xFFE5E7EB)
+                                                },
                                                 shape = RoundedCornerShape(12.dp)
                                             ) {
                                                 Text(
-                                                    text = "${if (gender.contains("woman", ignoreCase = true)) "♀" else "♂"} $age",
-                                                    color = if (gender.contains("woman", ignoreCase = true)) Color(0xFFDB2777) else Color(0xFF0284C7),
+                                                    text = "${when {
+                                                        isFemale -> "♀ "
+                                                        isMale -> "♂ "
+                                                        else -> ""
+                                                    }}$age",
+                                                    color = when {
+                                                        isFemale -> Color(0xFFDB2777)
+                                                        isMale -> Color(0xFF0284C7)
+                                                        else -> Color(0xFF374151)
+                                                    },
                                                     fontSize = 10.sp,
                                                     fontWeight = FontWeight.Bold,
                                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)

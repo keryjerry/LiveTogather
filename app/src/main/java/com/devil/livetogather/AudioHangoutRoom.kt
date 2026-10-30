@@ -2573,7 +2573,8 @@ fun RoomMemberProfileSheet(
     onTagMember: (String) -> Unit,
     roomAdminUserIds: List<String> = emptyList(),
     onToggleAdmin: ((RoomMember) -> Unit)? = null,
-    onInviteToVideo: ((RoomMember) -> Unit)? = null
+    onInviteToVideo: ((RoomMember) -> Unit)? = null,
+    showRoomActions: Boolean = true
 ) {
     val context = LocalContext.current
     val isVipOrPlatinum = currentUser.isVipOrPlatinum()
@@ -2587,6 +2588,8 @@ fun RoomMemberProfileSheet(
     var memberFollowerCount by remember { mutableStateOf(userProfile?.followerCount ?: 0) }
     var memberAdminRooms by remember { mutableStateOf<List<String>>(userProfile?.adminInRoomIds ?: emptyList()) }
     var showAdminRoomsDialog by remember { mutableStateOf(false) }
+    var showProfileGiftPicker by remember { mutableStateOf(false) }
+    var isSendingProfileGift by remember { mutableStateOf(false) }
     var isBestFriend by remember { mutableStateOf(currentUser.bestFriends.contains(member.uid)) }
     LaunchedEffect(currentUser.bestFriends, member.uid) {
         isBestFriend = currentUser.bestFriends.contains(member.uid)
@@ -2624,6 +2627,93 @@ fun RoomMemberProfileSheet(
             countDoc.remove()
             userDoc.remove()
             followDoc?.remove()
+        }
+    }
+
+    fun sendProfileGift(gift: VideoGiftItem) {
+        if (currentUser.uid.isBlank() || member.uid.isBlank() || member.uid == currentUser.uid) {
+            Toast.makeText(context, "This profile cannot receive a gift.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (isSendingProfileGift) {
+            return
+        }
+        isSendingProfileGift = true
+        val senderRef = db.collection("users").document(currentUser.uid)
+        val recipientRef = db.collection("users").document(member.uid)
+        val receivedGiftRef = recipientRef.collection("received_gifts").document()
+        db.runTransaction { transaction ->
+            val senderSnapshot = transaction.get(senderRef)
+            val recipientSnapshot = transaction.get(recipientRef)
+            if (!senderSnapshot.exists() || !recipientSnapshot.exists()) {
+                throw IllegalStateException("Profile is no longer available.")
+            }
+
+            val balance = senderSnapshot.getLong("diamonds") ?: 0L
+            if (balance < gift.cost) return@runTransaction false
+
+            val wealthXp = (senderSnapshot.getLong("wealthXp") ?: currentUser.getEffectiveWealthXp()) + gift.cost * 10L
+            val charmXp = (recipientSnapshot.getLong("charmXp") ?: 0L) + gift.cost * 10L
+
+            transaction.update(
+                senderRef,
+                mapOf(
+                    "diamonds" to balance - gift.cost,
+                    "wealthXp" to wealthXp,
+                    "wealthLevel" to LevelBadgeSystem.calculateLevelFromXp(wealthXp),
+                    "diamondsSpentCount" to FieldValue.increment(gift.cost)
+                )
+            )
+            transaction.update(
+                recipientRef,
+                mapOf(
+                    "charmXp" to charmXp,
+                    "charmLevel" to LevelBadgeSystem.calculateLevelFromXp(charmXp)
+                )
+            )
+            transaction.set(
+                receivedGiftRef,
+                mapOf(
+                    "giftId" to gift.id,
+                    "giftName" to gift.name,
+                    "giftEmoji" to gift.emoji,
+                    "cost" to gift.cost,
+                    "senderId" to currentUser.uid,
+                    "senderName" to currentUser.name,
+                    "receiverId" to member.uid,
+                    "timestamp" to System.currentTimeMillis()
+                )
+            )
+            true
+        }.addOnSuccessListener { sent ->
+            isSendingProfileGift = false
+            if (sent) {
+                val notificationId = "profile_gift_${UUID.randomUUID()}"
+                val notification = NotificationItem(
+                    id = notificationId,
+                    targetUserId = member.uid,
+                    senderId = currentUser.uid,
+                    senderName = currentUser.name,
+                    senderPhoto = currentUser.photo,
+                    type = "gift_received",
+                    title = "${gift.emoji} Gift received!",
+                    message = "${currentUser.name} sent you ${gift.name}.",
+                    timestamp = System.currentTimeMillis(),
+                    isRead = false,
+                    roomId = roomId
+                )
+                db.collection("users").document(member.uid).collection("notifications")
+                    .document(notificationId).set(notification)
+                db.collection("notifications").document(notificationId).set(notification)
+                showProfileGiftPicker = false
+                Toast.makeText(context, "${gift.emoji} ${gift.name} sent to ${member.name}!", Toast.LENGTH_LONG).show()
+            } else {
+                Toast.makeText(context, "You need ${gift.cost} diamonds to send this gift.", Toast.LENGTH_LONG).show()
+            }
+        }.addOnFailureListener { error ->
+            isSendingProfileGift = false
+            Log.e("RoomMemberProfile", "Failed to send gift to ${member.uid}", error)
+            Toast.makeText(context, "Gift could not be sent: ${error.localizedMessage ?: "Please try again."}", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -3149,6 +3239,20 @@ fun RoomMemberProfileSheet(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
+                if (!isSelf) {
+                    Button(
+                        onClick = { showProfileGiftPicker = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB300)),
+                        shape = RoundedCornerShape(50),
+                        modifier = Modifier.fillMaxWidth().height(38.dp)
+                    ) {
+                        Icon(Icons.Default.CardGiftcard, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Send Gift", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
                 // 1. Follow / Unfollow interactive button (Always Available for All Profiles)
                 Button(
                     onClick = {
@@ -3321,7 +3425,7 @@ fun RoomMemberProfileSheet(
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = if (isVipOrPlatinum) "Send Message" else "Msg Request",
+                                text = "Send Message",
                                 color = if (isVipOrPlatinum) Color.Black else Color.White,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
@@ -3331,7 +3435,7 @@ fun RoomMemberProfileSheet(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    OutlinedButton(
+                    if (showRoomActions) OutlinedButton(
                         onClick = {
                             onTagMember(member.name)
                             onDismiss()
@@ -3491,7 +3595,7 @@ fun RoomMemberProfileSheet(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                Button(
+                if (showRoomActions) Button(
                     onClick = {
                         onDismiss()
                         onLeaveRoom()
@@ -3564,6 +3668,7 @@ fun RoomMemberProfileSheet(
                                             Text("Role: Verified Room Admin 🛡️", color = Color(0xFF4FC3F7), fontSize = 9.sp)
                                         }
                                     }
+
                                 }
                             }
                         }
@@ -3576,7 +3681,42 @@ fun RoomMemberProfileSheet(
                         }
                     }
                 }
+
             }
+        }
+
+        if (showProfileGiftPicker) {
+            AlertDialog(
+                onDismissRequest = { showProfileGiftPicker = false },
+                title = { Text("Send a gift to ${member.name}", color = Color.White) },
+                text = {
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 360.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(VIDEO_GIFT_CATALOG) { gift ->
+                            OutlinedButton(
+                                onClick = { sendProfileGift(gift) },
+                                enabled = !isSendingProfileGift,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    if (isSendingProfileGift) "Sending…" else "${gift.emoji} ${gift.name} • %,d 💎".format(gift.cost),
+                                    color = Color.White,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showProfileGiftPicker = false }) {
+                        Text("Cancel", color = Color.LightGray)
+                    }
+                },
+                containerColor = BrandCard,
+                shape = RoundedCornerShape(18.dp)
+            )
         }
     }
 }
@@ -6565,7 +6705,17 @@ fun AudioHangoutRoomDialog(
                             userActiveMicEffect = userActiveMicEffect,
                             activeEmojiReactions = activeEmojiReactions,
                             activeMicLinkId = activeMicLinkDesignId,
-                            onSeatClick = handleSeatClick
+                            onSeatClick = handleSeatClick,
+                            onProfileClick = { seat ->
+                                val profile = allProfiles.find { it.uid == seat.uid }
+                                selectedMemberForSheet = RoomMember(
+                                    uid = seat.uid,
+                                    userId = profile?.userId ?: "",
+                                    name = seat.name,
+                                    photoUrl = seat.photo,
+                                    role = seat.role
+                                )
+                            }
                         )
                     } else {
                         TenMicStageSection(
@@ -6582,6 +6732,16 @@ fun AudioHangoutRoomDialog(
                             activeMicLinkId = activeMicLinkDesignId,
                             onOpenMicLinkSelector = { showMicLinkSelectorDialog = true },
                             onSeatClick = handleSeatClick,
+                            onProfileClick = { seat ->
+                                val profile = allProfiles.find { it.uid == seat.uid }
+                                selectedMemberForSheet = RoomMember(
+                                    uid = seat.uid,
+                                    userId = profile?.userId ?: "",
+                                    name = seat.name,
+                                    photoUrl = seat.photo,
+                                    role = seat.role
+                                )
+                            },
                             onQuickToggleMute = {
                                 myCurrentMicSeat?.let { seat ->
                                     toggleMuteMicSeat(db, room.id, seat.seatIndex, seat.isMuted)
@@ -8347,6 +8507,8 @@ fun InRoomInboxDialog(
     var selectedPartner by remember { mutableStateOf<UserProfile?>(null) }
     var selectedMatchId by remember { mutableStateOf<String?>(null) }
     var selectedActionMatch by remember { mutableStateOf<Pair<MatchItem, UserProfile>?>(null) }
+    var selectedProfileMember by remember { mutableStateOf<RoomMember?>(null) }
+    var selectedProfileMatchId by remember { mutableStateOf<String?>(null) }
     val archivedMatchIds = remember { mutableStateListOf<String>() }
     val matches = remember { mutableStateListOf<MatchItem>() }
     var activeTab by remember { mutableStateOf(0) } // 0: Messages, 1: Room Members
@@ -8562,7 +8724,16 @@ fun InRoomInboxDialog(
                                                     modifier = Modifier
                                                         .size(44.dp)
                                                         .clip(CircleShape)
-                                                        .border(1.dp, BrandBorder, CircleShape),
+                                                        .border(1.dp, BrandBorder, CircleShape)
+                                                        .clickable {
+                                                            selectedProfileMember = RoomMember(
+                                                                uid = partner.uid,
+                                                                userId = partner.userId,
+                                                                name = partner.name,
+                                                                photoUrl = partner.photo
+                                                            )
+                                                            selectedProfileMatchId = match.matchId
+                                                        },
                                                     contentScale = ContentScale.Crop
                                                 )
                                                 if (isOnlineInRoom) {
@@ -8587,7 +8758,16 @@ fun InRoomInboxDialog(
                                                         text = partner.name,
                                                         color = Color.White,
                                                         fontSize = 14.sp,
-                                                        fontWeight = FontWeight.Bold
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.clickable {
+                                                            selectedProfileMember = RoomMember(
+                                                                uid = partner.uid,
+                                                                userId = partner.userId,
+                                                                name = partner.name,
+                                                                photoUrl = partner.photo
+                                                            )
+                                                            selectedProfileMatchId = match.matchId
+                                                        }
                                                     )
                                                     if (isOnlineInRoom) {
                                                         Text(
@@ -8668,7 +8848,11 @@ fun InRoomInboxDialog(
                                                 modifier = Modifier
                                                     .size(42.dp)
                                                     .clip(CircleShape)
-                                                    .border(1.dp, BrandBorder, CircleShape),
+                                                    .border(1.dp, BrandBorder, CircleShape)
+                                                    .clickable {
+                                                        selectedProfileMember = member
+                                                        selectedProfileMatchId = listOf(currentUser.uid, member.uid).sorted().joinToString("_")
+                                                    },
                                                 contentScale = ContentScale.Crop
                                             )
                                             Spacer(modifier = Modifier.width(10.dp))
@@ -8677,7 +8861,11 @@ fun InRoomInboxDialog(
                                                     text = member.name,
                                                     color = Color.White,
                                                     fontSize = 14.sp,
-                                                    fontWeight = FontWeight.Bold
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.clickable {
+                                                        selectedProfileMember = member
+                                                        selectedProfileMatchId = listOf(currentUser.uid, member.uid).sorted().joinToString("_")
+                                                    }
                                                 )
                                                 Text(
                                                     text = if (member.role == "host") "Room Host 👑" else "Listener 🎧",
@@ -9166,6 +9354,43 @@ fun InRoomInboxDialog(
                         Text("Close", color = Color.Gray)
                     }
                 }
+            )
+        }
+
+        if (selectedProfileMember != null) {
+            val member = selectedProfileMember!!
+            val profile = allProfiles.find { it.uid == member.uid }
+                ?: UserProfile(uid = member.uid, userId = member.userId, name = member.name, photo = member.photoUrl)
+            RoomMemberProfileSheet(
+                member = member,
+                userProfile = profile,
+                currentUser = currentUser,
+                isHost = false,
+                roomId = "",
+                db = db,
+                onDismiss = { selectedProfileMember = null },
+                onLeaveRoom = { selectedProfileMember = null },
+                onLike = { recordSwipe(db, currentUser.uid, member.uid, "like") },
+                onDirectMessage = {
+                    selectedProfileMember = null
+                    selectedPartner = profile
+                    selectedMatchId = selectedProfileMatchId
+                        ?: listOf(currentUser.uid, member.uid).sorted().joinToString("_")
+                },
+                onRequestMessage = {
+                    selectedProfileMember = null
+                    selectedPartner = profile
+                    selectedMatchId = selectedProfileMatchId
+                        ?: listOf(currentUser.uid, member.uid).sorted().joinToString("_")
+                },
+                onKickOut = {},
+                onBan = {},
+                onBlock = {
+                    db.collection("users").document(currentUser.uid)
+                        .update("blockedUserIds", FieldValue.arrayUnion(member.uid))
+                },
+                onTagMember = {},
+                showRoomActions = false
             )
         }
     }
@@ -9947,7 +10172,8 @@ fun TenMicStageSection(
     onOpenMicLinkSelector: () -> Unit = {},
     onSeatClick: (MicSeat) -> Unit,
     onQuickToggleMute: () -> Unit,
-    onQuickLeaveStage: () -> Unit
+    onQuickLeaveStage: () -> Unit,
+    onProfileClick: ((MicSeat) -> Unit)? = null
 ) {
     val mySeat = seats.find { it.uid == currentUserId }
     val seat0 = seats.find { it.seatIndex == 0 }
@@ -9995,7 +10221,8 @@ fun TenMicStageSection(
                         reactionEmoji = activeEmojiReactions[seat.uid],
                         categorySeatEmoji = "🎙️",
                         categorySeatLabel = "Mic",
-                        onClick = { onSeatClick(seat) }
+                        onClick = { onSeatClick(seat) },
+                        onProfileClick = onProfileClick?.let { callback -> { callback(seat) } }
                     )
                 }
             }
@@ -10055,7 +10282,8 @@ fun TenMicStageSection(
                     reactionEmoji = activeEmojiReactions[seat.uid],
                     categorySeatEmoji = "🎙️",
                     categorySeatLabel = "Mic",
-                    onClick = { onSeatClick(seat) }
+                    onClick = { onSeatClick(seat) },
+                    onProfileClick = onProfileClick?.let { callback -> { callback(seat) } }
                 )
             }
         }
@@ -10088,7 +10316,8 @@ fun TenMicStageSection(
                     reactionEmoji = activeEmojiReactions[seat.uid],
                     categorySeatEmoji = "🎙️",
                     categorySeatLabel = "Mic",
-                    onClick = { onSeatClick(seat) }
+                    onClick = { onSeatClick(seat) },
+                    onProfileClick = onProfileClick?.let { callback -> { callback(seat) } }
                 )
             }
         }
@@ -10109,7 +10338,8 @@ fun VipRoyalStageCanvas(
     userActiveMicEffect: String = "",
     activeEmojiReactions: Map<String, String> = emptyMap(),
     activeMicLinkId: String = "mic_link_ruby_crown",
-    onSeatClick: (MicSeat) -> Unit
+    onSeatClick: (MicSeat) -> Unit,
+    onProfileClick: ((MicSeat) -> Unit)? = null
 ) {
     // 10 Seats mapped to the shifted-up curved velvet sofa, armchairs, and round table:
     // Seat 0: Host 👑 (Front Center Throne Chair)
@@ -10174,7 +10404,8 @@ fun VipRoyalStageCanvas(
                     reactionEmoji = activeEmojiReactions[seat.uid],
                     categorySeatEmoji = if (idx == 0) "👑" else "🎙️",
                     categorySeatLabel = if (idx == 0) "Host" else "Seat",
-                    onClick = { onSeatClick(seat) }
+                    onClick = { onSeatClick(seat) },
+                    onProfileClick = onProfileClick?.let { callback -> { callback(seat) } }
                 )
             }
         }
@@ -10404,7 +10635,8 @@ fun MicSeatView(
     reactionEmoji: String? = null,
     categorySeatEmoji: String = "🎙️",
     categorySeatLabel: String = "Mic",
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onProfileClick: (() -> Unit)? = null
 ) {
     val isSpeaking = if (isCurrentSelf) (isLocalTalking && !seat.isMuted) else (seat.isTalking && !seat.isMuted)
     val infiniteTransition = rememberInfiniteTransition(label = "pulse_${seat.seatIndex}")
@@ -10435,7 +10667,9 @@ fun MicSeatView(
         val seatBoxSize = if (shouldShowFrame) 62.dp else 52.dp
 
         Box(
-            modifier = Modifier.size(seatBoxSize),
+            modifier = Modifier
+                .size(seatBoxSize)
+                .then(if (seat.uid.isNotEmpty() && onProfileClick != null) Modifier.clickable { onProfileClick() } else Modifier),
             contentAlignment = Alignment.Center
         ) {
             if (seat.uid.isNotEmpty()) {
@@ -10543,7 +10777,9 @@ fun MicSeatView(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.width(62.dp)
+                modifier = Modifier
+                    .width(62.dp)
+                    .then(if (onProfileClick != null) Modifier.clickable { onProfileClick() } else Modifier)
             )
             Text(
                 text = if (seat.seatIndex == 0) "Host 👑" else if (isCurrentSelf) "You" else "Mic ${seat.seatIndex + 1}",
@@ -12792,6 +13028,3 @@ fun ReportUserDialog(
         }
     }
 }
-
-
-

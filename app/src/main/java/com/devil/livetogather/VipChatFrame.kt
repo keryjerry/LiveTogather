@@ -1204,6 +1204,37 @@ fun VipCenterDialog(
     onProfileUpdated: (UserProfile) -> Unit = {}
 ) {
     val context = LocalContext.current
+    var liveUser by remember(currentUser.uid) { mutableStateOf(currentUser) }
+    var pendingVipLevels by remember(currentUser.uid) { mutableStateOf(emptySet<Int>()) }
+    DisposableEffect(db, currentUser.uid) {
+        val userRegistration = db.collection("users").document(currentUser.uid)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    android.util.Log.e("VipCenter", "Failed to observe VIP profile approval", error)
+                } else if (snapshot != null && snapshot.exists()) {
+                    liveUser = parseUserProfileFromDoc(snapshot).copy(uid = snapshot.id)
+                    onProfileUpdated(liveUser)
+                }
+            }
+        val requestRegistration = db.collection("payment_requests")
+            .whereEqualTo("userId", currentUser.uid)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    android.util.Log.e("VipCenter", "Failed to observe VIP payment requests", error)
+                } else {
+                    pendingVipLevels = snapshot?.documents
+                        ?.filter { it.getString("purchaseType") == "vip" && it.getString("status").equals("pending", true) }
+                        ?.mapNotNull { (it.getLong("vipLevel") ?: 0L).toInt().takeIf { level -> level in 1..4 } }
+                        ?.toSet()
+                        ?: emptySet()
+                }
+            }
+        onDispose {
+            userRegistration.remove()
+            requestRegistration.remove()
+        }
+    }
+    val vipUser = liveUser
     var selectedTierIndex by remember { mutableIntStateOf(0) }
     var selectedSuitePiece by remember { mutableIntStateOf(2) } // 0: Bar, 1: Profile Show, 2: Avatar Frame, 3: Chat Frame
     var showEnlargedPreview by remember { mutableStateOf(false) }
@@ -1293,11 +1324,11 @@ fun VipCenterDialog(
     val currentTier = tiers[selectedTierIndex]
 
     // Ownership & Equipped Checks - Strictly for the specific purchased tier!
-    val isOwned = (currentUser.getVipLevel() == currentTier.level) ||
-        currentUser.plan.equals("VIP ${currentTier.level}", ignoreCase = true)
+    val isOwned = (vipUser.getVipLevel() == currentTier.level) ||
+        vipUser.plan.equals("VIP ${currentTier.level}", ignoreCase = true)
 
-    val isEquipped = currentUser.activeFrame == currentTier.frameId &&
-        currentUser.activeChatFrame == currentTier.chatFrameId
+    val isEquipped = vipUser.activeFrame == currentTier.frameId &&
+        vipUser.activeChatFrame == currentTier.chatFrameId
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -1313,47 +1344,9 @@ fun VipCenterDialog(
                 },
                 onSuccess = {
                     showPaymentModal = false
-                    val pkg = checkoutPackage
+                    pendingVipLevels = pendingVipLevels + currentTier.level
                     checkoutPackage = null
-                    // Direct 1-tap activation on successful purchase
-                    val newPlan = "VIP ${currentTier.level}"
-                    val newFrame = currentTier.frameId
-                    val newChatFrame = currentTier.chatFrameId
-                    val newChatBar = "chat_sword_vip_${currentTier.level}"
-                    val newArch = "arch_vip_${currentTier.level}"
-                    val newCover = "cover_vip_${currentTier.level}"
-                    val newEntrance = "entrance_vip_${currentTier.level}"
-
-                    val updates = mapOf(
-                        "plan" to newPlan,
-                        "vipLevel" to currentTier.level,
-                        "activeFrame" to newFrame,
-                        "activeChatFrame" to newChatFrame,
-                        "activeChatBar" to newChatBar,
-                        "activeProfileArch" to newArch,
-                        "activeProfileCover" to newCover,
-                        "activeEntranceEffect" to newEntrance,
-                        "ownedFrames" to (currentUser.ownedFrames + newFrame).distinct(),
-                        "ownedChatFrames" to (currentUser.ownedChatFrames + newChatFrame).distinct()
-                    )
-                    db.collection("users").document(currentUser.uid).update(updates)
-
-                    val prefs = context.getSharedPreferences("livetogather_user_prefs", Context.MODE_PRIVATE)
-                    prefs.edit()
-                        .putString("profile_active_frame", newFrame)
-                        .putString("profile_active_chat_frame", newChatFrame)
-                        .putString("profile_active_plan", newPlan)
-                        .apply()
-
-                    val updatedUser = currentUser.copy(
-                        plan = newPlan,
-                        activeFrame = newFrame,
-                        activeChatFrame = newChatFrame,
-                        ownedFrames = (currentUser.ownedFrames + newFrame).distinct(),
-                        ownedChatFrames = (currentUser.ownedChatFrames + newChatFrame).distinct()
-                    )
-                    onProfileUpdated(updatedUser)
-                    Toast.makeText(context, "🎉 ${currentTier.name} Dressing Up Suite Activated!", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "VIP purchase submitted and pending admin approval.", Toast.LENGTH_LONG).show()
                 }
             )
         }
@@ -1721,11 +1714,11 @@ fun VipCenterDialog(
                 // 3. Fixed Bottom Action Bar:
                 // Strictly ONLY Purchase button if not purchased!
                 // Once purchased, shows Wear (वियर) and Unwear (अनवियर) button!
-                val hasPurchasedTier = (currentUser.getVipLevel() == currentTier.level) ||
-                    currentUser.plan.equals("VIP ${currentTier.level}", ignoreCase = true)
+                val hasPurchasedTier = (vipUser.getVipLevel() == currentTier.level) ||
+                    vipUser.plan.equals("VIP ${currentTier.level}", ignoreCase = true)
 
-                val isWorn = currentUser.activeFrame == currentTier.frameId &&
-                    currentUser.activeChatFrame == currentTier.chatFrameId
+                val isWorn = vipUser.activeFrame == currentTier.frameId &&
+                    vipUser.activeChatFrame == currentTier.chatFrameId
 
                 Surface(
                     color = Color(0xFF08060D),
@@ -1738,7 +1731,22 @@ fun VipCenterDialog(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        if (!hasPurchasedTier) {
+                        if (!hasPurchasedTier && currentTier.level in pendingVipLevels) {
+                            Button(
+                                onClick = {},
+                                enabled = false,
+                                colors = ButtonDefaults.buttonColors(disabledContainerColor = Color(0xFF5B4B2D)),
+                                shape = RoundedCornerShape(26.dp),
+                                modifier = Modifier.fillMaxWidth().height(52.dp)
+                            ) {
+                                Text(
+                                    "Pending Admin Approval",
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 15.sp,
+                                    color = Color.White
+                                )
+                            }
+                        } else if (!hasPurchasedTier) {
                             // NOT PURCHASED YET: Show ONLY the Purchase Button!
                             Button(
                                 onClick = {
@@ -1786,8 +1794,8 @@ fun VipCenterDialog(
                                             "activeProfileCover" to "",
                                             "activeEntranceEffect" to ""
                                         )
-                                        db.collection("users").document(currentUser.uid).update(updates)
-                                        val updatedUser = currentUser.copy(
+                                        db.collection("users").document(vipUser.uid).update(updates)
+                                        val updatedUser = vipUser.copy(
                                             activeFrame = "",
                                             activeChatFrame = ""
                                         )
@@ -1795,7 +1803,6 @@ fun VipCenterDialog(
                                         Toast.makeText(context, "VIP Suite Unworn (हटा दिया गया)", Toast.LENGTH_SHORT).show()
                                     } else {
                                         // Wear: Equip entire VIP suite
-                                        val newPlan = "VIP ${currentTier.level}"
                                         val newFrame = currentTier.frameId
                                         val newChatFrame = currentTier.chatFrameId
                                         val newChatBar = "chat_sword_vip_${currentTier.level}"
@@ -1804,8 +1811,6 @@ fun VipCenterDialog(
                                         val newEntrance = "entrance_vip_${currentTier.level}"
 
                                         val updates = mapOf(
-                                            "plan" to newPlan,
-                                            "vipLevel" to currentTier.level,
                                             "activeFrame" to newFrame,
                                             "activeChatFrame" to newChatFrame,
                                             "activeChatBar" to newChatBar,
@@ -1813,9 +1818,8 @@ fun VipCenterDialog(
                                             "activeProfileCover" to newCover,
                                             "activeEntranceEffect" to newEntrance
                                         )
-                                        db.collection("users").document(currentUser.uid).update(updates)
-                                        val updatedUser = currentUser.copy(
-                                            plan = newPlan,
+                                        db.collection("users").document(vipUser.uid).update(updates)
+                                        val updatedUser = vipUser.copy(
                                             activeFrame = newFrame,
                                             activeChatFrame = newChatFrame
                                         )

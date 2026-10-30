@@ -102,7 +102,9 @@ data class PaymentRequestTicket(
     val status: String = "PENDING", // PENDING, APPROVED, REJECTED
     val category: String = "Payment Verification (Submit UTR for Coins)",
     val message: String = "",
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val purchaseType: String = "coins",
+    val vipLevel: Int = 0
 )
 
 fun parsePaymentRequestTicket(doc: com.google.firebase.firestore.DocumentSnapshot): PaymentRequestTicket? {
@@ -130,7 +132,9 @@ fun parsePaymentRequestTicket(doc: com.google.firebase.firestore.DocumentSnapsho
             status = status,
             category = doc.getString("category") ?: "Payment Verification (Submit UTR for Coins)",
             message = doc.getString("message") ?: "",
-            timestamp = ts
+            timestamp = ts,
+            purchaseType = doc.getString("purchaseType") ?: "coins",
+            vipLevel = (doc.getLong("vipLevel") ?: 0L).toInt()
         )
     } catch (e: Exception) {
         android.util.Log.e("PaymentAndSupport", "Error parsing payment request ${doc.id}: ${e.message}", e)
@@ -278,6 +282,8 @@ object PaymentAndSupportManager {
         packAmount: String,
         category: String = "Payment Verification (Submit UTR for Coins)",
         message: String = "",
+        purchaseType: String = "coins",
+        vipLevel: Int = 0,
         onSuccess: () -> Unit,
         onFailure: (String) -> Unit
     ) {
@@ -291,9 +297,11 @@ object PaymentAndSupportManager {
             "utrNumber" to utrNumber.trim(),
             "coinsRequested" to packCoins,
             "amountPaid" to packAmount,
-            "status" to "PENDING",
+            "status" to "pending",
             "category" to category,
             "message" to message,
+            "purchaseType" to purchaseType,
+            "vipLevel" to vipLevel,
             "timestamp" to System.currentTimeMillis()
         )
         db.collection("payment_requests").document(autoId)
@@ -309,7 +317,11 @@ object PaymentAndSupportManager {
                     senderPhoto = "",
                     type = "payment_utr_submitted",
                     title = "💳 New Payment UTR: $packAmount",
-                    message = "$userName (#$userNumericId) submitted UTR ${utrNumber.trim()} for %,d Diamonds ($packAmount)".format(packCoins),
+                    message = if (purchaseType == "vip") {
+                        "$userName (#$userNumericId) submitted UTR ${utrNumber.trim()} for VIP $vipLevel ($packAmount)"
+                    } else {
+                        "$userName (#$userNumericId) submitted UTR ${utrNumber.trim()} for %,d Diamonds ($packAmount)".format(packCoins)
+                    },
                     timestamp = System.currentTimeMillis(),
                     isRead = false,
                     roomId = ""
@@ -345,11 +357,11 @@ object PaymentAndSupportManager {
         val db = FirebaseFirestore.getInstance()
         val batch = db.batch()
 
-        // 1. Update payment_requests status to APPROVED
+        // 1. Update payment_requests status to approved
         val reqRef = db.collection("payment_requests").document(request.requestId)
         batch.update(
             reqRef, mapOf(
-                "status" to "APPROVED",
+                "status" to "approved",
                 "approvedAt" to FieldValue.serverTimestamp(),
                 "approvedBy" to adminUid
             )
@@ -364,9 +376,24 @@ object PaymentAndSupportManager {
             updateMap["hasRecharged"] = true
             updateMap["rechargeCount"] = FieldValue.increment(1)
         }
-        if (request.category.contains("Monetization", ignoreCase = true) || request.amountPaid.contains("599")) {
+        if (request.purchaseType == "host_monetization" ||
+            (request.purchaseType == "coins" && request.category.contains("Monetization", ignoreCase = true))) {
             updateMap["isHostMonetized"] = true
             updateMap["hostMonetizationDate"] = System.currentTimeMillis()
+        }
+        if (request.purchaseType == "vip" && request.vipLevel in 1..4) {
+            val vipFrame = "vip_suite_frame_${request.vipLevel}"
+            val vipChatFrame = listOf(
+                "",
+                "chat_frame_silver_knight",
+                "chat_frame_golden_paladin",
+                "chat_frame_imperial_amethyst",
+                "chat_frame_celestial_dragon"
+            )[request.vipLevel]
+            updateMap["plan"] = "VIP ${request.vipLevel}"
+            updateMap["vipLevel"] = request.vipLevel
+            updateMap["ownedFrames"] = FieldValue.arrayUnion(vipFrame)
+            updateMap["ownedChatFrames"] = FieldValue.arrayUnion(vipChatFrame)
         }
         if (updateMap.isNotEmpty()) {
             batch.update(userRef, updateMap)
@@ -404,7 +431,7 @@ object PaymentAndSupportManager {
         db.collection("payment_requests").document(requestId)
             .update(
                 mapOf(
-                    "status" to "REJECTED",
+                    "status" to "rejected",
                     "rejectedAt" to FieldValue.serverTimestamp(),
                     "rejectedBy" to adminUid
                 )
@@ -977,6 +1004,15 @@ fun UpiPaymentCheckoutModal(
                             }
                             isSubmitting = true
                             val isMonetizationPkg = selectedPackage.id == "pkg_host_monetization_599" || selectedPackage.title.contains("Monetization", ignoreCase = true)
+                            val vipLevel = selectedPackage.id
+                                .removePrefix("vip_package_")
+                                .toIntOrNull()
+                                ?.takeIf { it in 1..4 } ?: 0
+                            val purchaseType = when {
+                                isMonetizationPkg -> "host_monetization"
+                                vipLevel > 0 -> "vip"
+                                else -> "coins"
+                            }
                             val finalNumericId = if (currentUser.userId.isNotBlank()) currentUser.userId else (10000000 + kotlin.math.abs(currentUser.uid.hashCode()) % 90000000).toString()
                             PaymentAndSupportManager.submitPaymentVerificationRequest(
                                 userId = currentUser.uid,
@@ -985,30 +1021,26 @@ fun UpiPaymentCheckoutModal(
                                 utrNumber = trimmed,
                                 packCoins = selectedPackage.coins,
                                 packAmount = selectedPackage.priceInr,
-                                category = if (isMonetizationPkg) "Host Monetization Activation" else "Payment Verification (Submit UTR for Coins)",
-                                message = if (isMonetizationPkg) "Host Monetization ₹599 paid" else "",
+                                category = when {
+                                    isMonetizationPkg -> "Host Monetization Activation"
+                                    vipLevel > 0 -> "VIP $vipLevel Suite Purchase"
+                                    else -> "Payment Verification (Submit UTR for Coins)"
+                                },
+                                message = when {
+                                    isMonetizationPkg -> "Host Monetization ₹599 paid"
+                                    vipLevel > 0 -> "VIP $vipLevel suite purchase"
+                                    else -> ""
+                                },
+                                purchaseType = purchaseType,
+                                vipLevel = vipLevel,
                                 onSuccess = {
                                     isSubmitting = false
                                     if (isMonetizationPkg) {
-                                        try {
-                                            val db = FirebaseFirestore.getInstance()
-                                            db.collection("users").document(currentUser.uid).update(
-                                                mapOf(
-                                                    "isHostMonetized" to true,
-                                                    "hostMonetizationDate" to System.currentTimeMillis()
-                                                )
-                                            )
-                                            val prefs = context.getSharedPreferences("livetogather_user_prefs", Context.MODE_PRIVATE)
-                                            prefs.edit()
-                                                .putBoolean("profile_is_host_monetized", true)
-                                                .putLong("profile_host_monetization_date", System.currentTimeMillis())
-                                                .apply()
-                                        } catch (e: Exception) {
-                                            android.util.Log.e("Checkout", "Monetization activation error: ${e.message}")
-                                        }
-                                        Toast.makeText(context, "✅ UTR #$trimmed submitted! Host Monetization activated successfully! 🚀", Toast.LENGTH_LONG).show()
+                                        Toast.makeText(context, "✅ UTR #$trimmed submitted. Host Monetization is pending admin approval.", Toast.LENGTH_LONG).show()
+                                    } else if (vipLevel > 0) {
+                                        Toast.makeText(context, "✅ UTR #$trimmed submitted. VIP $vipLevel is pending admin approval.", Toast.LENGTH_LONG).show()
                                     } else {
-                                        Toast.makeText(context, "✅ UTR #$trimmed submitted! Diamonds will be credited.", Toast.LENGTH_LONG).show()
+                                        Toast.makeText(context, "✅ UTR #$trimmed submitted. Diamonds are pending admin approval.", Toast.LENGTH_LONG).show()
                                     }
                                     onSuccess()
                                     onDismiss()

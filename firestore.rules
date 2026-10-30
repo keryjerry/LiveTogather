@@ -162,6 +162,140 @@ service cloud.firestore {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
     }
 
+    function hasNoSelfGrantedEntitlements() {
+      return request.resource.data.get('plan', 'Free') == 'Free' &&
+        request.resource.data.get('vipLevel', 0) == 0 &&
+        request.resource.data.get('isHostMonetized', false) == false &&
+        request.resource.data.get('hostMonetizationDate', 0) == 0 &&
+        request.resource.data.get('activeFrame', '') == '' &&
+        request.resource.data.get('activeChatFrame', '') == '' &&
+        !request.resource.data.get('ownedFrames', []).hasAny([
+          'vip_suite_frame_1',
+          'vip_suite_frame_2',
+          'vip_suite_frame_3',
+          'vip_suite_frame_4'
+        ]) &&
+        !request.resource.data.get('ownedChatFrames', []).hasAny([
+          'chat_frame_silver_knight',
+          'chat_frame_golden_paladin',
+          'chat_frame_imperial_amethyst',
+          'chat_frame_celestial_dragon'
+        ]);
+    }
+
+    function hasApprovedVipLevel(level) {
+      return request.resource.data.get('vipLevel', 0) >= level ||
+        (
+          level == 1 &&
+          request.resource.data.get('plan', '') in ['VIP 1', 'VIP 2', 'VIP 3', 'VIP 4']
+        ) ||
+        (
+          level == 2 &&
+          request.resource.data.get('plan', '') in ['VIP 2', 'VIP 3', 'VIP 4']
+        ) ||
+        (
+          level == 3 &&
+          request.resource.data.get('plan', '') in ['VIP 3', 'VIP 4']
+        ) ||
+        (
+          level == 4 &&
+          request.resource.data.get('plan', '') == 'VIP 4'
+        );
+    }
+
+    function mayEquipVipFrame() {
+      return (
+        request.resource.data.get('activeFrame', '') != 'vip_suite_frame_1' ||
+        hasApprovedVipLevel(1)
+      ) && (
+        request.resource.data.get('activeFrame', '') != 'vip_suite_frame_2' ||
+        hasApprovedVipLevel(2)
+      ) && (
+        request.resource.data.get('activeFrame', '') != 'vip_suite_frame_3' ||
+        hasApprovedVipLevel(3)
+      ) && (
+        request.resource.data.get('activeFrame', '') != 'vip_suite_frame_4' ||
+        hasApprovedVipLevel(4)
+      ) && (
+        request.resource.data.get('activeChatFrame', '') != 'chat_frame_silver_knight' ||
+        hasApprovedVipLevel(1)
+      ) && (
+        request.resource.data.get('activeChatFrame', '') != 'chat_frame_golden_paladin' ||
+        hasApprovedVipLevel(2)
+      ) && (
+        request.resource.data.get('activeChatFrame', '') != 'chat_frame_imperial_amethyst' ||
+        hasApprovedVipLevel(3)
+      ) && (
+        request.resource.data.get('activeChatFrame', '') != 'chat_frame_celestial_dragon' ||
+        hasApprovedVipLevel(4)
+      ) && (
+        (
+          request.resource.data.get('activeChatBar', '') != 'chat_sword_vip_1' &&
+          request.resource.data.get('activeProfileArch', '') != 'arch_vip_1' &&
+          request.resource.data.get('activeProfileCover', '') != 'cover_vip_1' &&
+          request.resource.data.get('activeEntranceEffect', '') != 'entrance_vip_1'
+        ) ||
+        hasApprovedVipLevel(1)
+      ) && (
+        (
+          request.resource.data.get('activeChatBar', '') != 'chat_sword_vip_2' &&
+          request.resource.data.get('activeProfileArch', '') != 'arch_vip_2' &&
+          request.resource.data.get('activeProfileCover', '') != 'cover_vip_2' &&
+          request.resource.data.get('activeEntranceEffect', '') != 'entrance_vip_2'
+        ) ||
+        hasApprovedVipLevel(2)
+      ) && (
+        (
+          request.resource.data.get('activeChatBar', '') != 'chat_sword_vip_3' &&
+          request.resource.data.get('activeProfileArch', '') != 'arch_vip_3' &&
+          request.resource.data.get('activeProfileCover', '') != 'cover_vip_3' &&
+          request.resource.data.get('activeEntranceEffect', '') != 'entrance_vip_3'
+        ) ||
+        hasApprovedVipLevel(3)
+      ) && (
+        (
+          request.resource.data.get('activeChatBar', '') != 'chat_sword_vip_4' &&
+          request.resource.data.get('activeProfileArch', '') != 'arch_vip_4' &&
+          request.resource.data.get('activeProfileCover', '') != 'cover_vip_4' &&
+          request.resource.data.get('activeEntranceEffect', '') != 'entrance_vip_4'
+        ) ||
+        hasApprovedVipLevel(4)
+      ) && (
+        !request.resource.data.get('ownedFrames', []).hasAny(['vip_suite_frame_1']) ||
+        hasApprovedVipLevel(1)
+      ) && (
+        !request.resource.data.get('ownedFrames', []).hasAny(['vip_suite_frame_2']) ||
+        hasApprovedVipLevel(2)
+      ) && (
+        !request.resource.data.get('ownedFrames', []).hasAny(['vip_suite_frame_3']) ||
+        hasApprovedVipLevel(3)
+      ) && (
+        !request.resource.data.get('ownedFrames', []).hasAny(['vip_suite_frame_4']) ||
+        hasApprovedVipLevel(4)
+      ) && (
+        !request.resource.data.get('ownedChatFrames', []).hasAny([
+          'chat_frame_silver_knight',
+          'chat_frame_golden_paladin',
+          'chat_frame_imperial_amethyst',
+          'chat_frame_celestial_dragon'
+        ]) ||
+        (
+          (!request.resource.data.get('ownedChatFrames', []).hasAny(['chat_frame_silver_knight']) || hasApprovedVipLevel(1)) &&
+          (!request.resource.data.get('ownedChatFrames', []).hasAny(['chat_frame_golden_paladin']) || hasApprovedVipLevel(2)) &&
+          (!request.resource.data.get('ownedChatFrames', []).hasAny(['chat_frame_imperial_amethyst']) || hasApprovedVipLevel(3)) &&
+          (!request.resource.data.get('ownedChatFrames', []).hasAny(['chat_frame_celestial_dragon']) || hasApprovedVipLevel(4))
+        )
+      );
+    }
+
+    function mayChangePlanWithoutVipGrant() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['plan']) ||
+        (
+          !request.resource.data.get('plan', '').lower().matches('.*vip.*') &&
+          !request.resource.data.get('plan', '').lower().matches('.*platinum.*')
+        );
+    }
+
     // Check if the current user is host or room admin
     function isRoomHostOrAdmin(roomData) {
       return isAuthenticated() && (
@@ -194,7 +328,8 @@ service cloud.firestore {
         hasOfficialAdminRights(userId) ||
         (
           (!('isAdmin' in request.resource.data) || request.resource.data.isAdmin == false) &&
-          (!('officialRole' in request.resource.data) || request.resource.data.officialRole == '')
+          (!('officialRole' in request.resource.data) || request.resource.data.officialRole == '') &&
+          hasNoSelfGrantedEntitlements()
         )
       );
 
@@ -210,8 +345,13 @@ service cloud.firestore {
             'officialRole',
             'isSuspended',
             'suspensionExpiry',
-            'suspensionReason'
-          ])
+            'suspensionReason',
+            'vipLevel',
+            'isHostMonetized',
+            'hostMonetizationDate'
+          ]) &&
+          mayChangePlanWithoutVipGrant() &&
+          mayEquipVipFrame()
         ) ||
         (
           isAuthenticated() &&
@@ -248,6 +388,20 @@ service cloud.firestore {
         allow write: if isAuthenticated();
       }
 
+      match /received_gifts/{giftId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isAuthenticated() &&
+          request.resource.data.senderId == request.auth.uid &&
+          request.resource.data.receiverId == userId &&
+          request.resource.data.giftId is string &&
+          request.resource.data.cost is number &&
+          request.resource.data.cost > 0 &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.diamonds -
+            request.resource.data.cost ==
+          getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.diamonds;
+        allow update, delete: if isOwner(userId) || isAdmin();
+      }
+
       // User coin & earning transaction ledgers
       match /coin_transactions/{txId} {
         allow read: if isOwner(userId) || isAdmin();
@@ -267,8 +421,32 @@ service cloud.firestore {
 
     match /payment_requests/{reqId} {
       allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if isAdmin();
+      allow create: if isAuthenticated() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.get('purchaseType', '') in ['coins', 'vip', 'host_monetization'] &&
+        (
+          request.resource.data.get('purchaseType', '') != 'vip' ||
+          request.resource.data.get('vipLevel', 0) in [1, 2, 3, 4]
+        ) &&
+        request.resource.data.keys().hasOnly([
+          'requestId',
+          'userId',
+          'userNumericId',
+          'userName',
+          'utrNumber',
+          'coinsRequested',
+          'amountPaid',
+          'status',
+          'category',
+          'message',
+          'purchaseType',
+          'vipLevel',
+          'timestamp'
+        ]);
+      allow update: if isAdmin() &&
+        request.resource.data.status in ['approved', 'rejected'];
+      allow delete: if isAdmin();
     }
 
     match /withdrawal_requests/{reqId} {

@@ -1492,7 +1492,8 @@ data class ChatMessage(
     val proposalStatus: String = "", // "pending", "accepted", "declined"
     val chatFrameId: String = "",
     val vipLevel: Int = 0,
-    val isFounder: Boolean = false
+    val isFounder: Boolean = false,
+    val mediaMimeType: String = ""
 )
 
 data class IntimacyBond(
