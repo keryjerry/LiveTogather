@@ -5,15 +5,13 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioManager
+import android.media.MediaPlayer
 import android.media.ToneGenerator
 import android.util.Log
 import android.net.Uri
 import android.widget.Toast
-import android.widget.VideoView
 import android.view.TextureView
 import android.view.Surface
-import android.media.MediaPlayer
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.activity.compose.BackHandler
@@ -2591,6 +2589,8 @@ fun RoomMemberProfileSheet(
     var showAdminRoomsDialog by remember { mutableStateOf(false) }
     var showProfileGiftPicker by remember { mutableStateOf(false) }
     var isSendingProfileGift by remember { mutableStateOf(false) }
+    var isSendingMicLinkRequest by remember { mutableStateOf(false) }
+    var hasSentMicLinkRequest by remember(member.uid, roomId) { mutableStateOf(false) }
     var isBestFriend by remember { mutableStateOf(currentUser.bestFriends.contains(member.uid)) }
     LaunchedEffect(currentUser.bestFriends, member.uid) {
         isBestFriend = currentUser.bestFriends.contains(member.uid)
@@ -3259,6 +3259,62 @@ fun RoomMemberProfileSheet(
                         Icon(Icons.Default.CardGiftcard, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Send Gift", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                if (!isSelf && showRoomActions && roomId.isNotBlank()) {
+                    OutlinedButton(
+                        onClick = {
+                            if (isSendingMicLinkRequest || hasSentMicLinkRequest) return@OutlinedButton
+                            isSendingMicLinkRequest = true
+                            val requestId = UUID.randomUUID().toString()
+                            db.collection("intimacy_requests").document(requestId)
+                                .set(
+                                    mapOf(
+                                        "id" to requestId,
+                                        "requestType" to "mic_link",
+                                        "roomId" to roomId,
+                                        "senderUid" to currentUser.uid,
+                                        "senderName" to currentUser.name,
+                                        "senderPhoto" to currentUser.photo,
+                                        "recipientUid" to member.uid,
+                                        "recipientName" to member.name,
+                                        "recipientPhoto" to member.photoUrl,
+                                        "giftId" to "mic_link_request",
+                                        "giftName" to "Intimacy Mic Link",
+                                        "giftEmoji" to "💞",
+                                        "bondType" to "couple",
+                                        "status" to "pending",
+                                        "timestamp" to System.currentTimeMillis()
+                                    )
+                                )
+                                .addOnSuccessListener {
+                                    isSendingMicLinkRequest = false
+                                    hasSentMicLinkRequest = true
+                                    Toast.makeText(context, "Mic-link request sent to ${member.name}.", Toast.LENGTH_SHORT).show()
+                                }
+                                .addOnFailureListener { error ->
+                                    isSendingMicLinkRequest = false
+                                    Log.e("RoomMemberProfile", "Failed to send mic-link request to ${member.uid}", error)
+                                    Toast.makeText(context, "Could not send request: ${error.localizedMessage ?: "Please try again."}", Toast.LENGTH_LONG).show()
+                                }
+                        },
+                        enabled = !isSendingMicLinkRequest && !hasSentMicLinkRequest,
+                        shape = RoundedCornerShape(50),
+                        modifier = Modifier.fillMaxWidth().height(38.dp),
+                        border = BorderStroke(1.dp, Color(0xFFFF4081))
+                    ) {
+                        Text(
+                            text = when {
+                                isSendingMicLinkRequest -> "Sending mic-link request…"
+                                hasSentMicLinkRequest -> "Mic-link request sent"
+                                else -> "💞 Request Intimacy Mic Link"
+                            },
+                            color = Color(0xFFFF80AB),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                 }
@@ -5216,11 +5272,15 @@ fun AudioHangoutRoomDialog(
 
     // Real-time listener for active Intimacy Bonds between seated users
     val activeIntimacyBonds = remember { mutableStateListOf<IntimacyBond>() }
-    LaunchedEffect(currentUser.uid, micSeats) {
-        if (currentUser.uid.isBlank()) return@LaunchedEffect
-        db.collection("intimacy_bonds")
+    DisposableEffect(room.id) {
+        if (room.id.isBlank()) return@DisposableEffect onDispose {}
+        val listener = db.collection("intimacy_bonds")
             .whereEqualTo("status", "active")
-            .addSnapshotListener { snapshot, _ ->
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e("AudioHangoutRoom", "Failed to listen for active intimacy bonds", error)
+                    return@addSnapshotListener
+                }
                 if (snapshot != null) {
                     val bonds = snapshot.documents.mapNotNull { it.toObject(IntimacyBond::class.java) }
                     activeIntimacyBonds.clear()
@@ -5243,6 +5303,7 @@ fun AudioHangoutRoomDialog(
                     }
                 }
             }
+        onDispose { listener.remove() }
     }
 
     // Real-Time Listener for Incoming Intimacy Gifting Proposals
@@ -5253,11 +5314,13 @@ fun AudioHangoutRoomDialog(
             .whereEqualTo("recipientUid", currentUser.uid)
             .whereEqualTo("status", "pending")
             .addSnapshotListener { snapshot, err ->
-                if (err == null && snapshot != null && !snapshot.isEmpty) {
-                    pendingIntimacyRequest = snapshot.documents.firstOrNull()?.data
-                } else {
-                    pendingIntimacyRequest = null
+                if (err != null) {
+                    Log.e("AudioHangoutRoom", "Failed to listen for intimacy requests", err)
+                    return@addSnapshotListener
                 }
+                pendingIntimacyRequest = snapshot?.documents
+                    ?.firstOrNull { it.getString("roomId") == room.id }
+                    ?.data
             }
         onDispose { listener.remove() }
     }
@@ -6805,6 +6868,7 @@ fun AudioHangoutRoomDialog(
                             userActiveMicEffect = userActiveMicEffect,
                             activeEmojiReactions = activeEmojiReactions,
                             activeMicLinkId = activeMicLinkDesignId,
+                            activeIntimacyBonds = activeIntimacyBonds,
                             onSeatClick = handleSeatClick,
                             onProfileClick = { seat ->
                                 val profile = allProfiles.find { it.uid == seat.uid }
@@ -6830,6 +6894,7 @@ fun AudioHangoutRoomDialog(
                             categorySeatEmoji = "🎙️",
                             categorySeatLabel = "Mic",
                             activeMicLinkId = activeMicLinkDesignId,
+                            activeIntimacyBonds = activeIntimacyBonds,
                             onOpenMicLinkSelector = { showMicLinkSelectorDialog = true },
                             onSeatClick = handleSeatClick,
                             onProfileClick = { seat ->
@@ -8197,6 +8262,8 @@ fun AudioHangoutRoomDialog(
                                 val reqId = "intimacy_req_${System.currentTimeMillis()}"
                                 val reqData = mapOf(
                                     "id" to reqId,
+                                    "requestType" to "mic_link",
+                                    "roomId" to room.id,
                                     "senderUid" to currentUser.uid,
                                     "senderName" to currentUser.name,
                                     "senderPhoto" to currentUser.photo,
@@ -10269,6 +10336,7 @@ fun TenMicStageSection(
     categorySeatEmoji: String = "🎙️",
     categorySeatLabel: String = "Seat",
     activeMicLinkId: String = "mic_link_ruby_crown",
+    activeIntimacyBonds: List<IntimacyBond> = emptyList(),
     onOpenMicLinkSelector: () -> Unit = {},
     onSeatClick: (MicSeat) -> Unit,
     onQuickToggleMute: () -> Unit,
@@ -10278,7 +10346,17 @@ fun TenMicStageSection(
     val mySeat = seats.find { it.uid == currentUserId }
     val seat0 = seats.find { it.seatIndex == 0 }
     val seat1 = seats.find { it.seatIndex == 1 }
-    val isBondActive = (seat0?.uid?.isNotBlank() == true && seat1?.uid?.isNotBlank() == true)
+    val seatedUids = seats.map { it.uid }.filter { it.isNotBlank() }.toSet()
+    val activeSeatedBonds = activeIntimacyBonds.filter { bond ->
+        bond.status == "active" && seatedUids.contains(bond.user1Id) && seatedUids.contains(bond.user2Id)
+    }
+    val linkedUserIds = activeSeatedBonds.flatMap { listOf(it.user1Id, it.user2Id) }.toSet()
+    val seat0And1Bond = if (seat0?.uid?.isNotBlank() == true && seat1?.uid?.isNotBlank() == true) {
+        activeSeatedBonds.firstOrNull { bond ->
+            (bond.user1Id == seat0.uid && bond.user2Id == seat1.uid) ||
+                (bond.user1Id == seat1.uid && bond.user2Id == seat0.uid)
+        }
+    } else null
 
     Column(
         modifier = Modifier
@@ -10315,6 +10393,7 @@ fun TenMicStageSection(
                         isCurrentSelf = seat.uid.isNotEmpty() && seat.uid == currentUserId,
                         isLocalTalking = isLocalTalking,
                         isHost = isHost,
+                        isIntimacyLinked = seat.uid in linkedUserIds,
                         allProfiles = allProfiles,
                         userActiveFrame = userActiveFrame,
                         userActiveMicEffect = userActiveMicEffect,
@@ -10328,8 +10407,9 @@ fun TenMicStageSection(
             }
 
             // Real-Time Active Mic Link Overlay (between Seat 0 & Seat 1)
-            if (isBondActive) {
-                val (dRes, pCol, sCol) = when (activeMicLinkId) {
+            if (seat0And1Bond != null) {
+                val linkDesignId = seat0And1Bond.activeMicLinkId.ifBlank { activeMicLinkId }
+                val (dRes, pCol, sCol) = when (linkDesignId) {
                     "mic_link_twin_besties" -> Triple(R.drawable.photoreal_link_twin_besties, Color(0xFF00E5FF), Color(0xFFFF4081))
                     "mic_link_cyberpunk_reactor" -> Triple(R.drawable.photoreal_link_cyberpunk_reactor, Color(0xFF00F5FF), Color(0xFFA855F7))
                     "mic_link_celestial_wings" -> Triple(R.drawable.photoreal_link_celestial_wings, Color(0xFFFFD700), Color(0xFFE0F7FA))
@@ -10376,6 +10456,7 @@ fun TenMicStageSection(
                     isCurrentSelf = seat.uid.isNotEmpty() && seat.uid == currentUserId,
                     isLocalTalking = isLocalTalking,
                     isHost = isHost,
+                    isIntimacyLinked = seat.uid in linkedUserIds,
                     allProfiles = allProfiles,
                     userActiveFrame = userActiveFrame,
                     userActiveMicEffect = userActiveMicEffect,
@@ -10410,6 +10491,7 @@ fun TenMicStageSection(
                     isCurrentSelf = seat.uid.isNotEmpty() && seat.uid == currentUserId,
                     isLocalTalking = isLocalTalking,
                     isHost = isHost,
+                    isIntimacyLinked = seat.uid in linkedUserIds,
                     allProfiles = allProfiles,
                     userActiveFrame = userActiveFrame,
                     userActiveMicEffect = userActiveMicEffect,
@@ -10438,9 +10520,16 @@ fun VipRoyalStageCanvas(
     userActiveMicEffect: String = "",
     activeEmojiReactions: Map<String, String> = emptyMap(),
     activeMicLinkId: String = "mic_link_ruby_crown",
+    activeIntimacyBonds: List<IntimacyBond> = emptyList(),
     onSeatClick: (MicSeat) -> Unit,
     onProfileClick: ((MicSeat) -> Unit)? = null
 ) {
+    val seatedUids = seats.map { it.uid }.filter { it.isNotBlank() }.toSet()
+    val activeSeatedBonds = activeIntimacyBonds.filter { bond ->
+        bond.status == "active" && seatedUids.contains(bond.user1Id) && seatedUids.contains(bond.user2Id)
+    }
+    val linkedUserIds = activeSeatedBonds.flatMap { listOf(it.user1Id, it.user2Id) }.toSet()
+
     // 10 Seats mapped to the shifted-up curved velvet sofa, armchairs, and round table:
     // Seat 0: Host 👑 (Front Center Throne Chair)
     // Seat 1: Center Round Velvet Table
@@ -10499,6 +10588,7 @@ fun VipRoyalStageCanvas(
                     isCurrentSelf = seat.uid.isNotEmpty() && seat.uid == currentUserId,
                     isLocalTalking = isLocalTalking,
                     isHost = isHost,
+                    isIntimacyLinked = seat.uid in linkedUserIds,
                     allProfiles = allProfiles,
                     userActiveFrame = userActiveFrame,
                     reactionEmoji = activeEmojiReactions[seat.uid],
@@ -10513,8 +10603,15 @@ fun VipRoyalStageCanvas(
         // Real-Time Active Mic Link Overlay in VIP Room (Between Seat 0 Host and Seat 1 Mic 2)
         val seat0 = seats.find { it.seatIndex == 0 }
         val seat1 = seats.find { it.seatIndex == 1 }
-        if (seat0?.uid?.isNotBlank() == true && seat1?.uid?.isNotBlank() == true) {
-            val (dRes, pCol, sCol) = when (activeMicLinkId) {
+        val seat0And1Bond = if (seat0?.uid?.isNotBlank() == true && seat1?.uid?.isNotBlank() == true) {
+            activeSeatedBonds.firstOrNull { bond ->
+                (bond.user1Id == seat0.uid && bond.user2Id == seat1.uid) ||
+                    (bond.user1Id == seat1.uid && bond.user2Id == seat0.uid)
+            }
+        } else null
+        if (seat0And1Bond != null) {
+            val linkDesignId = seat0And1Bond.activeMicLinkId.ifBlank { activeMicLinkId }
+            val (dRes, pCol, sCol) = when (linkDesignId) {
                 "mic_link_twin_besties" -> Triple(R.drawable.photoreal_link_twin_besties, Color(0xFF00E5FF), Color(0xFFFF4081))
                 "mic_link_cyberpunk_reactor" -> Triple(R.drawable.photoreal_link_cyberpunk_reactor, Color(0xFF00F5FF), Color(0xFFA855F7))
                 "mic_link_celestial_wings" -> Triple(R.drawable.photoreal_link_celestial_wings, Color(0xFFFFD700), Color(0xFFE0F7FA))
@@ -10729,6 +10826,7 @@ fun MicSeatView(
     isCurrentSelf: Boolean,
     isLocalTalking: Boolean,
     isHost: Boolean,
+    isIntimacyLinked: Boolean = false,
     allProfiles: List<UserProfile> = emptyList(),
     userActiveFrame: String = "",
     userActiveMicEffect: String = "",
@@ -10785,13 +10883,28 @@ fun MicSeatView(
                 FlowingAvatarFrame(
                     photoUrl = seat.photo.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
                     frameId = seatFrameId,
-                    avatarSize = 38.dp,
+                    avatarSize = 42.dp,
                     isSpeaking = isSpeaking,
                     vipLevel = seatVipLvl,
                     showVipBadge = false,
                     showMicEffect = seatMicEffectId.isNotBlank() && isSpeaking,
                     micEffectId = seatMicEffectId
                 )
+
+                if (isIntimacyLinked) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .offset(x = 1.dp, y = (-1).dp)
+                            .size(17.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF3B1027))
+                            .border(1.dp, Color(0xFFFF80AB), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("💞", fontSize = 9.sp, lineHeight = 10.sp)
+                    }
+                }
 
                 // Mic Mute / Unmute Status Badge at bottom-right with subtle voice pulse animation
                 val isPulsing = isSpeaking && !seat.isMuted
@@ -10942,6 +11055,7 @@ fun IntimacyGiftingAcceptanceDialog(
     val giftName = requestData["giftName"] as? String ?: "Intimacy Gift"
     val giftEmoji = requestData["giftEmoji"] as? String ?: "💖"
     val bondType = requestData["bondType"] as? String ?: "couple"
+    var isSubmitting by remember(reqId) { mutableStateOf(false) }
 
     androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismiss,
@@ -10998,10 +11112,21 @@ fun IntimacyGiftingAcceptanceDialog(
                     // Decline
                     Button(
                         onClick = {
-                            db.collection("intimacy_requests").document(reqId).update("status", "declined")
-                            Toast.makeText(context, "Proposal declined.", Toast.LENGTH_SHORT).show()
-                            onDismiss()
+                            if (isSubmitting || reqId.isBlank()) return@Button
+                            isSubmitting = true
+                            db.collection("intimacy_requests").document(reqId)
+                                .update("status", "declined")
+                                .addOnSuccessListener {
+                                    Toast.makeText(context, "Proposal declined.", Toast.LENGTH_SHORT).show()
+                                    onDismiss()
+                                }
+                                .addOnFailureListener { error ->
+                                    isSubmitting = false
+                                    Log.e("IntimacyRequest", "Failed to decline request $reqId", error)
+                                    Toast.makeText(context, "Could not decline request: ${error.localizedMessage ?: "Please try again."}", Toast.LENGTH_LONG).show()
+                                }
                         },
+                        enabled = !isSubmitting,
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF332040)),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.weight(1f).height(42.dp)
@@ -11012,6 +11137,8 @@ fun IntimacyGiftingAcceptanceDialog(
                     // Accept & Activate
                     Button(
                         onClick = {
+                            if (isSubmitting || reqId.isBlank() || senderUid.isBlank() || currentUser.uid.isBlank()) return@Button
+                            isSubmitting = true
                             val bondId = listOf(senderUid, currentUser.uid).sorted().joinToString("_")
                             val activeMicLink = when (bondType.lowercase()) {
                                 "bestie" -> "mic_link_twin_besties"
@@ -11046,8 +11173,13 @@ fun IntimacyGiftingAcceptanceDialog(
                             batch.commit().addOnSuccessListener {
                                 Toast.makeText(context, "💖 Intimacy Bond Activated in Real-Time!", Toast.LENGTH_SHORT).show()
                                 onDismiss()
+                            }.addOnFailureListener { error ->
+                                isSubmitting = false
+                                Log.e("IntimacyRequest", "Failed to activate request $reqId", error)
+                                Toast.makeText(context, "Could not activate mic link: ${error.localizedMessage ?: "Please try again."}", Toast.LENGTH_LONG).show()
                             }
                         },
+                        enabled = !isSubmitting,
                         colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.weight(1f).height(42.dp)
@@ -12227,6 +12359,88 @@ private fun VideoGiftsSection(
 // -------------------------------------------------------------
 // 10. FULL-SCREEN TRANSPARENT VIDEO GIFT BROADCAST ANIMATION
 // -------------------------------------------------------------
+private class GiftVideoTextureView(
+    context: Context,
+    private val rawResId: Int,
+    private val onFinished: () -> Unit,
+    private val onFailure: (String) -> Unit
+) : TextureView(context), TextureView.SurfaceTextureListener {
+    private var player: MediaPlayer? = null
+    private var videoSurface: Surface? = null
+
+    init {
+        isOpaque = false
+        surfaceTextureListener = this
+    }
+
+    override fun onSurfaceTextureAvailable(surfaceTexture: android.graphics.SurfaceTexture, width: Int, height: Int) {
+        releasePlayback()
+        val surface = Surface(surfaceTexture)
+        val mediaPlayer = MediaPlayer()
+        videoSurface = surface
+        player = mediaPlayer
+        try {
+            mediaPlayer.setSurface(surface)
+            mediaPlayer.setDataSource(
+                context,
+                Uri.parse("android.resource://${context.packageName}/$rawResId")
+            )
+            mediaPlayer.setOnPreparedListener { it.start() }
+            mediaPlayer.setOnCompletionListener {
+                releasePlayback()
+                onFinished()
+            }
+            mediaPlayer.setOnErrorListener { _, what, extra ->
+                val message = "Gift video playback failed (what=$what, extra=$extra)"
+                Log.e("GiftVideo", message)
+                releasePlayback()
+                onFailure(message)
+                true
+            }
+            mediaPlayer.prepareAsync()
+        } catch (error: java.io.IOException) {
+            handlePlaybackFailure(error)
+        } catch (error: IllegalArgumentException) {
+            handlePlaybackFailure(error)
+        } catch (error: IllegalStateException) {
+            handlePlaybackFailure(error)
+        } catch (error: SecurityException) {
+            handlePlaybackFailure(error)
+        }
+    }
+
+    override fun onSurfaceTextureSizeChanged(
+        surface: android.graphics.SurfaceTexture,
+        width: Int,
+        height: Int
+    ) = Unit
+
+    override fun onSurfaceTextureDestroyed(surface: android.graphics.SurfaceTexture): Boolean {
+        releasePlayback()
+        return true
+    }
+
+    override fun onSurfaceTextureUpdated(surface: android.graphics.SurfaceTexture) = Unit
+
+    fun release() {
+        surfaceTextureListener = null
+        releasePlayback()
+    }
+
+    private fun handlePlaybackFailure(error: Exception) {
+        Log.e("GiftVideo", "Unable to initialize gift video playback", error)
+        releasePlayback()
+        onFailure(error.localizedMessage ?: "Unable to play gift video.")
+    }
+
+    private fun releasePlayback() {
+        player?.release()
+        player = null
+        videoSurface?.release()
+        videoSurface = null
+    }
+}
+
 @Composable
 fun FullScreenGiftAnimationOverlay(
     giftEvent: GiftEvent,
@@ -12234,7 +12448,7 @@ fun FullScreenGiftAnimationOverlay(
     isVideoRoom: Boolean = false
 ) {
     val isVideo = giftEvent.animationType == "video_mp4"
-    val activeDuration = if (isVideo) 10000L else 3800L
+    val activeDuration = 3800L
 
     val infiniteTransition = rememberInfiniteTransition(label = "gift_anim")
 
@@ -12270,10 +12484,12 @@ fun FullScreenGiftAnimationOverlay(
     var overlayAlpha by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(giftEvent.id) {
         overlayAlpha = 1f
-        delay(activeDuration)
-        overlayAlpha = 0f
-        delay(450)
-        onDismiss()
+        if (!isVideo) {
+            delay(activeDuration)
+            overlayAlpha = 0f
+            delay(450)
+            onDismiss()
+        }
     }
 
     val animatedAlpha by animateFloatAsState(
@@ -12362,44 +12578,20 @@ fun FullScreenGiftAnimationOverlay(
                         "royal_jet_mp4" -> R.raw.royal_jet
                         else -> VIDEO_GIFT_CATALOG.find { it.id == giftEvent.giftId }?.rawResId ?: R.raw.lamborgini_car
                     }
-                    AndroidView(
-                        factory = { ctx ->
-                            TextureView(ctx).apply {
-                                isOpaque = false
-                                surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-                                    override fun onSurfaceTextureAvailable(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {
-                                        val s = Surface(surface)
-                                        val mp = MediaPlayer().apply {
-                                            setSurface(s)
-                                            val videoUri = Uri.parse("android.resource://${ctx.packageName}/$rawResId")
-                                            setDataSource(ctx, videoUri)
-                                            setOnPreparedListener { player ->
-                                                player.isLooping = false
-                                                player.setVolume(1.0f, 1.0f)
-                                                player.start()
-                                            }
-                                            setOnCompletionListener {
-                                                s.release()
-                                                onDismiss()
-                                            }
-                                            setOnErrorListener { _, _, _ ->
-                                                s.release()
-                                                onDismiss()
-                                                true
-                                            }
-                                            prepareAsync()
-                                        }
-                                    }
-                                    override fun onSurfaceTextureSizeChanged(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {}
-                                    override fun onSurfaceTextureDestroyed(surface: android.graphics.SurfaceTexture): Boolean = true
-                                    override fun onSurfaceTextureUpdated(surface: android.graphics.SurfaceTexture) {}
-                                }
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer(blendMode = BlendMode.Screen)
-                    )
+                    key(giftEvent.id) {
+                        AndroidView(
+                            factory = { ctx ->
+                                GiftVideoTextureView(
+                                    context = ctx,
+                                    rawResId = rawResId,
+                                    onFinished = onDismiss,
+                                    onFailure = { onDismiss() }
+                                )
+                            },
+                            modifier = Modifier.fillMaxSize(),
+                            onRelease = { it.release() }
+                        )
+                    }
                 }
 
                 "car" -> {
