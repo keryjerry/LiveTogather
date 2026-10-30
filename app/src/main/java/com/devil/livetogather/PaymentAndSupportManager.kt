@@ -392,6 +392,12 @@ object PaymentAndSupportManager {
             )[request.vipLevel]
             updateMap["plan"] = "VIP ${request.vipLevel}"
             updateMap["vipLevel"] = request.vipLevel
+            updateMap["activeFrame"] = vipFrame
+            updateMap["activeChatFrame"] = vipChatFrame
+            updateMap["activeChatBar"] = "chat_sword_vip_${request.vipLevel}"
+            updateMap["activeProfileArch"] = "arch_vip_${request.vipLevel}"
+            updateMap["activeProfileCover"] = "cover_vip_${request.vipLevel}"
+            updateMap["activeEntranceEffect"] = "entrance_vip_${request.vipLevel}"
             updateMap["ownedFrames"] = FieldValue.arrayUnion(vipFrame)
             updateMap["ownedChatFrames"] = FieldValue.arrayUnion(vipChatFrame)
         }

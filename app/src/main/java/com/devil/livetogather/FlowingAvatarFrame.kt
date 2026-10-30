@@ -75,7 +75,7 @@ fun FlowingAvatarFrame(
     micEffectId: String = "",
     onClick: (() -> Unit)? = null
 ) {
-    val frameItem = AVATAR_FRAMES_CATALOG.find { it.id == frameId }
+    val frameItem = getAvatarFrameItem(frameId)
     val effectiveVip = if (vipLevel > 0) vipLevel else (frameItem?.vipLevel ?: 0)
     val isAnimated = showAnimation && (frameItem?.isAnimated ?: frameId.isNotBlank())
     val drawableRes = frameItem?.drawableRes ?: getAvatarFrameDrawable(frameId)
@@ -175,7 +175,8 @@ fun FlowingAvatarFrame(
 
     val targetAvatarSize = avatarSize * frameTrimFactor
     val targetFrameSize = if (frameId.isNotBlank()) {
-        avatarSize * minScale * frameTrimFactor
+        val calibratedSize = avatarSize * minScale * frameTrimFactor
+        if (isVipSuiteFrame) minOf(calibratedSize, frameSize) else calibratedSize
     } else if (micEffectId.isNotBlank() && isSpeaking) {
         (avatarSize + 16.dp) * frameTrimFactor
     } else {
@@ -258,7 +259,6 @@ fun FlowingAvatarFrame(
                 modifier = Modifier
                     .size(targetAvatarSize)
                     .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.2f))
                     .then(
                         if (!isVipSuiteFrame) {
                             Modifier.border(
@@ -292,10 +292,10 @@ fun FlowingAvatarFrame(
                         .fillMaxSize()
                         .graphicsLayer(
                             alpha = 1.0f,
-                            translationY = wingLift,
-                            rotationZ = wingSkew * 0.4f,
-                            scaleX = pulseScale * 1.08f,
-                            scaleY = pulseScale * 1.08f
+                            translationY = if (isVipSuiteFrame) 0f else wingLift,
+                            rotationZ = if (isVipSuiteFrame) 0f else wingSkew * 0.4f,
+                            scaleX = if (isVipSuiteFrame) 1f else pulseScale * 1.08f,
+                            scaleY = if (isVipSuiteFrame) 1f else pulseScale * 1.08f
                         ),
                     contentScale = ContentScale.Fit,
                     alpha = 1.0f

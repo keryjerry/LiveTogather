@@ -1236,7 +1236,7 @@ fun VipCenterDialog(
     }
     val vipUser = liveUser
     var selectedTierIndex by remember { mutableIntStateOf(0) }
-    var selectedSuitePiece by remember { mutableIntStateOf(2) } // 0: Bar, 1: Profile Show, 2: Avatar Frame, 3: Chat Frame
+    var selectedSuitePiece by remember { mutableIntStateOf(2) }
     var showEnlargedPreview by remember { mutableStateOf(false) }
     var isProcessingPayment by remember { mutableStateOf(false) }
 
@@ -1560,16 +1560,16 @@ fun VipCenterDialog(
 
                             Spacer(modifier = Modifier.height(10.dp))
 
-                            // 4-Card Row with Play Indicator ▶
+                            // VIP suite categories
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 val cards = listOf(
-                                    Triple(0, currentTier.swordRes, "Room Bar"),
-                                    Triple(1, currentTier.mockupRes, "Profile Show"),
-                                    Triple(2, currentTier.avatarRes, "Avatar Frame"),
-                                    Triple(3, currentTier.bubbleRes, "Chat Frame")
+                                    Triple(0, currentTier.swordRes, "Entry Effects"),
+                                    Triple(1, currentTier.bubbleRes, "Chat Bubbles"),
+                                    Triple(2, currentTier.avatarRes, "Profile/Avatar Frames"),
+                                    Triple(3, currentTier.avatarRes, "Border/Seat Frames")
                                 )
 
                                 cards.forEach { (idx, resId, label) ->
@@ -1583,40 +1583,51 @@ fun VipCenterDialog(
                                         ),
                                         modifier = Modifier
                                             .weight(1f)
-                                            .height(84.dp)
+                                            .height(96.dp)
                                             .clickable {
                                                 selectedSuitePiece = idx
                                                 showEnlargedPreview = true
                                             }
                                     ) {
                                         Box(modifier = Modifier.fillMaxSize()) {
-                                            // Circular Play Indicator (▶)
-                                            Surface(
-                                                color = Color(0xFFFFB300),
-                                                shape = CircleShape,
-                                                modifier = Modifier
-                                                    .size(18.dp)
-                                                    .padding(3.dp)
-                                                    .align(Alignment.TopStart)
-                                            ) {
-                                                Box(contentAlignment = Alignment.Center) {
-                                                    Icon(
-                                                        Icons.Default.PlayArrow,
-                                                        contentDescription = "Preview",
-                                                        tint = Color.Black,
-                                                        modifier = Modifier.size(10.dp)
-                                                    )
-                                                }
+                                            if (idx == 3) {
+                                                FlowingAvatarFrame(
+                                                    photoUrl = currentUser.photo,
+                                                    frameId = currentTier.frameId,
+                                                    modifier = Modifier
+                                                        .size(60.dp)
+                                                        .align(Alignment.TopCenter),
+                                                    avatarSize = 30.dp,
+                                                    frameSize = 56.dp,
+                                                    vipLevel = currentTier.level,
+                                                    showAnimation = false,
+                                                    showVipBadge = false
+                                                )
+                                            } else {
+                                                Image(
+                                                    painter = painterResource(id = resId),
+                                                    contentDescription = label,
+                                                    contentScale = ContentScale.Fit,
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .height(64.dp)
+                                                        .align(Alignment.TopCenter)
+                                                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                                                )
                                             }
-
-                                            // 3D Master Graphic
-                                            Image(
-                                                painter = painterResource(id = resId),
-                                                contentDescription = label,
-                                                contentScale = if (idx == 0) ContentScale.Fit else ContentScale.Crop,
+                                            Text(
+                                                text = label,
+                                                fontSize = 8.sp,
+                                                lineHeight = 9.sp,
+                                                textAlign = TextAlign.Center,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis,
+                                                color = Color.White,
                                                 modifier = Modifier
-                                                    .fillMaxSize()
-                                                    .padding(top = 14.dp, bottom = 4.dp, start = 4.dp, end = 4.dp)
+                                                    .fillMaxWidth()
+                                                    .align(Alignment.BottomCenter)
+                                                    .background(Color.Black.copy(alpha = 0.55f))
+                                                    .padding(horizontal = 2.dp, vertical = 4.dp)
                                             )
                                         }
                                     }
@@ -1892,10 +1903,10 @@ fun VipCenterDialog(
                             ) {
                                 Text(
                                     text = when (selectedSuitePiece) {
-                                        0 -> "⚔️ ${currentTier.name} Room Chat Bar with Royal Sword"
-                                        1 -> "👑 ${currentTier.name} Profile Show & Palace Cover"
-                                        2 -> "🖼️ ${currentTier.name} 3D Flowing Avatar Frame"
-                                        else -> "💬 ${currentTier.name} Ultra-HD Chat Frame"
+                                        0 -> "✨ ${currentTier.name} Entry Effects"
+                                        1 -> "💬 ${currentTier.name} Chat Bubbles"
+                                        2 -> "🖼️ ${currentTier.name} Profile/Avatar Frame"
+                                        else -> "👑 ${currentTier.name} Border/Seat Frame"
                                     },
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold,
@@ -1907,9 +1918,8 @@ fun VipCenterDialog(
 
                                 val previewRes = when (selectedSuitePiece) {
                                     0 -> currentTier.swordRes
-                                    1 -> currentTier.mockupRes
-                                    2 -> currentTier.avatarRes
-                                    else -> currentTier.bubbleRes
+                                    1 -> currentTier.bubbleRes
+                                    else -> currentTier.avatarRes
                                 }
 
                                 Box(
@@ -1918,12 +1928,15 @@ fun VipCenterDialog(
                                         .height(180.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    if (selectedSuitePiece == 2) {
+                                    if (selectedSuitePiece == 2 || selectedSuitePiece == 3) {
                                         FlowingAvatarFrame(
                                             photoUrl = currentUser.photo,
                                             frameId = currentTier.frameId,
-                                            avatarSize = 60.dp,
-                                            vipLevel = currentTier.level
+                                            avatarSize = if (selectedSuitePiece == 3) 46.dp else 60.dp,
+                                            frameSize = if (selectedSuitePiece == 3) 118.dp else 156.dp,
+                                            vipLevel = currentTier.level,
+                                            showAnimation = false,
+                                            showVipBadge = false
                                         )
                                     } else {
                                         Image(
