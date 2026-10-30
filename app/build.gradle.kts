@@ -36,9 +36,30 @@ android {
         }
         release {
             signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
             optimization {
-                enable = false
+                enable = true
             }
+        }
+    }
+    splits {
+        abi {
+            isEnable = providers.gradleProperty("splitApk").orNull == "true"
+            if (isEnable) {
+                reset()
+                include("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+            }
+            isUniversalApk = false
+        }
+    }
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
         }
     }
     compileOptions {
