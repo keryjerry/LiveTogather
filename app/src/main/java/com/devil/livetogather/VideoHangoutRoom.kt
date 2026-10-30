@@ -148,7 +148,11 @@ fun VideoHangoutRoomDialog(
     var showCommentInputDialog by remember { mutableStateOf(false) }
     var showInRoomInboxDialog by remember { mutableStateOf(false) }
     var showGiftStoreDialog by remember { mutableStateOf(false) }
+    var giftCenterRecipient by remember { mutableStateOf<RoomMember?>(null) }
+    var pendingIntimacyRequest by remember { mutableStateOf<Map<String, Any>?>(null) }
     var showLuxuryStoreDialog by remember { mutableStateOf(false) }
+    var intimacyStoreItemToSend by remember { mutableStateOf<StoreItem?>(null) }
+    var isSendingIntimacyStoreItem by remember { mutableStateOf(false) }
     var showTrackSelectorDialog by remember { mutableStateOf(false) }
     var showEmojiTray by remember { mutableStateOf(false) }
     var activeGiftEvent by remember { mutableStateOf<GiftEvent?>(null) }
@@ -157,6 +161,23 @@ fun VideoHangoutRoomDialog(
     var showAllViewersDialog by remember { mutableStateOf(false) }
     var pendingVideoInvite by remember { mutableStateOf<Map<String, Any>?>(null) }
     val pendingStageRequests = remember { mutableStateListOf<Map<String, Any>>() }
+
+    DisposableEffect(room.id, currentUser.uid) {
+        if (room.id.isBlank() || currentUser.uid.isBlank()) return@DisposableEffect onDispose {}
+        val listener = db.collection("intimacy_requests")
+            .whereEqualTo("recipientUid", currentUser.uid)
+            .whereEqualTo("status", "pending")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e("VideoHangoutRoom", "Failed to listen for intimacy requests", error)
+                    return@addSnapshotListener
+                }
+                pendingIntimacyRequest = snapshot?.documents
+                    ?.firstOrNull { it.getString("roomId") == room.id }
+                    ?.data
+            }
+        onDispose { listener.remove() }
+    }
 
     // Audio & Mic States
     var isMuted by remember { mutableStateOf(!isUserHost) }
@@ -2036,9 +2057,134 @@ fun VideoHangoutRoomDialog(
                         userOwnedFrames = updated.ownedFrames
                         userDiamonds = updated.diamonds
                     },
+                    onSendIntimacyItem = { intimacyStoreItemToSend = it },
                     onOpenTopUp = {
                         showGiftStoreDialog = true
                     }
+                )
+            }
+
+            intimacyStoreItemToSend?.let { item ->
+                AlertDialog(
+                    onDismissRequest = {
+                        if (!isSendingIntimacyStoreItem) intimacyStoreItemToSend = null
+                    },
+                    title = { Text("Send ${item.name}", color = Color.White) },
+                    text = {
+                        LazyColumn(
+                            modifier = Modifier.heightIn(max = 360.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            val recipients = activeMembers.filter {
+                                it.uid.isNotBlank() && it.uid != currentUser.uid
+                            }
+                            if (recipients.isEmpty()) {
+                                item { Text("No other room members are available.", color = Color.LightGray) }
+                            }
+                            items(recipients) { recipient ->
+                                OutlinedButton(
+                                    onClick = {
+                                        if (isSendingIntimacyStoreItem) return@OutlinedButton
+                                        isSendingIntimacyStoreItem = true
+                                        val requestId = UUID.randomUUID().toString()
+                                        val senderRef = db.collection("users").document(currentUser.uid)
+                                        val requestRef = db.collection("intimacy_requests").document(requestId)
+                                        db.runTransaction { transaction ->
+                                            val sender = transaction.get(senderRef)
+                                            if (!sender.exists()) {
+                                                throw IllegalStateException("Sender profile is unavailable.")
+                                            }
+                                            val balance = sender.getLong("diamonds") ?: 0L
+                                            if (balance < item.diamondPrice) return@runTransaction null
+                                            val newBalance = balance - item.diamondPrice
+                                            transaction.update(
+                                                senderRef,
+                                                mapOf(
+                                                    "diamonds" to newBalance,
+                                                    "diamondsSpentCount" to FieldValue.increment(1),
+                                                    "wealthXp" to FieldValue.increment(item.diamondPrice * 10L)
+                                                )
+                                            )
+                                            val bondType = when {
+                                                item.id.contains("bestie", true) -> "bestie"
+                                                item.id.contains("soulmate", true) -> "soulmate"
+                                                item.id.contains("eternal", true) -> "eternal"
+                                                item.id.contains("cyber", true) -> "cyber"
+                                                else -> "couple"
+                                            }
+                                            transaction.set(
+                                                requestRef,
+                                                mapOf(
+                                                    "id" to requestId,
+                                                    "requestType" to "mic_link",
+                                                    "roomId" to room.id,
+                                                    "senderUid" to currentUser.uid,
+                                                    "senderName" to currentUser.name,
+                                                    "senderPhoto" to currentUser.photo,
+                                                    "recipientUid" to recipient.uid,
+                                                    "recipientName" to recipient.name,
+                                                    "recipientPhoto" to recipient.photoUrl,
+                                                    "giftId" to item.id,
+                                                    "giftName" to item.name,
+                                                    "giftEmoji" to item.iconEmoji,
+                                                    "bondType" to bondType,
+                                                    "status" to "pending",
+                                                    "timestamp" to System.currentTimeMillis()
+                                                )
+                                            )
+                                            newBalance
+                                        }.addOnSuccessListener { updatedBalance ->
+                                            isSendingIntimacyStoreItem = false
+                                            if (updatedBalance != null) {
+                                                userDiamonds = updatedBalance
+                                                intimacyStoreItemToSend = null
+                                                Toast.makeText(
+                                                    context,
+                                                    "${item.name} sent to ${recipient.name} for acceptance.",
+                                                    Toast.LENGTH_LONG
+                                                ).show()
+                                            } else {
+                                                Toast.makeText(
+                                                    context,
+                                                    "You need ${item.diamondPrice} diamonds to send this link.",
+                                                    Toast.LENGTH_LONG
+                                                ).show()
+                                            }
+                                        }.addOnFailureListener { error ->
+                                            isSendingIntimacyStoreItem = false
+                                            Log.e("VideoHangoutRoom", "Failed to send intimacy item ${item.id}", error)
+                                            Toast.makeText(
+                                                context,
+                                                "Could not send request: ${error.localizedMessage ?: "Please try again."}",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        }
+                                    },
+                                    enabled = !isSendingIntimacyStoreItem,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("${recipient.name}  •  ${recipient.role}", color = Color.White)
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = { intimacyStoreItemToSend = null },
+                            enabled = !isSendingIntimacyStoreItem
+                        ) { Text("Cancel", color = Color.LightGray) }
+                    },
+                    containerColor = BrandCard,
+                    shape = RoundedCornerShape(18.dp)
+                )
+            }
+
+            if (pendingIntimacyRequest != null) {
+                IntimacyGiftingAcceptanceDialog(
+                    requestData = pendingIntimacyRequest!!,
+                    currentUser = currentUser,
+                    db = db,
+                    onDismiss = { pendingIntimacyRequest = null }
                 )
             }
 
@@ -2049,7 +2195,11 @@ fun VideoHangoutRoomDialog(
                     ownedFrames = userOwnedFrames,
                     currentUser = currentUser,
                     roomId = room.id,
-                    onDismiss = { showGiftStoreDialog = false },
+                    fixedGiftRecipient = giftCenterRecipient,
+                    onDismiss = {
+                        showGiftStoreDialog = false
+                        giftCenterRecipient = null
+                    },
                     onDiamondsRecharged = { added ->
                         val newTotal = userDiamonds + added
                         db.collection("users").document(currentUser.uid).update("diamonds", newTotal)
@@ -2080,7 +2230,7 @@ fun VideoHangoutRoomDialog(
                         db.collection("users").document(currentUser.uid).update("activeFrame", target)
                         activeUserFrame = target
                     },
-                    onSendGift = { giftItem ->
+                    onSendGift = { giftItem, selectedRecipientUid, selectedRecipientName ->
                         if (userDiamonds >= giftItem.cost) {
                             val newDiamonds = userDiamonds - giftItem.cost
                             val xpEarned = giftItem.cost * 10L
@@ -2120,6 +2270,50 @@ fun VideoHangoutRoomDialog(
                                 }
                             }
 
+                            if (giftItem.id.contains("intimacy", true) ||
+                                giftItem.id.contains("ring", true) ||
+                                giftItem.id.contains("proposal", true) ||
+                                giftItem.id.contains("couple", true) ||
+                                giftItem.id.contains("bestie", true) ||
+                                giftItem.id.contains("necklace", true)
+                            ) {
+                                val recipientUid = selectedRecipientUid.ifBlank { targetHostId }
+                                if (recipientUid.isNotBlank() && recipientUid != currentUser.uid) {
+                                    val recipient = activeMembers.firstOrNull { it.uid == recipientUid }
+                                    val requestId = UUID.randomUUID().toString()
+                                    val request = mapOf<String, Any?>(
+                                        "id" to requestId,
+                                        "requestType" to "mic_link",
+                                        "roomId" to room.id,
+                                        "senderUid" to currentUser.uid,
+                                        "senderName" to currentUser.name,
+                                        "senderPhoto" to currentUser.photo,
+                                        "recipientUid" to recipientUid,
+                                        "recipientName" to selectedRecipientName.ifBlank { recipient?.name ?: room.hostName },
+                                        "recipientPhoto" to (
+                                            recipient?.photoUrl
+                                                ?: allProfiles.firstOrNull { it.uid == recipientUid }?.photo.orEmpty()
+                                            ),
+                                        "giftId" to giftItem.id,
+                                        "giftName" to giftItem.name,
+                                        "giftEmoji" to giftItem.emoji,
+                                        "bondType" to when {
+                                            giftItem.id.contains("bestie", true) -> "bestie"
+                                            giftItem.id.contains("soulmate", true) -> "soulmate"
+                                            giftItem.id.contains("eternal", true) -> "eternal"
+                                            else -> "couple"
+                                        },
+                                        "status" to "pending",
+                                        "timestamp" to System.currentTimeMillis()
+                                    )
+                                    db.collection("intimacy_requests").document(requestId).set(request)
+                                        .addOnFailureListener { error ->
+                                            Log.e("VideoHangoutRoom", "Failed to send intimacy request", error)
+                                            Toast.makeText(context, "Gift sent, but intimacy request failed: ${error.localizedMessage ?: "Please try again."}", Toast.LENGTH_LONG).show()
+                                        }
+                                }
+                            }
+
                             // If PK Battle is active, update Blue score
                             if (room.isPkActive) {
                                 val updatedScore = room.pkHost1Score + giftItem.cost
@@ -2148,7 +2342,9 @@ fun VideoHangoutRoomDialog(
                                 giftEmoji = giftItem.emoji,
                                 cost = giftItem.cost,
                                 animationType = giftItem.animationType,
-                                timestamp = System.currentTimeMillis()
+                                timestamp = System.currentTimeMillis(),
+                                targetUserId = selectedRecipientUid,
+                                targetUserName = selectedRecipientName.ifBlank { "All Mics" }
                             )
                             db.collection("rooms").document(room.id).collection("gift_events")
                                 .document(event.id).set(event)
@@ -2169,6 +2365,7 @@ fun VideoHangoutRoomDialog(
                                 .document(giftComment.id).set(giftComment)
 
                             showGiftStoreDialog = false
+                            giftCenterRecipient = null
                             Toast.makeText(context, "ðŸŽ Sent ${giftItem.name}!", Toast.LENGTH_SHORT).show()
                         } else {
                             Toast.makeText(context, "âš ï¸ Insufficient Diamonds! Needed: %,d ðŸ’Ž".format(giftItem.cost), Toast.LENGTH_SHORT).show()
@@ -2413,6 +2610,11 @@ fun VideoHangoutRoomDialog(
                     roomId = room.id,
                     db = db,
                     onDismiss = { selectedMemberForProfile = null },
+                    onOpenGiftCenter = { target ->
+                        selectedMemberForProfile = null
+                        giftCenterRecipient = target
+                        showGiftStoreDialog = true
+                    },
                     onLeaveRoom = {
                         selectedMemberForProfile = null
                         onDismiss()

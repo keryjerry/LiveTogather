@@ -52,7 +52,8 @@ fun LuxuryStoreDialog(
     roomId: String = "",
     onDismiss: () -> Unit,
     onOpenTopUp: () -> Unit = {},
-    onProfileUpdated: (UserProfile) -> Unit = {}
+    onProfileUpdated: (UserProfile) -> Unit = {},
+    onSendIntimacyItem: ((StoreItem) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -394,6 +395,7 @@ fun LuxuryStoreDialog(
                             currentUser = currentUser,
                             isPurchasing = isPurchasing,
                             onPreviewVideo = { previewVideoItem = it },
+                            onSendIntimacyItem = onSendIntimacyItem,
                             onEquipToggle = { targetItem ->
                                 if (isPurchasing) return@StoreItemCard
                                 isPurchasing = true
@@ -589,21 +591,26 @@ fun StoreItemCard(
     isPurchasing: Boolean,
     onPreviewVideo: (StoreItem) -> Unit = {},
     onEquipToggle: (StoreItem) -> Unit = {},
+    onSendIntimacyItem: ((StoreItem) -> Unit)? = null,
     onPurchase: (StoreItem) -> Unit
 ) {
     val now = System.currentTimeMillis()
-    val expiry = if (item.category == "mic_effect") currentUser.micEffectExpiries[item.id] ?: 0L else currentUser.frameExpiries[item.id] ?: 0L
+    val isMicEffect = item.category == "mic_effect"
+    val isAvatarFrame = item.category == "avatar_frame"
+    val isEquippable = isMicEffect || isAvatarFrame
+    val isIntimacySendable = item.category == "ring" || item.category == "mic_link" || item.isIntimacyBondOnly
+    val expiry = if (isMicEffect) currentUser.micEffectExpiries[item.id] ?: 0L else currentUser.frameExpiries[item.id] ?: 0L
     val isExpired = expiry > 0L && now > expiry
-    val isOwned = (!isExpired) && (if (item.category == "mic_effect") {
+    val isOwned = isEquippable && !isExpired && (if (isMicEffect) {
         currentUser.ownedMicEffects.contains(item.id) || currentUser.activeMicEffect == item.id
     } else {
         currentUser.ownedFrames.contains(item.id) || currentUser.activeFrame == item.id
     })
-    val isEquipped = if (item.category == "mic_effect") {
+    val isEquipped = if (isMicEffect) {
         currentUser.activeMicEffect == item.id
-    } else {
+    } else if (isAvatarFrame) {
         currentUser.activeFrame == item.id
-    }
+    } else false
     val hasVideo = item.videoRes != 0
 
     Surface(
@@ -889,16 +896,18 @@ fun StoreItemCard(
                         )
                     }
                 }
-                item.isIntimacyBondOnly -> {
+                isIntimacySendable -> {
                     Surface(
                         color = Color(0xFFE040FB),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable(enabled = !isPurchasing) { onPurchase(item) }
+                            .clickable(enabled = !isPurchasing && onSendIntimacyItem != null) {
+                                onSendIntimacyItem?.invoke(item)
+                            }
                     ) {
                         Text(
-                            text = "Intimacy Bond",
+                            text = if (onSendIntimacyItem != null) "Send" else "Send in a live room",
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Black,
                             color = Color.White,
@@ -1089,10 +1098,12 @@ fun InventoryBackpackDialog(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 val ownedItems = remember(currentUser.ownedFrames, currentUser.ownedMicEffects, currentUser.activeMicEffect) {
-                    LuxuryStoreCatalog.allItems.filter { 
-                        currentUser.ownedFrames.contains(it.id) || 
-                        currentUser.ownedMicEffects.contains(it.id) || 
-                        currentUser.activeMicEffect == it.id 
+                    LuxuryStoreCatalog.allItems.filter { item ->
+                        when (item.category) {
+                            "avatar_frame" -> currentUser.ownedFrames.contains(item.id) || currentUser.activeFrame == item.id
+                            "mic_effect" -> currentUser.ownedMicEffects.contains(item.id) || currentUser.activeMicEffect == item.id
+                            else -> false
+                        }
                     }
                 }
 

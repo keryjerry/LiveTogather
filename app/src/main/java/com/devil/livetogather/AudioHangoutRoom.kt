@@ -2574,6 +2574,7 @@ fun RoomMemberProfileSheet(
     roomAdminUserIds: List<String> = emptyList(),
     onToggleAdmin: ((RoomMember) -> Unit)? = null,
     onInviteToVideo: ((RoomMember) -> Unit)? = null,
+    onOpenGiftCenter: ((RoomMember) -> Unit)? = null,
     showRoomActions: Boolean = true
 ) {
     val context = LocalContext.current
@@ -3253,7 +3254,13 @@ fun RoomMemberProfileSheet(
 
                 if (!isSelf) {
                     Button(
-                        onClick = { showProfileGiftPicker = true },
+                        onClick = {
+                            if (onOpenGiftCenter != null) {
+                                onOpenGiftCenter(member)
+                            } else {
+                                showProfileGiftPicker = true
+                            }
+                        },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB300)),
                         shape = RoundedCornerShape(50),
                         modifier = Modifier.fillMaxWidth().height(38.dp)
@@ -5116,6 +5123,7 @@ fun AudioHangoutRoomDialog(
     var showFollowCelebrationDialog by remember { mutableStateOf(false) }
     var hostFollowerCount by remember { mutableStateOf(0) }
     var selectedMemberForSheet by remember { mutableStateOf<RoomMember?>(null) }
+    var giftCenterRecipient by remember { mutableStateOf<RoomMember?>(null) }
     var selectedMemberForRequest by remember { mutableStateOf<RoomMember?>(null) }
     var entranceNotificationUser by remember { mutableStateOf<String?>(null) }
     val knownMemberIds = remember { mutableStateListOf<String>() }
@@ -5164,6 +5172,8 @@ fun AudioHangoutRoomDialog(
     var showGuestLimitExpiredDialog by remember { mutableStateOf(false) }
     var showGiftStoreDialog by remember { mutableStateOf(false) }
     var showLuxuryStoreDialog by remember { mutableStateOf(false) }
+    var intimacyStoreItemToSend by remember { mutableStateOf<StoreItem?>(null) }
+    var isSendingIntimacyStoreItem by remember { mutableStateOf(false) }
     var activeGiftEvent by remember { mutableStateOf<GiftEvent?>(null) }
 
     // Real-time listener for current user diamonds and active frame
@@ -5292,14 +5302,7 @@ fun AudioHangoutRoomDialog(
                     val seatedUids = micSeats.map { it.uid }.filter { it.isNotBlank() }
                     for (bond in bonds) {
                         if (seatedUids.contains(bond.user1Id) && seatedUids.contains(bond.user2Id)) {
-                            val design = when (bond.bondType.lowercase()) {
-                                "soulmate" -> "mic_link_ruby_crown"
-                                "bestie" -> "mic_link_twin_besties"
-                                "eternal" -> "mic_link_emerald_infinity"
-                                "cyber" -> "mic_link_cyberpunk_reactor"
-                                else -> bond.activeMicLinkId.ifBlank { "mic_link_ruby_crown" }
-                            }
-                            activeMicLinkDesignId = design
+                            activeMicLinkDesignId = bond.activeMicLinkId.ifBlank { "mic_link_ruby_crown" }
                             break
                         }
                     }
@@ -7575,6 +7578,11 @@ fun AudioHangoutRoomDialog(
                     }
                 },
                 onDismiss = { selectedMemberForSheet = null },
+                onOpenGiftCenter = { target ->
+                    selectedMemberForSheet = null
+                    giftCenterRecipient = target
+                    showGiftStoreDialog = true
+                },
                 onLeaveRoom = {
                     selectedMemberForSheet = null
                     onDismiss()
@@ -8067,9 +8075,110 @@ fun AudioHangoutRoomDialog(
                     userOwnedMicEffects = updated.ownedMicEffects
                     userDiamonds = updated.diamonds
                 },
+                onSendIntimacyItem = { item -> intimacyStoreItemToSend = item },
                 onOpenTopUp = {
                     showGiftStoreDialog = true
                 }
+            )
+        }
+
+        if (intimacyStoreItemToSend != null) {
+            val item = intimacyStoreItemToSend!!
+            AlertDialog(
+                onDismissRequest = {
+                    if (!isSendingIntimacyStoreItem) intimacyStoreItemToSend = null
+                },
+                title = { Text("Send ${item.name}", color = Color.White) },
+                text = {
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 360.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        val recipients = activeMembers.filter { it.uid.isNotBlank() && it.uid != currentUser.uid }
+                        if (recipients.isEmpty()) {
+                            item { Text("No other room members are available.", color = Color.LightGray) }
+                        }
+                        items(recipients) { recipient ->
+                            OutlinedButton(
+                                onClick = {
+                                    if (isSendingIntimacyStoreItem) return@OutlinedButton
+                                    isSendingIntimacyStoreItem = true
+                                    val requestId = UUID.randomUUID().toString()
+                                    val senderRef = db.collection("users").document(currentUser.uid)
+                                    val requestRef = db.collection("intimacy_requests").document(requestId)
+                                    db.runTransaction { transaction ->
+                                        val sender = transaction.get(senderRef)
+                                        if (!sender.exists()) throw IllegalStateException("Sender profile is unavailable.")
+                                        val balance = sender.getLong("diamonds") ?: 0L
+                                        if (balance < item.diamondPrice) return@runTransaction null
+                                        val newBalance = balance - item.diamondPrice
+                                        transaction.update(
+                                            senderRef,
+                                            mapOf(
+                                                "diamonds" to newBalance,
+                                                "diamondsSpentCount" to FieldValue.increment(1),
+                                                "wealthXp" to FieldValue.increment(item.diamondPrice * 10L)
+                                            )
+                                        )
+                                        val bondType = when {
+                                            item.id.contains("bestie", true) -> "bestie"
+                                            item.id.contains("soulmate", true) -> "soulmate"
+                                            item.id.contains("eternal", true) -> "eternal"
+                                            item.id.contains("cyber", true) -> "cyber"
+                                            else -> "couple"
+                                        }
+                                        transaction.set(
+                                            requestRef,
+                                            mapOf(
+                                                "id" to requestId,
+                                                "requestType" to "mic_link",
+                                                "roomId" to room.id,
+                                                "senderUid" to currentUser.uid,
+                                                "senderName" to currentUser.name,
+                                                "senderPhoto" to currentUser.photo,
+                                                "recipientUid" to recipient.uid,
+                                                "recipientName" to recipient.name,
+                                                "recipientPhoto" to recipient.photoUrl,
+                                                "giftId" to item.id,
+                                                "giftName" to item.name,
+                                                "giftEmoji" to item.iconEmoji,
+                                                "bondType" to bondType,
+                                                "status" to "pending",
+                                                "timestamp" to System.currentTimeMillis()
+                                            )
+                                        )
+                                        newBalance
+                                    }.addOnSuccessListener { updatedBalance ->
+                                        isSendingIntimacyStoreItem = false
+                                        if (updatedBalance != null) {
+                                            userDiamonds = updatedBalance
+                                            intimacyStoreItemToSend = null
+                                            Toast.makeText(context, "${item.name} sent to ${recipient.name} for acceptance.", Toast.LENGTH_LONG).show()
+                                        } else {
+                                            Toast.makeText(context, "You need ${item.diamondPrice} diamonds to send this link.", Toast.LENGTH_LONG).show()
+                                        }
+                                    }.addOnFailureListener { error ->
+                                        isSendingIntimacyStoreItem = false
+                                        Log.e("AudioHangoutRoom", "Failed to send intimacy item ${item.id}", error)
+                                        Toast.makeText(context, "Could not send request: ${error.localizedMessage ?: "Please try again."}", Toast.LENGTH_LONG).show()
+                                    }
+                                },
+                                enabled = !isSendingIntimacyStoreItem,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("${recipient.name}  •  ${recipient.role}", color = Color.White)
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = { intimacyStoreItemToSend = null },
+                        enabled = !isSendingIntimacyStoreItem
+                    ) { Text("Cancel", color = Color.LightGray) }
+                },
+                containerColor = BrandCard,
+                shape = RoundedCornerShape(18.dp)
             )
         }
 
@@ -8095,7 +8204,11 @@ fun AudioHangoutRoomDialog(
                 ownedFrames = userOwnedFrames,
                 currentUser = currentUser,
                 roomId = room.id,
-                onDismiss = { showGiftStoreDialog = false },
+                fixedGiftRecipient = giftCenterRecipient,
+                onDismiss = {
+                    showGiftStoreDialog = false
+                    giftCenterRecipient = null
+                },
                 onDiamondsRecharged = { addedDiamonds ->
                     val newTotal = userDiamonds + addedDiamonds
                     db.collection("users").document(currentUser.uid).update("diamonds", newTotal)
@@ -8190,7 +8303,7 @@ fun AudioHangoutRoomDialog(
                         isPurchaseAlert = false
                     )
                 },
-                onSendGift = { giftItem ->
+                onSendGift = { giftItem, selectedRecipientUid, selectedRecipientName ->
                     if (userDiamonds >= giftItem.cost) {
                         val newDiamonds = userDiamonds - giftItem.cost
                         val xpEarned = giftItem.cost * 10L
@@ -8206,7 +8319,9 @@ fun AudioHangoutRoomDialog(
                         userDiamonds = newDiamonds
 
                         // Also award Charm XP and Host Commission Earnings to the room host in real-time
-                        val recipientHostId = targetHostId.ifBlank { room.hostUid.ifBlank { room.hostId } }
+                        val recipientHostId = selectedRecipientUid.ifBlank {
+                            targetHostId.ifBlank { room.hostUid.ifBlank { room.hostId } }
+                        }
                         if (recipientHostId.isNotBlank()) {
                             db.collection("users").document(recipientHostId).get().addOnSuccessListener { hostSnap ->
                                 val curCharmXp = hostSnap.getLong("charmXp") ?: 0L
@@ -8259,7 +8374,18 @@ fun AudioHangoutRoomDialog(
                         // Real-Time Intimacy/Bestie Gifting Proposal Trigger
                         val isIntimacyGift = giftItem.id.contains("ring", ignoreCase = true) || giftItem.id.contains("intimacy", ignoreCase = true) || giftItem.id.contains("bestie", ignoreCase = true) || giftItem.id.contains("couple", ignoreCase = true) || giftItem.id.contains("proposal", ignoreCase = true) || giftItem.id.contains("necklace", ignoreCase = true)
                         if (isIntimacyGift) {
-                            val targetUid = recipientHostId.ifBlank { targetHostId.ifBlank { room.hostUid.ifBlank { room.hostId } } }
+                            val targetUid = selectedRecipientUid.ifBlank {
+                                recipientHostId.ifBlank { targetHostId.ifBlank { room.hostUid.ifBlank { room.hostId } } }
+                            }
+                            val selectedRecipient = micSeats.firstOrNull { it.uid == targetUid }
+                            val recipientName = if (selectedRecipientUid.isNotBlank()) {
+                                selectedRecipientName.ifBlank { selectedRecipient?.name.orEmpty() }
+                            } else {
+                                room.hostName
+                            }
+                            val recipientPhoto = selectedRecipient?.photo
+                                ?: giftCenterRecipient?.takeIf { it.uid == targetUid }?.photoUrl
+                                ?: room.hostPhotoUrl
                             if (targetUid.isNotBlank() && targetUid != currentUser.uid) {
                                 val reqId = "intimacy_req_${System.currentTimeMillis()}"
                                 val reqData = mapOf(
@@ -8270,8 +8396,8 @@ fun AudioHangoutRoomDialog(
                                     "senderName" to currentUser.name,
                                     "senderPhoto" to currentUser.photo,
                                     "recipientUid" to targetUid,
-                                    "recipientName" to room.hostName,
-                                    "recipientPhoto" to room.hostPhotoUrl,
+                                    "recipientName" to recipientName,
+                                    "recipientPhoto" to recipientPhoto,
                                     "giftId" to giftItem.id,
                                     "giftName" to giftItem.name,
                                     "giftEmoji" to giftItem.emoji,
@@ -8294,7 +8420,9 @@ fun AudioHangoutRoomDialog(
                             giftEmoji = giftItem.emoji,
                             cost = giftItem.cost,
                             animationType = giftItem.animationType,
-                            timestamp = System.currentTimeMillis()
+                            timestamp = System.currentTimeMillis(),
+                            targetUserId = selectedRecipientUid,
+                            targetUserName = selectedRecipientName.ifBlank { "All Mics" }
                         )
                         activeGiftEvent = giftEvent
                         db.collection("rooms").document(room.id)
@@ -8320,6 +8448,7 @@ fun AudioHangoutRoomDialog(
                         }
 
                         showGiftStoreDialog = false
+                        giftCenterRecipient = null
                     } else {
                         Toast.makeText(context, "⚠️ Insufficient Diamonds! Needed: %,d 💎 to send ${giftItem.name} (Available: %,d 💎). Please recharge.".format(giftItem.cost, userDiamonds), Toast.LENGTH_LONG).show()
                     }
@@ -11055,6 +11184,7 @@ fun IntimacyGiftingAcceptanceDialog(
     val senderUid = requestData["senderUid"] as? String ?: ""
     val senderName = requestData["senderName"] as? String ?: "A friend"
     val senderPhoto = requestData["senderPhoto"] as? String ?: ""
+    val giftId = requestData["giftId"] as? String ?: ""
     val giftName = requestData["giftName"] as? String ?: "Intimacy Gift"
     val giftEmoji = requestData["giftEmoji"] as? String ?: "💖"
     val bondType = requestData["bondType"] as? String ?: "couple"
@@ -11143,10 +11273,11 @@ fun IntimacyGiftingAcceptanceDialog(
                             if (isSubmitting || reqId.isBlank() || senderUid.isBlank() || currentUser.uid.isBlank()) return@Button
                             isSubmitting = true
                             val bondId = listOf(senderUid, currentUser.uid).sorted().joinToString("_")
-                            val activeMicLink = when (bondType.lowercase()) {
-                                "bestie" -> "mic_link_twin_besties"
-                                "soulmate" -> "mic_link_celestial_wings"
-                                "eternal" -> "mic_link_emerald_infinity"
+                            val activeMicLink = when {
+                                giftId in LuxuryStoreCatalog.micLinks.map { it.id } -> giftId
+                                bondType.equals("bestie", ignoreCase = true) -> "mic_link_twin_besties"
+                                bondType.equals("soulmate", ignoreCase = true) -> "mic_link_celestial_wings"
+                                bondType.equals("eternal", ignoreCase = true) -> "mic_link_emerald_infinity"
                                 else -> "mic_link_ruby_crown"
                             }
 
@@ -11170,8 +11301,8 @@ fun IntimacyGiftingAcceptanceDialog(
                             val batch = db.batch()
                             batch.set(db.collection("intimacy_bonds").document(bondId), newBond)
                             batch.update(db.collection("intimacy_requests").document(reqId), "status", "accepted")
-                            batch.update(db.collection("users").document(senderUid), mapOf("activeIntimacyBadge" to giftName, "activeMicLinkId" to activeMicLink))
-                            batch.update(db.collection("users").document(currentUser.uid), mapOf("activeIntimacyBadge" to giftName, "activeMicLinkId" to activeMicLink))
+                            batch.update(db.collection("users").document(senderUid), "activeIntimacyBadge", giftName)
+                            batch.update(db.collection("users").document(currentUser.uid), "activeIntimacyBadge", giftName)
 
                             batch.commit().addOnSuccessListener {
                                 Toast.makeText(context, "💖 Intimacy Bond Activated in Real-Time!", Toast.LENGTH_SHORT).show()
@@ -11755,12 +11886,15 @@ fun GiftStoreDialog(
     onDiamondsRecharged: (Long) -> Unit,
     onBuyFrame: (frameId: String, cost: Long) -> Unit,
     onApplyFrame: (frameId: String) -> Unit,
-    onSendGift: (VideoGiftItem) -> Unit,
+    onSendGift: (VideoGiftItem, String, String) -> Unit,
     micSeats: List<MicSeat> = emptyList(),
+    fixedGiftRecipient: RoomMember? = null,
     onSendMicroGift: ((gift: RoomGiftItem, quantity: Int, targetSeatIndex: Int, targetUserName: String, fromBackpack: Boolean) -> Unit)? = null,
     onClaimStarterGifts: (() -> Unit)? = null
 ) {
-    var selectedTab by remember { mutableStateOf(0) } // 0: 3D Gifts, 1: Backpack, 2: VIP Gifts, 3: Diamonds, 4: Frames
+    var selectedTab by remember(fixedGiftRecipient?.uid) {
+        mutableStateOf(if (fixedGiftRecipient != null) 2 else 0)
+    } // 0: 3D Gifts, 1: Backpack, 2: Video Gifts, 3: Diamonds
     var localBackpack by remember(currentUser.backpack) { mutableStateOf(currentUser.backpack) }
     val context = LocalContext.current
 
@@ -11907,8 +12041,9 @@ fun GiftStoreDialog(
                         2 -> VideoGiftsSection(
                             currentDiamonds = currentDiamonds,
                             seatedUsers = micSeats,
-                            onSendGift = { gift ->
-                                onSendGift(gift)
+                            fixedGiftRecipient = fixedGiftRecipient,
+                            onSendGift = { gift, recipientUid, recipientName ->
+                                onSendGift(gift, recipientUid, recipientName)
                                 onDismiss()
                             },
                             onGoToRecharge = { selectedTab = 3 }
@@ -12199,10 +12334,13 @@ private fun DiamondsRechargeSection(
 private fun VideoGiftsSection(
     currentDiamonds: Long,
     seatedUsers: List<MicSeat> = emptyList(),
-    onSendGift: (VideoGiftItem) -> Unit,
+    fixedGiftRecipient: RoomMember? = null,
+    onSendGift: (VideoGiftItem, String, String) -> Unit,
     onGoToRecharge: () -> Unit
 ) {
-    var selectedCategory by remember { mutableStateOf("3d") }
+    var selectedCategory by remember(fixedGiftRecipient?.uid) {
+        mutableStateOf(if (fixedGiftRecipient != null) "intimacy" else "3d")
+    }
     val visibleGifts = remember(selectedCategory) {
         VIDEO_GIFT_CATALOG.filter { it.category == selectedCategory }
     }
@@ -12227,14 +12365,24 @@ private fun VideoGiftsSection(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         // ROW 1: TARGET SELECTOR ("All Mics" vs Specific Seated Users / Co-Hosts)
-        TargetMicSelectorRow(
-            occupiedSeats = occupiedSeats,
-            selectedTargetIndex = selectedTargetSeatIndex,
-            onSelectTarget = { seatIndex, name ->
-                selectedTargetSeatIndex = seatIndex
-                selectedTargetName = name
+        if (fixedGiftRecipient != null) {
+            Row(
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFF1E1528)).padding(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("🎯 Sending to ${fixedGiftRecipient.name}", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
-        )
+        } else {
+            TargetMicSelectorRow(
+                occupiedSeats = occupiedSeats,
+                selectedTargetIndex = selectedTargetSeatIndex,
+                onSelectTarget = { seatIndex, name ->
+                    selectedTargetSeatIndex = seatIndex
+                    selectedTargetName = name
+                }
+            )
+        }
 
         // ROW 2: Balance Header
         Row(
@@ -12327,7 +12475,7 @@ private fun VideoGiftsSection(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Cost: %,d 💎 • To: $selectedTargetName".format(selectedGift.cost),
+                    text = "Cost: %,d 💎 • To: ${fixedGiftRecipient?.name ?: selectedTargetName}".format(selectedGift.cost),
                     color = BrandGold,
                     fontSize = 10.5.sp,
                     fontWeight = FontWeight.SemiBold
@@ -12337,7 +12485,12 @@ private fun VideoGiftsSection(
             Button(
                 onClick = {
                     if (canAfford) {
-                        onSendGift(selectedGift)
+                        val targetSeat = occupiedSeats.firstOrNull { it.seatIndex == selectedTargetSeatIndex }
+                        onSendGift(
+                            selectedGift,
+                            fixedGiftRecipient?.uid ?: targetSeat?.uid.orEmpty(),
+                            fixedGiftRecipient?.name ?: targetSeat?.name ?: selectedTargetName
+                        )
                     } else {
                         onGoToRecharge()
                     }
