@@ -202,7 +202,7 @@ object PaymentAndSupportManager {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
 
-            // Direct App Launch with Seamless Fallback to System UPI Chooser
+            // Named app buttons launch only that app; the generic button opens the chooser.
             if (!packageName.isNullOrBlank()) {
                 val directIntent = Intent(Intent.ACTION_VIEW, upiUri).apply {
                     setPackage(packageName)
@@ -212,52 +212,39 @@ object PaymentAndSupportManager {
                     context.startActivity(directIntent)
                     onOpened()
                     return true
-                } catch (e: Exception) {
-                    android.util.Log.w("UPI", "Direct package $packageName failed, falling back to general UPI intent chooser: ${e.message}")
-                    // Fall back to general ACTION_VIEW chooser below so user can select any installed UPI app
-                }
-            }
-
-            // Safe Chooser Launch: Only launch chooser if system finds compatible apps
-            val pm = context.packageManager
-            val resolveInfo = try {
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                    pm.queryIntentActivities(
-                        intent,
-                        android.content.pm.PackageManager.ResolveInfoFlags.of(0)
-                    )
-                } else {
-                    @Suppress("DEPRECATION")
-                    pm.queryIntentActivities(intent, 0)
-                }
-            } catch (e: Exception) {
-                emptyList()
-            }
-
-            if (resolveInfo.isNotEmpty()) {
-                val chooser = Intent.createChooser(intent, "Pay ₹$cleanAmount via UPI").apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(chooser)
-                onOpened()
-                return true
-            } else {
-                // If no package detected, try direct startActivity with fallback to avoid system error popup
-                try {
-                    context.startActivity(intent)
-                    onOpened()
-                    return true
-                } catch (e: Exception) {
-                    android.util.Log.w("UPI", "No UPI apps installed: ${e.message}")
+                } catch (e: android.content.ActivityNotFoundException) {
+                    android.util.Log.w("UPI", "UPI app $packageName is not available", e)
                     onError("NO_UPI_APP")
                     return false
                 }
             }
+
+            val pm = context.packageManager
+            val resolveInfo = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                pm.queryIntentActivities(
+                    intent,
+                    android.content.pm.PackageManager.ResolveInfoFlags.of(0)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                pm.queryIntentActivities(intent, 0)
+            }
+
+            if (resolveInfo.isEmpty()) {
+                onError("NO_UPI_APP")
+                return false
+            }
+
+            val chooser = Intent.createChooser(intent, "Pay \u20B9$cleanAmount via UPI")
+                .apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+            context.startActivity(chooser)
+            onOpened()
+            return true
         } catch (e: Exception) {
             android.util.Log.e("UPI", "Launch error: ${e.message}", e)
             onError(e.localizedMessage ?: "NO_UPI_APP")
-            return false
         }
+        return false
     }
 
     /**
