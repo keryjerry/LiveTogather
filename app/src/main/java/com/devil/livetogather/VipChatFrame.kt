@@ -1084,6 +1084,33 @@ fun VipMiniCardFrame(
         return
     }
 
+    if (!isFounder) {
+        val headerFrameRes = getVipHeaderFrameDrawable(vipLevel)
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+            shape = RoundedCornerShape(24.dp),
+            modifier = modifier.fillMaxWidth()
+        ) {
+            Box(modifier = Modifier.fillMaxWidth()) {
+                if (headerFrameRes != 0) {
+                    Image(
+                        painter = painterResource(id = headerFrameRes),
+                        contentDescription = "VIP $vipLevel profile header frame",
+                        contentScale = ContentScale.FillBounds,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(750f / 480f)
+                            .align(Alignment.TopCenter)
+                    )
+                }
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    content()
+                }
+            }
+        }
+        return
+    }
+
     val infiniteTransition = rememberInfiniteTransition(label = "MiniCardGlow")
     val sweepAngle by infiniteTransition.animateFloat(
         initialValue = 0f,

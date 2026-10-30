@@ -11017,7 +11017,8 @@ fun MicSeatView(
                     avatarSize = 48.dp,
                     isSpeaking = isSpeaking,
                     vipLevel = seatVipLvl,
-                    showAnimation = false,
+                    showAnimation = true,
+                    showAuraAnimation = false,
                     showVipBadge = false,
                     showMicEffect = seatMicEffectId.isNotBlank() && isSpeaking,
                     micEffectId = seatMicEffectId

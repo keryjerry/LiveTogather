@@ -70,6 +70,7 @@ fun FlowingAvatarFrame(
     isSpeaking: Boolean = false,
     vipLevel: Int = 0,
     showAnimation: Boolean = true,
+    showAuraAnimation: Boolean = true,
     showVipBadge: Boolean = true,
     showMicEffect: Boolean = false,
     micEffectId: String = "",
@@ -223,7 +224,7 @@ fun FlowingAvatarFrame(
             }
 
             // Flowing Rotating Aura Ring (Living motion graphics shining behind frame)
-            if (isAnimated && frameId.isNotBlank()) {
+            if (isAnimated && showAuraAnimation && frameId.isNotBlank()) {
                 Box(
                     modifier = Modifier
                         .size(targetAvatarSize + 7.dp)
@@ -292,8 +293,8 @@ fun FlowingAvatarFrame(
                         .fillMaxSize()
                         .graphicsLayer(
                             alpha = 1.0f,
-                            translationY = if (isVipSuiteFrame) 0f else wingLift,
-                            rotationZ = if (isVipSuiteFrame) 0f else wingSkew * 0.4f,
+                            translationY = wingLift,
+                            rotationZ = wingSkew * 0.4f,
                             scaleX = if (isVipSuiteFrame) 1f else pulseScale * 1.08f,
                             scaleY = if (isVipSuiteFrame) 1f else pulseScale * 1.08f
                         ),

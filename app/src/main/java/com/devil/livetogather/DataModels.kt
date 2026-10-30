@@ -2705,6 +2705,16 @@ fun getAvatarFrameDrawable(frameId: String): Int {
     }
 }
 
+fun getVipHeaderFrameDrawable(vipLevel: Int): Int {
+    return when (vipLevel) {
+        1 -> R.drawable.vip1_header_frame
+        2 -> R.drawable.vip2_header_frame
+        3 -> R.drawable.vip3_header_frame
+        4 -> R.drawable.vip4_header_frame
+        else -> 0
+    }
+}
+
 fun getAvatarFrameItem(frameId: String): AvatarFrameItem? {
     val resolvedId = when (frameId) {
         "frame_vip1_archangel" -> "vip_suite_frame_1"

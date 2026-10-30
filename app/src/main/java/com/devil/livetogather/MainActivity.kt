@@ -4578,13 +4578,7 @@ fun ProfileScreenContent(
                     4 -> R.drawable.vip4_cover_master
                     else -> 0
                 }
-                val vipHeaderRes = when (vipLvl) {
-                    1 -> R.drawable.vip1_header_arch_master
-                    2 -> R.drawable.vip2_header_arch_master
-                    3 -> R.drawable.vip3_header_arch_master
-                    4 -> R.drawable.vip4_header_arch_master
-                    else -> 0
-                }
+                val vipHeaderRes = getVipHeaderFrameDrawable(vipLvl)
                 Surface(
                     color = Color(0xFF0F0B18),
                     shape = RoundedCornerShape(24.dp),
