@@ -4542,85 +4542,106 @@ fun ProfileScreenContent(
                                     .padding(horizontal = 14.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                // User Name in Radiant Gold
+                                // User Name, Gender/Age, ID & Intimacy/Love Zone Box
                                 Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(
-                                        text = name,
-                                        color = if (vipLvl > 0) Color(0xFFFFD700) else Color.White,
-                                        fontSize = 19.sp,
-                                        fontWeight = FontWeight.Black
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    if (isVoiceVerified) {
-                                        Surface(
-                                            color = Color(0xFFFEF3C7),
-                                            shape = RoundedCornerShape(8.dp),
-                                            border = BorderStroke(1.dp, Color(0xFFF59E0B)),
-                                            shadowElevation = 1.dp
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
-                                                verticalAlignment = Alignment.CenterVertically
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = name,
+                                                color = if (vipLvl > 0) Color(0xFFFFD700) else Color.White,
+                                                fontSize = 18.sp,
+                                                fontWeight = FontWeight.Black
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Surface(
+                                                color = if (gender.contains("woman", ignoreCase = true) || gender.contains("female", ignoreCase = true)) Color(0xFFFCE7F3) else Color(0xFFE0F2FE),
+                                                shape = RoundedCornerShape(12.dp)
                                             ) {
-                                                Text("🛡️", fontSize = 10.sp)
-                                                Spacer(modifier = Modifier.width(2.dp))
                                                 Text(
-                                                    text = "Verified",
-                                                    fontSize = 9.sp,
-                                                    fontWeight = FontWeight.Black,
-                                                    color = Color(0xFFB45309)
+                                                    text = "${if (gender.contains("woman", ignoreCase = true)) "♀" else "♂"} $age",
+                                                    color = if (gender.contains("woman", ignoreCase = true)) Color(0xFFDB2777) else Color(0xFF0284C7),
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                                 )
                                             }
                                         }
+
+                                        Spacer(modifier = Modifier.height(4.dp))
+
+                                        // 8-digit User ID Chip with Click-to-Copy
+                                        val displayProfileUserId = remember(currentUser.userId, currentUser.uid) {
+                                            val uidVal = currentUser.uid.ifBlank { currentUserId }
+                                            if (currentUser.userId.isNotBlank() && currentUser.userId.length == 8 && currentUser.userId.all { it.isDigit() }) {
+                                                currentUser.userId
+                                            } else {
+                                                (10000000 + kotlin.math.abs(uidVal.hashCode()) % 90000000).toString()
+                                            }
+                                        }
+
+                                        Surface(
+                                            color = Color(0xFF1E1728).copy(alpha = 0.85f),
+                                            shape = RoundedCornerShape(8.dp),
+                                            border = BorderStroke(0.8.dp, Color(0xFF4C3666)),
+                                            modifier = Modifier.clickable {
+                                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                                val clip = android.content.ClipData.newPlainText("User ID", displayProfileUserId)
+                                                clipboard.setPrimaryClip(clip)
+                                                Toast.makeText(context, "User ID $displayProfileUserId copied! 📋", Toast.LENGTH_SHORT).show()
+                                            }
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text("ID: $displayProfileUserId", color = Color.White.copy(alpha = 0.85f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = Color(0xFFFFD700), modifier = Modifier.size(11.dp))
+                                            }
+                                        }
                                     }
-                                    Spacer(modifier = Modifier.width(6.dp))
+
+                                    // Intimacy & Love Zone Card (Matching Visual Mockup)
                                     Surface(
-                                        color = if (gender.contains("woman", ignoreCase = true) || gender.contains("female", ignoreCase = true)) Color(0xFFFCE7F3) else Color(0xFFE0F2FE),
-                                        shape = RoundedCornerShape(12.dp)
+                                        color = Color(0xFF26183B).copy(alpha = 0.9f),
+                                        shape = RoundedCornerShape(16.dp),
+                                        border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(Color(0xFFFFD700), Color(0xFFFF4081)))),
+                                        shadowElevation = 4.dp,
+                                        modifier = Modifier.clickable { showVipCenterModal = true }
                                     ) {
-                                        Text(
-                                            text = "${if (gender.contains("woman", ignoreCase = true)) "♀" else "♂"} $age",
-                                            color = if (gender.contains("woman", ignoreCase = true)) Color(0xFFDB2777) else Color(0xFF0284C7),
-                                            fontSize = 10.5.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
-                                        )
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(6.dp))
-
-                                // 8-digit User ID Chip with Click-to-Copy
-                                val displayProfileUserId = remember(currentUser.userId, currentUser.uid) {
-                                    val uidVal = currentUser.uid.ifBlank { currentUserId }
-                                    if (currentUser.userId.isNotBlank() && currentUser.userId.length == 8 && currentUser.userId.all { it.isDigit() }) {
-                                        currentUser.userId
-                                    } else {
-                                        (10000000 + kotlin.math.abs(uidVal.hashCode()) % 90000000).toString()
-                                    }
-                                }
-
-                                Surface(
-                                    color = Color(0xFF1E1728).copy(alpha = 0.85f),
-                                    shape = RoundedCornerShape(8.dp),
-                                    border = BorderStroke(0.8.dp, Color(0xFF4C3666)),
-                                    modifier = Modifier.clickable {
-                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                        val clip = android.content.ClipData.newPlainText("User ID", displayProfileUserId)
-                                        clipboard.setPrimaryClip(clip)
-                                        Toast.makeText(context, "User ID $displayProfileUserId copied! 📋", Toast.LENGTH_SHORT).show()
-                                    }
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text("ID: $displayProfileUserId", color = Color.White.copy(alpha = 0.85f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = Color(0xFFFFD700), modifier = Modifier.size(11.dp))
+                                        Column(
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            Text(
+                                                text = "Intimacy & Love Zone",
+                                                color = Color.White.copy(alpha = 0.85f),
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Spacer(modifier = Modifier.height(3.dp))
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text("💎 💕 💍 💍", fontSize = 11.sp)
+                                            }
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Surface(
+                                                color = Color(0xFFFF4081).copy(alpha = 0.25f),
+                                                shape = RoundedCornerShape(50),
+                                                border = BorderStroke(0.8.dp, Color(0xFFFF4081))
+                                            ) {
+                                                Text(
+                                                    text = "Acceptance Notification",
+                                                    color = Color.White,
+                                                    fontSize = 8.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
                                     }
                                 }
 
