@@ -2583,6 +2583,7 @@ fun RoomMemberProfileSheet(
     val isSelf = member.uid == currentUser.uid
     val isCurrentAdmin = isHost || (currentUser.uid in roomAdminUserIds)
     var showReportDialog by remember { mutableStateOf(false) }
+    var showFullProfileDialog by remember(member.uid) { mutableStateOf(false) }
 
     var isFollowingMember by remember { mutableStateOf(false) }
     var memberFollowerCount by remember { mutableStateOf(userProfile?.followerCount ?: 0) }
@@ -2899,6 +2900,15 @@ fun RoomMemberProfileSheet(
                             }
                         }
                     }
+                }
+
+                OutlinedButton(
+                    onClick = { showFullProfileDialog = true },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.75f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = BrandGold)
+                ) {
+                    Text("View Full Profile", fontWeight = FontWeight.Bold)
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -3718,6 +3728,96 @@ fun RoomMemberProfileSheet(
                 shape = RoundedCornerShape(18.dp)
             )
         }
+
+        if (showFullProfileDialog) {
+            UserFullProfileDialog(
+                profile = userProfile ?: UserProfile(
+                    uid = member.uid,
+                    userId = member.userId,
+                    name = member.name,
+                    photo = member.photoUrl
+                ),
+                viewer = currentUser,
+                onDismiss = { showFullProfileDialog = false }
+            )
+        }
+    }
+}
+
+@Composable
+private fun UserFullProfileDialog(profile: UserProfile, viewer: UserProfile, onDismiss: () -> Unit) {
+    val isSelf = profile.uid == viewer.uid
+    val isViewerAdmin = viewer.isOfficialAdmin(
+        com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.email
+    )
+    val canSeeEmail = isSelf || isViewerAdmin || profile.emailPrivacy == "public"
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(modifier = Modifier.fillMaxSize(), color = BrandDark) {
+            Column(
+                modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Full Profile", color = BrandGold, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Close profile", tint = Color.White)
+                    }
+                }
+                AsyncImage(
+                    model = profile.photo.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                    contentDescription = "${profile.name} profile photo",
+                    modifier = Modifier.size(112.dp).clip(CircleShape),
+                    contentScale = ContentScale.Crop
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(profile.name, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    listOf(profile.age.toString(), profile.gender).filter { it.isNotBlank() }.joinToString(" • "),
+                    color = Color.LightGray,
+                    fontSize = 13.sp
+                )
+                Spacer(modifier = Modifier.height(18.dp))
+                FullProfileInfoRow("Location", profile.getDisplayLocation(viewer))
+                if (profile.bio.isNotBlank()) FullProfileInfoRow("About", profile.bio)
+                if (profile.profession.isNotBlank()) FullProfileInfoRow("Profession", profile.profession)
+                if (profile.education.isNotBlank()) FullProfileInfoRow("Education", profile.education)
+                if (profile.interests.isNotBlank()) FullProfileInfoRow("Interests", profile.interests)
+                if (profile.hobbies.isNotBlank()) FullProfileInfoRow("Hobbies", profile.hobbies)
+                if (profile.languages.isNotBlank()) FullProfileInfoRow("Languages", profile.languages)
+                if (profile.zodiac.isNotBlank()) FullProfileInfoRow("Zodiac", profile.zodiac)
+                FullProfileInfoRow("Followers", profile.followerCount.toString())
+                if (profile.email.isNotBlank()) {
+                    FullProfileInfoRow(
+                        "Email",
+                        if (canSeeEmail) profile.email else "Hidden by privacy settings"
+                    )
+                }
+                Spacer(modifier = Modifier.height(20.dp))
+                Button(onClick = onDismiss, colors = ButtonDefaults.buttonColors(containerColor = BrandCoral)) {
+                    Text("Close", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FullProfileInfoRow(label: String, value: String) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)
+            .background(BrandCard, RoundedCornerShape(12.dp)).padding(12.dp)
+    ) {
+        Text(label, color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(3.dp))
+        Text(value, color = Color.White, fontSize = 13.sp)
     }
 }
 
@@ -11967,9 +12067,19 @@ private fun VideoGiftsSection(
     onSendGift: (VideoGiftItem) -> Unit,
     onGoToRecharge: () -> Unit
 ) {
-    var selectedGift by remember { mutableStateOf(VIDEO_GIFT_CATALOG[0]) }
+    var selectedCategory by remember { mutableStateOf("3d") }
+    val visibleGifts = remember(selectedCategory) {
+        VIDEO_GIFT_CATALOG.filter { it.category == selectedCategory }
+    }
+    var selectedGift by remember { mutableStateOf(VIDEO_GIFT_CATALOG.first { it.category == "3d" }) }
     var selectedTargetSeatIndex by remember { mutableIntStateOf(-1) } // -1 = All Mics
     var selectedTargetName by remember { mutableStateOf("All Mics") }
+
+    LaunchedEffect(selectedCategory) {
+        if (selectedGift.category != selectedCategory) {
+            selectedGift = visibleGifts.firstOrNull() ?: VIDEO_GIFT_CATALOG.first()
+        }
+    }
 
     val occupiedSeats = remember(seatedUsers) {
         seatedUsers.filter { it.uid.isNotBlank() }
@@ -12021,6 +12131,23 @@ private fun VideoGiftsSection(
             )
         }
 
+        LazyRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(listOf("3d" to "✨ 3D Gifts", "intimacy" to "💞 Intimacy Gifts")) { (category, label) ->
+                FilterChip(
+                    selected = selectedCategory == category,
+                    onClick = { selectedCategory = category },
+                    label = { Text(label, fontSize = 11.sp) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = BrandGold,
+                        selectedLabelColor = BrandDark
+                    )
+                )
+            }
+        }
+
         // ROW 3: Compact 3-Column Grid of Video Gifts (with selection highlight!)
         LazyVerticalGrid(
             columns = GridCells.Fixed(3),
@@ -12031,7 +12158,7 @@ private fun VideoGiftsSection(
                 .fillMaxWidth()
                 .weight(1f)
         ) {
-            items(VIDEO_GIFT_CATALOG) { gift ->
+            items(visibleGifts) { gift ->
                 val canBuy = currentDiamonds >= gift.cost
                 val isSelected = selectedGift.id == gift.id
 

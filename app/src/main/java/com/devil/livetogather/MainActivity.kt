@@ -13,6 +13,8 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
+import android.widget.MediaController
+import android.widget.VideoView
 import androidx.core.content.ContextCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
@@ -22,6 +24,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -31,6 +35,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -74,6 +79,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.viewinterop.AndroidView
 import coil.Coil
 import coil.ImageLoader
 import coil.compose.AsyncImage
@@ -1923,6 +1929,23 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                         MomentsScreenContent(
                             moments = moments,
                             currentUserId = currentUserId,
+                            onOpenProfile = { userId ->
+                                if (userId == currentUser.uid || userId == currentUserId) {
+                                    selectedUserProfile = currentUser
+                                } else {
+                                    db.collection("users").document(userId).get()
+                                        .addOnSuccessListener { snapshot ->
+                                            if (snapshot.exists()) {
+                                                selectedUserProfile = parseUserProfileFromDoc(snapshot).copy(uid = snapshot.id)
+                                            } else {
+                                                Toast.makeText(context, "This profile is no longer available.", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                        .addOnFailureListener { error ->
+                                            Toast.makeText(context, "Could not load profile: ${error.localizedMessage}", Toast.LENGTH_LONG).show()
+                                        }
+                                }
+                            },
                             onPostClick = { showPostMomentDialog = true },
                             onLikeMoment = { moment ->
                                 val idx = moments.indexOfFirst { it.id == moment.id }
@@ -2704,7 +2727,25 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                 moment = moment,
                 currentUser = currentUser,
                 db = db,
-                onDismiss = { showCommentsMoment = null }
+                onDismiss = { showCommentsMoment = null },
+                onOpenProfile = { userId ->
+                    showCommentsMoment = null
+                    if (userId == currentUser.uid || userId == currentUserId) {
+                        selectedUserProfile = currentUser
+                    } else {
+                        db.collection("users").document(userId).get()
+                            .addOnSuccessListener { snapshot ->
+                                if (snapshot.exists()) {
+                                    selectedUserProfile = parseUserProfileFromDoc(snapshot).copy(uid = snapshot.id)
+                                } else {
+                                    Toast.makeText(context, "This profile is no longer available.", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                            .addOnFailureListener { error ->
+                                Toast.makeText(context, "Could not load profile: ${error.localizedMessage}", Toast.LENGTH_LONG).show()
+                            }
+                    }
+                }
             )
         }
 
@@ -4054,12 +4095,14 @@ fun ChatsScreenContent(
 fun MomentsScreenContent(
     moments: List<MomentItem>,
     currentUserId: String,
+    onOpenProfile: (String) -> Unit = {},
     onPostClick: () -> Unit,
     onLikeMoment: (MomentItem) -> Unit,
     onCommentMoment: (MomentItem) -> Unit,
     onEditMoment: (MomentItem) -> Unit = {},
     onDeleteMoment: (MomentItem) -> Unit = {}
 ) {
+    var selectedGallery by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -4113,12 +4156,15 @@ fun MomentsScreenContent(
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     AsyncImage(
                                         model = item.userPhoto.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80" },
-                                        contentDescription = null,
-                                        modifier = Modifier.size(34.dp).clip(CircleShape),
+                                        contentDescription = "View ${item.userName}'s profile",
+                                        modifier = Modifier.size(34.dp).clip(CircleShape)
+                                            .clickable { if (item.userId.isNotBlank()) onOpenProfile(item.userId) },
                                         contentScale = ContentScale.Crop
                                     )
                                     Spacer(modifier = Modifier.width(10.dp))
-                                    Column {
+                                    Column(modifier = Modifier.clickable {
+                                        if (item.userId.isNotBlank()) onOpenProfile(item.userId)
+                                    }) {
                                         Text(item.userName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                         Text(formatRelativeTime(item.timestamp), color = Color.Gray, fontSize = 10.sp)
                                     }
@@ -4162,14 +4208,10 @@ fun MomentsScreenContent(
                                 else emptyList()
 
                             if (displayPhotos.size == 1) {
-                                AsyncImage(
-                                    model = displayPhotos.first(),
-                                    contentDescription = null,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(180.dp)
-                                        .clip(RoundedCornerShape(12.dp)),
-                                    contentScale = ContentScale.Crop
+                                MomentMediaThumbnail(
+                                    url = displayPhotos.first(),
+                                    modifier = Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(12.dp)),
+                                    onClick = { selectedGallery = displayPhotos to 0 }
                                 )
                             } else if (displayPhotos.size > 1) {
                                 LazyRow(
@@ -4178,15 +4220,11 @@ fun MomentsScreenContent(
                                         .fillMaxWidth()
                                         .height(180.dp)
                                 ) {
-                                    items(displayPhotos) { photoUrl ->
-                                        AsyncImage(
-                                            model = photoUrl,
-                                            contentDescription = null,
-                                            modifier = Modifier
-                                                .fillParentMaxWidth(0.82f)
-                                                .fillMaxHeight()
-                                                .clip(RoundedCornerShape(12.dp)),
-                                            contentScale = ContentScale.Crop
+                                    itemsIndexed(displayPhotos) { index, mediaUrl ->
+                                        MomentMediaThumbnail(
+                                            url = mediaUrl,
+                                            modifier = Modifier.fillParentMaxWidth(0.82f).fillMaxHeight().clip(RoundedCornerShape(12.dp)),
+                                            onClick = { selectedGallery = displayPhotos to index }
                                         )
                                     }
                                 }
@@ -4230,6 +4268,106 @@ fun MomentsScreenContent(
                     }
                 }
             }
+        }
+    }
+    selectedGallery?.let { (mediaUrls, initialPage) ->
+        MomentGalleryViewer(
+            mediaUrls = mediaUrls,
+            initialPage = initialPage,
+            onDismiss = { selectedGallery = null }
+        )
+    }
+}
+
+private fun isMomentVideo(url: String): Boolean {
+    val path = Uri.parse(url).lastPathSegment.orEmpty().substringBefore('?')
+    return listOf(".mp4", ".mov", ".webm", ".mkv", ".3gp")
+        .any { path.endsWith(it, ignoreCase = true) }
+}
+
+@Composable
+private fun MomentMediaThumbnail(url: String, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
+    val mediaModifier = if (onClick != null) modifier.clickable(onClick = onClick) else modifier
+    Box(modifier = mediaModifier, contentAlignment = Alignment.Center) {
+        if (isMomentVideo(url)) {
+            Box(Modifier.fillMaxSize().background(Color(0xFF17131A)))
+            Icon(Icons.Default.PlayArrow, contentDescription = "Play video", tint = Color.White, modifier = Modifier.size(52.dp))
+            Text(
+                "VIDEO",
+                color = Color.White,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(Alignment.BottomStart).padding(10.dp)
+            )
+        } else {
+            AsyncImage(
+                model = url,
+                contentDescription = "Open moment photo",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        }
+    }
+}
+
+@Composable
+private fun MomentGalleryViewer(mediaUrls: List<String>, initialPage: Int, onDismiss: () -> Unit) {
+    val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { mediaUrls.size })
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+                key = { mediaUrls[it] }
+            ) { page ->
+                val url = mediaUrls[page]
+                if (isMomentVideo(url)) {
+                    if (page == pagerState.currentPage) {
+                        AndroidView(
+                            modifier = Modifier.fillMaxSize(),
+                            factory = { viewContext ->
+                                VideoView(viewContext).apply {
+                                    setVideoURI(Uri.parse(url))
+                                    val controller = MediaController(viewContext)
+                                    controller.setAnchorView(this)
+                                    setMediaController(controller)
+                                    setOnPreparedListener { it.start() }
+                                    setOnCompletionListener { start() }
+                                }
+                            },
+                            onRelease = { it.stopPlayback() }
+                        )
+                    } else {
+                        Box(Modifier.fillMaxSize().background(Color.Black))
+                    }
+                } else {
+                    AsyncImage(
+                        model = url,
+                        contentDescription = "Moment media ${page + 1}",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
+                    )
+                }
+            }
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
+                    .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+            ) {
+                Icon(Icons.Default.Close, contentDescription = "Close gallery", tint = Color.White)
+            }
+            Text(
+                "${pagerState.currentPage + 1} / ${mediaUrls.size}",
+                color = Color.White,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp)
+                    .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(16.dp))
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            )
         }
     }
 }
@@ -8485,7 +8623,7 @@ fun PostMomentDialog(
                         withContext(Dispatchers.Main) {
                             uploadStatusText = "Uploading ${index + 1}/${batch.size}..."
                         }
-                        val uploadedUrl = ImageUploadManager.uploadImage(context, uri, "moments")
+                        val uploadedUrl = ImageUploadManager.uploadMomentMedia(context, uri)
                         if (!uploadedUrl.isNullOrBlank()) {
                             newUrls.add(uploadedUrl)
                         }
@@ -8493,9 +8631,9 @@ fun PostMomentDialog(
                     withContext(Dispatchers.Main) {
                         if (newUrls.isNotEmpty()) {
                             pickedMediaUrls.addAll(newUrls)
-                            Toast.makeText(context, "${newUrls.size} photos ready to share! 📸", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "${newUrls.size} media item(s) ready to share!", Toast.LENGTH_SHORT).show()
                         } else {
-                            Toast.makeText(context, "Photo upload failed. Try another photo.", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Media upload failed. Choose an image or video.", Toast.LENGTH_SHORT).show()
                         }
                     }
                 } catch (e: Throwable) {
@@ -8571,7 +8709,7 @@ fun PostMomentDialog(
                             .background(BrandCardSubtle)
                             .border(1.dp, BrandBorder, RoundedCornerShape(14.dp))
                             .clickable(enabled = !isUploading) {
-                                multiMediaPickerLauncher.launch("image/*")
+                                multiMediaPickerLauncher.launch("*/*")
                             },
                         contentAlignment = Alignment.Center
                     ) {
@@ -8591,7 +8729,7 @@ fun PostMomentDialog(
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = BrandCoral, modifier = Modifier.size(36.dp))
                                 Spacer(modifier = Modifier.height(6.dp))
-                                Text("Select Photos (Multiple supported)", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Text("Select Photos or Videos (up to 6)", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text("Choose from Gallery / Camera", color = Color.Gray, fontSize = 10.sp)
                             }
@@ -8610,12 +8748,7 @@ fun PostMomentDialog(
                                         .clip(RoundedCornerShape(12.dp))
                                         .border(1.dp, BrandBorder, RoundedCornerShape(12.dp))
                                 ) {
-                                    AsyncImage(
-                                        model = url,
-                                        contentDescription = null,
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop
-                                    )
+                                    MomentMediaThumbnail(url, Modifier.fillMaxSize())
                                     Box(
                                         modifier = Modifier
                                             .align(Alignment.TopEnd)
@@ -8642,7 +8775,7 @@ fun PostMomentDialog(
                                             .background(BrandCardSubtle)
                                             .border(1.dp, BrandBorder, RoundedCornerShape(12.dp))
                                             .clickable(enabled = !isUploading) {
-                                                multiMediaPickerLauncher.launch("image/*")
+                                                multiMediaPickerLauncher.launch("*/*")
                                             },
                                         contentAlignment = Alignment.Center
                                     ) {
@@ -8661,7 +8794,7 @@ fun PostMomentDialog(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 CircularProgressIndicator(color = BrandCoral, modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text(uploadStatusText.ifEmpty { "Uploading photos..." }, color = BrandGold, fontSize = 11.sp)
+                                Text(uploadStatusText.ifEmpty { "Uploading media..." }, color = BrandGold, fontSize = 11.sp)
                             }
                         }
                     }
@@ -8735,7 +8868,7 @@ fun EditMomentDialog(
                         withContext(Dispatchers.Main) {
                             uploadStatusText = "Uploading ${index + 1}/${batch.size}..."
                         }
-                        val uploadedUrl = ImageUploadManager.uploadImage(context, uri, "moments")
+                        val uploadedUrl = ImageUploadManager.uploadMomentMedia(context, uri)
                         if (!uploadedUrl.isNullOrBlank()) {
                             newUrls.add(uploadedUrl)
                         }
@@ -8743,9 +8876,9 @@ fun EditMomentDialog(
                     withContext(Dispatchers.Main) {
                         if (newUrls.isNotEmpty()) {
                             pickedMediaUrls.addAll(newUrls)
-                            Toast.makeText(context, "${newUrls.size} photos added! 📸", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "${newUrls.size} media item(s) added!", Toast.LENGTH_SHORT).show()
                         } else {
-                            Toast.makeText(context, "Photo upload failed. Try another photo.", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Media upload failed. Choose an image or video.", Toast.LENGTH_SHORT).show()
                         }
                     }
                 } catch (e: Throwable) {
@@ -8816,12 +8949,7 @@ fun EditMomentDialog(
                                         .clip(RoundedCornerShape(12.dp))
                                         .border(1.dp, BrandBorder, RoundedCornerShape(12.dp))
                                 ) {
-                                    AsyncImage(
-                                        model = url,
-                                        contentDescription = null,
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop
-                                    )
+                                    MomentMediaThumbnail(url, Modifier.fillMaxSize())
                                     Box(
                                         modifier = Modifier
                                             .align(Alignment.TopEnd)
@@ -8848,7 +8976,7 @@ fun EditMomentDialog(
                                             .background(BrandCardSubtle)
                                             .border(1.dp, BrandBorder, RoundedCornerShape(12.dp))
                                             .clickable(enabled = !isUploading) {
-                                                multiMediaPickerLauncher.launch("image/*")
+                                                multiMediaPickerLauncher.launch("*/*")
                                             },
                                         contentAlignment = Alignment.Center
                                     ) {
@@ -8867,7 +8995,7 @@ fun EditMomentDialog(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 CircularProgressIndicator(color = BrandCoral, modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text(uploadStatusText.ifEmpty { "Uploading photos..." }, color = BrandGold, fontSize = 11.sp)
+                                Text(uploadStatusText.ifEmpty { "Uploading media..." }, color = BrandGold, fontSize = 11.sp)
                             }
                         }
                     }
@@ -8880,7 +9008,7 @@ fun EditMomentDialog(
                             .background(BrandCardSubtle)
                             .border(1.dp, BrandBorder, RoundedCornerShape(14.dp))
                             .clickable(enabled = !isUploading) {
-                                multiMediaPickerLauncher.launch("image/*")
+                                multiMediaPickerLauncher.launch("*/*")
                             },
                         contentAlignment = Alignment.Center
                     ) {
@@ -9065,7 +9193,8 @@ fun CommentsDialog(
     moment: MomentItem,
     currentUser: UserProfile,
     db: FirebaseFirestore,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onOpenProfile: (String) -> Unit = {}
 ) {
     val comments = remember { mutableStateListOf<CommentItem>() }
     var newCommentText by remember { mutableStateOf("") }
@@ -9140,11 +9269,14 @@ fun CommentsDialog(
                                 AsyncImage(
                                     model = comment.userPhoto.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80" },
                                     contentDescription = null,
-                                    modifier = Modifier.size(30.dp).clip(CircleShape),
+                                    modifier = Modifier.size(30.dp).clip(CircleShape)
+                                        .clickable { if (comment.userId.isNotBlank()) onOpenProfile(comment.userId) },
                                     contentScale = ContentScale.Crop
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Column {
+                                Column(modifier = Modifier.clickable {
+                                    if (comment.userId.isNotBlank()) onOpenProfile(comment.userId)
+                                }) {
                                     Text(comment.userName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                     Text(comment.text, color = Color.LightGray, fontSize = 12.sp)
                                 }

@@ -1422,7 +1422,8 @@ data class VideoGiftItem(
     val animationType: String,
     val description: String,
     val rawResId: Int = 0,
-    val thumbnailResId: Int = 0
+    val thumbnailResId: Int = 0,
+    val category: String = "3d"
 )
 
 val VIDEO_GIFT_CATALOG = listOf(
@@ -1451,7 +1452,21 @@ val VIDEO_GIFT_CATALOG = listOf(
     // 12. Take You On Heaven Ship (NEW 3D MP4 - 100k Diamond)
     VideoGiftItem("heaven_ship_mp4", "Take You On Heaven Ship", "🛥️", 100000L, "video_mp4", "Billionaire mega yacht cruising with sky fireworks", R.raw.heaven_ship, R.drawable.thumb_heaven_ship),
     // 13. Will Take You On Jet (NEW 3D MP4 - 120k Diamond)
-    VideoGiftItem("royal_jet_mp4", "Will Take You On Jet", "✈️", 120000L, "video_mp4", "Supersonic luxury private jet soaring into sunset", R.raw.royal_jet, R.drawable.thumb_royal_jet)
+    VideoGiftItem("royal_jet_mp4", "Will Take You On Jet", "✈️", 120000L, "video_mp4", "Supersonic luxury private jet soaring into sunset", R.raw.royal_jet, R.drawable.thumb_royal_jet),
+    VideoGiftItem("gift_jeweled_star_mp4", "Celestial Jeweled Star", "⭐", 30000L, "video_mp4", "A radiant jeweled star gliding across a moonlit sky", R.raw.gift_jeweled_star, R.drawable.thumb_gift_jeweled_star),
+    VideoGiftItem("gift_firework_treasure_mp4", "Firework Treasure", "🎁", 40000L, "video_mp4", "A golden gift bursts into a shower of celebratory sparks", R.raw.gift_firework_treasure, R.drawable.thumb_gift_firework_treasure),
+    VideoGiftItem("gift_golden_car_mp4", "Golden Treasure Car", "🏎️", 50000L, "video_mp4", "A glowing golden car surrounded by festive lights", R.raw.gift_golden_car, R.drawable.thumb_gift_golden_car),
+    VideoGiftItem("gift_cyber_arena_mp4", "Cyber Gift Arena", "⚡", 60000L, "video_mp4", "A vivid futuristic arena filled with electric color", R.raw.gift_cyber_arena, R.drawable.thumb_gift_cyber_arena),
+    VideoGiftItem("gift_royal_chest_mp4", "Royal Treasure Chest", "🧰", 75000L, "video_mp4", "A royal chest opens to reveal a dazzling treasure", R.raw.gift_royal_chest, R.drawable.thumb_gift_royal_chest),
+    VideoGiftItem("gift_cosmic_clock_mp4", "Cosmic Timekeeper", "🌌", 90000L, "video_mp4", "A celestial timepiece glowing among the stars", R.raw.gift_cosmic_clock, R.drawable.thumb_gift_cosmic_clock),
+    VideoGiftItem("intimacy_diamond_rain_mp4", "Diamond Rain of Love", "💎", 30000L, "video_mp4", "A cascade of sparkling diamonds for a special connection", R.raw.intimacy_diamond_rain, R.drawable.thumb_intimacy_diamond_rain, "intimacy"),
+    VideoGiftItem("intimacy_soulmate_cloud_mp4", "Cloudborne Soulmates", "☁️", 35000L, "video_mp4", "Two soulmates meet beneath a glowing celestial sky", R.raw.intimacy_soulmate_cloud, R.drawable.thumb_intimacy_soulmate_cloud, "intimacy"),
+    VideoGiftItem("intimacy_sunrise_embrace_mp4", "Sunrise Embrace", "🌅", 40000L, "video_mp4", "A warm sunrise illuminates a romantic embrace", R.raw.intimacy_sunrise_embrace, R.drawable.thumb_intimacy_sunrise_embrace, "intimacy"),
+    VideoGiftItem("intimacy_ice_castle_couple_mp4", "Ice Castle Romance", "❄️", 45000L, "video_mp4", "A couple shares a sparkling moment in a crystal palace", R.raw.intimacy_ice_castle_couple, R.drawable.thumb_intimacy_ice_castle_couple, "intimacy"),
+    VideoGiftItem("intimacy_shadow_proposal_mp4", "Royal Proposal", "💍", 50000L, "video_mp4", "A dramatic royal proposal beneath a castle arch", R.raw.intimacy_shadow_proposal, R.drawable.thumb_intimacy_shadow_proposal, "intimacy"),
+    VideoGiftItem("intimacy_royal_wedding_mp4", "Royal Wedding", "💒", 55000L, "video_mp4", "A romantic royal wedding celebration", R.raw.intimacy_royal_wedding, R.drawable.thumb_intimacy_royal_wedding, "intimacy"),
+    VideoGiftItem("intimacy_couple_vows_mp4", "Together Forever", "💞", 60000L, "video_mp4", "A couple celebrates their vows in a storybook setting", R.raw.intimacy_couple_vows, R.drawable.thumb_intimacy_couple_vows, "intimacy"),
+    VideoGiftItem("intimacy_waterfall_walk_mp4", "Waterfall Getaway", "🌿", 65000L, "video_mp4", "A quiet couple's escape beside a cascading waterfall", R.raw.intimacy_waterfall_walk, R.drawable.thumb_intimacy_waterfall_walk, "intimacy")
 )
 
 data class SwipeRecord(

@@ -6,8 +6,10 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Log
 import com.google.firebase.storage.FirebaseStorage
+import com.google.firebase.storage.StorageMetadata
 import com.google.firebase.storage.StorageReference
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -86,6 +88,28 @@ object ImageUploadManager {
             Log.w(TAG, "Firebase Storage quick upload skipped: ${e.message}")
             null
         } ?: firestoreDataUri
+    }
+
+    suspend fun uploadMomentMedia(context: Context, uri: Uri): String? {
+        val contentType = context.contentResolver.getType(uri) ?: return null
+        if (contentType.startsWith("image/")) {
+            return uploadImage(context, uri, "moments")
+        }
+        if (!contentType.startsWith("video/")) return null
+
+        val extension = when (contentType.substringAfter('/').lowercase()) {
+            "quicktime" -> "mov"
+            "x-matroska" -> "mkv"
+            "webm" -> "webm"
+            else -> "mp4"
+        }
+        val storageRef = FirebaseStorage.getInstance().reference
+            .child("moments/${UUID.randomUUID()}.$extension")
+        storageRef.putFile(
+            uri,
+            StorageMetadata.Builder().setContentType(contentType).build()
+        ).await()
+        return storageRef.downloadUrl.await().toString()
     }
 
     private suspend fun uploadToStorageRef(storageRef: StorageReference, bytes: ByteArray): String? = suspendCoroutine { continuation ->
