@@ -10885,9 +10885,10 @@ fun MicSeatView(
                 FlowingAvatarFrame(
                     photoUrl = seat.photo.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
                     frameId = seatFrameId,
-                    avatarSize = 44.dp,
+                    avatarSize = 48.dp,
                     isSpeaking = isSpeaking,
                     vipLevel = seatVipLvl,
+                    showAnimation = false,
                     showVipBadge = false,
                     showMicEffect = seatMicEffectId.isNotBlank() && isSpeaking,
                     micEffectId = seatMicEffectId
