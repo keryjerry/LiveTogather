@@ -14,18 +14,22 @@ android {
         applicationId = "com.devil.livetogather"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.0.3"
+        versionCode = 5
+        versionName = "1.0.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
         create("release") {
-            storeFile = file(project.findProperty("RELEASE_STORE_FILE")?.toString() ?: "release.jks")
-            storePassword = project.findProperty("RELEASE_STORE_PASSWORD")?.toString() ?: "livetogather123"
-            keyAlias = project.findProperty("RELEASE_KEY_ALIAS")?.toString() ?: "livetogather"
-            keyPassword = project.findProperty("RELEASE_KEY_PASSWORD")?.toString() ?: "livetogather123"
+            storeFile = rootProject.file("app/release.jks")
+            storePassword = providers.gradleProperty("RELEASE_STORE_PASSWORD")
+                .orElse(providers.environmentVariable("RELEASE_STORE_PASSWORD"))
+                .orNull.orEmpty()
+            keyAlias = "livetogather"
+            keyPassword = providers.gradleProperty("RELEASE_KEY_PASSWORD")
+                .orElse(providers.environmentVariable("RELEASE_KEY_PASSWORD"))
+                .orNull.orEmpty()
         }
     }
 
@@ -36,6 +40,8 @@ android {
         }
         release {
             signingConfig = signingConfigs.getByName("release")
+            isDebuggable = false
+            isJniDebuggable = false
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -77,6 +83,7 @@ dependencies {
     implementation("com.google.firebase:firebase-storage-ktx")
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.firebase:firebase-messaging-ktx")
+    implementation("com.google.firebase:firebase-functions-ktx")
 
     // Agora Full SDK (Voice + Video Streaming)
     implementation("io.agora.rtc:full-sdk:4.4.1")

@@ -518,7 +518,7 @@ service cloud.firestore {
       // Gift Events in Room
       match /gift_events/{eventId} {
         allow read: if isAuthenticated();
-        allow create: if isAuthenticated();
+        allow create: if false;
         allow update, delete: if isAdmin();
       }
 

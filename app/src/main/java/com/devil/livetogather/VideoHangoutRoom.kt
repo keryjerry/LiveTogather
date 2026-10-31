@@ -2231,71 +2231,33 @@ fun VideoHangoutRoomDialog(
                         activeUserFrame = target
                     },
                     onSendGift = { giftItem, selectedRecipientUid, selectedRecipientName ->
-                        if (userDiamonds >= giftItem.cost) {
-                            val newDiamonds = userDiamonds - giftItem.cost
-                            val xpEarned = giftItem.cost * 10L
-                            val newWealthXp = currentUser.getEffectiveWealthXp() + xpEarned
-                            val newWealthLevel = LevelBadgeSystem.calculateLevelFromXp(newWealthXp)
-
-                            db.collection("users").document(currentUser.uid).update(
-                                mapOf(
-                                    "diamonds" to newDiamonds,
-                                    "wealthXp" to newWealthXp,
-                                    "wealthLevel" to newWealthLevel
-                                )
-                            )
-                            userDiamonds = newDiamonds
-
-                            val targetHostId = room.hostUid.ifBlank { room.hostId }
-                            if (targetHostId.isNotBlank()) {
-                                db.collection("users").document(targetHostId).get().addOnSuccessListener { hostSnap ->
-                                    val curCharmXp = hostSnap.getLong("charmXp") ?: 0L
-                                    val updatedCharmXp = curCharmXp + xpEarned
-                                    val updatedCharmLvl = LevelBadgeSystem.calculateLevelFromXp(updatedCharmXp)
-                                    val hostMonetized = hostSnap.getBoolean("isHostMonetized") ?: false
-                                    val hostWealth = (hostSnap.getLong("wealthLevel") ?: 1L).toInt()
-                                    val commissionPercent = LevelBadgeSystem.getHostCommissionPercent(hostWealth)
-                                    val giftValueInr = giftItem.cost * 0.01
-
-                                    val updates = mutableMapOf<String, Any>(
-                                        "charmXp" to updatedCharmXp,
-                                        "charmLevel" to updatedCharmLvl
-                                    )
-                                    if (hostMonetized) {
-                                        val curEarnings = hostSnap.getDouble("hostEarningsInr") ?: 0.0
-                                        val commissionEarned = giftValueInr * (commissionPercent / 100.0)
-                                        updates["hostEarningsInr"] = curEarnings + commissionEarned
-                                    }
-                                    db.collection("users").document(targetHostId).update(updates)
-                                }
-                            }
-
-                            if (giftItem.id.contains("intimacy", true) ||
-                                giftItem.id.contains("ring", true) ||
-                                giftItem.id.contains("proposal", true) ||
-                                giftItem.id.contains("couple", true) ||
-                                giftItem.id.contains("bestie", true) ||
-                                giftItem.id.contains("necklace", true)
-                            ) {
-                                val recipientUid = selectedRecipientUid.ifBlank { targetHostId }
-                                if (recipientUid.isNotBlank() && recipientUid != currentUser.uid) {
-                                    val recipient = activeMembers.firstOrNull { it.uid == recipientUid }
+                        val recipientUid = selectedRecipientUid.ifBlank { room.hostUid.ifBlank { room.hostId } }
+                        if (recipientUid.isBlank() || recipientUid == currentUser.uid) {
+                            Toast.makeText(context, "Select a valid gift recipient.", Toast.LENGTH_SHORT).show()
+                        } else {
+                            GiftTransactionService.sendGift(
+                                roomId = room.id,
+                                giftId = giftItem.id,
+                                recipientUids = listOf(recipientUid),
+                                quantity = 1,
+                                fromBackpack = false
+                            ).addOnSuccessListener { result ->
+                                userDiamonds = result.senderDiamonds ?: userDiamonds.toLong()
+                                activeGiftEvent = result.event
+                                if (giftItem.id.contains("intimacy", true) || giftItem.id.contains("ring", true) ||
+                                    giftItem.id.contains("proposal", true) || giftItem.id.contains("couple", true) ||
+                                    giftItem.id.contains("bestie", true) || giftItem.id.contains("necklace", true)) {
                                     val requestId = UUID.randomUUID().toString()
                                     val request = mapOf<String, Any?>(
-                                        "id" to requestId,
-                                        "requestType" to "mic_link",
-                                        "roomId" to room.id,
-                                        "senderUid" to currentUser.uid,
-                                        "senderName" to currentUser.name,
-                                        "senderPhoto" to currentUser.photo,
-                                        "recipientUid" to recipientUid,
-                                        "recipientName" to selectedRecipientName.ifBlank { recipient?.name ?: room.hostName },
+                                        "id" to requestId, "requestType" to "mic_link", "roomId" to room.id,
+                                        "senderUid" to currentUser.uid, "senderName" to currentUser.name,
+                                        "senderPhoto" to currentUser.photo, "recipientUid" to recipientUid,
+                                        "recipientName" to selectedRecipientName.ifBlank { room.hostName },
                                         "recipientPhoto" to (
-                                            recipient?.photoUrl
+                                            activeMembers.firstOrNull { it.uid == recipientUid }?.photoUrl
                                                 ?: allProfiles.firstOrNull { it.uid == recipientUid }?.photo.orEmpty()
                                             ),
-                                        "giftId" to giftItem.id,
-                                        "giftName" to giftItem.name,
+                                        "giftId" to giftItem.id, "giftName" to giftItem.name,
                                         "giftEmoji" to giftItem.emoji,
                                         "bondType" to when {
                                             giftItem.id.contains("bestie", true) -> "bestie"
@@ -2303,72 +2265,49 @@ fun VideoHangoutRoomDialog(
                                             giftItem.id.contains("eternal", true) -> "eternal"
                                             else -> "couple"
                                         },
-                                        "status" to "pending",
-                                        "timestamp" to System.currentTimeMillis()
+                                        "status" to "pending", "timestamp" to System.currentTimeMillis()
                                     )
                                     db.collection("intimacy_requests").document(requestId).set(request)
                                         .addOnFailureListener { error ->
-                                            Log.e("VideoHangoutRoom", "Failed to send intimacy request", error)
-                                            Toast.makeText(context, "Gift sent, but intimacy request failed: ${error.localizedMessage ?: "Please try again."}", Toast.LENGTH_LONG).show()
+                                            Log.e("VideoHangoutRoom", "Failed to send intimacy request.", error)
+                                            Toast.makeText(context, "Gift sent, but intimacy request failed.", Toast.LENGTH_LONG).show()
                                         }
                                 }
-                            }
-
-                            // If PK Battle is active, update Blue score
-                            if (room.isPkActive) {
-                                val updatedScore = room.pkHost1Score + giftItem.cost
-                                db.collection("rooms").document(room.id).update("pkHost1Score", updatedScore)
-
-                                val suppData = mapOf(
-                                    "uid" to currentUser.uid,
-                                    "name" to currentUser.name,
-                                    "photo" to currentUser.photo,
-                                    "points" to giftItem.cost,
-                                    "team" to "blue"
+                                if (room.isPkActive) {
+                                    db.collection("rooms").document(room.id).update(
+                                        "pkHost1Score", com.google.firebase.firestore.FieldValue.increment(giftItem.cost)
+                                    ).addOnFailureListener { error ->
+                                        Log.e("VideoHangoutRoom", "Failed to update PK gift score.", error)
+                                    }
+                                    db.collection("rooms").document(room.id).collection("pk_supporters")
+                                        .document(currentUser.uid).set(
+                                            mapOf(
+                                                "uid" to currentUser.uid,
+                                                "name" to currentUser.name,
+                                                "photo" to currentUser.photo,
+                                                "points" to giftItem.cost,
+                                                "team" to "blue"
+                                            )
+                                        ).addOnFailureListener { error ->
+                                            Log.e("VideoHangoutRoom", "Failed to update PK gift supporter.", error)
+                                        }
+                                }
+                                val comment = LiveRoomComment(
+                                    id = UUID.randomUUID().toString(), roomId = room.id, userId = currentUser.uid,
+                                    userName = currentUser.name, userPhoto = currentUser.photo, tier = "VIP",
+                                    message = "sent ${giftItem.name} (${giftItem.cost} diamonds)",
+                                    timestamp = System.currentTimeMillis()
                                 )
-                                db.collection("rooms").document(room.id).collection("pk_supporters")
-                                    .document(currentUser.uid).set(suppData)
+                                db.collection("rooms").document(room.id).collection("live_comments")
+                                    .document(comment.id).set(comment)
+                                    .addOnFailureListener { error -> Log.e("VideoHangoutRoom", "Failed to publish gift comment.", error) }
+                                showGiftStoreDialog = false
+                                giftCenterRecipient = null
+                                Toast.makeText(context, "Sent ${giftItem.name}.", Toast.LENGTH_SHORT).show()
+                            }.addOnFailureListener { error ->
+                                Log.e("VideoHangoutRoom", "Gift transaction failed.", error)
+                                Toast.makeText(context, error.localizedMessage ?: "Could not send gift.", Toast.LENGTH_LONG).show()
                             }
-
-                            // Broadcast gift event for 3D animation
-                            val event = GiftEvent(
-                                id = UUID.randomUUID().toString(),
-                                roomId = room.id,
-                                senderId = currentUser.uid,
-                                senderName = currentUser.name,
-                                senderPhoto = currentUser.photo,
-                                giftId = giftItem.id,
-                                giftName = giftItem.name,
-                                giftEmoji = giftItem.emoji,
-                                cost = giftItem.cost,
-                                animationType = giftItem.animationType,
-                                timestamp = System.currentTimeMillis(),
-                                targetUserId = selectedRecipientUid,
-                                targetUserName = selectedRecipientName.ifBlank { "All Mics" }
-                            )
-                            db.collection("rooms").document(room.id).collection("gift_events")
-                                .document(event.id).set(event)
-                            activeGiftEvent = event
-
-                            // Broadcast comment
-                            val giftComment = LiveRoomComment(
-                                id = UUID.randomUUID().toString(),
-                                roomId = room.id,
-                                userId = currentUser.uid,
-                                userName = currentUser.name,
-                                userPhoto = currentUser.photo,
-                                tier = "VIP",
-                                message = "sent ${giftItem.name} ðŸŽ (${giftItem.cost} ðŸ’Ž)",
-                                timestamp = System.currentTimeMillis()
-                            )
-                            db.collection("rooms").document(room.id).collection("live_comments")
-                                .document(giftComment.id).set(giftComment)
-
-                            showGiftStoreDialog = false
-                            giftCenterRecipient = null
-                            Toast.makeText(context, "ðŸŽ Sent ${giftItem.name}!", Toast.LENGTH_SHORT).show()
-                        } else {
-                            Toast.makeText(context, "âš ï¸ Insufficient Diamonds! Needed: %,d ðŸ’Ž".format(giftItem.cost), Toast.LENGTH_SHORT).show()
                         }
                     },
                     micSeats = remember(room, activeMembers) {
@@ -2385,78 +2324,45 @@ fun VideoHangoutRoomDialog(
                         list
                     },
                     onSendMicroGift = { giftItem, quantity, targetSeatIndex, targetUserName, fromBackpack ->
-                        val targetUid = room.hostUid.ifBlank { room.hostId }
-                        val totalCost = giftItem.cost * quantity
-                        val canProceed = fromBackpack || userDiamonds >= totalCost
-
-                        if (canProceed) {
-                            if (!fromBackpack) {
-                                val newDiamonds = userDiamonds - totalCost
-                                val xpEarned = totalCost * 10L
-                                val newWealthXp = currentUser.getEffectiveWealthXp() + xpEarned
-                                val newWealthLevel = LevelBadgeSystem.calculateLevelFromXp(newWealthXp)
-                                db.collection("users").document(currentUser.uid).update(
-                                    mapOf(
-                                        "diamonds" to newDiamonds,
-                                        "wealthXp" to newWealthXp,
-                                        "wealthLevel" to newWealthLevel
-                                    )
-                                )
-                                userDiamonds = newDiamonds
-                            } else {
-                                val curBackpack = currentUser.backpack.toMutableMap()
-                                val curCount = curBackpack[giftItem.id] ?: 0
-                                val rem = maxOf(0, curCount - quantity)
-                                if (rem > 0) curBackpack[giftItem.id] = rem else curBackpack.remove(giftItem.id)
-                                db.collection("users").document(currentUser.uid).update("backpack", curBackpack)
+                        val hostUid = room.hostUid.ifBlank { room.hostId }
+                        val recipientUids = if (targetSeatIndex >= 0) {
+                            val seatUid = when (targetSeatIndex) {
+                                0 -> hostUid
+                                1 -> room.pkHost2Uid.ifBlank { activeMembers.firstOrNull { it.role == "co_host" }?.uid.orEmpty() }
+                                else -> ""
                             }
-
-                            // Event broadcast
-                            val event = GiftEvent(
-                                id = UUID.randomUUID().toString(),
-                                roomId = room.id,
-                                senderId = currentUser.uid,
-                                senderName = currentUser.name,
-                                senderPhoto = currentUser.photo,
-                                giftId = giftItem.id,
-                                giftName = giftItem.name,
-                                giftEmoji = giftItem.emoji,
-                                cost = totalCost,
-                                animationType = giftItem.animationType,
-                                timestamp = System.currentTimeMillis(),
-                                targetUserId = targetUid,
-                                targetUserName = targetUserName,
-                                quantity = quantity,
-                                targetMicSeatIndex = targetSeatIndex,
-                                drawableResId = giftItem.drawableResId,
-                                fromBackpack = fromBackpack
-                            )
-                            db.collection("rooms").document(room.id).collection("gift_events")
-                                .document(event.id).set(event)
-                            activeGiftEvent = event
-
-                            // Live comment
-                            val giftComment = LiveRoomComment(
-                                id = UUID.randomUUID().toString(),
-                                roomId = room.id,
-                                userId = currentUser.uid,
-                                userName = currentUser.name,
-                                userPhoto = currentUser.photo,
-                                tier = "VIP",
-                                message = "sent ${giftItem.name} x$quantity ${giftItem.emoji} (${if (fromBackpack) "Backpack" else "$totalCost ðŸ’Ž"})",
-                                timestamp = System.currentTimeMillis()
-                            )
-                            db.collection("rooms").document(room.id).collection("live_comments")
-                                .document(giftComment.id).set(giftComment)
-
-                            if (room.isPkActive) {
-                                db.collection("rooms").document(room.id).update("pkHost1Score", FieldValue.increment(totalCost.toLong()))
-                            }
-
-                            showGiftStoreDialog = false
-                            Toast.makeText(context, "ðŸŽ Sent ${giftItem.name} x$quantity!", Toast.LENGTH_SHORT).show()
+                            seatUid.takeIf { it.isNotBlank() && it != currentUser.uid }?.let(::listOf).orEmpty()
                         } else {
-                            Toast.makeText(context, "âš ï¸ Insufficient Diamonds! Needed: %,d ðŸ’Ž".format(totalCost), Toast.LENGTH_SHORT).show()
+                            (listOf(hostUid) + activeMembers.filter { it.role == "co_host" || it.role == "host" }.map { it.uid })
+                                .filter { it.isNotBlank() && it != currentUser.uid }.distinct()
+                        }
+                        if (recipientUids.isEmpty()) {
+                            Toast.makeText(context, "No eligible gift recipient is seated.", Toast.LENGTH_SHORT).show()
+                        } else {
+                            val totalCost = giftItem.cost * quantity * recipientUids.size
+                            GiftTransactionService.sendGift(
+                                roomId = room.id,
+                                giftId = giftItem.id,
+                                recipientUids = recipientUids,
+                                quantity = quantity,
+                                fromBackpack = fromBackpack,
+                                targetMicSeatIndex = targetSeatIndex
+                            ).addOnSuccessListener { result ->
+                                result.senderDiamonds?.let { userDiamonds = it }
+                                activeGiftEvent = result.event.copy(
+                                    drawableResId = giftItem.drawableResId,
+                                    targetUserName = targetUserName
+                                )
+                                if (room.isPkActive) {
+                                    db.collection("rooms").document(room.id).update(
+                                        "pkHost1Score", com.google.firebase.firestore.FieldValue.increment(totalCost)
+                                    ).addOnFailureListener { error -> Log.e("VideoHangoutRoom", "Failed to update PK gift score.", error) }
+                                }
+                                showGiftStoreDialog = false
+                            }.addOnFailureListener { error ->
+                                Log.e("VideoHangoutRoom", "Micro gift transaction failed.", error)
+                                Toast.makeText(context, error.localizedMessage ?: "Could not send gift.", Toast.LENGTH_LONG).show()
+                            }
                         }
                     },
                     onClaimStarterGifts = {

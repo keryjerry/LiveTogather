@@ -1363,7 +1363,12 @@ data class GiftEvent(
     val quantity: Int = 1,
     val targetMicSeatIndex: Int = -1, // -1 for All Mics, or 0..7 for specific mic seat
     val drawableResId: Int = 0,
-    val fromBackpack: Boolean = false
+    val fromBackpack: Boolean = false,
+    val receiverUserIds: List<String> = emptyList(),
+    val receiverNames: List<String> = emptyList(),
+    val receiverDiamondPayout: Long = 0L,
+    val receiverEarningsInr: Double = 0.0,
+    val receiverRate: Double = 0.0
 )
 
 data class RoomGiftItem(
@@ -1468,6 +1473,12 @@ val VIDEO_GIFT_CATALOG = listOf(
     VideoGiftItem("intimacy_couple_vows_mp4", "Together Forever", "💞", 60000L, "video_mp4", "A couple celebrates their vows in a storybook setting", R.raw.intimacy_couple_vows, R.drawable.thumb_intimacy_couple_vows, "intimacy"),
     VideoGiftItem("intimacy_waterfall_walk_mp4", "Waterfall Getaway", "🌿", 65000L, "video_mp4", "A quiet couple's escape beside a cascading waterfall", R.raw.intimacy_waterfall_walk, R.drawable.thumb_intimacy_waterfall_walk, "intimacy")
 )
+
+fun giftThumbnailResourceId(giftId: String): Int =
+    VIDEO_GIFT_CATALOG.firstOrNull { it.id == giftId }?.thumbnailResId
+        ?.takeIf { it != 0 }
+        ?: ROOM_GIFT_CATALOG.firstOrNull { it.id == giftId }?.drawableResId
+        ?: 0
 
 data class SwipeRecord(
     val fromUserId: String = "",
@@ -1578,7 +1589,11 @@ data class NotificationItem(
     val message: String = "",
     val timestamp: Long = System.currentTimeMillis(),
     val isRead: Boolean = false,
-    val roomId: String = ""
+    val roomId: String = "",
+    val giftId: String = "",
+    val giftName: String = "",
+    val diamondsReceived: Long = 0L,
+    val earningsInr: Double = 0.0
 )
 
 data class RoomMember(

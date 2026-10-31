@@ -819,6 +819,17 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
             currentUserId = authUid
             prefs.edit().putString("user_uid", authUid).apply()
             currentUser = currentUser.copy(uid = authUid)
+            com.google.firebase.messaging.FirebaseMessaging.getInstance().token
+                .addOnSuccessListener { token ->
+                    prefs.edit().putString("fcm_token", token).apply()
+                    db.collection("users").document(authUid).update("fcmToken", token)
+                        .addOnFailureListener { error ->
+                            Log.e("FCMService", "Failed to sync the current FCM token.", error)
+                        }
+                }
+                .addOnFailureListener { error ->
+                    Log.e("FCMService", "Failed to retrieve the current FCM token.", error)
+                }
         }
 
         // Initialize Moments Feed from local cache or seed
@@ -8557,12 +8568,26 @@ fun NotificationsDialog(
                                     modifier = Modifier.padding(10.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    AsyncImage(
-                                        model = notif.senderPhoto.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80" },
-                                        contentDescription = null,
-                                        modifier = Modifier.size(38.dp).clip(CircleShape),
-                                        contentScale = ContentScale.Crop
-                                    )
+                                    val giftThumbnailResId = if (notif.type.equals("GIFT_RECEIVED", ignoreCase = true)) {
+                                        giftThumbnailResourceId(notif.giftId)
+                                    } else {
+                                        0
+                                    }
+                                    if (giftThumbnailResId != 0) {
+                                        Image(
+                                            painter = painterResource(id = giftThumbnailResId),
+                                            contentDescription = notif.giftName,
+                                            modifier = Modifier.size(38.dp).clip(RoundedCornerShape(8.dp)),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    } else {
+                                        AsyncImage(
+                                            model = notif.senderPhoto.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80" },
+                                            contentDescription = null,
+                                            modifier = Modifier.size(38.dp).clip(CircleShape),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    }
                                     Spacer(modifier = Modifier.width(10.dp))
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(notif.title, color = BrandCoral, fontWeight = FontWeight.Bold, fontSize = 13.sp)

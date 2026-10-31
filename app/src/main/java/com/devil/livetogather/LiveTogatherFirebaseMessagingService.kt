@@ -24,15 +24,16 @@ class LiveTogatherFirebaseMessagingService : FirebaseMessagingService() {
 
         val isLive = rawTitle.contains("LIVE", ignoreCase = true) || rawBody.contains("LIVE", ignoreCase = true)
         val isPurchase = rawTitle.contains("Diamond", ignoreCase = true) || rawTitle.contains("Coin", ignoreCase = true)
+        val giftId = data["giftId"].orEmpty()
 
-        // Show loud sound + vibrating pop-up notification even when app is closed / in background
         AppNotificationHelper.showSystemNotification(
             context = applicationContext,
             title = rawTitle,
             message = rawBody,
             roomId = roomId.ifBlank { null },
             isLiveAlert = isLive,
-            isPurchaseAlert = isPurchase
+            isPurchaseAlert = isPurchase,
+            giftId = giftId.ifBlank { null }
         )
     }
 
@@ -44,12 +45,11 @@ class LiveTogatherFirebaseMessagingService : FirebaseMessagingService() {
 
         val uid = prefs.getString("user_uid", "") ?: ""
         if (uid.isNotBlank()) {
-            try {
-                val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
-                db.collection("users").document(uid).update("fcmToken", token)
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to upload new FCM token: " + e.message)
-            }
+            com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                .collection("users").document(uid).update("fcmToken", token)
+                .addOnFailureListener { error ->
+                    Log.e(TAG, "Failed to upload new FCM token.", error)
+                }
         }
     }
 

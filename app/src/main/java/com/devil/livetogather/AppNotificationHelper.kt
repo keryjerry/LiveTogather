@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.os.Build
@@ -76,7 +77,8 @@ object AppNotificationHelper {
         message: String,
         roomId: String? = null,
         isLiveAlert: Boolean = false,
-        isPurchaseAlert: Boolean = false
+        isPurchaseAlert: Boolean = false,
+        giftId: String? = null
     ) {
         ensureChannels(context)
         val channelId = when {
@@ -109,7 +111,7 @@ object AppNotificationHelper {
 
         val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
 
-        val notification = NotificationCompat.Builder(context, channelId)
+        val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(brandedTitle)
             .setContentText(message)
@@ -123,8 +125,22 @@ object AppNotificationHelper {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(pendingIntent)
             .setFullScreenIntent(pendingIntent, false)
-            .build()
 
+        val thumbnailResId = giftId?.let(::giftThumbnailResourceId)
+        if (thumbnailResId != null && thumbnailResId != 0) {
+            val bitmap = BitmapFactory.decodeResource(context.resources, thumbnailResId)
+            if (bitmap != null) {
+                builder.setLargeIcon(bitmap)
+                    .setStyle(
+                        NotificationCompat.BigPictureStyle()
+                            .bigPicture(bitmap)
+                            .bigLargeIcon(bitmap)
+                            .setSummaryText(message)
+                    )
+            }
+        }
+
+        val notification = builder.build()
         nm.notify((System.currentTimeMillis() % 100000).toInt(), notification)
     }
 }

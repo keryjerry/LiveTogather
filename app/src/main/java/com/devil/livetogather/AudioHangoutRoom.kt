@@ -8304,220 +8304,105 @@ fun AudioHangoutRoomDialog(
                     )
                 },
                 onSendGift = { giftItem, selectedRecipientUid, selectedRecipientName ->
-                    if (userDiamonds >= giftItem.cost) {
-                        val newDiamonds = userDiamonds - giftItem.cost
-                        val xpEarned = giftItem.cost * 10L
-                        val newWealthXp = currentUser.getEffectiveWealthXp() + xpEarned
-                        val newWealthLevel = LevelBadgeSystem.calculateLevelFromXp(newWealthXp)
-
-                        val userUpdates = mutableMapOf<String, Any>(
-                            "diamonds" to newDiamonds,
-                            "wealthXp" to newWealthXp,
-                            "wealthLevel" to newWealthLevel
-                        )
-                        db.collection("users").document(currentUser.uid).update(userUpdates)
-                        userDiamonds = newDiamonds
-
-                        // Also award Charm XP and Host Commission Earnings to the room host in real-time
-                        val recipientHostId = selectedRecipientUid.ifBlank {
-                            targetHostId.ifBlank { room.hostUid.ifBlank { room.hostId } }
-                        }
-                        if (recipientHostId.isNotBlank()) {
-                            db.collection("users").document(recipientHostId).get().addOnSuccessListener { hostSnap ->
-                                val curCharmXp = hostSnap.getLong("charmXp") ?: 0L
-                                val updatedCharmXp = curCharmXp + xpEarned
-                                val updatedCharmLvl = LevelBadgeSystem.calculateLevelFromXp(updatedCharmXp)
-
-                                val isHostMonetized = hostSnap.getBoolean("isHostMonetized") ?: hostSnap.getBoolean("profile_is_host_monetized") ?: (hostSnap.getString("role")?.equals("admin", true) == true || hostSnap.getString("name")?.equals("Devil", true) == true)
-
-                                val hostWealthLvl = (hostSnap.getLong("wealthLevel") ?: 1L).toInt()
-                                val commissionPercent = LevelBadgeSystem.getHostCommissionPercent(hostWealthLvl)
-                                // 10,000 diamonds = ₹100 => 1 diamond = ₹0.01
-                                val giftValueInr = giftItem.cost * 0.01
-                                val hostEarningsInr = giftValueInr * (commissionPercent / 100.0)
-
-                                val hostUpdateMap = mutableMapOf<String, Any>(
-                                    "charmXp" to updatedCharmXp,
-                                    "charmLevel" to updatedCharmLvl
-                                )
-                                if (isHostMonetized) {
-                                    hostUpdateMap["earningsInr"] = FieldValue.increment(hostEarningsInr)
-                                    hostUpdateMap["totalEarningsInr"] = FieldValue.increment(hostEarningsInr)
-                                }
-
-                                db.collection("users").document(recipientHostId).update(hostUpdateMap)
-
-                                if (isHostMonetized) {
-                                    // Real-Time Earning Transaction Record
-                                    val txId = UUID.randomUUID().toString()
-                                    val tx = EarningTransaction(
-                                        id = txId,
-                                        type = "GIFT_COMMISSION",
-                                        title = "Gift received: ${giftItem.name} 🎁",
-                                        amountInr = hostEarningsInr,
-                                        diamonds = giftItem.cost,
-                                        senderName = currentUser.name,
-                                        upiId = "",
-                                        status = "CREDITED",
-                                        timestamp = System.currentTimeMillis()
-                                    )
-                                    db.collection("users").document(recipientHostId)
-                                        .collection("earning_transactions").document(txId).set(tx)
-                                }
-                            }
-                        }
-
-                        if (newWealthLevel > currentUser.getEffectiveWealthLevel()) {
-                            Toast.makeText(context, "🎉 LEVEL UP! You reached Wealth Level $newWealthLevel! 👑", Toast.LENGTH_LONG).show()
-                        }
-
-                        // Real-Time Intimacy/Bestie Gifting Proposal Trigger
-                        val isIntimacyGift = giftItem.id.contains("ring", ignoreCase = true) || giftItem.id.contains("intimacy", ignoreCase = true) || giftItem.id.contains("bestie", ignoreCase = true) || giftItem.id.contains("couple", ignoreCase = true) || giftItem.id.contains("proposal", ignoreCase = true) || giftItem.id.contains("necklace", ignoreCase = true)
-                        if (isIntimacyGift) {
-                            val targetUid = selectedRecipientUid.ifBlank {
-                                recipientHostId.ifBlank { targetHostId.ifBlank { room.hostUid.ifBlank { room.hostId } } }
-                            }
-                            val selectedRecipient = micSeats.firstOrNull { it.uid == targetUid }
-                            val recipientName = if (selectedRecipientUid.isNotBlank()) {
-                                selectedRecipientName.ifBlank { selectedRecipient?.name.orEmpty() }
-                            } else {
-                                room.hostName
-                            }
-                            val recipientPhoto = selectedRecipient?.photo
-                                ?: giftCenterRecipient?.takeIf { it.uid == targetUid }?.photoUrl
-                                ?: room.hostPhotoUrl
-                            if (targetUid.isNotBlank() && targetUid != currentUser.uid) {
-                                val reqId = "intimacy_req_${System.currentTimeMillis()}"
-                                val reqData = mapOf(
-                                    "id" to reqId,
-                                    "requestType" to "mic_link",
-                                    "roomId" to room.id,
-                                    "senderUid" to currentUser.uid,
-                                    "senderName" to currentUser.name,
-                                    "senderPhoto" to currentUser.photo,
-                                    "recipientUid" to targetUid,
-                                    "recipientName" to recipientName,
-                                    "recipientPhoto" to recipientPhoto,
-                                    "giftId" to giftItem.id,
-                                    "giftName" to giftItem.name,
-                                    "giftEmoji" to giftItem.emoji,
-                                    "bondType" to (if (giftItem.id.contains("bestie")) "bestie" else if (giftItem.id.contains("soulmate")) "soulmate" else if (giftItem.id.contains("eternal")) "eternal" else "couple"),
-                                    "status" to "pending",
-                                    "timestamp" to System.currentTimeMillis()
-                                )
-                                db.collection("intimacy_requests").document(reqId).set(reqData)
-                            }
-                        }
-
-                        val giftEvent = GiftEvent(
-                            id = UUID.randomUUID().toString(),
-                            roomId = room.id,
-                            senderId = currentUser.uid,
-                            senderName = currentUser.name,
-                            senderPhoto = currentUser.photo,
-                            giftId = giftItem.id,
-                            giftName = giftItem.name,
-                            giftEmoji = giftItem.emoji,
-                            cost = giftItem.cost,
-                            animationType = giftItem.animationType,
-                            timestamp = System.currentTimeMillis(),
-                            targetUserId = selectedRecipientUid,
-                            targetUserName = selectedRecipientName.ifBlank { "All Mics" }
-                        )
-                        activeGiftEvent = giftEvent
-                        db.collection("rooms").document(room.id)
-                        .collection("gift_events").document(giftEvent.id)
-                        .set(giftEvent)
-
-                        // Real-Time PK Battle Score & Supporters Sync
-                        if (room.isPkActive) {
-                            val supportedTeam = selectedPkTeamForBoost
-                            val scoreField = if (supportedTeam == "red") "pkHost2Score" else "pkHost1Score"
-                            db.collection("rooms").document(room.id).update(scoreField, FieldValue.increment(giftItem.cost.toLong()))
-                            db.collection("rooms").document(room.id)
-                                .collection("pk_supporters").document("${supportedTeam}_${currentUser.uid}").set(
-                                    mapOf(
-                                        "team" to supportedTeam,
-                                        "uid" to currentUser.uid,
-                                        "name" to currentUser.name,
-                                        "photo" to currentUser.photo,
-                                        "points" to FieldValue.increment(giftItem.cost.toLong())
-                                    ),
-                                    SetOptions.merge()
-                                )
-                        }
-
-                        showGiftStoreDialog = false
-                        giftCenterRecipient = null
+                    val recipientUid = selectedRecipientUid.ifBlank { targetHostId.ifBlank { room.hostUid.ifBlank { room.hostId } } }
+                    if (recipientUid.isBlank() || recipientUid == currentUser.uid) {
+                        Toast.makeText(context, "Select a valid gift recipient.", Toast.LENGTH_SHORT).show()
                     } else {
-                        Toast.makeText(context, "⚠️ Insufficient Diamonds! Needed: %,d 💎 to send ${giftItem.name} (Available: %,d 💎). Please recharge.".format(giftItem.cost, userDiamonds), Toast.LENGTH_LONG).show()
+                        GiftTransactionService.sendGift(
+                            roomId = room.id,
+                            giftId = giftItem.id,
+                            recipientUids = listOf(recipientUid),
+                            quantity = 1,
+                            fromBackpack = false
+                        ).addOnSuccessListener { result ->
+                            userDiamonds = result.senderDiamonds ?: userDiamonds.toLong()
+                            activeGiftEvent = result.event
+                            val isIntimacyGift = giftItem.id.contains("ring", true) || giftItem.id.contains("intimacy", true) ||
+                                giftItem.id.contains("bestie", true) || giftItem.id.contains("couple", true) ||
+                                giftItem.id.contains("proposal", true) || giftItem.id.contains("necklace", true)
+                            if (isIntimacyGift) {
+                                val requestId = UUID.randomUUID().toString()
+                                val request = mapOf<String, Any?>(
+                                    "id" to requestId, "requestType" to "mic_link", "roomId" to room.id,
+                                    "senderUid" to currentUser.uid, "senderName" to currentUser.name,
+                                    "senderPhoto" to currentUser.photo, "recipientUid" to recipientUid,
+                                    "recipientName" to selectedRecipientName.ifBlank { room.hostName },
+                                    "giftId" to giftItem.id, "giftName" to giftItem.name,
+                                    "giftEmoji" to giftItem.emoji,
+                                    "bondType" to if (giftItem.id.contains("bestie", true)) "bestie" else "couple",
+                                    "status" to "pending", "timestamp" to System.currentTimeMillis()
+                                )
+                                db.collection("intimacy_requests").document(requestId).set(request)
+                                    .addOnFailureListener { error ->
+                                        Log.e("AudioHangoutRoom", "Failed to send intimacy request.", error)
+                                        Toast.makeText(context, "Gift sent, but intimacy request failed.", Toast.LENGTH_LONG).show()
+                                    }
+                            }
+                            if (room.isPkActive) {
+                                val supportedTeam = selectedPkTeamForBoost
+                                val scoreField = if (supportedTeam == "red") "pkHost2Score" else "pkHost1Score"
+                                db.collection("rooms").document(room.id).update(
+                                    scoreField, FieldValue.increment(giftItem.cost)
+                                ).addOnFailureListener { error -> Log.e("AudioHangoutRoom", "Failed to update PK gift score.", error) }
+                                db.collection("rooms").document(room.id)
+                                    .collection("pk_supporters").document("${supportedTeam}_${currentUser.uid}")
+                                    .set(
+                                        mapOf(
+                                            "team" to supportedTeam,
+                                            "uid" to currentUser.uid,
+                                            "name" to currentUser.name,
+                                            "photo" to currentUser.photo,
+                                            "points" to FieldValue.increment(giftItem.cost)
+                                        ),
+                                        SetOptions.merge()
+                                    ).addOnFailureListener { error ->
+                                        Log.e("AudioHangoutRoom", "Failed to update PK gift supporter.", error)
+                                    }
+                            }
+                            showGiftStoreDialog = false
+                            giftCenterRecipient = null
+                        }.addOnFailureListener { error ->
+                            Log.e("AudioHangoutRoom", "Gift transaction failed.", error)
+                            Toast.makeText(context, error.localizedMessage ?: "Could not send gift.", Toast.LENGTH_LONG).show()
+                        }
                     }
                 },
                 micSeats = micSeats,
                 onSendMicroGift = { giftItem, quantity, targetSeatIndex, targetUserName, fromBackpack ->
-                    val occupiedSeats = micSeats.filter { it.uid.isNotBlank() }
-                    val multiplier = if (targetSeatIndex == -1) maxOf(1, occupiedSeats.size) else 1
-                    val totalCost = giftItem.cost * quantity * multiplier
-                    val canProceed = fromBackpack || userDiamonds >= totalCost
-
-                    if (canProceed) {
-                        if (!fromBackpack) {
-                            val newDiamonds = userDiamonds - totalCost
-                            val xpEarned = totalCost * 10L
-                            val newWealthXp = currentUser.getEffectiveWealthXp() + xpEarned
-                            val newWealthLevel = LevelBadgeSystem.calculateLevelFromXp(newWealthXp)
-                            db.collection("users").document(currentUser.uid).update(
-                                mapOf(
-                                    "diamonds" to newDiamonds,
-                                    "wealthXp" to newWealthXp,
-                                    "wealthLevel" to newWealthLevel
-                                )
-                            )
-                            userDiamonds = newDiamonds
-                        } else {
-                            val curBackpack = currentUser.backpack.toMutableMap()
-                            val curCount = curBackpack[giftItem.id] ?: 0
-                            val deductCount = quantity * multiplier
-                            val rem = maxOf(0, curCount - deductCount)
-                            if (rem > 0) curBackpack[giftItem.id] = rem else curBackpack.remove(giftItem.id)
-                            db.collection("users").document(currentUser.uid).update("backpack", curBackpack)
-                        }
-
-                        // Broadcast Gift Event for real-time trajectory & firecracker explosion
-                        val giftEvent = GiftEvent(
-                            id = UUID.randomUUID().toString(),
-                            roomId = room.id,
-                            senderId = currentUser.uid,
-                            senderName = currentUser.name,
-                            senderPhoto = currentUser.photo,
-                            giftId = giftItem.id,
-                            giftName = giftItem.name,
-                            giftEmoji = giftItem.emoji,
-                            cost = totalCost,
-                            animationType = giftItem.animationType,
-                            timestamp = System.currentTimeMillis(),
-                            targetUserId = if (targetSeatIndex >= 0) micSeats.find { it.seatIndex == targetSeatIndex }?.uid ?: "" else "",
-                            targetUserName = targetUserName,
-                            quantity = quantity,
-                            targetMicSeatIndex = targetSeatIndex,
-                            drawableResId = giftItem.drawableResId,
-                            fromBackpack = fromBackpack
-                        )
-                        activeGiftEvent = giftEvent
-                        db.collection("rooms").document(room.id)
-                            .collection("gift_events").document(giftEvent.id)
-                            .set(giftEvent)
-
-                        // Real-Time PK Battle Score sync
-                        if (room.isPkActive) {
-                            val supportedTeam = selectedPkTeamForBoost
-                            val scoreField = if (supportedTeam == "red") "pkHost2Score" else "pkHost1Score"
-                            db.collection("rooms").document(room.id).update(scoreField, FieldValue.increment(totalCost.toLong()))
-                        }
-
-                        showGiftStoreDialog = false
+                    val occupiedSeats = micSeats.filter { it.uid.isNotBlank() && it.uid != currentUser.uid }
+                    val recipientUids = if (targetSeatIndex >= 0) {
+                        micSeats.firstOrNull { it.seatIndex == targetSeatIndex }?.uid?.takeIf { it.isNotBlank() && it != currentUser.uid }?.let(::listOf).orEmpty()
                     } else {
-                        Toast.makeText(context, "⚠️ Insufficient Diamonds! Needed: %,d 💎".format(totalCost), Toast.LENGTH_SHORT).show()
+                        occupiedSeats.map { it.uid }.distinct()
+                    }
+                    if (recipientUids.isEmpty()) {
+                        Toast.makeText(context, "No eligible gift recipient is seated.", Toast.LENGTH_SHORT).show()
+                    } else {
+                        val totalCost = giftItem.cost * quantity * recipientUids.size
+                        GiftTransactionService.sendGift(
+                            roomId = room.id,
+                            giftId = giftItem.id,
+                            recipientUids = recipientUids,
+                            quantity = quantity,
+                            fromBackpack = fromBackpack,
+                            targetMicSeatIndex = targetSeatIndex
+                        ).addOnSuccessListener { result ->
+                            result.senderDiamonds?.let { userDiamonds = it }
+                            activeGiftEvent = result.event.copy(
+                                drawableResId = giftItem.drawableResId,
+                                targetUserName = targetUserName
+                            )
+                            if (room.isPkActive) {
+                                val scoreField = if (selectedPkTeamForBoost == "red") "pkHost2Score" else "pkHost1Score"
+                                db.collection("rooms").document(room.id).update(
+                                    scoreField, FieldValue.increment(totalCost)
+                                ).addOnFailureListener { error -> Log.e("AudioHangoutRoom", "Failed to update PK gift score.", error) }
+                            }
+                            showGiftStoreDialog = false
+                        }.addOnFailureListener { error ->
+                            Log.e("AudioHangoutRoom", "Micro gift transaction failed.", error)
+                            Toast.makeText(context, error.localizedMessage ?: "Could not send gift.", Toast.LENGTH_LONG).show()
+                        }
                     }
                 },
                 onClaimStarterGifts = {
@@ -12693,6 +12578,17 @@ fun FullScreenGiftAnimationOverlay(
 
                     Spacer(modifier = Modifier.width(8.dp))
 
+                    val thumbnailResId = giftThumbnailResourceId(giftEvent.giftId)
+                    if (thumbnailResId != 0) {
+                        Image(
+                            painter = painterResource(id = thumbnailResId),
+                            contentDescription = giftEvent.giftName,
+                            modifier = Modifier.size(30.dp).clip(RoundedCornerShape(6.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+
                     Column {
                         Text(
                             text = "👑 ${giftEvent.senderName} sent ${giftEvent.giftName} ${giftEvent.giftEmoji}!",
@@ -12705,6 +12601,34 @@ fun FullScreenGiftAnimationOverlay(
                             color = Color.White,
                             fontSize = 10.sp
                         )
+                        Text(
+                            text = "To: ${giftEvent.targetUserName}",
+                            color = Color.White.copy(alpha = 0.9f),
+                            fontSize = 10.sp
+                        )
+                        if (giftEvent.receiverDiamondPayout > 0 ||
+                            (!giftEvent.fromBackpack && giftEvent.receiverEarningsInr == 0.0)) {
+                            Text(
+                                text = "${giftEvent.targetUserName} Got ${giftEvent.receiverDiamondPayout} Diamonds",
+                                color = Color(0xFF8CFFB4),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        if (giftEvent.receiverEarningsInr > 0.0) {
+                            Text(
+                                text = "${giftEvent.targetUserName} received ₹%.2f host commission".format(giftEvent.receiverEarningsInr),
+                                color = Color(0xFF8CFFB4),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        } else if (giftEvent.fromBackpack) {
+                            Text(
+                                text = "Backpack gift: no diamond payout",
+                                color = Color.White.copy(alpha = 0.85f),
+                                fontSize = 10.sp
+                            )
+                        }
                     }
                 }
             }
