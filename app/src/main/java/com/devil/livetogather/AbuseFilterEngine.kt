@@ -134,7 +134,66 @@ object AbuseFilterEngine {
         "teri maa ki chut",
         "tharak",
         "tharki",
-        "tu chuda"
+        "tu chuda",
+        // Extended Hinglish shortforms & slang variants
+        "mc",
+        "bc",
+        "bsdk",
+        "bkl",
+        "mkc",
+        "tmkc",
+        "chutya",
+        "chootiye",
+        "chutiye",
+        "chutiyaa",
+        "gandwe",
+        "laude",
+        "lauda",
+        "lawda",
+        "bhenchod",
+        "behenchod",
+        "maderchod",
+        "madarchodh",
+        "chudakkad",
+        "randibaaz",
+        "randwa",
+        "randwe",
+        "fuck",
+        "bitch",
+        "bastard",
+        "asshole",
+        // Devanagari Hindi Abusive Words & Phrases
+        "मादरचोद",
+        "मादर चोद",
+        "बहनचोद",
+        "भेनचोद",
+        "चूतिया",
+        "चुतिया",
+        "चूतिये",
+        "गांड",
+        "गांडू",
+        "भोसड़ी",
+        "भोसड़ीके",
+        "भोसडी",
+        "भोसडीके",
+        "रंडी",
+        "रांड",
+        "लंड",
+        "लौड़ा",
+        "लोड़ा",
+        "लौड़े",
+        "टट्टे",
+        "टट्टी",
+        "कुत्ता",
+        "कुतिया",
+        "कमीने",
+        "हरामी",
+        "हरामजादे",
+        "छक्के",
+        "हिजड़ा",
+        "झांट",
+        "बलात्कार",
+        "भाड़वे"
     )
 
     // Pre-compiled multi-word phrases (sorted by length descending for greedy matching)
@@ -199,11 +258,19 @@ object AbuseFilterEngine {
         }
 
         // 2. Check single words with token boundary matching
-        val tokens = normalized.split(Regex("[\\s.,!?;:()\\-_/\\\\]+"))
+        val tokens = normalized.split(Regex("[\\s.,!?;:()\\-_/\\\\*#@~`|\"'+=\\[\\]{}<>]+"))
         for (token in tokens) {
             val cleanedToken = token.trim()
             if (cleanedToken.isNotEmpty() && singleWords.contains(cleanedToken)) {
                 return Pair(true, cleanedToken)
+            }
+        }
+
+        // 3. Evasion check: strip all dots, spaces, dashes (e.g. "c.h.u.t.i.y.a" or "m c" or "b.s.d.k")
+        val stripped = normalized.replace(Regex("[\\s._\\-*#@]+"), "")
+        for (word in singleWords) {
+            if (word.length >= 3 && stripped.contains(word)) {
+                return Pair(true, word)
             }
         }
 

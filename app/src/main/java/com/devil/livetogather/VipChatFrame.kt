@@ -1662,6 +1662,113 @@ fun VipCenterDialog(
                             }
                         }
 
+                        // VIP Entrance Video Selection Section
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("🎬 VIP Entrance Video", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFFD700))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Surface(
+                                        color = Color(0xFF9333EA).copy(alpha = 0.35f),
+                                        shape = RoundedCornerShape(4.dp),
+                                        border = BorderStroke(0.6.dp, Color(0xFFFFD700))
+                                    ) {
+                                        Text("Auto-Plays On Room Entry", fontSize = 9.sp, color = Color(0xFFE9D5FF), modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            val vipVideos = listOf(
+                                Pair("lamborgini_car", "🏎️ Lamborghini Sovereign"),
+                                Pair("king_entry", "👑 Imperial Royal King"),
+                                Pair("king_lion_entry", "🦁 Golden Lion Sovereign"),
+                                Pair("royal_jet", "✈️ Billionaire Private Jet"),
+                                Pair("eagle_entry", "🦅 Apex Golden Eagle"),
+                                Pair("terminator_entry", "⚡ Cybernetic Mech"),
+                                Pair("golden_super_car", "🏆 24K Gold Supercar"),
+                                Pair("heaven_ship", "⛵ Celestial Galleon")
+                            )
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                vipVideos.forEach { (vidId, vidTitle) ->
+                                    val isCurrentVideo = (vipUser.activeEntranceVideo == vidId) || (currentUser.activeEntranceVideo == vidId)
+                                    Surface(
+                                        color = if (isCurrentVideo) Color(0xFF381B52) else Color(0xFF161124),
+                                        shape = RoundedCornerShape(12.dp),
+                                        border = BorderStroke(
+                                            1.2.dp,
+                                            if (isCurrentVideo) Color(0xFFFFD700) else Color(0xFF2E2442)
+                                        ),
+                                        modifier = Modifier
+                                            .width(135.dp)
+                                            .clickable {
+                                                val newVid = if (isCurrentVideo) "" else vidId
+                                                db.collection("users").document(vipUser.uid).update("activeEntranceVideo", newVid)
+                                                val updated = vipUser.copy(activeEntranceVideo = newVid)
+                                                onProfileUpdated(updated)
+                                                Toast.makeText(
+                                                    context,
+                                                    if (newVid.isNotBlank()) "🎬 Selected $vidTitle: Auto-plays when entering any room!" else "VIP Entrance Video cleared",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(8.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(48.dp)
+                                                    .background(Color(0xFF0F0B18), RoundedCornerShape(8.dp)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(vidTitle.take(2), fontSize = 24.sp)
+                                            }
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Text(
+                                                text = vidTitle.drop(2).trim(),
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Surface(
+                                                color = if (isCurrentVideo) Color(0xFF16A34A) else Color(0xFF28203D),
+                                                shape = RoundedCornerShape(50)
+                                            ) {
+                                                Text(
+                                                    text = if (isCurrentVideo) "✓ ACTIVE" else "SELECT",
+                                                    fontSize = 8.5.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color.White,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         // 2D. "Privileges (17/52)" Grid Section
                         Column(modifier = Modifier.fillMaxWidth()) {
                             Row(

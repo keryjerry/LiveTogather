@@ -1,6 +1,8 @@
 @file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 package com.devil.livetogather
 
+import android.app.Activity
+
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -410,6 +412,8 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
         )
     }
 
+        var showSessionExpiredDialog by remember { mutableStateOf(false) }
+
     // Real-time synchronization of Admin Role, 8-digit User ID, Wallet Coins/Diamonds, and Wealth/Charm/PK Levels
     LaunchedEffect(currentUserId) {
         if (currentUserId.isNotBlank()) {
@@ -419,6 +423,11 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                         val currentAuthEmail = auth.currentUser?.email?.trim() ?: currentUser.email.trim()
                         val isWhitelisted = isUserWhitelistedAdmin(currentAuthEmail, currentUserId)
                         val adminFlag = isWhitelisted
+                        val remoteSessionId = snapshot.getString("activeSessionId") ?: ""
+                        val localSessionId = prefs.getString("activeSessionId", "") ?: ""
+                        if (remoteSessionId.isNotBlank() && localSessionId.isNotBlank() && remoteSessionId != localSessionId) {
+                            showSessionExpiredDialog = true
+                        }
                         val updatedCoins = snapshot.getLong("coins") ?: snapshot.getLong("diamonds") ?: currentUser.coins
                         val updatedDiamonds = snapshot.getLong("diamonds") ?: currentUser.diamonds
                         val firestoreUserId = snapshot.getString("userId") ?: ""
@@ -2356,6 +2365,49 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                 dismissButton = {
                     TextButton(onClick = { showHostTrialOfferDialog = false }) {
                         Text("Cancel", color = Color.Gray)
+                    }
+                }
+            )
+        }
+
+        // Single Device Active Session Verification Dialog
+        if (showSessionExpiredDialog) {
+            AlertDialog(
+                onDismissRequest = { /* Forced termination - cannot dismiss */ },
+                containerColor = Color(0xFF1E1428),
+                shape = RoundedCornerShape(20.dp),
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("🔒", fontSize = 22.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("सत्र समाप्त / Session Logged Out", color = Color(0xFFFF5252), fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
+                },
+                text = {
+                    Text(
+                        "यह अकाउंट किसी अन्य डिवाइस पर लॉगिन हो चुका है। सुरक्षा कारणों से आपको इस डिवाइस से ऑटोमैटिक लॉगआउट किया जा रहा है।",
+                        color = Color.White,
+                        fontSize = 13.5.sp,
+                        lineHeight = 19.sp
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showSessionExpiredDialog = false
+                            try {
+                                auth.signOut()
+                            } catch (e: Exception) {}
+                            prefs.edit().clear().apply()
+                            val intent = Intent(context, LoginActivity::class.java)
+                            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                            context.startActivity(intent)
+                            (context as? Activity)?.finish()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                        shape = RoundedCornerShape(50)
+                    ) {
+                        Text("लॉगिन स्क्रीन पर जाएं", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                 }
             )

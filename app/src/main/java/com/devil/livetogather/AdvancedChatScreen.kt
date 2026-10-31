@@ -1,5 +1,8 @@
 package com.devil.livetogather
 
+import android.app.Activity
+import android.os.Build
+import android.view.WindowManager
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
@@ -88,6 +91,50 @@ fun Advanced1v1ChatScreen(
     var showChatMenu by remember { mutableStateOf(false) }
     var showClearConfirmDialog by remember { mutableStateOf(false) }
     var showReportConfirmDialog by remember { mutableStateOf(false) }
+    var showChatGiftSheet by remember { mutableStateOf(false) }
+    var lastMessageTimestamps by remember { mutableStateOf(listOf<Long>()) }
+    var spamCooldownUntil by remember { mutableStateOf(0L) }
+    var selectedUnlockGift by remember { mutableStateOf<StoreItem?>(null) }
+    var isSubmittingUnlockGift by remember { mutableStateOf(false) }
+
+    // Default strict FLAG_SECURE screenshot blocking with mutual consent toggle
+    val currentActivity = context as? Activity
+    val isScreenshotAllowed = matchItem?.screenshotAllowed == true
+    DisposableEffect(isScreenshotAllowed, currentActivity) {
+        if (currentActivity != null) {
+            if (isScreenshotAllowed) {
+                currentActivity.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            } else {
+                currentActivity.window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+            }
+        }
+        var captureCallback: Activity.ScreenCaptureCallback? = null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && currentActivity != null) {
+            captureCallback = Activity.ScreenCaptureCallback {
+                val sysMsg = ChatMessage(
+                    senderId = "system",
+                    text = "📸 ${currentUser.name} has taken a screenshot of this conversation",
+                    type = "system",
+                    timestamp = System.currentTimeMillis()
+                )
+                db.collection("matches").document(matchId).collection("messages").add(sysMsg)
+            }
+            try {
+                currentActivity.registerScreenCaptureCallback(currentActivity.mainExecutor, captureCallback)
+            } catch (e: Exception) {
+                Log.w("AdvancedChat", "ScreenCaptureCallback error: ${e.message}")
+            }
+        }
+        onDispose {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && currentActivity != null && captureCallback != null) {
+                try {
+                    currentActivity.unregisterScreenCaptureCallback(captureCallback)
+                } catch (e: Exception) {}
+            }
+            currentActivity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
+    }
+
     var showProposalDialog by remember { mutableStateOf(false) }
     var showMediaTrustDialog by remember { mutableStateOf(false) }
     var showPartnerProfile by remember { mutableStateOf(false) }
@@ -107,8 +154,9 @@ fun Advanced1v1ChatScreen(
                 ?: android.webkit.MimeTypeMap.getSingleton()
                     .getMimeTypeFromExtension(android.webkit.MimeTypeMap.getFileExtensionFromUrl(uri.toString()))
                 ?: ""
-            if (!mimeType.startsWith("image/") && !mimeType.startsWith("video/")) {
-                Toast.makeText(context, "Choose an image or video to share.", Toast.LENGTH_SHORT).show()
+            if (!mimeType.startsWith("image/")) {
+                Toast.makeText(context, "Video sharing is disabled in inbox. You can share photos and send luxury gifts.", Toast.LENGTH_SHORT).show()
+                return@rememberLauncherForActivityResult
             } else {
                 coroutineScope.launch {
                     var uploadedStorageRef: StorageReference? = null
@@ -439,6 +487,24 @@ fun Advanced1v1ChatScreen(
                             }
                         )
 
+                        val isPermitted = matchItem?.screenshotAllowed == true
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    if (isPermitted) "🛡️ Screenshots: PERMITTED" else "🔒 Screenshots: BLOCKED (Default)",
+                                    color = if (isPermitted) Color(0xFFFFB300) else Color(0xFF00E676),
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            },
+                            onClick = {
+                                showChatMenu = false
+                                val newAllow = !isPermitted
+                                db.collection("matches").document(matchId).update("screenshotAllowed", newAllow)
+                                Toast.makeText(context, if (newAllow) "Screenshots temporarily permitted" else "Screenshots strictly blocked", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+
                         DropdownMenuItem(
                             text = { Text("🚨 Report User", color = Color(0xFFFF9100), fontSize = 13.sp) },
                             onClick = {
@@ -528,51 +594,135 @@ fun Advanced1v1ChatScreen(
                     }
                 }
 
-                // 5,000 💎 Luxury First Message Unlock Card
+                // Luxury Gift First Message Unlock Section (Min 5,000 Diamonds Gift Required)
                 if (isMutualFollow == true && !isChatUnlocked) {
                     item {
                         Surface(
-                            color = Color(0xFF1E1430),
-                            shape = RoundedCornerShape(16.dp),
-                            border = BorderStroke(1.2.dp, Color(0xFFFFD700)),
+                            color = Color(0xFF1A1226),
+                            shape = RoundedCornerShape(18.dp),
+                            border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(Color(0xFFFFD700), Color(0xFFFF4081)))),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 10.dp)
                         ) {
                             Column(
-                                modifier = Modifier.padding(16.dp),
+                                modifier = Modifier.padding(14.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Text("👑 First Message Exclusive Unlock", color = Color(0xFFFFD700), fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                Spacer(modifier = Modifier.height(6.dp))
+                                Text("👑 Select Gift to Unlock Chat", color = Color(0xFFFFD700), fontWeight = FontWeight.Bold, fontSize = 14.5.sp)
+                                Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    "Send a 5,000 💎 Luxury Introduction Gift to ${partner.name} to unlock permanent direct messaging.",
+                                    "Send a 5,000+ 💎 luxury gift to ${partner.name} to unlock permanent messaging. Gifts below 5,000 💎 cannot unlock.",
                                     color = Color.White.copy(alpha = 0.8f),
                                     fontSize = 11.5.sp,
                                     textAlign = TextAlign.Center
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text("Your Balance: ${currentUser.diamonds} 💎", color = Color(0xFF00E5FF), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                Spacer(modifier = Modifier.height(12.dp))
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                val unlockGiftList = listOf(
+                                    Triple("Rose Proposal", 75000L, "🌹"),
+                                    Triple("Princess Ruby", 65000L, "💎"),
+                                    Triple("Lost Treasure", 90000L, "👑"),
+                                    Triple("Royal Solitaire", 150000L, "💍"),
+                                    Triple("Golden Heart", 5000L, "💖"),
+                                    Triple("Sweet Heart", 2000L, "🤍"),
+                                    Triple("Small Candy", 500L, "🍬")
+                                )
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    unlockGiftList.forEach { (gName, gPrice, gEmoji) ->
+                                        val isEligible = gPrice >= 5000L
+                                        val isSelected = selectedUnlockGift?.name == gName
+                                        Surface(
+                                            color = if (isSelected) Color(0xFF381D4A) else if (isEligible) Color(0xFF221633) else Color(0xFF16131D),
+                                            shape = RoundedCornerShape(12.dp),
+                                            border = BorderStroke(
+                                                1.dp,
+                                                if (isSelected) Color(0xFFFFD700) else if (isEligible) Color(0xFF4A3860) else Color(0xFF26202E)
+                                            ),
+                                            modifier = Modifier
+                                                .width(105.dp)
+                                                .clickable(enabled = isEligible) {
+                                                    selectedUnlockGift = StoreItem(
+                                                        id = gName.lowercase().replace(" ", "_"),
+                                                        name = gName,
+                                                        category = "unlock_gift",
+                                                        subCategory = "Unlock",
+                                                        diamondPrice = gPrice,
+                                                        iconEmoji = gEmoji
+                                                    )
+                                                }
+                                        ) {
+                                            Column(
+                                                modifier = Modifier.padding(8.dp),
+                                                horizontalAlignment = Alignment.CenterHorizontally
+                                            ) {
+                                                Text(gEmoji, fontSize = 24.sp)
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text(gName, color = if (isEligible) Color.White else Color.Gray, fontSize = 10.5.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                                                Text("💎 $gPrice", color = if (isEligible) Color(0xFF00E5FF) else Color.DarkGray, fontSize = 9.5.sp)
+                                                if (!isEligible) {
+                                                    Spacer(modifier = Modifier.height(2.dp))
+                                                    Text("🔒 Min 5k Req", color = Color(0xFFFF5252), fontSize = 8.sp, fontWeight = FontWeight.SemiBold)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(14.dp))
+
+                                val giftToSend = selectedUnlockGift ?: StoreItem(id = "golden_heart", name = "Golden Heart", category = "unlock_gift", subCategory = "Unlock", diamondPrice = 5000L, iconEmoji = "💖")
                                 Button(
                                     onClick = {
+                                        if (isSubmittingUnlockGift) return@Button
+                                        if (currentUser.diamonds < giftToSend.diamondPrice) {
+                                            Toast.makeText(context, "Insufficient diamonds! Need ${giftToSend.diamondPrice} 💎", Toast.LENGTH_LONG).show()
+                                            return@Button
+                                        }
+                                        isSubmittingUnlockGift = true
                                         ChatMediaEngine.unlockFirstMessageWithGift(
                                             db = db,
                                             matchId = matchId,
                                             sender = currentUser,
                                             receiver = partner,
-                                            giftDiamonds = 5000L
+                                            giftDiamonds = giftToSend.diamondPrice
                                         ) { success, msg ->
+                                            isSubmittingUnlockGift = false
                                             Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                                             if (success) {
-                                                onUpdateCurrentUser(currentUser.copy(diamonds = (currentUser.diamonds - 5000L).coerceAtLeast(0L)))
+                                                onUpdateCurrentUser(currentUser.copy(diamonds = (currentUser.diamonds - giftToSend.diamondPrice).coerceAtLeast(0L)))
+                                                // Post gift visual message
+                                                val giftMsg = ChatMessage(
+                                                    senderId = currentUserId,
+                                                    text = "🎁 Sent ${giftToSend.name} & Unlocked Chat!",
+                                                    type = "gift",
+                                                    giftAmount = giftToSend.diamondPrice,
+                                                    mediaUrl = giftToSend.iconEmoji,
+                                                    timestamp = System.currentTimeMillis()
+                                                )
+                                                db.collection("matches").document(matchId).collection("messages").add(giftMsg)
                                             }
                                         }
                                     },
+                                    enabled = !isSubmittingUnlockGift,
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD700)),
-                                    shape = RoundedCornerShape(50)
+                                    shape = RoundedCornerShape(50),
+                                    modifier = Modifier.fillMaxWidth().height(42.dp)
                                 ) {
-                                    Text("🎁 Send 5,000 💎 & Unlock Chat", color = Color.Black, fontWeight = FontWeight.Black, fontSize = 12.sp)
+                                    Text(
+                                        "🎁 Send ${giftToSend.name} (${giftToSend.diamondPrice} 💎) & Unlock Chat",
+                                        color = Color.Black,
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 11.5.sp
+                                    )
                                 }
                             }
                         }
@@ -714,44 +864,52 @@ fun Advanced1v1ChatScreen(
                             }
                         }
 
-                        "video" -> {
+                        "gift" -> {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start
                             ) {
-                                val videoView = remember(msg.mediaUrl) { mutableStateOf<VideoView?>(null) }
-                                Box(
-                                    modifier = Modifier
-                                        .size(width = 240.dp, height = 190.dp)
-                                        .clip(RoundedCornerShape(14.dp))
-                                        .background(Color.Black)
-                                        .border(1.dp, if (isMe) BrandCoral else Color.White.copy(alpha = 0.2f), RoundedCornerShape(14.dp))
+                                Surface(
+                                    color = Color(0xFF221330),
+                                    shape = RoundedCornerShape(16.dp),
+                                    border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(Color(0xFFFFD700), Color(0xFFFF4081)))),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                 ) {
-                                    if (playingVideoUrl == msg.mediaUrl) {
-                                        AndroidView(
-                                            factory = { viewContext ->
-                                                VideoView(viewContext).also { view ->
-                                                    videoView.value = view
-                                                    val controller = MediaController(viewContext)
-                                                    controller.setAnchorView(view)
-                                                    view.setMediaController(controller)
-                                                    view.setVideoURI(Uri.parse(msg.mediaUrl))
-                                                    view.setOnPreparedListener { it.start() }
-                                                }
-                                            },
-                                            modifier = Modifier.fillMaxSize()
-                                        )
-                                        DisposableEffect(msg.mediaUrl) {
-                                            onDispose { videoView.value?.stopPlayback() }
-                                        }
-                                    } else {
-                                        IconButton(
-                                            onClick = { playingVideoUrl = msg.mediaUrl },
-                                            modifier = Modifier.align(Alignment.Center)
-                                        ) {
-                                            Icon(Icons.Default.PlayArrow, contentDescription = "Play video", tint = Color.White, modifier = Modifier.size(52.dp))
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Text(if (msg.mediaUrl.isNotBlank()) msg.mediaUrl else "🎁", fontSize = 30.sp)
+                                        Column {
+                                            Text(msg.text, color = Color(0xFFFFD700), fontWeight = FontWeight.Bold, fontSize = 13.5.sp)
+                                            if (msg.giftAmount > 0) {
+                                                Text("💎 ${msg.giftAmount} Diamonds Value", color = Color(0xFF00E5FF), fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold)
+                                            }
                                         }
                                     }
+                                }
+                            }
+                        }
+
+                        "system" -> {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Surface(
+                                    color = Color.Black.copy(alpha = 0.55f),
+                                    shape = RoundedCornerShape(50),
+                                    border = BorderStroke(0.8.dp, Color(0xFFFF5252).copy(alpha = 0.6f)),
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = msg.text,
+                                        color = Color(0xFFFF8A80),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                                    )
                                 }
                             }
                         }
@@ -1037,7 +1195,7 @@ fun Advanced1v1ChatScreen(
                         IconButton(
                             onClick = {
                                 if (canSendMedia) {
-                                    mediaPickerLauncher.launch("*/*")
+                                    mediaPickerLauncher.launch("image/*")
                                 } else {
                                     showMediaTrustDialog = true
                                 }
@@ -1052,6 +1210,21 @@ fun Advanced1v1ChatScreen(
                                 tint = if (canSendMedia) Color(0xFF00E5FF) else Color.LightGray,
                                 modifier = Modifier.size(20.dp)
                             )
+                        }
+
+                        Spacer(modifier = Modifier.width(6.dp))
+
+                        // In-Chat Luxury & Intimacy Gift Sheet Button (VIP frames excluded, diamond sharing blocked)
+                        IconButton(
+                            onClick = { showChatGiftSheet = true },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(
+                                    Brush.sweepGradient(listOf(Color(0xFFFF1744), Color(0xFFFFB300), Color(0xFFFF4081), Color(0xFFFF1744))),
+                                    CircleShape
+                                )
+                        ) {
+                            Text("🎁", fontSize = 18.sp)
                         }
 
                         Spacer(modifier = Modifier.width(6.dp))
@@ -1310,6 +1483,103 @@ fun Advanced1v1ChatScreen(
                 dismissButton = {
                     TextButton(onClick = { showProposalDialog = false }) {
                         Text("Cancel", color = Color.Gray)
+                    }
+                }
+            )
+        }
+
+
+        // In-Chat Luxury & Intimacy Gifting Sheet (VIP Frames Excluded, Diamond Sharing Blocked)
+        if (showChatGiftSheet) {
+            AlertDialog(
+                onDismissRequest = { showChatGiftSheet = false },
+                containerColor = Color(0xFF181024),
+                shape = RoundedCornerShape(22.dp),
+                title = {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("🎁", fontSize = 20.sp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Send Luxury Gift", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        }
+                        Text("Balance: ${currentUser.diamonds} 💎", color = Color(0xFF00E5FF), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                },
+                text = {
+                    val availableGifts = (LuxuryStoreCatalog.rings + LuxuryStoreCatalog.micLinks)
+                        .filter { it.category != "frame" && it.category != "vip_frame" }
+
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 380.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(availableGifts) { giftItem ->
+                            Surface(
+                                color = Color(0xFF221735),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, Color(0xFFFFD700).copy(alpha = 0.4f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        if (currentUser.diamonds < giftItem.diamondPrice) {
+                                            Toast.makeText(context, "Insufficient balance! Need ${giftItem.diamondPrice} 💎", Toast.LENGTH_SHORT).show()
+                                            return@clickable
+                                        }
+                                        showChatGiftSheet = false
+                                        // Deduct diamonds from sender, credit charm to partner
+                                        val newBalance = currentUser.diamonds - giftItem.diamondPrice
+                                        onUpdateCurrentUser(currentUser.copy(diamonds = newBalance))
+                                        db.collection("users").document(currentUserId)
+                                            .update("diamonds", newBalance)
+                                        db.collection("users").document(partner.uid)
+                                            .update("charmXp", com.google.firebase.firestore.FieldValue.increment(giftItem.diamondPrice * 10L))
+
+                                        // Send gift chat message
+                                        val giftMessage = ChatMessage(
+                                            senderId = currentUserId,
+                                            text = "🎁 Sent ${giftItem.name}",
+                                            type = "gift",
+                                            giftAmount = giftItem.diamondPrice,
+                                            mediaUrl = giftItem.iconEmoji,
+                                            timestamp = System.currentTimeMillis()
+                                        )
+                                        db.collection("matches").document(matchId).collection("messages").add(giftMessage)
+                                        db.collection("matches").document(matchId).update("lastMessage", "🎁 Sent ${giftItem.name}")
+                                        Toast.makeText(context, "Sent ${giftItem.name} to ${partner.name}! 🌟", Toast.LENGTH_SHORT).show()
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                        Text(giftItem.iconEmoji, fontSize = 24.sp)
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Column {
+                                            Text(giftItem.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                                            Text(giftItem.description.take(40) + "…", color = Color.Gray, fontSize = 9.5.sp)
+                                        }
+                                    }
+                                    Surface(
+                                        color = Color(0xFF351F4E),
+                                        shape = RoundedCornerShape(50),
+                                        border = BorderStroke(0.8.dp, Color(0xFFFFD700))
+                                    ) {
+                                        Text("💎 ${giftItem.diamondPrice}", color = Color(0xFF00E5FF), fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showChatGiftSheet = false }) {
+                        Text("Close", color = Color.LightGray)
                     }
                 }
             )

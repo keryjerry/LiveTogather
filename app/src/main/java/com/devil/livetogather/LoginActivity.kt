@@ -448,11 +448,7 @@ class LoginActivity : ComponentActivity() {
                             db.collection("users").document(uid).update("userId", genId)
                         }
                         saveProfileToPrefs(prefs, userObj)
-                        setLoading(false)
-                        val intent = Intent(this, MainActivity::class.java)
-                        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                        startActivity(intent)
-                        finish()
+                        bindSessionAndLaunchMain(uid, prefs)
                         return@addOnSuccessListener
                     }
                 }
@@ -470,11 +466,7 @@ class LoginActivity : ComponentActivity() {
                                 )
                                 saveProfileToPrefs(prefs, restoredProfile)
                                 db.collection("users").document(uid).set(restoredProfile, SetOptions.merge())
-                                setLoading(false)
-                                val intent = Intent(this, MainActivity::class.java)
-                                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                                startActivity(intent)
-                                finish()
+                                bindSessionAndLaunchMain(uid, prefs)
                                 return@addOnSuccessListener
                             }
                             checkByDeviceIdOrFallback(db, uid, email, deviceId, prefs)
@@ -489,11 +481,7 @@ class LoginActivity : ComponentActivity() {
             .addOnFailureListener {
                 val cachedName = prefs.getString("profile_name", "") ?: ""
                 if (cachedName.isNotBlank()) {
-                    setLoading(false)
-                    val intent = Intent(this, MainActivity::class.java)
-                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                    startActivity(intent)
-                    finish()
+                    bindSessionAndLaunchMain(uid, prefs)
                 } else {
                     proceedToProfileSetup()
                 }
@@ -524,11 +512,7 @@ class LoginActivity : ComponentActivity() {
                         }
                         saveProfileToPrefs(prefs, restored)
                         db.collection("users").document(uid).set(restored, SetOptions.merge())
-                        setLoading(false)
-                        val intent = Intent(this, MainActivity::class.java)
-                        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                        startActivity(intent)
-                        finish()
+                        bindSessionAndLaunchMain(uid, prefs)
                         return@addOnSuccessListener
                     }
                     proceedToProfileSetup()
@@ -539,6 +523,17 @@ class LoginActivity : ComponentActivity() {
         } else {
             proceedToProfileSetup()
         }
+    }
+
+    private fun bindSessionAndLaunchMain(uid: String, prefs: SharedPreferences) {
+        val newSessionId = java.util.UUID.randomUUID().toString()
+        prefs.edit().putString("activeSessionId", newSessionId).apply()
+        com.google.firebase.firestore.FirebaseFirestore.getInstance().collection("users").document(uid).update("activeSessionId", newSessionId)
+        setLoading(false)
+        val intent = Intent(this, MainActivity::class.java)
+        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        startActivity(intent)
+        finish()
     }
 
     private fun proceedToProfileSetup() {

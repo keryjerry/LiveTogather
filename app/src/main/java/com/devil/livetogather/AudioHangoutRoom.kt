@@ -5008,7 +5008,7 @@ fun FloatingAudioRoomPIP(
                     }
                 }
 
-                // Center: Theme or Host photo with animated equalizer ring
+                // Center: Theme or Host photo with live animated equalizer
                 Box(
                     modifier = Modifier
                         .size(46.dp)
@@ -5025,6 +5025,34 @@ fun FloatingAudioRoomPIP(
                             .clip(CircleShape),
                         contentScale = ContentScale.Crop
                     )
+                    // Live Equalizer Soundwave overlay so user knows room is active
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.40f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            verticalAlignment = Alignment.Bottom,
+                            modifier = Modifier.height(18.dp)
+                        ) {
+                            val inf = rememberInfiniteTransition(label = "PipEq")
+                            val h1 by inf.animateFloat(initialValue = 4f, targetValue = 16f, animationSpec = infiniteRepeatable(tween(350, easing = LinearEasing), RepeatMode.Reverse), label = "h1")
+                            val h2 by inf.animateFloat(initialValue = 14f, targetValue = 6f, animationSpec = infiniteRepeatable(tween(420, easing = LinearEasing), RepeatMode.Reverse), label = "h2")
+                            val h3 by inf.animateFloat(initialValue = 6f, targetValue = 18f, animationSpec = infiniteRepeatable(tween(310, easing = LinearEasing), RepeatMode.Reverse), label = "h3")
+                            val h4 by inf.animateFloat(initialValue = 15f, targetValue = 5f, animationSpec = infiniteRepeatable(tween(460, easing = LinearEasing), RepeatMode.Reverse), label = "h4")
+                            listOf(h1, h2, h3, h4).forEach { barH ->
+                                Box(
+                                    modifier = Modifier
+                                        .width(3.dp)
+                                        .height(barH.dp)
+                                        .clip(RoundedCornerShape(2.dp))
+                                        .background(Brush.verticalGradient(listOf(BrandGold, BrandCoral)))
+                                )
+                            }
+                        }
+                    }
                 }
 
                 // Room Title
@@ -5493,6 +5521,20 @@ fun AudioHangoutRoomDialog(
             if (newArrivals.isNotEmpty()) {
                 val newest = newArrivals.last()
                 entranceNotificationUser = newest.name
+                val arrivalProfile = allProfiles.find { it.uid == newest.uid || it.name.equals(newest.name, true) }
+                if (arrivalProfile != null && arrivalProfile.activeEntranceVideo.isNotBlank()) {
+                    val vidKey = arrivalProfile.activeEntranceVideo
+                    activeGiftEvent = GiftEvent(
+                        id = UUID.randomUUID().toString(),
+                        giftId = if (vidKey.endsWith("_mp4")) vidKey else "${vidKey}_mp4",
+                        giftName = "👑 VIP Sovereign Arrival",
+                        giftEmoji = "🎬",
+                        senderName = newest.name,
+                        senderPhoto = newest.photoUrl,
+                        animationType = "video_mp4",
+                        cost = 0L
+                    )
+                }
                 knownMemberIds.addAll(newArrivals.map { it.uid })
                 delay(3500)
                 entranceNotificationUser = null
@@ -6293,7 +6335,7 @@ fun AudioHangoutRoomDialog(
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Column(modifier = Modifier.widthIn(max = 110.dp)) {
                                             Text(
-                                                text = hostName,
+                                                text = room.title.ifBlank { room.roomName.ifBlank { "Live Lounge" } },
                                                 color = Color.White,
                                                 fontSize = 11.5.sp,
                                                 fontWeight = FontWeight.Bold,
@@ -6301,7 +6343,7 @@ fun AudioHangoutRoomDialog(
                                                 overflow = TextOverflow.Ellipsis
                                             )
                                             Text(
-                                                text = "👥 $hostFollowerCount • ID: $displayRoomId",
+                                                text = "ID: $displayRoomId • 👥 $hostFollowerCount",
                                                 color = BrandGold,
                                                 fontSize = 8.5.sp,
                                                 fontWeight = FontWeight.SemiBold,
@@ -10340,6 +10382,101 @@ fun toggleLockMicSeat(
 // 2.5 REAL 10-MIC LIVE AUDIO STAGE (CLEAN TRANSPARENT 2 ROWS OF 5)
 // -------------------------------------------------------------
 @Composable
+fun StageFourSeatsRow(
+    baseIndex: Int,
+    seats: List<MicSeat>,
+    currentUserId: String,
+    isHost: Boolean,
+    isLocalTalking: Boolean,
+    linkedUserIds: Set<String>,
+    allProfiles: List<UserProfile>,
+    userActiveFrame: String,
+    userActiveMicEffect: String,
+    activeEmojiReactions: Map<String, String>,
+    categorySeatEmoji: String,
+    categorySeatLabel: String,
+    activeMicLinkId: String,
+    activeSeatedBonds: List<IntimacyBond>,
+    onSeatClick: (MicSeat) -> Unit,
+    onProfileClick: ((MicSeat) -> Unit)?
+) {
+    androidx.compose.foundation.layout.BoxWithConstraints(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        val totalW = maxWidth
+        val centerY = 32.dp
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val centerYPx = with(density) { centerY.toPx() }
+
+        // Exact column X centers in SpaceAround layout for 4 items:
+        val colXs = listOf(0.125f, 0.375f, 0.625f, 0.875f)
+        val colXPxs = colXs.map { with(density) { (totalW * it).toPx() } }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceAround,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            for (col in 0..3) {
+                val seatIdx = baseIndex + col
+                val seat = seats.find { it.seatIndex == seatIdx } ?: MicSeat(
+                    seatIndex = seatIdx,
+                    label = if (seatIdx == 0) "Host 👑" else "Mic ${seatIdx + 1}",
+                    uid = "",
+                    name = "",
+                    photo = "",
+                    role = if (seatIdx == 0) "host" else "speaker"
+                )
+                MicSeatView(
+                    seat = seat,
+                    isCurrentSelf = seat.uid.isNotEmpty() && seat.uid == currentUserId,
+                    isLocalTalking = isLocalTalking,
+                    isHost = isHost,
+                    isIntimacyLinked = seat.uid in linkedUserIds,
+                    allProfiles = allProfiles,
+                    userActiveFrame = userActiveFrame,
+                    userActiveMicEffect = userActiveMicEffect,
+                    reactionEmoji = activeEmojiReactions[seat.uid],
+                    categorySeatEmoji = categorySeatEmoji,
+                    categorySeatLabel = categorySeatLabel,
+                    onClick = { onSeatClick(seat) },
+                    onProfileClick = onProfileClick?.let { callback -> { callback(seat) } }
+                )
+            }
+        }
+
+        // Automatic Adjacent Mic Link Connectors (Left and Right for any adjacent occupied pair)
+        for (col in 0..2) {
+            val seatLeft = seats.find { it.seatIndex == baseIndex + col }
+            val seatRight = seats.find { it.seatIndex == baseIndex + col + 1 }
+            if (seatLeft != null && seatRight != null && seatLeft.uid.isNotBlank() && seatRight.uid.isNotBlank()) {
+                val pairBond = activeSeatedBonds.firstOrNull { b ->
+                    (b.user1Id == seatLeft.uid && b.user2Id == seatRight.uid) ||
+                    (b.user1Id == seatRight.uid && b.user2Id == seatLeft.uid)
+                }
+                val linkDesignId = pairBond?.activeMicLinkId?.ifBlank { activeMicLinkId } ?: activeMicLinkId
+                val (dRes, pCol, sCol) = when (linkDesignId) {
+                    "mic_link_twin_besties" -> Triple(R.drawable.photoreal_link_twin_besties, Color(0xFF00E5FF), Color(0xFFFF4081))
+                    "mic_link_cyberpunk_reactor" -> Triple(R.drawable.photoreal_link_cyberpunk_reactor, Color(0xFF00F5FF), Color(0xFFA855F7))
+                    "mic_link_celestial_wings" -> Triple(R.drawable.photoreal_link_celestial_wings, Color(0xFFFFD700), Color(0xFFE0F7FA))
+                    "mic_link_emerald_infinity" -> Triple(R.drawable.photoreal_link_emerald_infinity, Color(0xFF00E676), Color(0xFFFFD700))
+                    else -> Triple(R.drawable.photoreal_link_ruby_crown, Color(0xFFFF1744), Color(0xFFFFD700))
+                }
+                StageMicLinkOverlay(
+                    startOffset = androidx.compose.ui.geometry.Offset(colXPxs[col], centerYPx),
+                    endOffset = androidx.compose.ui.geometry.Offset(colXPxs[col + 1], centerYPx),
+                    drawableRes = dRes,
+                    primaryColor = pCol,
+                    secondaryColor = sCol,
+                    emblemSize = 34.dp,
+                    modifier = Modifier.matchParentSize()
+                )
+            }
+        }
+    }
+}
+
+@Composable
 fun TenMicStageSection(
     seats: List<MicSeat>,
     currentUserId: String,
@@ -10381,144 +10518,69 @@ fun TenMicStageSection(
     ) {
 
 
-        // Row 1 (4 Mic Seats: 0 to 3 with StageMicLinkOverlay between Seat 0 & 1)
-        androidx.compose.foundation.layout.BoxWithConstraints(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            val totalW = maxWidth
-            val seat0X = totalW * 0.12f
-            val seat1X = totalW * 0.37f
-            val centerY = 32.dp
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceAround,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                for (i in 0..3) {
-                    val seat = seats.find { it.seatIndex == i } ?: MicSeat(
-                        seatIndex = i,
-                        label = if (i == 0) "Host 👑" else "Mic ${i + 1}",
-                        uid = "",
-                        name = "",
-                        photo = "",
-                        role = if (i == 0) "host" else "speaker"
-                    )
-                    MicSeatView(
-                        seat = seat,
-                        isCurrentSelf = seat.uid.isNotEmpty() && seat.uid == currentUserId,
-                        isLocalTalking = isLocalTalking,
-                        isHost = isHost,
-                        isIntimacyLinked = seat.uid in linkedUserIds,
-                        allProfiles = allProfiles,
-                        userActiveFrame = userActiveFrame,
-                        userActiveMicEffect = userActiveMicEffect,
-                        reactionEmoji = activeEmojiReactions[seat.uid],
-                        categorySeatEmoji = "🎙️",
-                        categorySeatLabel = "Mic",
-                        onClick = { onSeatClick(seat) },
-                        onProfileClick = onProfileClick?.let { callback -> { callback(seat) } }
-                    )
-                }
-            }
-
-            // Real-Time Active Mic Link Overlay (between Seat 0 & Seat 1)
-            if (seat0And1Bond != null) {
-                val linkDesignId = seat0And1Bond.activeMicLinkId.ifBlank { activeMicLinkId }
-                val (dRes, pCol, sCol) = when (linkDesignId) {
-                    "mic_link_twin_besties" -> Triple(R.drawable.photoreal_link_twin_besties, Color(0xFF00E5FF), Color(0xFFFF4081))
-                    "mic_link_cyberpunk_reactor" -> Triple(R.drawable.photoreal_link_cyberpunk_reactor, Color(0xFF00F5FF), Color(0xFFA855F7))
-                    "mic_link_celestial_wings" -> Triple(R.drawable.photoreal_link_celestial_wings, Color(0xFFFFD700), Color(0xFFE0F7FA))
-                    "mic_link_emerald_infinity" -> Triple(R.drawable.photoreal_link_emerald_infinity, Color(0xFF00E676), Color(0xFFFFD700))
-                    else -> Triple(R.drawable.photoreal_link_ruby_crown, Color(0xFFFF1744), Color(0xFFFFD700))
-                }
-
-                val density = androidx.compose.ui.platform.LocalDensity.current
-                val seat0XPx = with(density) { seat0X.toPx() }
-                val seat1XPx = with(density) { seat1X.toPx() }
-                val centerYPx = with(density) { centerY.toPx() }
-
-                StageMicLinkOverlay(
-                    startOffset = androidx.compose.ui.geometry.Offset(seat0XPx, centerYPx),
-                    endOffset = androidx.compose.ui.geometry.Offset(seat1XPx, centerYPx),
-                    drawableRes = dRes,
-                    primaryColor = pCol,
-                    secondaryColor = sCol,
-                    emblemSize = 34.dp,
-                    modifier = Modifier.matchParentSize()
-                )
-            }
-        }
+        // Row 1 (Seats 0 to 3 - Auto-adjacent mic link left & right)
+        StageFourSeatsRow(
+            baseIndex = 0,
+            seats = seats,
+            currentUserId = currentUserId,
+            isHost = isHost,
+            isLocalTalking = isLocalTalking,
+            linkedUserIds = linkedUserIds,
+            allProfiles = allProfiles,
+            userActiveFrame = userActiveFrame,
+            userActiveMicEffect = userActiveMicEffect,
+            activeEmojiReactions = activeEmojiReactions,
+            categorySeatEmoji = categorySeatEmoji,
+            categorySeatLabel = categorySeatLabel,
+            activeMicLinkId = activeMicLinkId,
+            activeSeatedBonds = activeSeatedBonds,
+            onSeatClick = onSeatClick,
+            onProfileClick = onProfileClick
+        )
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Row 2 (4 Mic Seats: 4 to 7)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceAround,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            for (i in 4..7) {
-                val seat = seats.find { it.seatIndex == i } ?: MicSeat(
-                    seatIndex = i,
-                    label = "Mic ${i + 1}",
-                    uid = "",
-                    name = "",
-                    photo = "",
-                    role = "speaker"
-                )
-                MicSeatView(
-                    seat = seat,
-                    isCurrentSelf = seat.uid.isNotEmpty() && seat.uid == currentUserId,
-                    isLocalTalking = isLocalTalking,
-                    isHost = isHost,
-                    isIntimacyLinked = seat.uid in linkedUserIds,
-                    allProfiles = allProfiles,
-                    userActiveFrame = userActiveFrame,
-                    userActiveMicEffect = userActiveMicEffect,
-                    reactionEmoji = activeEmojiReactions[seat.uid],
-                    categorySeatEmoji = "🎙️",
-                    categorySeatLabel = "Mic",
-                    onClick = { onSeatClick(seat) },
-                    onProfileClick = onProfileClick?.let { callback -> { callback(seat) } }
-                )
-            }
-        }
+        // Row 2 (Seats 4 to 7 - Auto-adjacent mic link left & right)
+        StageFourSeatsRow(
+            baseIndex = 4,
+            seats = seats,
+            currentUserId = currentUserId,
+            isHost = isHost,
+            isLocalTalking = isLocalTalking,
+            linkedUserIds = linkedUserIds,
+            allProfiles = allProfiles,
+            userActiveFrame = userActiveFrame,
+            userActiveMicEffect = userActiveMicEffect,
+            activeEmojiReactions = activeEmojiReactions,
+            categorySeatEmoji = categorySeatEmoji,
+            categorySeatLabel = categorySeatLabel,
+            activeMicLinkId = activeMicLinkId,
+            activeSeatedBonds = activeSeatedBonds,
+            onSeatClick = onSeatClick,
+            onProfileClick = onProfileClick
+        )
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Row 3 (4 Mic Seats: 8 to 11)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceAround,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            for (i in 8..11) {
-                val seat = seats.find { it.seatIndex == i } ?: MicSeat(
-                    seatIndex = i,
-                    label = "Mic ${i + 1}",
-                    uid = "",
-                    name = "",
-                    photo = "",
-                    role = "speaker"
-                )
-                MicSeatView(
-                    seat = seat,
-                    isCurrentSelf = seat.uid.isNotEmpty() && seat.uid == currentUserId,
-                    isLocalTalking = isLocalTalking,
-                    isHost = isHost,
-                    isIntimacyLinked = seat.uid in linkedUserIds,
-                    allProfiles = allProfiles,
-                    userActiveFrame = userActiveFrame,
-                    userActiveMicEffect = userActiveMicEffect,
-                    reactionEmoji = activeEmojiReactions[seat.uid],
-                    categorySeatEmoji = "🎙️",
-                    categorySeatLabel = "Mic",
-                    onClick = { onSeatClick(seat) },
-                    onProfileClick = onProfileClick?.let { callback -> { callback(seat) } }
-                )
-            }
-        }
+        // Row 3 (Seats 8 to 11 - Auto-adjacent mic link left & right)
+        StageFourSeatsRow(
+            baseIndex = 8,
+            seats = seats,
+            currentUserId = currentUserId,
+            isHost = isHost,
+            isLocalTalking = isLocalTalking,
+            linkedUserIds = linkedUserIds,
+            allProfiles = allProfiles,
+            userActiveFrame = userActiveFrame,
+            userActiveMicEffect = userActiveMicEffect,
+            activeEmojiReactions = activeEmojiReactions,
+            categorySeatEmoji = categorySeatEmoji,
+            categorySeatLabel = categorySeatLabel,
+            activeMicLinkId = activeMicLinkId,
+            activeSeatedBonds = activeSeatedBonds,
+            onSeatClick = onSeatClick,
+            onProfileClick = onProfileClick
+        )
     }
 }
 
@@ -12644,11 +12706,11 @@ fun FullScreenGiftAnimationOverlay(
                 }
                 "video_mp4" -> {
                     val rawResId = when (giftEvent.giftId) {
-                        "lamborghini_mp4" -> R.raw.lamborgini_car
-                        "eagle_entry_mp4" -> R.raw.eagle_entry
-                        "king_lion_mp4" -> R.raw.king_lion_entry
-                        "terminator_dragon_mp4" -> R.raw.terminator_entry
-                        "king_entry_mp4" -> R.raw.king_entry
+                        "lamborghini_mp4", "lamborgini_car", "lamborgini_car_mp4" -> R.raw.lamborgini_car
+                        "eagle_entry_mp4", "eagle_entry" -> R.raw.eagle_entry
+                        "king_lion_mp4", "king_lion_entry", "king_lion_entry_mp4" -> R.raw.king_lion_entry
+                        "terminator_dragon_mp4", "terminator_entry", "terminator_entry_mp4" -> R.raw.terminator_entry
+                        "king_entry_mp4", "king_entry" -> R.raw.king_entry
                         "diamond_ring_proposal_mp4" -> R.raw.diamond_ring_proposal
                         "golden_super_car_mp4" -> R.raw.golden_super_car
                         "princess_ruby_necklace_mp4" -> R.raw.princess_ruby_necklace

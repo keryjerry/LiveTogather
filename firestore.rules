@@ -622,10 +622,7 @@ service cloud.firestore {
     }
 
     match /intimacy_bonds/{bondId} {
-      allow read: if isAuthenticated() && (
-        resource.data.user1Id == request.auth.uid ||
-        resource.data.user2Id == request.auth.uid
-      );
+      allow read: if isAuthenticated();
       allow write: if isAuthenticated() && (
         request.resource.data.user1Id == request.auth.uid ||
         request.resource.data.user2Id == request.auth.uid

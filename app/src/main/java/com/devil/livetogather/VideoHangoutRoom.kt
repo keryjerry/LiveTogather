@@ -627,6 +627,12 @@ fun VideoHangoutRoomDialog(
             showGuestLimitExpiredDialog = true
             return
         }
+        val cleanMsg = message.trim()
+        val badWord = AbuseFilterEngine.findAbusiveWord(cleanMsg)
+        if (badWord != null) {
+            Toast.makeText(context, "🚫 Blocked: Inappropriate language ($badWord) is prohibited in LiveTogather!", Toast.LENGTH_SHORT).show()
+            return
+        }
         val now = System.currentTimeMillis()
         val commenterLevel = currentUser.getEffectiveWealthLevel()
         val commenterTier = if (currentUser.getVipLevel() > 0) "VIP" else if (currentUser.isVipOrPlatinum()) "Platinum" else "Standard"
@@ -951,8 +957,12 @@ fun VideoHangoutRoomDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Top-Left: Host Avatar Pill
-                    Surface(
+                    // Top-Left: Host Avatar Pill & 18+ Badge
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Surface(
                         color = Color.Black.copy(alpha = 0.55f),
                         shape = RoundedCornerShape(50),
                         border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.6f)),
@@ -969,7 +979,8 @@ fun VideoHangoutRoomDialog(
                                 )
                                 selectedMemberForProfile = hostMember
                             }
-                    ) {
+
+) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.padding(start = 2.dp, end = 8.dp)
@@ -992,7 +1003,7 @@ fun VideoHangoutRoomDialog(
                             Spacer(modifier = Modifier.width(6.dp))
                             Column(modifier = Modifier.widthIn(max = 135.dp)) {
                                 Text(
-                                    text = room.title.ifBlank { "${room.hostName}'s Stream" },
+                                    text = room.title.ifBlank { room.roomName.ifBlank { "Live Video Stream" } },
                                     color = Color.White,
                                     fontSize = 11.5.sp,
                                     fontWeight = FontWeight.ExtraBold,
@@ -1062,6 +1073,20 @@ fun VideoHangoutRoomDialog(
                             }
                         }
                     }
+
+                    Surface(
+                        color = Color(0xFFFF1744).copy(alpha = 0.25f),
+                        shape = RoundedCornerShape(50),
+                        border = BorderStroke(0.8.dp, Color(0xFFFF1744).copy(alpha = 0.8f))
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                        ) {
+                            Text("🔞 18+ Moderated", color = Color(0xFFFF5252), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
 
                     // Top-Right: Viewers, Controls (Strictly separated for Host vs Viewer)
                     Row(

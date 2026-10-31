@@ -855,7 +855,9 @@ data class UserProfile(
 
     // LiveTogather Appointed Staff & Super Power Role
     // Values: "analyzer", "volunteer", "safety_patrol", or ""
-    val officialRole: String = ""
+    val officialRole: String = "",
+    val activeSessionId: String = "",
+    val activeEntranceVideo: String = ""
 ) {
     val level: Int get() = maxOf(wealthLevel, charmLevel, pkLevel)
     fun getEffectiveWealthLevel(): Int = LevelBadgeSystem.getEffectiveWealthLevel(this)
@@ -1165,6 +1167,8 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
     val locationPrivacy = doc.getString("locationPrivacy") ?: "public"
     val hasPasswordSet = doc.getBoolean("hasPasswordSet") ?: false
     val officialRole = doc.getString("officialRole") ?: ""
+    val activeSessionId = doc.getString("activeSessionId") ?: ""
+    val activeEntranceVideo = doc.getString("activeEntranceVideo") ?: ""
 
     return UserProfile(
         uid = uid,
@@ -1259,7 +1263,9 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
         emailPrivacy = emailPrivacy,
         hasPasswordSet = hasPasswordSet,
         locationPrivacy = locationPrivacy,
-        officialRole = officialRole
+        officialRole = officialRole,
+        activeSessionId = activeSessionId,
+        activeEntranceVideo = activeEntranceVideo
     )
 }
 
@@ -1324,6 +1330,8 @@ fun saveProfileToPrefs(prefs: SharedPreferences, user: UserProfile) {
         .putLong("profile_host_monetization_date", user.hostMonetizationDate)
         .putString("profile_email_privacy", user.emailPrivacy)
         .putBoolean("profile_has_password_set", user.hasPasswordSet)
+        .putString("activeSessionId", user.activeSessionId)
+        .putString("activeEntranceVideo", user.activeEntranceVideo)
         .apply()
 }
 
@@ -1502,7 +1510,8 @@ data class MatchItem(
     val intimacyLevel: Int = 1,
     val intimacyXp: Long = 0L,
     val chatStreakDays: Int = 1,
-    val lastChatDate: String = ""
+    val lastChatDate: String = "",
+    val screenshotAllowed: Boolean = false
 )
 
 data class ChatMessage(
