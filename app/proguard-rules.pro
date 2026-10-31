@@ -13,3 +13,7 @@
 -keep class com.devil.livetogather.MomentItem { *; }
 -keep class com.devil.livetogather.CommentItem { *; }
 -keep class com.devil.livetogather.EarningTransaction { *; }
+
+# Agora's native JNI_OnLoad resolves internal Java classes by their original names.
+-keep class io.agora.** { *; }
+-dontwarn com.google.devtools.build.android.desugar.runtime.ThrowableExtension
