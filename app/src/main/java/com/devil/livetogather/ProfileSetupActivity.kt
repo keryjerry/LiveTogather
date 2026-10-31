@@ -739,6 +739,7 @@ fun ProfileSetupScreen(onComplete: () -> Unit) {
             currentPhotoUrl = photoUrl,
             userLevel = userLevel,
             isVip = isVip,
+            userGender = gender,
             onAvatarSelected = { preset ->
                 photoUrl = preset.imageUrl
                 localAvatarUri = null

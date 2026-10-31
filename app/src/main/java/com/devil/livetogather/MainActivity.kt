@@ -4485,6 +4485,7 @@ fun ProfileScreenContent(
     var showLuxuryStoreModal by remember { mutableStateOf(false) }
     var showLuxuryAvatarModal by remember { mutableStateOf(false) }
     var showVoiceVerificationModal by remember { mutableStateOf(false) }
+    var showSelfieVerificationModal by remember { mutableStateOf(false) }
     var showVipCenterModal by remember { mutableStateOf(false) }
     var showMonthlyCardModal by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -4903,6 +4904,72 @@ fun ProfileScreenContent(
                                                 Text("ID: $displayProfileUserId", color = Color.White.copy(alpha = 0.85f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                                                 Spacer(modifier = Modifier.width(4.dp))
                                                 Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = Color(0xFFFFD700), modifier = Modifier.size(11.dp))
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.height(6.dp))
+
+                                        // Liveness Selfie Verification Badge ("Verify Yourself" / "Verified User")
+                                        val isVerified = currentUser.isVerifiedUser
+                                        val isPendingVerification = currentUser.verificationStatus.equals("pending", ignoreCase = true)
+
+                                        Surface(
+                                            color = when {
+                                                isVerified -> Color(0xFF064E3B).copy(alpha = 0.9f)
+                                                isPendingVerification -> Color(0xFF451A03).copy(alpha = 0.9f)
+                                                else -> Color(0xFF2A0D1E).copy(alpha = 0.9f)
+                                            },
+                                            shape = RoundedCornerShape(10.dp),
+                                            border = BorderStroke(
+                                                1.dp,
+                                                when {
+                                                    isVerified -> Color(0xFF10B981)
+                                                    isPendingVerification -> Color(0xFFF59E0B)
+                                                    else -> Color(0xFFFF4081)
+                                                }
+                                            ),
+                                            modifier = Modifier.clickable { showSelfieVerificationModal = true }
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(
+                                                    imageVector = when {
+                                                        isVerified -> Icons.Default.CheckCircle
+                                                        isPendingVerification -> Icons.Default.HourglassTop
+                                                        else -> Icons.Default.CameraAlt
+                                                    },
+                                                    contentDescription = null,
+                                                    tint = when {
+                                                        isVerified -> Color(0xFF34D399)
+                                                        isPendingVerification -> Color(0xFFFBBF24)
+                                                        else -> Color(0xFFFF4081)
+                                                    },
+                                                    modifier = Modifier.size(13.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(5.dp))
+                                                Text(
+                                                    text = when {
+                                                        isVerified -> "Verified User"
+                                                        isPendingVerification -> "Verification Pending"
+                                                        else -> "Verify Yourself"
+                                                    },
+                                                    fontSize = 10.5.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = when {
+                                                        isVerified -> Color(0xFF34D399)
+                                                        isPendingVerification -> Color(0xFFFBBF24)
+                                                        else -> Color.White
+                                                    }
+                                                )
+                                                if (isVerified) {
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("🟢", fontSize = 8.sp)
+                                                } else if (!isPendingVerification) {
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("📸", fontSize = 9.sp)
+                                                }
                                             }
                                         }
                                     }
@@ -6271,6 +6338,7 @@ fun ProfileScreenContent(
             currentPhotoUrl = photoUrl,
             userLevel = currentUser.level,
             isVip = currentUser.isVipOrPlatinum(),
+            userGender = currentUser.gender,
             onAvatarSelected = { preset ->
                 photoUrl = preset.imageUrl
                 val updatedProfile = currentUser.copy(uid = currentUserId, photo = preset.imageUrl)
@@ -6293,6 +6361,17 @@ fun ProfileScreenContent(
             db = db,
             onDismiss = { showVoiceVerificationModal = false },
             onVerified = { updated ->
+                onUpdateProfile(updated)
+            }
+        )
+    }
+
+    if (showSelfieVerificationModal) {
+        SelfieVerificationDialog(
+            currentUser = currentUser,
+            db = db,
+            onDismiss = { showSelfieVerificationModal = false },
+            onVerifiedSubmitted = { updated ->
                 onUpdateProfile(updated)
             }
         )

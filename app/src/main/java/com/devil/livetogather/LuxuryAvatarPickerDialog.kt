@@ -45,12 +45,28 @@ fun LuxuryAvatarPickerDialog(
     currentPhotoUrl: String,
     userLevel: Int,
     isVip: Boolean,
+    userGender: String = "",
     onAvatarSelected: (LuxuryAvatarPreset) -> Unit,
     onRequestCustomUpload: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    var selectedGender by remember { mutableStateOf("All") }
+    val isUserFemale = remember(userGender) {
+        userGender.equals("Woman", ignoreCase = true) || userGender.equals("Female", ignoreCase = true)
+    }
+    val isUserMale = remember(userGender) {
+        userGender.equals("Man", ignoreCase = true) || userGender.equals("Male", ignoreCase = true)
+    }
+
+    var selectedGender by remember(userGender) {
+        mutableStateOf(
+            when {
+                isUserFemale -> "Women"
+                isUserMale -> "Men"
+                else -> "All"
+            }
+        )
+    }
     var selectedCategory by remember { mutableStateOf("All") }
     var showPrivilegeInfoDialog by remember { mutableStateOf(false) }
 
@@ -58,9 +74,14 @@ fun LuxuryAvatarPickerDialog(
         LuxuryAvatarCatalog.canUploadCustomAvatar(userLevel, isVip)
     }
 
-    val filteredPresets = remember(selectedGender, selectedCategory) {
+    val filteredPresets = remember(selectedGender, selectedCategory, isUserFemale, isUserMale) {
+        val effectiveGender = when {
+            isUserFemale -> "Women"
+            isUserMale -> "Men"
+            else -> selectedGender
+        }
         LuxuryAvatarCatalog.presets.filter { preset ->
-            val matchGender = when (selectedGender) {
+            val matchGender = when (effectiveGender) {
                 "Women" -> preset.gender.equals("Female", ignoreCase = true)
                 "Men" -> preset.gender.equals("Male", ignoreCase = true)
                 else -> true
@@ -135,40 +156,104 @@ fun LuxuryAvatarPickerDialog(
                     }
                 }
 
-                // Gender Toggle Filter (All / Women / Men)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFF1E1E2F))
-                        .padding(4.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    listOf("All", "Women", "Men").forEach { genderOption ->
-                        val isSelected = selectedGender == genderOption
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(
-                                    if (isSelected) Brush.horizontalGradient(
-                                        listOf(Color(0xFFFF3366), Color(0xFFFF7700))
-                                    ) else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
-                                )
-                                .clickable { selectedGender = genderOption }
-                                .padding(vertical = 6.dp),
-                            contentAlignment = Alignment.Center
+                // Gender Filter & Security Lock Banner
+                val femaleCount = remember { LuxuryAvatarCatalog.presets.count { it.gender.equals("Female", true) } }
+                val maleCount = remember { LuxuryAvatarCatalog.presets.count { it.gender.equals("Male", true) } }
+                val totalCount = remember { LuxuryAvatarCatalog.presets.size }
+
+                if (isUserFemale) {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp)),
+                        color = Color(0xFF831843).copy(alpha = 0.35f),
+                        border = BorderStroke(1.dp, Color(0xFFF472B6))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = when (genderOption) {
-                                    "Women" -> "👩 Women (10)"
-                                    "Men" -> "👨 Men (10)"
-                                    else -> "🌟 All (20)"
-                                },
-                                color = if (isSelected) Color.White else Color.Gray,
-                                fontSize = 12.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                            )
+                            Text("🔒", fontSize = 16.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "Gender-Protected: Female Profile",
+                                    color = Color(0xFFFCE7F3),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Exclusively displaying $femaleCount verified female studio avatars",
+                                    color = Color(0xFFF9A8D4),
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+                    }
+                } else if (isUserMale) {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp)),
+                        color = Color(0xFF0C4A6E).copy(alpha = 0.35f),
+                        border = BorderStroke(1.dp, Color(0xFF38BDF8))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("🔒", fontSize = 16.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "Gender-Protected: Male Profile",
+                                    color = Color(0xFFE0F2FE),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Exclusively displaying $maleCount verified male studio avatars",
+                                    color = Color(0xFF7DD3FC),
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFF1E1E2F))
+                            .padding(4.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        listOf("All", "Women", "Men").forEach { genderOption ->
+                            val isSelected = selectedGender == genderOption
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(
+                                        if (isSelected) Brush.horizontalGradient(
+                                            listOf(Color(0xFFFF3366), Color(0xFFFF7700))
+                                        ) else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
+                                    )
+                                    .clickable { selectedGender = genderOption }
+                                    .padding(vertical = 6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = when (genderOption) {
+                                        "Women" -> "👩 Women ($femaleCount)"
+                                        "Men" -> "👨 Men ($maleCount)"
+                                        else -> "🌟 All ($totalCount)"
+                                    },
+                                    color = if (isSelected) Color.White else Color.Gray,
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
+                            }
                         }
                     }
                 }

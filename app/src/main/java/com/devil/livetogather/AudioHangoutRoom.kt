@@ -2800,12 +2800,42 @@ fun RoomMemberProfileSheet(
 
                         Column {
                             val ageText = userProfile?.age?.let { ", $it" } ?: ""
-                            Text(
-                                text = "${if (isSelf) "You (${member.name})" else member.name}$ageText",
-                                color = Color.White,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "${if (isSelf) "You (${member.name})" else member.name}$ageText",
+                                    color = Color.White,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                val isTargetVerified = userProfile?.isVerifiedUser == true || (isSelf && currentUser.isVerifiedUser) || member.isVerifiedUser
+                                if (isTargetVerified) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Surface(
+                                        color = Color(0xFF064E3B).copy(alpha = 0.85f),
+                                        shape = RoundedCornerShape(8.dp),
+                                        border = BorderStroke(0.8.dp, Color(0xFF10B981))
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.CheckCircle,
+                                                contentDescription = "Verified User",
+                                                tint = Color(0xFF34D399),
+                                                modifier = Modifier.size(11.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Text(
+                                                text = "Verified User",
+                                                color = Color(0xFF34D399),
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                }
+                            }
 
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -3251,6 +3281,24 @@ fun RoomMemberProfileSheet(
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
+
+                if (!isSelf && isViewerAdmin && userProfile?.verificationStatus == "pending") {
+                    Button(
+                        onClick = {
+                            db.collection("users").document(member.uid).update("verificationStatus", "verified")
+                            db.collection("verification_requests").document(member.uid).update("status", "approved")
+                            Toast.makeText(context, "${member.name} is now a Verified User! 🟢", Toast.LENGTH_SHORT).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                        shape = RoundedCornerShape(50),
+                        modifier = Modifier.fillMaxWidth().height(38.dp)
+                    ) {
+                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Approve User Verification 🛡️", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
 
                 if (!isSelf) {
                     Button(

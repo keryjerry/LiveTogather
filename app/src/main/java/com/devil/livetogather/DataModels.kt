@@ -853,12 +853,18 @@ data class UserProfile(
     val voiceIntroDuration: Int = 20,
     val isVoicePrivate: Boolean = false,
 
+    // Real-Time Liveness Selfie Verification System
+    val verificationStatus: String = "unverified", // "unverified", "pending", "verified"
+    val verificationSelfieUrl: String = "",
+    val verificationTimestamp: Long = 0L,
+
     // LiveTogather Appointed Staff & Super Power Role
     // Values: "analyzer", "volunteer", "safety_patrol", or ""
     val officialRole: String = "",
     val activeSessionId: String = "",
     val activeEntranceVideo: String = ""
 ) {
+    val isVerifiedUser: Boolean get() = verificationStatus.equals("verified", ignoreCase = true)
     val level: Int get() = maxOf(wealthLevel, charmLevel, pkLevel)
     fun getEffectiveWealthLevel(): Int = LevelBadgeSystem.getEffectiveWealthLevel(this)
     fun getEffectiveWealthXp(): Long = LevelBadgeSystem.getEffectiveWealthXp(this)
@@ -1169,6 +1175,9 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
     val officialRole = doc.getString("officialRole") ?: ""
     val activeSessionId = doc.getString("activeSessionId") ?: ""
     val activeEntranceVideo = doc.getString("activeEntranceVideo") ?: ""
+    val verificationStatus = doc.getString("verificationStatus") ?: "unverified"
+    val verificationSelfieUrl = doc.getString("verificationSelfieUrl") ?: ""
+    val verificationTimestamp = doc.getLong("verificationTimestamp") ?: 0L
 
     return UserProfile(
         uid = uid,
@@ -1265,7 +1274,10 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
         locationPrivacy = locationPrivacy,
         officialRole = officialRole,
         activeSessionId = activeSessionId,
-        activeEntranceVideo = activeEntranceVideo
+        activeEntranceVideo = activeEntranceVideo,
+        verificationStatus = verificationStatus,
+        verificationSelfieUrl = verificationSelfieUrl,
+        verificationTimestamp = verificationTimestamp
     )
 }
 
@@ -1613,8 +1625,11 @@ data class RoomMember(
     val joinedAt: Long = System.currentTimeMillis(),
     val role: String = "listener", // "host" or "listener"
     val tier: String = "Standard", // "VIP", "Platinum", "Standard"
-    @get:PropertyName("agoraUid") @set:PropertyName("agoraUid") var agoraUid: Int = 0
-)
+    @get:PropertyName("agoraUid") @set:PropertyName("agoraUid") var agoraUid: Int = 0,
+    val verificationStatus: String = "unverified"
+) {
+    val isVerifiedUser: Boolean get() = verificationStatus.equals("verified", ignoreCase = true)
+}
 
 data class ReportTicket(
     val reportId: String = "",
@@ -2852,6 +2867,110 @@ object LuxuryAvatarCatalog {
             imageUrl = "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=800&q=80",
             badge = "SOVEREIGN"
         ),
+        LuxuryAvatarPreset(
+            id = "av_fem_new_1",
+            name = "Alia Vance",
+            gender = "Female",
+            category = "VIP Royalty",
+            imageUrl = "file:///android_asset/avatars/girl/avatar_girl_1.webp",
+            badge = "EXCLUSIVE"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_fem_new_2",
+            name = "Tara Punk",
+            gender = "Female",
+            category = "Urban Glamour",
+            imageUrl = "file:///android_asset/avatars/girl/avatar_girl_2.webp",
+            badge = "TRENDING"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_fem_new_3",
+            name = "Meera Velvet",
+            gender = "Female",
+            category = "Executive & Charisma",
+            imageUrl = "file:///android_asset/avatars/girl/avatar_girl_3.webp",
+            badge = "EXECUTIVE"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_fem_new_4",
+            name = "Sanya Desk",
+            gender = "Female",
+            category = "Studio Aesthetic",
+            imageUrl = "file:///android_asset/avatars/girl/avatar_girl_4.webp",
+            badge = "STUDIO HD"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_fem_new_5",
+            name = "Diya Curls",
+            gender = "Female",
+            category = "VIP Royalty",
+            imageUrl = "file:///android_asset/avatars/girl/avatar_girl_5.webp",
+            badge = "ROYALTY"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_fem_new_6",
+            name = "Pooja Grace",
+            gender = "Female",
+            category = "Studio Aesthetic",
+            imageUrl = "file:///android_asset/avatars/girl/avatar_girl_6.webp",
+            badge = "POPULAR"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_fem_new_7",
+            name = "Roshni Elite",
+            gender = "Female",
+            category = "VIP Royalty",
+            imageUrl = "file:///android_asset/avatars/girl/avatar_girl_7.webp",
+            badge = "SOVEREIGN"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_fem_new_8",
+            name = "Simran Glow",
+            gender = "Female",
+            category = "Urban Glamour",
+            imageUrl = "file:///android_asset/avatars/girl/avatar_girl_8.webp",
+            badge = "GLAMOUR"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_fem_new_9",
+            name = "Kavya Chic",
+            gender = "Female",
+            category = "Executive & Charisma",
+            imageUrl = "file:///android_asset/avatars/girl/avatar_girl_9.webp",
+            badge = "CHARISMA"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_fem_new_10",
+            name = "Ishita Belle",
+            gender = "Female",
+            category = "VIP Royalty",
+            imageUrl = "file:///android_asset/avatars/girl/avatar_girl_10.webp",
+            badge = "ROYALTY"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_fem_new_11",
+            name = "Tanvi Allure",
+            gender = "Female",
+            category = "Studio Aesthetic",
+            imageUrl = "file:///android_asset/avatars/girl/avatar_girl_11.webp",
+            badge = "STUDIO HD"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_fem_new_12",
+            name = "Nisha Radiance",
+            gender = "Female",
+            category = "Urban Glamour",
+            imageUrl = "file:///android_asset/avatars/girl/avatar_girl_12.webp",
+            badge = "GLAMOUR"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_fem_new_13",
+            name = "Aditi Warmth",
+            gender = "Female",
+            category = "Studio Aesthetic",
+            imageUrl = "file:///android_asset/avatars/girl/avatar_girl_13.webp",
+            badge = "POPULAR"
+        ),
 
         // MALE PRESETS (10 Realistic HD Studio Portraits)
         LuxuryAvatarPreset(
@@ -2933,6 +3052,70 @@ object LuxuryAvatarCatalog {
             category = "VIP Royalty",
             imageUrl = "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=800&q=80",
             badge = "SOVEREIGN"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_male_new_1",
+            name = "Aarav Beanie",
+            gender = "Male",
+            category = "Urban Glamour",
+            imageUrl = "file:///android_asset/avatars/boy/avatar_boy_1.webp",
+            badge = "TRENDING"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_male_new_2",
+            name = "Dev Cravat",
+            gender = "Male",
+            category = "VIP Royalty",
+            imageUrl = "file:///android_asset/avatars/boy/avatar_boy_2.webp",
+            badge = "ROYALTY"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_male_new_3",
+            name = "Rohan Terrace",
+            gender = "Male",
+            category = "Studio Aesthetic",
+            imageUrl = "file:///android_asset/avatars/boy/avatar_boy_3.webp",
+            badge = "STUDIO HD"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_male_new_4",
+            name = "Karan Denim",
+            gender = "Male",
+            category = "Executive & Charisma",
+            imageUrl = "file:///android_asset/avatars/boy/avatar_boy_4.webp",
+            badge = "CHARISMA"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_male_new_5",
+            name = "Siddharth Regal",
+            gender = "Male",
+            category = "VIP Royalty",
+            imageUrl = "file:///android_asset/avatars/boy/avatar_boy_5.webp",
+            badge = "EXCLUSIVE"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_male_new_6",
+            name = "Aditya Crown",
+            gender = "Male",
+            category = "VIP Royalty",
+            imageUrl = "file:///android_asset/avatars/boy/avatar_boy_6.webp",
+            badge = "SOVEREIGN"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_male_new_7",
+            name = "Vivaan Cozy",
+            gender = "Male",
+            category = "Studio Aesthetic",
+            imageUrl = "file:///android_asset/avatars/boy/avatar_boy_7.webp",
+            badge = "POPULAR"
+        ),
+        LuxuryAvatarPreset(
+            id = "av_male_new_8",
+            name = "Samar Street",
+            gender = "Male",
+            category = "Urban Glamour",
+            imageUrl = "file:///android_asset/avatars/boy/avatar_boy_8.webp",
+            badge = "GLAMOUR"
         )
     )
 
