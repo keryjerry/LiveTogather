@@ -13,6 +13,7 @@ class LiveTogatherFirebaseMessagingService : FirebaseMessagingService() {
 
         val data = remoteMessage.data
         val roomId = data["roomId"] ?: data["room_id"] ?: ""
+        val senderId = data["senderId"] ?: data["sender_id"] ?: data["chatUserId"] ?: data["partnerUid"] ?: ""
 
         val rawTitle = remoteMessage.notification?.title
             ?: data["title"]
@@ -31,6 +32,7 @@ class LiveTogatherFirebaseMessagingService : FirebaseMessagingService() {
             title = rawTitle,
             message = rawBody,
             roomId = roomId.ifBlank { null },
+            chatPartnerUid = senderId.ifBlank { null },
             isLiveAlert = isLive,
             isPurchaseAlert = isPurchase,
             giftId = giftId.ifBlank { null }

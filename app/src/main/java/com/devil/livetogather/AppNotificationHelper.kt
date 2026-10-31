@@ -76,6 +76,7 @@ object AppNotificationHelper {
         title: String,
         message: String,
         roomId: String? = null,
+        chatPartnerUid: String? = null,
         isLiveAlert: Boolean = false,
         isPurchaseAlert: Boolean = false,
         giftId: String? = null
@@ -93,6 +94,12 @@ object AppNotificationHelper {
             if (!roomId.isNullOrBlank()) {
                 putExtra("ROOM_ID", roomId)
                 putExtra("extra_room_id", roomId)
+                putExtra("roomId", roomId)
+            }
+            if (!chatPartnerUid.isNullOrBlank()) {
+                putExtra("OPEN_CHAT_USER_ID", chatPartnerUid)
+                putExtra("senderId", chatPartnerUid)
+                putExtra("chatPartnerUid", chatPartnerUid)
             }
         }
         val pendingIntent = PendingIntent.getActivity(

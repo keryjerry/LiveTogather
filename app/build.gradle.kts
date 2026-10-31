@@ -88,6 +88,11 @@ dependencies {
     // Agora Full SDK (Voice + Video Streaming)
     implementation("io.agora.rtc:full-sdk:4.4.1")
 
+    // CameraX for In-App Circular Front Camera Auto-Verification
+    implementation("androidx.camera:camera-camera2:1.3.4")
+    implementation("androidx.camera:camera-lifecycle:1.3.4")
+    implementation("androidx.camera:camera-view:1.3.4")
+
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

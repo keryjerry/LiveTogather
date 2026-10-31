@@ -1,5 +1,10 @@
-@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 package com.devil.livetogather
+
+import androidx.compose.foundation.basicMarquee
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 
 import android.Manifest
 import android.content.Context
@@ -3109,7 +3114,7 @@ fun RoomMemberProfileSheet(
                     }
                 }
 
-                // Location Privacy Shield: User's location (city, state, distance) is hidden unless both users are mutual Best Friends
+                // Location & Followers Privacy Shield (Other users' followers are strictly private)
                 val isMutualBestFriend = currentUser.isMutualBestFriend(userProfile ?: UserProfile(uid = member.uid))
                 if (isSelf) {
                     val locationStr = userProfile?.locationName?.ifBlank { userProfile.city } ?: userProfile?.city ?: "Kolkata"
@@ -3126,7 +3131,7 @@ fun RoomMemberProfileSheet(
                     } else 0
                     val distText = if (distKm > 0) " • $distKm km away" else ""
                     Text(
-                        text = "📍 $locationStr$distText • ⭐ Mutual Best Friend • 👥 $memberFollowerCount Followers",
+                        text = "📍 $locationStr$distText • ⭐ Mutual Best Friend • 👥 Followers Private 🔒",
                         color = Color(0xFF81C784),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
@@ -3134,7 +3139,7 @@ fun RoomMemberProfileSheet(
                     )
                 } else {
                     Text(
-                        text = "📍 Location Hidden 🔒 (Best Friends Only) • 👥 $memberFollowerCount Followers",
+                        text = "📍 Location Hidden 🔒 • 👥 Followers Private 🔒",
                         color = Color(0xFFFFB74D),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
@@ -4317,12 +4322,17 @@ fun RoomSettingsDialog(
                                 ) {
                                     Button(
                                         onClick = {
-                                            db.collection("rooms").document(room.id).update(
-                                                mapOf(
-                                                    "isHostLive" to true,
-                                                    "statusMessage" to "LIVE NOW"
-                                                )
+                                            val goLiveUpdates = mapOf<String, Any>(
+                                                "isHostLive" to true,
+                                                "isLive" to true,
+                                                "isSetOfflineByHost" to false,
+                                                "statusMessage" to "LIVE NOW"
                                             )
+                                            db.collection("rooms").document(room.id).update(goLiveUpdates)
+                                            if (room.category.isNotBlank()) {
+                                                db.collection("intent_categories").document(room.category)
+                                                    .collection("rooms").document(room.id).update(goLiveUpdates)
+                                            }
                                             broadcastLiveNotificationToFollowers(
                                                 db = db,
                                                 hostId = room.hostId,
@@ -4344,13 +4354,18 @@ fun RoomSettingsDialog(
 
                                     Button(
                                         onClick = {
-                                            db.collection("rooms").document(room.id).update(
-                                                mapOf(
-                                                    "isHostLive" to false,
-                                                    "statusMessage" to "Host will be live soon"
-                                                )
+                                            val offlineUpdates = mapOf<String, Any>(
+                                                "isHostLive" to false,
+                                                "isLive" to false,
+                                                "isSetOfflineByHost" to true,
+                                                "statusMessage" to "Host has closed the room"
                                             )
-                                            Toast.makeText(context, "Room status set to 'Host will be live soon'", Toast.LENGTH_SHORT).show()
+                                            db.collection("rooms").document(room.id).update(offlineUpdates)
+                                            if (room.category.isNotBlank()) {
+                                                db.collection("intent_categories").document(room.category)
+                                                    .collection("rooms").document(room.id).update(offlineUpdates)
+                                            }
+                                            Toast.makeText(context, "Room set offline. Host remains inside, listeners exited.", Toast.LENGTH_SHORT).show()
                                         },
                                         colors = ButtonDefaults.buttonColors(
                                             containerColor = if (!room.isHostLive) Color(0xFF2A281E) else Color(0xFF202433)
@@ -5185,6 +5200,40 @@ fun AudioHangoutRoomDialog(
 
     val activeMembers = remember { mutableStateListOf<RoomMember>() }
 
+    // Custom Room Banner Upload from Local Storage
+    val coroutineScope = rememberCoroutineScope()
+    var isUploadingRoomBanner by remember { mutableStateOf(false) }
+    val roomImagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            isUploadingRoomBanner = true
+            coroutineScope.launch(Dispatchers.IO) {
+                try {
+                    val dataUri = ImageUploadManager.convertImageToFirestoreDataUri(context, uri)
+                    if (!dataUri.isNullOrBlank()) {
+                        db.collection("rooms").document(room.id).update("banner_image_url", dataUri)
+                        if (room.category.isNotBlank()) {
+                            db.collection("intent_categories").document(room.category)
+                                .collection("rooms").document(room.id).update("banner_image_url", dataUri)
+                        }
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "Room picture updated from storage! 🖼️", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Failed to upload image: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                } finally {
+                    withContext(Dispatchers.Main) {
+                        isUploadingRoomBanner = false
+                    }
+                }
+            }
+        }
+    }
+
     // Modals
     var showExitOrKeepDialog by remember { mutableStateOf(false) }
     var showTrackSelector by remember { mutableStateOf(false) }
@@ -5897,12 +5946,14 @@ fun AudioHangoutRoomDialog(
                     val isLive = snapshot.getBoolean("isLive") ?: (snapshot.getBoolean("isHostLive") ?: updated.isLive)
                     val isEnded = snapshot.getBoolean("isEnded") ?: false
                     val isHostLive = snapshot.getBoolean("isHostLive") ?: updated.isHostLive
+                    val isSetOfflineByHost = snapshot.getBoolean("isSetOfflineByHost") ?: false
                     val endedAt = snapshot.getLong("endedAt") ?: 0L
                     val hasAdminPresent = activeMembers.any { it.uid != room.hostId && it.uid in room.adminUserIds }
-                    val isRoomClosed = !isLive || isEnded || (!isHostLive && !hasAdminPresent)
+                    val isRoomClosed = isSetOfflineByHost || !isLive || isEnded || (!isHostLive && !hasAdminPresent)
 
                     if (isRoomClosed && !isUserHost) {
-                        Toast.makeText(context, "Room is closed • Host is offline", Toast.LENGTH_LONG).show()
+                        val closeMsg = if (isSetOfflineByHost) "Room is closed • Host has closed the room" else "Room is closed • Host is offline"
+                        Toast.makeText(context, closeMsg, Toast.LENGTH_LONG).show()
                         AudioPlayerManager.pause()
                         onDismiss()
                         return@addSnapshotListener
@@ -6357,38 +6408,71 @@ fun AudioHangoutRoomDialog(
                                 modifier = Modifier.weight(1f, fill = false),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                // Host Avatar Pill (Enhanced with Square Avatar, Follower Count & Prominent Follow Button)
+                                // Host & Room Header Box with Animated Luxury Border
+                                val luxurySweepBorder = Brush.sweepGradient(
+                                    listOf(
+                                        Color(0xFFFFD700), // Gold
+                                        Color(0xFFA855F7), // Royal Purple
+                                        Color(0xFF06B6D4), // Cyan Diamond
+                                        Color(0xFFF59E0B), // Amber
+                                        Color(0xFFFFD700)  // Gold loop
+                                    )
+                                )
                                 Surface(
-                                    color = Color.Black.copy(alpha = 0.65f),
-                                    shape = RoundedCornerShape(12.dp),
-                                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.22f)),
+                                    color = Color.Black.copy(alpha = 0.70f),
+                                    shape = RoundedCornerShape(14.dp),
+                                    border = BorderStroke(1.4.dp, luxurySweepBorder),
                                     modifier = Modifier.clickable { selectedMemberForSheet = hostMemberObj }
                                 ) {
                                     Row(
                                         modifier = Modifier.padding(start = 4.dp, top = 3.dp, bottom = 3.dp, end = 5.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        // Square Host Profile with rounded corners
-                                        Box(contentAlignment = Alignment.Center) {
+                                        // Wider Room Dedicated Image Box with Local Storage Picker
+                                        val displayRoomBanner = room.banner_image_url.ifBlank { hostPhoto }.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" }
+                                        Box(
+                                            modifier = Modifier
+                                                .size(width = 46.dp, height = 38.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .border(1.2.dp, BrandGold, RoundedCornerShape(8.dp))
+                                                .clickable(enabled = isUserHost) {
+                                                    roomImagePickerLauncher.launch("image/*")
+                                                },
+                                            contentAlignment = Alignment.Center
+                                        ) {
                                             AsyncImage(
-                                                model = hostPhoto.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                                                model = displayRoomBanner,
                                                 contentDescription = hostName,
-                                                modifier = Modifier
-                                                    .size(36.dp)
-                                                    .clip(RoundedCornerShape(8.dp))
-                                                    .border(1.2.dp, BrandGold, RoundedCornerShape(8.dp)),
+                                                modifier = Modifier.fillMaxSize(),
                                                 contentScale = ContentScale.Crop
                                             )
+                                            if (isUploadingRoomBanner) {
+                                                Box(
+                                                    modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = BrandGold)
+                                                }
+                                            } else if (isUserHost) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .align(Alignment.BottomEnd)
+                                                        .background(Color.Black.copy(alpha = 0.75f), RoundedCornerShape(topStart = 4.dp))
+                                                        .padding(1.dp)
+                                                ) {
+                                                    Text("📷", fontSize = 8.sp)
+                                                }
+                                            }
                                         }
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Column(modifier = Modifier.widthIn(max = 110.dp)) {
+                                        Column(modifier = Modifier.widthIn(max = 120.dp)) {
                                             Text(
                                                 text = room.title.ifBlank { room.roomName.ifBlank { "Live Lounge" } },
                                                 color = Color.White,
                                                 fontSize = 11.5.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
+                                                modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE)
                                             )
                                             Text(
                                                 text = "ID: $displayRoomId • 👥 $hostFollowerCount",

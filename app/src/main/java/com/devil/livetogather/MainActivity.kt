@@ -250,11 +250,13 @@ val SETTINGS_TOPIC_OPTIONS = mapOf(
 
 class MainActivity : ComponentActivity() {
     private var initialDeepLinkRoomId: String? = null
+    private var initialDeepLinkChatUserId: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         initialDeepLinkRoomId = extractRoomId(intent)
+        initialDeepLinkChatUserId = extractChatUserId(intent)
         val imageLoader = ImageLoader.Builder(this)
             .memoryCache {
                 coil.memory.MemoryCache.Builder(this)
@@ -275,7 +277,10 @@ class MainActivity : ComponentActivity() {
             .build()
         Coil.setImageLoader(imageLoader)
         setContent {
-            LiveTogatherApp(initialRoomId = initialDeepLinkRoomId)
+            LiveTogatherApp(
+                initialRoomId = initialDeepLinkRoomId,
+                initialChatUserId = initialDeepLinkChatUserId
+            )
         }
     }
 
@@ -285,6 +290,10 @@ class MainActivity : ComponentActivity() {
         val roomId = extractRoomId(intent)
         if (!roomId.isNullOrBlank()) {
             pendingDeepLinkRoomId.value = roomId
+        }
+        val chatUserId = extractChatUserId(intent)
+        if (!chatUserId.isNullOrBlank()) {
+            pendingDeepLinkChatUserId.value = chatUserId
         }
     }
 
@@ -322,14 +331,24 @@ class MainActivity : ComponentActivity() {
             ?: intent.data?.getQueryParameter("roomId")
     }
 
+    private fun extractChatUserId(intent: Intent?): String? {
+        if (intent == null) return null
+        return intent.getStringExtra("OPEN_CHAT_USER_ID")
+            ?: intent.getStringExtra("senderId")
+            ?: intent.getStringExtra("chatUserId")
+            ?: intent.getStringExtra("chatPartnerUid")
+            ?: intent.data?.getQueryParameter("chatUserId")
+    }
+
     companion object {
         val pendingDeepLinkRoomId = mutableStateOf<String?>(null)
+        val pendingDeepLinkChatUserId = mutableStateOf<String?>(null)
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LiveTogatherApp(initialRoomId: String? = null) {
+fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = null) {
     val context = LocalContext.current
     val db = remember { FirebaseFirestore.getInstance() }
     val auth = remember { FirebaseAuth.getInstance() }
@@ -454,6 +473,39 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                             db.collection("users").document(currentUserId).update("isAdmin", true)
                         } else if (!isWhitelisted && snapshot.getBoolean("isAdmin") == true) {
                             db.collection("users").document(currentUserId).update("isAdmin", false)
+                        }
+
+                        // Auto-Level Up Greetings Notification & Bonus Diamonds (2, 4, 5+ Diamonds)
+                        val oldHighestLevel = maxOf(currentUser.wealthLevel, currentUser.charmLevel, currentUser.pkLevel)
+                        val newHighestLevel = maxOf(updatedWealthLvl, updatedCharmLvl, updatedPkLvl)
+                        if (newHighestLevel > oldHighestLevel && oldHighestLevel > 0) {
+                            val bonusDiamonds: Long = when {
+                                newHighestLevel <= 2 -> 2L
+                                newHighestLevel <= 4 -> 4L
+                                else -> 5L
+                            }
+                            db.collection("users").document(currentUserId).update("diamonds", FieldValue.increment(bonusDiamonds))
+                            val greetingNotif = NotificationItem(
+                                id = UUID.randomUUID().toString(),
+                                targetUserId = currentUserId,
+                                senderId = "system_livetogather",
+                                senderName = "LiveTogather Team 👑",
+                                senderPhoto = "",
+                                type = "level_up_greeting",
+                                title = "Level Up Greetings! Lv.$newHighestLevel 👑",
+                                message = "Congratulations on reaching Level $newHighestLevel! LiveTogather has gifted you $bonusDiamonds bonus diamonds 💎 to celebrate!",
+                                diamondsReceived = bonusDiamonds,
+                                timestamp = System.currentTimeMillis()
+                            )
+                            db.collection("users").document(currentUserId)
+                                .collection("notifications").document(greetingNotif.id).set(greetingNotif)
+
+                            AppNotificationHelper.showSystemNotification(
+                                context = context,
+                                title = "Level Up Greetings! Lv.$newHighestLevel 👑",
+                                message = "LiveTogather awarded you $bonusDiamonds bonus diamonds 💎 for reaching Level $newHighestLevel!",
+                                isPurchaseAlert = true
+                            )
                         }
 
                         if (currentUser.isAdmin != adminFlag || currentUser.coins != updatedCoins || currentUser.diamonds != updatedDiamonds ||
@@ -782,6 +834,25 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
     var activeCategoryHub by remember { mutableStateOf<IntentCategory?>(null) }
     var matchedPartner by remember { mutableStateOf<UserProfile?>(null) }
     var activeChatPartner by remember { mutableStateOf<UserProfile?>(null) }
+
+// Automatic 1-on-1 Chat Deep-Linking from FCM Notification / Internal Intent
+    val pendingChatLink = MainActivity.pendingDeepLinkChatUserId.value ?: initialChatUserId
+    LaunchedEffect(pendingChatLink) {
+        if (!pendingChatLink.isNullOrBlank()) {
+            val targetUid = pendingChatLink.trim()
+            db.collection("users").document(targetUid).get()
+                .addOnSuccessListener { doc ->
+                    if (doc != null && doc.exists()) {
+                        val partner = parseUserProfileFromDoc(doc).copy(uid = doc.id)
+                        activeChatPartner = partner
+                    }
+                    MainActivity.pendingDeepLinkChatUserId.value = null
+                }
+                .addOnFailureListener {
+                    MainActivity.pendingDeepLinkChatUserId.value = null
+                }
+        }
+    }
     var showMainSubscriptionModal by remember { mutableStateOf(false) }
     var subscriptionPaywallNotice by remember { mutableStateOf<String?>(null) }
     var showHostTrialOfferDialog by remember { mutableStateOf(false) }
@@ -1999,6 +2070,10 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                             },
                             db = db,
                             currentUserId = currentUserId,
+                            onNavigateToMoments = { currentScreen = "moments" },
+                            onOpenUserChat = { partner ->
+                                activeChatPartner = partner
+                            },
                             onShareMomentClick = { showPostMomentDialog = true },
                             onEditMoment = { moment ->
                                 momentToEdit = moment
@@ -2602,6 +2677,15 @@ fun LiveTogatherApp(initialRoomId: String? = null) {
                         .addOnSuccessListener { doc ->
                             if (doc != null && doc.exists()) {
                                 activeAudioRoom = parseRoomFromDoc(doc)
+                            }
+                        }
+                },
+                onOpenChat = { targetUid ->
+                    db.collection("users").document(targetUid).get()
+                        .addOnSuccessListener { doc ->
+                            if (doc != null && doc.exists()) {
+                                val partner = parseUserProfileFromDoc(doc).copy(uid = doc.id)
+                                activeChatPartner = partner
                             }
                         }
                 },
@@ -4444,6 +4528,8 @@ fun ProfileScreenContent(
     userMoments: List<MomentItem>,
     db: FirebaseFirestore,
     currentUserId: String,
+    onNavigateToMoments: () -> Unit = {},
+    onOpenUserChat: (UserProfile) -> Unit = {},
     onUpdateProfile: (UserProfile) -> Unit,
     onSelectPlan: (SubscriptionPlanItem) -> Unit,
     onOpenSettings: () -> Unit,
@@ -4455,6 +4541,8 @@ fun ProfileScreenContent(
     onDeleteMoment: (MomentItem) -> Unit = {},
     onOpenPrivacyPolicy: () -> Unit = {}
 ) {
+    var showSocialConnectionsDialog by remember { mutableStateOf(false) }
+    var socialConnectionsInitialTab by remember { mutableIntStateOf(0) }
     var isEditing by remember { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
@@ -5128,17 +5216,34 @@ fun ProfileScreenContent(
                                     horizontalArrangement = Arrangement.SpaceAround,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier.clickable {
+                                            socialConnectionsInitialTab = 0
+                                            showSocialConnectionsDialog = true
+                                        }
+                                    ) {
                                         Text(text = "${currentUser.followingCount}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black)
                                         Text(text = "Following", color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp, fontWeight = FontWeight.Medium)
                                     }
                                     Box(modifier = Modifier.width(1.dp).height(20.dp).background(Color(0xFF33264A)))
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier.clickable {
+                                            socialConnectionsInitialTab = 1
+                                            showSocialConnectionsDialog = true
+                                        }
+                                    ) {
                                         Text(text = "${currentUser.followerCount}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black)
                                         Text(text = "Followers", color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp, fontWeight = FontWeight.Medium)
                                     }
                                     Box(modifier = Modifier.width(1.dp).height(20.dp).background(Color(0xFF33264A)))
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier.clickable {
+                                            onNavigateToMoments()
+                                        }
+                                    ) {
                                         Text(text = "${userMoments.size}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black)
                                         Text(text = "Moments", color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp, fontWeight = FontWeight.Medium)
                                     }
@@ -6373,6 +6478,19 @@ fun ProfileScreenContent(
             onDismiss = { showSelfieVerificationModal = false },
             onVerifiedSubmitted = { updated ->
                 onUpdateProfile(updated)
+            }
+        )
+    }
+
+    if (showSocialConnectionsDialog) {
+        SocialConnectionsDialog(
+            initialTab = socialConnectionsInitialTab,
+            currentUser = currentUser,
+            db = db,
+            onDismiss = { showSocialConnectionsDialog = false },
+            onOpenUserChat = { partner ->
+                showSocialConnectionsDialog = false
+                onOpenUserChat(partner)
             }
         )
     }
@@ -8636,6 +8754,7 @@ fun NotificationsDialog(
     notifications: List<NotificationItem>,
     onDismiss: () -> Unit,
     onOpenRoom: ((String) -> Unit)? = null,
+    onOpenChat: ((String) -> Unit)? = null,
     onOpenAdmin: ((Int) -> Unit)? = null,
     onMarkAllRead: () -> Unit
 ) {
@@ -8687,6 +8806,9 @@ fun NotificationsDialog(
                                             onDismiss()
                                         } else if (notif.roomId.isNotBlank()) {
                                             onOpenRoom?.invoke(notif.roomId)
+                                            onDismiss()
+                                        } else if (notif.senderId.isNotBlank() && notif.senderId != "system_livetogather") {
+                                            onOpenChat?.invoke(notif.senderId)
                                             onDismiss()
                                         }
                                     },
