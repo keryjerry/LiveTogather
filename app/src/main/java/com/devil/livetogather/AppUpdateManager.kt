@@ -130,22 +130,44 @@ object AppUpdateManager {
         CoroutineScope(Dispatchers.IO).launch {
             var connection: HttpURLConnection? = null
             try {
-                val url = URL(apkUrl)
-                connection = url.openConnection() as HttpURLConnection
-                connection.connectTimeout = 15000
-                connection.readTimeout = 30000
-                connection.instanceFollowRedirects = true
-                connection.connect()
+                // Multi-hop redirect follower for GitHub releases (HTTP 302 -> objects.githubusercontent.com)
+                var currentUrl = apkUrl
+                var redirectCount = 0
+                val maxRedirects = 6
 
-                val responseCode = connection.responseCode
-                if (responseCode !in 200..299) {
+                while (redirectCount < maxRedirects) {
+                    val url = URL(currentUrl)
+                    connection = (url.openConnection() as HttpURLConnection).apply {
+                        connectTimeout = 20000
+                        readTimeout = 60000
+                        instanceFollowRedirects = true
+                        setRequestProperty("User-Agent", "LiveTogather-Updater/1.0")
+                    }
+                    connection.connect()
+
+                    val responseCode = connection.responseCode
+                    if (responseCode in listOf(HttpURLConnection.HTTP_MOVED_PERM, HttpURLConnection.HTTP_MOVED_TEMP, HttpURLConnection.HTTP_SEE_OTHER, 307, 308)) {
+                        val redirectLocation = connection.getHeaderField("Location")
+                        connection.disconnect()
+                        if (!redirectLocation.isNullOrBlank()) {
+                            currentUrl = redirectLocation
+                            redirectCount++
+                            continue
+                        }
+                    }
+                    break
+                }
+
+                val nonNullConn = connection
+                val finalCode = nonNullConn?.responseCode ?: -1
+                if (nonNullConn == null || finalCode !in 200..299) {
                     withContext(Dispatchers.Main) {
-                        onError("Server returned HTTP $responseCode")
+                        onError("Server returned HTTP $finalCode")
                     }
                     return@launch
                 }
 
-                val fileLength = connection.contentLength
+                val fileLength = nonNullConn.contentLength
                 val cacheDir = context.externalCacheDir ?: context.cacheDir
                 if (!cacheDir.exists()) {
                     cacheDir.mkdirs()
@@ -167,7 +189,7 @@ object AppUpdateManager {
                     destinationFile.delete()
                 }
 
-                val input = connection.inputStream
+                val input = nonNullConn.inputStream
                 val output = FileOutputStream(destinationFile)
                 val buffer = ByteArray(8192)
                 var total: Long = 0
@@ -187,6 +209,14 @@ object AppUpdateManager {
                 output.flush()
                 output.close()
                 input.close()
+
+                if (destinationFile.length() < 100_000L) {
+                    destinationFile.delete()
+                    withContext(Dispatchers.Main) {
+                        onError("Downloaded APK file is incomplete or invalid.")
+                    }
+                    return@launch
+                }
 
                 withContext(Dispatchers.Main) {
                     onSuccess()

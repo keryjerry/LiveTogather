@@ -5610,6 +5610,48 @@ fun AudioHangoutRoomDialog(
         }
     }
 
+    // Auto-Play Current User's Selected VIP Entrance Video on Room Entry
+    var hasAutoPlayedOwnEntrance by remember(room.id, currentUser.uid) { mutableStateOf(false) }
+    LaunchedEffect(room.id, currentUser.activeEntranceVideo) {
+        if (!hasAutoPlayedOwnEntrance && currentUser.activeEntranceVideo.isNotBlank()) {
+            hasAutoPlayedOwnEntrance = true
+            delay(700)
+            val vidKey = currentUser.activeEntranceVideo
+            val resolvedGiftId = when {
+                vidKey.endsWith("_mp4") -> vidKey
+                vidKey == "lamborgini_car" -> "lamborghini_mp4"
+                vidKey == "eagle_entry" -> "eagle_entry_mp4"
+                vidKey == "king_lion_entry" -> "king_lion_mp4"
+                vidKey == "golden_super_car" -> "golden_super_car_mp4"
+                vidKey == "terminator_entry" -> "terminator_dragon_mp4"
+                vidKey == "king_entry" -> "king_entry_mp4"
+                vidKey == "heaven_ship" -> "heaven_ship_mp4"
+                vidKey == "royal_jet" -> "royal_jet_mp4"
+                vidKey == "gift_cyber_arena" -> "gift_cyber_arena_mp4"
+                else -> "${vidKey}_mp4"
+            }
+            val entranceEvent = GiftEvent(
+                id = UUID.randomUUID().toString(),
+                giftId = resolvedGiftId,
+                giftName = "👑 VIP Sovereign Arrival",
+                giftEmoji = "🎬",
+                senderId = currentUser.uid,
+                senderName = currentUser.name,
+                senderPhoto = currentUser.photo,
+                targetUserName = "All Members",
+                animationType = "video_mp4",
+                cost = 0L,
+                timestamp = System.currentTimeMillis()
+            )
+            // 1. Play on local screen
+            activeGiftEvent = entranceEvent
+            // 2. Broadcast to room so all active participants see and hear the VIP entrance
+            db.collection("rooms").document(room.id)
+                .collection("gift_events").document(entranceEvent.id)
+                .set(entranceEvent)
+        }
+    }
+
     LaunchedEffect(activeMembers.size) {
         if (knownMemberIds.isEmpty()) {
             knownMemberIds.addAll(activeMembers.map { it.uid })
