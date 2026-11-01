@@ -308,12 +308,15 @@ object ChatMediaEngine {
         val receiverRef = db.collection("users").document(receiver.uid)
         batch.update(receiverRef, "diamonds", com.google.firebase.firestore.FieldValue.increment(giftDiamonds))
 
-        // 3. Mark match as unlocked
+        // 3. Mark match as unlocked and guarantee users list is populated
         val matchRef = db.collection("matches").document(matchId)
         val matchUpdates = mapOf<String, Any>(
+            "matchId" to matchId,
+            "users" to listOf(sender.uid, receiver.uid),
             "isUnlocked" to true,
             "unlockedBy" to sender.uid,
             "unlockGiftAmount" to giftDiamonds,
+            "lastMessage" to "👑 Unlocked conversation with a 5,000 💎 Luxury Introduction Gift!",
             "intimacyXp" to com.google.firebase.firestore.FieldValue.increment(giftDiamonds / 10), // +500 XP bonus!
             "timestamp" to System.currentTimeMillis()
         )

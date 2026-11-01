@@ -14,8 +14,8 @@ android {
         applicationId = "com.devil.livetogather"
         minSdk = 26
         targetSdk = 35
-        versionCode = 12
-        versionName = "1.0.11"
+        versionCode = 13
+        versionName = "1.0.12"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -25,11 +25,11 @@ android {
             storeFile = rootProject.file("app/release.jks")
             storePassword = providers.gradleProperty("RELEASE_STORE_PASSWORD")
                 .orElse(providers.environmentVariable("RELEASE_STORE_PASSWORD"))
-                .orNull.orEmpty()
+                .getOrElse("livetogather123")
             keyAlias = "livetogather"
             keyPassword = providers.gradleProperty("RELEASE_KEY_PASSWORD")
                 .orElse(providers.environmentVariable("RELEASE_KEY_PASSWORD"))
-                .orNull.orEmpty()
+                .getOrElse("livetogather123")
         }
     }
 

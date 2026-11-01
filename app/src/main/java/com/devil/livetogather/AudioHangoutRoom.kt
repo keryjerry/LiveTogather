@@ -8591,14 +8591,20 @@ fun AudioHangoutRoomDialog(
                     } else {
                         occupiedSeats.map { it.uid }.distinct()
                     }
-                    if (recipientUids.isEmpty()) {
-                        Toast.makeText(context, "No eligible gift recipient is seated.", Toast.LENGTH_SHORT).show()
+                    val effectiveRecipients = if (recipientUids.isNotEmpty()) {
+                        recipientUids
                     } else {
-                        val totalCost = giftItem.cost * quantity * recipientUids.size
+                        val hostUid = targetHostId.ifBlank { room.hostUid.ifBlank { room.hostId } }
+                        if (hostUid.isNotBlank() && hostUid != currentUser.uid) listOf(hostUid) else emptyList()
+                    }
+                    if (effectiveRecipients.isEmpty()) {
+                        Toast.makeText(context, "Select an active host or seated member to send gift.", Toast.LENGTH_SHORT).show()
+                    } else {
+                        val totalCost = giftItem.cost * quantity * effectiveRecipients.size
                         GiftTransactionService.sendGift(
                             roomId = room.id,
                             giftId = giftItem.id,
-                            recipientUids = recipientUids,
+                            recipientUids = effectiveRecipients,
                             quantity = quantity,
                             fromBackpack = fromBackpack,
                             targetMicSeatIndex = targetSeatIndex
@@ -9292,323 +9298,19 @@ fun InRoomInboxDialog(
                         }
                     }
                 } else {
-                    // 1-ON-1 DIRECT CHAT SCREEN
+                    // UNIFIED ADVANCED 1-ON-1 CHAT SCREEN (VIP frames, voice notes, 3D luxury gifts, intimacy)
                     val partner = selectedPartner!!
-                    val matchId = selectedMatchId ?: if (currentUser.uid < partner.uid) "${currentUser.uid}_${partner.uid}" else "${partner.uid}_${currentUser.uid}"
-                    val chatMessages = remember { mutableStateListOf<ChatMessage>() }
-                    var messageInput by remember { mutableStateOf("") }
-                    val listState = rememberLazyListState()
-                    val coroutineScope = rememberCoroutineScope()
-
-                    DisposableEffect(matchId) {
-                        val msgListener = db.collection("matches").document(matchId)
-                            .collection("messages")
-                            .orderBy("timestamp", Query.Direction.ASCENDING)
-                            .limitToLast(50)
-                            .addSnapshotListener { snapshot, error ->
-                                if (error != null) return@addSnapshotListener
-                                if (snapshot != null) {
-                                    val list = snapshot.documents.mapNotNull { it.toObject(ChatMessage::class.java) }
-                                    chatMessages.clear()
-                                    chatMessages.addAll(list)
-                                    if (list.isNotEmpty()) {
-                                        coroutineScope.launch {
-                                            listState.animateScrollToItem(list.size - 1)
-                                        }
-                                    }
-                                }
-                            }
-                        onDispose { msgListener.remove() }
-                    }
-
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        // Chat Header
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(Color.Black.copy(alpha = 0.5f))
-                                .padding(horizontal = 10.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            IconButton(
-                                onClick = {
-                                    selectedPartner = null
-                                    selectedMatchId = null
-                                },
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                    contentDescription = "Back",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(6.dp))
-                            AsyncImage(
-                                model = partner.photo.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .size(34.dp)
-                                    .clip(CircleShape),
-                                contentScale = ContentScale.Crop
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = partner.name,
-                                    color = Color.White,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "Live In-Room Chat",
-                                    color = BrandGreen,
-                                    fontSize = 10.sp
-                                )
-                            }
-                            var showChatMenu by remember { mutableStateOf(false) }
-                            val isBlocked = currentUser.blockedUserIds.contains(partner.uid)
-                            Box {
-                                IconButton(
-                                    onClick = { showChatMenu = true },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.MoreVert,
-                                        contentDescription = "Options",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                                DropdownMenu(
-                                    expanded = showChatMenu,
-                                    onDismissRequest = { showChatMenu = false },
-                                    modifier = Modifier.background(BrandCard)
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text("🧹 Clear Chat History", color = Color.White, fontSize = 13.sp) },
-                                        onClick = {
-                                            showChatMenu = false
-                                            db.collection("matches").document(matchId).collection("messages").get()
-                                                .addOnSuccessListener { sn ->
-                                                    for (d in sn.documents) { d.reference.delete() }
-                                                    db.collection("matches").document(matchId).update("lastMessage", "")
-                                                    chatMessages.clear()
-                                                    Toast.makeText(context, "Chat history cleared", Toast.LENGTH_SHORT).show()
-                                                }
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = {
-                                            Text(
-                                                if (isBlocked) "✅ Unblock User" else "🚫 Block User",
-                                                color = if (isBlocked) BrandGreen else Color(0xFFFF5252),
-                                                fontSize = 13.sp
-                                            )
-                                        },
-                                        onClick = {
-                                            showChatMenu = false
-                                            val updatedBlocked = if (isBlocked) {
-                                                currentUser.blockedUserIds - partner.uid
-                                            } else {
-                                                currentUser.blockedUserIds + partner.uid
-                                            }
-                                            db.collection("users").document(currentUser.uid)
-                                                .update("blockedUserIds", updatedBlocked)
-                                            Toast.makeText(
-                                                context,
-                                                if (isBlocked) "${partner.name} unblocked" else "${partner.name} blocked",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("🚨 Report User", color = Color(0xFFFF9100), fontSize = 13.sp) },
-                                        onClick = {
-                                            showChatMenu = false
-                                            val reportData = hashMapOf(
-                                                "reporterId" to currentUser.uid,
-                                                "reporterName" to currentUser.name,
-                                                "reportedUserId" to partner.uid,
-                                                "reportedUserName" to partner.name,
-                                                "reason" to "Reported from in-room chat",
-                                                "timestamp" to System.currentTimeMillis()
-                                            )
-                                            db.collection("reports").add(reportData)
-                                            Toast.makeText(context, "Report submitted to moderators. Thank you.", Toast.LENGTH_SHORT).show()
-                                        }
-                                    )
-                                    HorizontalDivider(color = BrandBorder, thickness = 0.5.dp)
-                                    DropdownMenuItem(
-                                        text = { Text("🗑️ Delete Conversation", color = Color.Red, fontSize = 13.sp, fontWeight = FontWeight.Bold) },
-                                        onClick = {
-                                            showChatMenu = false
-                                            db.collection("matches").document(matchId).collection("messages").get()
-                                                .addOnSuccessListener { sn ->
-                                                    for (d in sn.documents) { d.reference.delete() }
-                                                    db.collection("matches").document(matchId).delete()
-                                                    selectedPartner = null
-                                                    selectedMatchId = null
-                                                    Toast.makeText(context, "Conversation deleted", Toast.LENGTH_SHORT).show()
-                                                }
-                                        }
-                                    )
-                                }
-                            }
-                            IconButton(
-                                onClick = onDismiss,
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Close",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f), thickness = 0.5.dp)
-
-                        // Messages History List
-                        LazyColumn(
-                            state = listState,
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            items(chatMessages) { msg ->
-                                val isMe = msg.senderId == currentUser.uid
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .widthIn(max = 260.dp)
-                                            .clip(
-                                                RoundedCornerShape(
-                                                    topStart = 14.dp,
-                                                    topEnd = 14.dp,
-                                                    bottomStart = if (isMe) 14.dp else 2.dp,
-                                                    bottomEnd = if (isMe) 2.dp else 14.dp
-                                                )
-                                            )
-                                            .background(
-                                                if (isMe) Brush.linearGradient(listOf(BrandCoral, Color(0xFFFF4081)))
-                                                else Brush.linearGradient(listOf(Color(0xFF2B2129), Color(0xFF382A35)))
-                                            )
-                                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                                    ) {
-                                        Text(
-                                            text = msg.text,
-                                            color = Color.White,
-                                            fontSize = 13.sp
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        // Message Input Field
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(Color.Black.copy(alpha = 0.6f))
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(24.dp))
-                                    .background(Color.White.copy(alpha = 0.08f))
-                                    .border(1.dp, BrandBorder.copy(alpha = 0.5f), RoundedCornerShape(24.dp))
-                                    .padding(horizontal = 12.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                BasicTextField(
-                                    value = messageInput,
-                                    onValueChange = { messageInput = it },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .padding(vertical = 8.dp),
-                                    textStyle = TextStyle(color = Color.White, fontSize = 13.sp),
-                                    cursorBrush = SolidColor(BrandCoral),
-                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                                    keyboardActions = KeyboardActions(
-                                        onSend = {
-                                            if (messageInput.isNotBlank()) {
-                                                val text = messageInput.trim()
-                                                val badWord = AbuseFilterEngine.findAbusiveWord(text)
-                                                if (badWord != null) {
-                                                    android.widget.Toast.makeText(context, "🚫 Blocked: Inappropriate word ($badWord) is prohibited in LiveTogather!", android.widget.Toast.LENGTH_SHORT).show()
-                                                    return@KeyboardActions
-                                                }
-                                                val newMsg = ChatMessage(senderId = currentUser.uid, text = text, timestamp = System.currentTimeMillis())
-                                                db.collection("matches").document(matchId).collection("messages").add(newMsg)
-                                                db.collection("matches").document(matchId).set(
-                                                    mapOf(
-                                                        "matchId" to matchId,
-                                                        "users" to listOf(currentUser.uid, partner.uid),
-                                                        "lastMessage" to text,
-                                                        "timestamp" to System.currentTimeMillis()
-                                                    ),
-                                                    SetOptions.merge()
-                                                )
-                                                messageInput = ""
-                                            }
-                                        }
-                                    ),
-                                    decorationBox = { innerTextField ->
-                                        if (messageInput.isEmpty()) {
-                                            Text("Type a message...", color = Color.Gray, fontSize = 13.sp)
-                                        }
-                                        innerTextField()
-                                    }
-                                )
-                            }
-
-                            IconButton(
-                                onClick = {
-                                    if (messageInput.isNotBlank()) {
-                                        val text = messageInput.trim()
-                                        val badWord = AbuseFilterEngine.findAbusiveWord(text)
-                                        if (badWord != null) {
-                                            android.widget.Toast.makeText(context, "🚫 Blocked: Inappropriate word ($badWord) is prohibited in LiveTogather!", android.widget.Toast.LENGTH_SHORT).show()
-                                            return@IconButton
-                                        }
-                                        val newMsg = ChatMessage(senderId = currentUser.uid, text = text, timestamp = System.currentTimeMillis())
-                                        db.collection("matches").document(matchId).collection("messages").add(newMsg)
-                                        db.collection("matches").document(matchId).set(
-                                            mapOf(
-                                                "matchId" to matchId,
-                                                "users" to listOf(currentUser.uid, partner.uid),
-                                                "lastMessage" to text,
-                                                "timestamp" to System.currentTimeMillis()
-                                            ),
-                                            SetOptions.merge()
-                                        )
-                                        messageInput = ""
-                                    }
-                                },
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .background(BrandCoral, CircleShape)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.Send,
-                                    contentDescription = "Send",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(15.dp)
-                                )
-                            }
-                        }
-                    }
+                    Advanced1v1ChatScreen(
+                        currentUserId = currentUser.uid,
+                        currentUser = currentUser,
+                        partner = partner,
+                        db = db,
+                        onDismiss = {
+                            selectedPartner = null
+                            selectedMatchId = null
+                        },
+                        onUpdateCurrentUser = { updated -> }
+                    )
                 }
             }
         // Inbox Action Dialog for Recent Chats

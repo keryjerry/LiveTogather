@@ -192,6 +192,24 @@ class FirestoreRefreshEngine(
             // 7. Live Matches Sync from Server
             if (currentUserId.isNotBlank()) {
                 try {
+                    // Auto-heal legacy match documents where users array was not stored
+                    try {
+                        val allMatchesSnap = db.collection("matches").limit(50).get().await()
+                        for (doc in allMatchesSnap.documents) {
+                            val usersList = doc.get("users") as? List<*>
+                            if (usersList == null || usersList.isEmpty()) {
+                                val parts = doc.id.split("_")
+                                if (parts.size == 2 && parts.all { it.isNotBlank() }) {
+                                    doc.reference.update(
+                                        "users", parts,
+                                        "matchId", doc.id
+                                    )
+                                }
+                            }
+                        }
+                    } catch (healError: Exception) {
+                        Log.d(TAG, "Legacy match heal check: ${healError.message}")
+                    }
                     val matchesSnap = try {
                         db.collection("matches")
                             .whereArrayContains("users", currentUserId)
