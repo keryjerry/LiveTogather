@@ -862,7 +862,9 @@ data class UserProfile(
     // Values: "analyzer", "volunteer", "safety_patrol", or ""
     val officialRole: String = "",
     val activeSessionId: String = "",
-    val activeEntranceVideo: String = ""
+    val activeEntranceVideo: String = "",
+    val ownedVipTiers: List<Int> = emptyList(),
+    val vipExpiries: Map<String, Long> = emptyMap()
 ) {
     val isVerifiedUser: Boolean get() = verificationStatus.equals("verified", ignoreCase = true)
     val level: Int get() = maxOf(wealthLevel, charmLevel, pkLevel)
@@ -873,6 +875,24 @@ data class UserProfile(
     fun getEffectivePkLevel(): Int = LevelBadgeSystem.calculatePkLevel(pkWins)
     fun getWealthTierInfo(): LevelTierInfo = LevelBadgeSystem.getLevelTierInfo(getEffectiveWealthLevel())
     fun getCharmTierInfo(): LevelTierInfo = LevelBadgeSystem.getLevelTierInfo(getEffectiveCharmLevel())
+
+    fun hasActiveVipTier(tierLevel: Int): Boolean {
+        if (isFounder()) return true
+        val exp = vipExpiries["vip_$tierLevel"] ?: 0L
+        if (exp > System.currentTimeMillis()) return true
+        if (ownedVipTiers.contains(tierLevel) && exp == 0L) return true
+        if (plan.equals("VIP $tierLevel", ignoreCase = true)) return true
+        if (getVipLevel() == tierLevel && !isDatingSubscription()) return true
+        return false
+    }
+
+    fun getVipTierRemainingDays(tierLevel: Int): Long {
+        if (isFounder()) return 30L
+        val exp = vipExpiries["vip_$tierLevel"] ?: 0L
+        if (exp <= System.currentTimeMillis()) return 0L
+        val diff = exp - System.currentTimeMillis()
+        return (diff / (24L * 60 * 60 * 1000L)).coerceAtLeast(1L)
+    }
 
     fun isOfficialAdmin(authEmail: String? = null): Boolean {
         val checkEmail = email.ifBlank { authEmail ?: "" }
@@ -1030,6 +1050,12 @@ data class UserProfile(
             }
         }
 
+        // Check owned active vip tiers
+        val activeTiers = ownedVipTiers.filter { hasActiveVipTier(it) }
+        if (activeTiers.isNotEmpty()) {
+            return activeTiers.maxOrNull() ?: 1
+        }
+
         // Dating subscriptions strictly DO NOT grant any broadcast VIP level or broadcast crown
         if (isDatingSubscription()) {
             return if (isTrialActive) 1 else 0
@@ -1178,6 +1204,13 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
     val verificationStatus = doc.getString("verificationStatus") ?: "unverified"
     val verificationSelfieUrl = doc.getString("verificationSelfieUrl") ?: ""
     val verificationTimestamp = doc.getLong("verificationTimestamp") ?: 0L
+    val rawOwnedVipTiers = (doc.get("ownedVipTiers") as? List<*>)
+    val ownedVipTiers: List<Int> = rawOwnedVipTiers?.mapNotNull { (it as? Number)?.toInt() } ?: emptyList()
+    val rawVipExpiries = doc.get("vipExpiries") as? Map<*, *>
+    val vipExpiries: Map<String, Long> = rawVipExpiries?.mapNotNull { (k, v) ->
+        val l = (v as? Number)?.toLong()
+        if (k is String && l != null) k to l else null
+    }?.toMap() ?: emptyMap()
 
     return UserProfile(
         uid = uid,
@@ -1277,7 +1310,9 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
         activeEntranceVideo = activeEntranceVideo,
         verificationStatus = verificationStatus,
         verificationSelfieUrl = verificationSelfieUrl,
-        verificationTimestamp = verificationTimestamp
+        verificationTimestamp = verificationTimestamp,
+        ownedVipTiers = ownedVipTiers,
+        vipExpiries = vipExpiries
     )
 }
 

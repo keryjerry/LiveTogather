@@ -1351,8 +1351,7 @@ fun VipCenterDialog(
     val currentTier = tiers[selectedTierIndex]
 
     // Ownership & Equipped Checks - Strictly for the specific purchased tier!
-    val isOwned = (vipUser.getVipLevel() == currentTier.level) ||
-        vipUser.plan.equals("VIP ${currentTier.level}", ignoreCase = true)
+    val isOwned = vipUser.hasActiveVipTier(currentTier.level)
 
     val isEquipped = vipUser.activeFrame == currentTier.frameId &&
         vipUser.activeChatFrame == currentTier.chatFrameId
@@ -1916,11 +1915,12 @@ fun VipCenterDialog(
                 // 3. Fixed Bottom Action Bar:
                 // Strictly ONLY Purchase button if not purchased!
                 // Once purchased, shows Wear (वियर) and Unwear (अनवियर) button!
-                val hasPurchasedTier = (vipUser.getVipLevel() == currentTier.level) ||
-                    vipUser.plan.equals("VIP ${currentTier.level}", ignoreCase = true)
+                val hasPurchasedTier = vipUser.hasActiveVipTier(currentTier.level)
+                val remainingDays = vipUser.getVipTierRemainingDays(currentTier.level)
 
-                val isWorn = vipUser.activeFrame == currentTier.frameId &&
-                    vipUser.activeChatFrame == currentTier.chatFrameId
+                val isWorn = (vipUser.activeFrame == currentTier.frameId &&
+                    vipUser.activeChatFrame == currentTier.chatFrameId) ||
+                    (vipUser.activeFrame == currentTier.frameId)
 
                 Surface(
                     color = Color(0xFF08060D),
@@ -1952,15 +1952,34 @@ fun VipCenterDialog(
                             // NOT PURCHASED YET: Show ONLY the Purchase Button!
                             Button(
                                 onClick = {
-                                    checkoutPackage = CoinPackageItem(
-                                        id = "vip_package_${currentTier.level}",
-                                        coins = 0L,
-                                        priceInr = currentTier.formattedPrice,
-                                        numericPrice = currentTier.inrPrice.toString(),
-                                        title = "LiveTogather ${currentTier.name} Dressing Up Suite (30 Days)",
-                                        badge = currentTier.name
-                                    )
-                                    showPaymentModal = true
+                                    if (isFounder) {
+                                        val thirtyDaysMillis = 30L * 24 * 60 * 60 * 1000L
+                                        val expiry = System.currentTimeMillis() + thirtyDaysMillis
+                                        val vipKey = "vip_${currentTier.level}"
+                                        db.collection("users").document(vipUser.uid).update(
+                                            mapOf(
+                                                "ownedVipTiers" to com.google.firebase.firestore.FieldValue.arrayUnion(currentTier.level),
+                                                "vipExpiries.$vipKey" to expiry
+                                            )
+                                        )
+                                        val updatedUser = vipUser.copy(
+                                            ownedVipTiers = (vipUser.ownedVipTiers + currentTier.level).distinct(),
+                                            vipExpiries = vipUser.vipExpiries + (vipKey to expiry)
+                                        )
+                                        liveUser = updatedUser
+                                        onProfileUpdated(updatedUser)
+                                        Toast.makeText(context, "👑 Founder Instant Access: ${currentTier.name} 30-Day Suite Unlocked!", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        checkoutPackage = CoinPackageItem(
+                                            id = "vip_package_${currentTier.level}",
+                                            coins = 0L,
+                                            priceInr = currentTier.formattedPrice,
+                                            numericPrice = currentTier.inrPrice.toString(),
+                                            title = "LiveTogather ${currentTier.name} Dressing Up Suite (30 Days)",
+                                            badge = currentTier.name
+                                        )
+                                        showPaymentModal = true
+                                    }
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFC107)),
                                 shape = RoundedCornerShape(26.dp),
@@ -1984,6 +2003,20 @@ fun VipCenterDialog(
                             }
                         } else {
                             // PURCHASED: Show Wear (वियर) / Unwear (अनवियर) Toggle Button!
+                            Surface(
+                                color = Color(0xFF10B981).copy(alpha = 0.2f),
+                                shape = RoundedCornerShape(50),
+                                border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.7f)),
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            ) {
+                                Text(
+                                    text = "✓ Owned • $remainingDays Days Validity Remaining",
+                                    color = Color(0xFF86EFAC),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 3.dp)
+                                )
+                            }
                             Button(
                                 onClick = {
                                     if (isWorn) {

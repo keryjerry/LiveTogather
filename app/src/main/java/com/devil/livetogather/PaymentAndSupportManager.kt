@@ -390,6 +390,9 @@ object PaymentAndSupportManager {
                 "chat_frame_imperial_amethyst",
                 "chat_frame_celestial_dragon"
             )[request.vipLevel]
+            val thirtyDaysMillis = 30L * 24 * 60 * 60 * 1000L
+            val expiryTimestamp = System.currentTimeMillis() + thirtyDaysMillis
+            val vipKey = "vip_${request.vipLevel}"
             updateMap["plan"] = "VIP ${request.vipLevel}"
             updateMap["vipLevel"] = request.vipLevel
             updateMap["activeFrame"] = vipFrame
@@ -400,6 +403,8 @@ object PaymentAndSupportManager {
             updateMap["activeEntranceEffect"] = "entrance_vip_${request.vipLevel}"
             updateMap["ownedFrames"] = FieldValue.arrayUnion(vipFrame)
             updateMap["ownedChatFrames"] = FieldValue.arrayUnion(vipChatFrame)
+            updateMap["ownedVipTiers"] = FieldValue.arrayUnion(request.vipLevel)
+            updateMap["vipExpiries.$vipKey"] = expiryTimestamp
         }
         if (updateMap.isNotEmpty()) {
             batch.update(userRef, updateMap)
