@@ -864,8 +864,18 @@ data class UserProfile(
     val activeSessionId: String = "",
     val activeEntranceVideo: String = "",
     val ownedVipTiers: List<Int> = emptyList(),
-    val vipExpiries: Map<String, Long> = emptyMap()
+    val vipExpiries: Map<String, Long> = emptyMap(),
+    val activeProfileBorderFrame: String = ""
 ) {
+    fun hasActiveProfileBorderFrame(): Boolean {
+        return isFounder() || activeProfileBorderFrame.isNotBlank()
+    }
+
+    fun getEffectiveProfileBorderFrame(): String {
+        if (activeProfileBorderFrame.isNotBlank()) return activeProfileBorderFrame
+        if (isFounder()) return "ice_butterfly"
+        return ""
+    }
     val isVerifiedUser: Boolean get() = verificationStatus.equals("verified", ignoreCase = true)
     val level: Int get() = maxOf(wealthLevel, charmLevel, pkLevel)
     fun getEffectiveWealthLevel(): Int = LevelBadgeSystem.getEffectiveWealthLevel(this)
@@ -882,7 +892,6 @@ data class UserProfile(
         if (exp > System.currentTimeMillis()) return true
         if (ownedVipTiers.contains(tierLevel) && exp == 0L) return true
         if (plan.equals("VIP $tierLevel", ignoreCase = true)) return true
-        if (getVipLevel() == tierLevel && !isDatingSubscription()) return true
         return false
     }
 
@@ -1211,6 +1220,7 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
         val l = (v as? Number)?.toLong()
         if (k is String && l != null) k to l else null
     }?.toMap() ?: emptyMap()
+    val activeProfileBorderFrame = doc.getString("activeProfileBorderFrame") ?: ""
 
     return UserProfile(
         uid = uid,
@@ -1312,7 +1322,8 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
         verificationSelfieUrl = verificationSelfieUrl,
         verificationTimestamp = verificationTimestamp,
         ownedVipTiers = ownedVipTiers,
-        vipExpiries = vipExpiries
+        vipExpiries = vipExpiries,
+        activeProfileBorderFrame = activeProfileBorderFrame
     )
 }
 

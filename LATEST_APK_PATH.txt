@@ -2,15 +2,22 @@
 LIVE TOGATHER - LATEST INSTALLED / BUILT APK PATH
 ==================================================
 
-1. APK File Full Path:
-C:\Users\user\LiveTogather\app\build\outputs\apk\debug\app-debug.apk
+1. Latest Release APK Full Path:
+C:\Users\user\LiveTogather\app-release-v1.0.14.apk
+or
+C:\Users\user\LiveTogather\app\build\outputs\apk\release\app-release.apk
 
 2. APK Folder Path:
-C:\Users\user\LiveTogather\app\build\outputs\apk\debug
+C:\Users\user\LiveTogather\app\build\outputs\apk\release
 
-3. Phone (Installed Package):
-Package: com.devil.livetogather
-Device Path: /data/app/~~XstlzEqtQK41-DZebK6H9w==/com.devil.livetogather-WqL5gVxDI4ZQBvFlUnNVSA==/base.apk
+3. Version:
+Version Code: 15
+Version Name: 1.0.14
 
-4. Open in Explorer (Win + R):
-explorer.exe " C:\Users\user\LiveTogather\app\build\outputs\apk\debug\
+4. Key Updates in v1.0.14:
+- Fixed infinite recursion crash bug in DataModels.kt (hasActiveVipTier / getVipLevel StackOverflowError).
+- Added 15 photorealistic 3D full-length mobile profile border frames in app/src/main/res/drawable/.
+- Implemented animated continuous shimmer lighting and glowing luxury border overlay.
+- Enabled 100% full profile scrollability underneath the frame without touch interception.
+- Defaulted Founder profile (servicesecure822@gmail.com) to active Ice Crystal Butterfly frame.
+- Added 🖼️ Luxury Profile Frame picker dialog with all 15 themes so founder and VIP users can switch frames with one click.

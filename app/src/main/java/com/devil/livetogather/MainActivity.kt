@@ -4608,6 +4608,7 @@ fun ProfileScreenContent(
     var showVipStatusDialog by remember { mutableStateOf(false) }
     var showSetPasswordDialog by remember { mutableStateOf(false) }
     var showHelpDeskModal by remember { mutableStateOf(false) }
+    var showProfileBorderPickerModal by remember { mutableStateOf(false) }
     var showAdminDashboardModal by remember { mutableStateOf(false) }
     var helpDeskPrefilledPackage by remember { mutableStateOf<CoinPackageItem?>(null) }
     var isUploadingPhoto by remember { mutableStateOf(false) }
@@ -4746,6 +4747,19 @@ fun ProfileScreenContent(
                                     fontSize = 11.5.sp,
                                     fontWeight = FontWeight.ExtraBold
                                 )
+                            }
+                        }
+
+                        // Luxury Profile Border Frame Selector Button
+                        if (currentUser.hasActiveProfileBorderFrame()) {
+                            IconButton(
+                                onClick = { showProfileBorderPickerModal = true },
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .background(Color(0xFF2B1B47), CircleShape)
+                                    .border(1.dp, Brush.sweepGradient(listOf(Color(0xFFFFD700), Color(0xFF00E5FF), Color(0xFFFFD700))), CircleShape)
+                            ) {
+                                Text("🖼️", fontSize = 14.sp)
                             }
                         }
 
@@ -6501,6 +6515,27 @@ fun ProfileScreenContent(
             }
         }
     }
+
+    // 3D Animated Full-Length Luxury Profile Border Overlay
+    if (currentUser.hasActiveProfileBorderFrame()) {
+        val effectiveBorderId = currentUser.getEffectiveProfileBorderFrame()
+        val borderRes = ProfileBorderRegistry.getDrawableForId(effectiveBorderId)
+        LuxuryProfileBorderOverlay(
+            drawableRes = borderRes,
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+}
+
+    if (showProfileBorderPickerModal) {
+        ProfileBorderSelectorDialog(
+            currentUser = currentUser,
+            db = db,
+            onDismiss = { showProfileBorderPickerModal = false },
+            onBorderSelected = { selectedBorderId ->
+                onUpdateProfile(currentUser.copy(activeProfileBorderFrame = selectedBorderId))
+            }
+        )
     }
 
     if (showDeleteConfirmDialog) {
