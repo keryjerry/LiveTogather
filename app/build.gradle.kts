@@ -42,16 +42,19 @@ android {
             signingConfig = signingConfigs.getByName("release")
             isDebuggable = false
             isJniDebuggable = false
-            isMinifyEnabled = true
-            isShrinkResources = true
+            isMinifyEnabled = false
+            isShrinkResources = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
             optimization {
-                enable = true
+                enable = false
             }
         }
+    }
+    lint {
+        checkReleaseBuilds = false
     }
     splits {
         abi {

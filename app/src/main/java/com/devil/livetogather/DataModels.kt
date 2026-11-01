@@ -865,17 +865,27 @@ data class UserProfile(
     val activeEntranceVideo: String = "",
     val ownedVipTiers: List<Int> = emptyList(),
     val vipExpiries: Map<String, Long> = emptyMap(),
-    val activeProfileBorderFrame: String = ""
+    val activeProfileBorderFrame: String = "",
+    val profileFrameExpiries: Map<String, Long> = emptyMap()
 ) {
-    fun hasActiveProfileBorderFrame(): Boolean {
-        return isFounder() || activeProfileBorderFrame.isNotBlank()
+    fun ownsProfileFrame(id: String): Boolean =
+        isFounder() || (profileFrameExpiries[id] ?: 0L) > System.currentTimeMillis()
+
+    fun getProfileFrameRemainingDays(id: String): Long {
+        val exp = profileFrameExpiries[id] ?: 0L
+        val diff = exp - System.currentTimeMillis()
+        return if (diff <= 0L) 0L else (diff / (24L * 60 * 60 * 1000L)).coerceAtLeast(1L)
     }
 
     fun getEffectiveProfileBorderFrame(): String {
-        if (activeProfileBorderFrame.isNotBlank()) return activeProfileBorderFrame
-        if (isFounder()) return "ice_butterfly"
-        return ""
+        if (activeProfileBorderFrame == "none") return ""
+        if (activeProfileBorderFrame.isNotBlank()) {
+            return if (ownsProfileFrame(activeProfileBorderFrame)) activeProfileBorderFrame else ""
+        }
+        return if (isFounder()) "ice_butterfly" else ""
     }
+
+    fun hasActiveProfileBorderFrame(): Boolean = getEffectiveProfileBorderFrame().isNotBlank()
     val isVerifiedUser: Boolean get() = verificationStatus.equals("verified", ignoreCase = true)
     val level: Int get() = maxOf(wealthLevel, charmLevel, pkLevel)
     fun getEffectiveWealthLevel(): Int = LevelBadgeSystem.getEffectiveWealthLevel(this)
@@ -1221,6 +1231,10 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
         if (k is String && l != null) k to l else null
     }?.toMap() ?: emptyMap()
     val activeProfileBorderFrame = doc.getString("activeProfileBorderFrame") ?: ""
+    val profileFrameExpiries: Map<String, Long> = (doc.get("profileFrameExpiries") as? Map<*, *>)?.mapNotNull { (k, v) ->
+        val l = (v as? Number)?.toLong()
+        if (k is String && l != null) k to l else null
+    }?.toMap() ?: emptyMap()
 
     return UserProfile(
         uid = uid,
@@ -1323,7 +1337,8 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
         verificationTimestamp = verificationTimestamp,
         ownedVipTiers = ownedVipTiers,
         vipExpiries = vipExpiries,
-        activeProfileBorderFrame = activeProfileBorderFrame
+        activeProfileBorderFrame = activeProfileBorderFrame,
+        profileFrameExpiries = profileFrameExpiries
     )
 }
 

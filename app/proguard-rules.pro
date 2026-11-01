@@ -1,19 +1,15 @@
-# Firestore creates these Kotlin data models reflectively from document fields.
--keep class com.devil.livetogather.UserProfile { *; }
--keep class com.devil.livetogather.MatchItem { *; }
--keep class com.devil.livetogather.ChatMessage { *; }
--keep class com.devil.livetogather.NotificationItem { *; }
--keep class com.devil.livetogather.SwipeRecord { *; }
--keep class com.devil.livetogather.GiftEvent { *; }
--keep class com.devil.livetogather.LiveEmojiReaction { *; }
--keep class com.devil.livetogather.IntimacyBond { *; }
--keep class com.devil.livetogather.RoomMember { *; }
--keep class com.devil.livetogather.LiveRoomComment { *; }
--keep class com.devil.livetogather.MicSeat { *; }
--keep class com.devil.livetogather.MomentItem { *; }
--keep class com.devil.livetogather.CommentItem { *; }
--keep class com.devil.livetogather.EarningTransaction { *; }
+-keep class com.devil.livetogather.** { *; }
+-keep public class * extends android.app.Activity
+-keep public class * extends android.app.Application
+-keep public class * extends android.app.Service
+-keep public class * extends android.content.BroadcastReceiver
+-keep public class * extends android.content.ContentProvider
 
-# Agora's native JNI_OnLoad resolves internal Java classes by their original names.
+# Firestore models
+-keepclassmembers class * {
+    @com.google.firebase.firestore.** *;
+}
+
+# Agora native JNI
 -keep class io.agora.** { *; }
 -dontwarn com.google.devtools.build.android.desugar.runtime.ThrowableExtension

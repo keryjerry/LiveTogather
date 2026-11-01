@@ -4608,7 +4608,6 @@ fun ProfileScreenContent(
     var showVipStatusDialog by remember { mutableStateOf(false) }
     var showSetPasswordDialog by remember { mutableStateOf(false) }
     var showHelpDeskModal by remember { mutableStateOf(false) }
-    var showProfileBorderPickerModal by remember { mutableStateOf(false) }
     var showAdminDashboardModal by remember { mutableStateOf(false) }
     var helpDeskPrefilledPackage by remember { mutableStateOf<CoinPackageItem?>(null) }
     var isUploadingPhoto by remember { mutableStateOf(false) }
@@ -4667,12 +4666,20 @@ fun ProfileScreenContent(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .statusBarsPadding()
             .background(BrandDark)
     ) {
+        // Live animated luxury frame: edge-to-edge, sits BEHIND all profile content
+        // so every button / avatar / badge stays visible on top of it.
+        if (currentUser.hasActiveProfileBorderFrame()) {
+            LuxuryProfileBorderOverlay(
+                frameId = currentUser.getEffectiveProfileBorderFrame(),
+                modifier = Modifier.fillMaxSize()
+            )
+        }
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
+                .statusBarsPadding()
                 .imePadding(),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -4704,7 +4711,7 @@ fun ProfileScreenContent(
                     ) {
                         // Shimmering Compact 3D Diamonds Wallet Pill
                         Surface(
-                            color = Color(0xFF1E1728),
+                            color = Color(0xFF1E1728).copy(alpha = 0.45f),
                             shape = RoundedCornerShape(16.dp),
                             border = BorderStroke(1.dp, Color(0xFF9333EA)),
                             shadowElevation = 2.dp,
@@ -4729,7 +4736,7 @@ fun ProfileScreenContent(
 
                         // Compact Coins Wallet Pill
                         Surface(
-                            color = Color(0xFF1E1728),
+                            color = Color(0xFF1E1728).copy(alpha = 0.45f),
                             shape = RoundedCornerShape(16.dp),
                             border = BorderStroke(1.dp, Color(0xFFFFD700)),
                             shadowElevation = 2.dp,
@@ -4750,25 +4757,12 @@ fun ProfileScreenContent(
                             }
                         }
 
-                        // Luxury Profile Border Frame Selector Button
-                        if (currentUser.hasActiveProfileBorderFrame()) {
-                            IconButton(
-                                onClick = { showProfileBorderPickerModal = true },
-                                modifier = Modifier
-                                    .size(30.dp)
-                                    .background(Color(0xFF2B1B47), CircleShape)
-                                    .border(1.dp, Brush.sweepGradient(listOf(Color(0xFFFFD700), Color(0xFF00E5FF), Color(0xFFFFD700))), CircleShape)
-                            ) {
-                                Text("🖼️", fontSize = 14.sp)
-                            }
-                        }
-
                         // Settings Button (Cleanly spaced)
                         IconButton(
                             onClick = onOpenSettings,
                             modifier = Modifier
                                 .size(30.dp)
-                                .background(Color(0xFF1E1728), CircleShape)
+                                .background(Color(0xFF1E1728).copy(alpha = 0.45f), CircleShape)
                                 .border(1.dp, Color(0xFF3D2C54), CircleShape)
                         ) {
                             Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White, modifier = Modifier.size(16.dp))
@@ -6516,27 +6510,7 @@ fun ProfileScreenContent(
         }
     }
 
-    // 3D Animated Full-Length Luxury Profile Border Overlay
-    if (currentUser.hasActiveProfileBorderFrame()) {
-        val effectiveBorderId = currentUser.getEffectiveProfileBorderFrame()
-        val borderRes = ProfileBorderRegistry.getDrawableForId(effectiveBorderId)
-        LuxuryProfileBorderOverlay(
-            drawableRes = borderRes,
-            modifier = Modifier.fillMaxSize()
-        )
-    }
 }
-
-    if (showProfileBorderPickerModal) {
-        ProfileBorderSelectorDialog(
-            currentUser = currentUser,
-            db = db,
-            onDismiss = { showProfileBorderPickerModal = false },
-            onBorderSelected = { selectedBorderId ->
-                onUpdateProfile(currentUser.copy(activeProfileBorderFrame = selectedBorderId))
-            }
-        )
-    }
 
     if (showDeleteConfirmDialog) {
         AlertDialog(

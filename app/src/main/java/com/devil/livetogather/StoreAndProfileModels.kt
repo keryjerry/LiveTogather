@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.Color
 enum class StoreCategory(val id: String, val title: String, val icon: String) {
     INTIMACY("intimacy", "Intimacy", "💍"),
     AVATAR("avatar", "Avatar", "👑"),
+    PROFILE_FRAME("profile_frame", "Profile Frame", "🖼️"),
     MIC_EFFECTS("mic_effects", "Mic Effects", "🌀"),
     ENTRANCE("entrance", "Entrance", "🚀")
 }

@@ -69,6 +69,7 @@ fun LuxuryStoreDialog(
         selectedSubCategory = when (selectedCategory) {
             StoreCategory.INTIMACY -> "Ring"
             StoreCategory.AVATAR -> "Avatar Frame"
+            StoreCategory.PROFILE_FRAME -> "Monthly Card"
             StoreCategory.MIC_EFFECTS -> "All Effects"
             StoreCategory.ENTRANCE -> "All Entrances"
         }
@@ -103,6 +104,7 @@ fun LuxuryStoreDialog(
                     else -> LuxuryStoreCatalog.micEffects
                 }
             }
+            StoreCategory.PROFILE_FRAME -> emptyList()
             StoreCategory.ENTRANCE -> {
                 when (selectedSubCategory) {
                     "All Entrances" -> LuxuryStoreCatalog.entrances
@@ -338,6 +340,7 @@ fun LuxuryStoreDialog(
                 val subTabs = when (selectedCategory) {
                     StoreCategory.INTIMACY -> listOf("Ring", "Jewelry", "Love Zone", "Mic Link", "Special")
                     StoreCategory.AVATAR -> listOf("Avatar Frame", "CP Avatar Frame", "Dynamic Avatar")
+                    StoreCategory.PROFILE_FRAME -> listOf("Monthly Card")
                     StoreCategory.MIC_EFFECTS -> listOf("All Effects", "Sound Wave", "Mic Animation")
                     StoreCategory.ENTRANCE -> listOf("All Entrances", "Mythic Rides", "Aircrafts", "Banners")
                 }
@@ -380,7 +383,14 @@ fun LuxuryStoreDialog(
                 Divider(color = Color(0xFF261F38), thickness = 1.dp)
 
                 // 5. STORE ITEMS GRID (MATCHING REFERENCE IMAGES IN HIGH CONTRAST DARK LUXURY)
-                LazyVerticalGrid(
+                if (selectedCategory == StoreCategory.PROFILE_FRAME) {
+                    ProfileFrameMonthlyCardSection(
+                        currentUser = currentUser,
+                        db = db,
+                        onProfileUpdated = onProfileUpdated,
+                        modifier = Modifier.weight(1f)
+                    )
+                } else LazyVerticalGrid(
                     columns = GridCells.Fixed(3),
                     modifier = Modifier
                         .fillMaxWidth()
