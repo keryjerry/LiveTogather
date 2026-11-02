@@ -1,5 +1,9 @@
 package com.devil.livetogather
 
+import coil.compose.AsyncImage
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+
 import android.graphics.SurfaceTexture
 import android.media.MediaPlayer
 import android.net.Uri
@@ -59,15 +63,16 @@ fun LuxuryStoreDialog(
     val coroutineScope = rememberCoroutineScope()
 
     var selectedCategory by remember { mutableStateOf(StoreCategory.INTIMACY) }
-    var selectedSubCategory by remember { mutableStateOf("Ring") }
+    var selectedSubCategory by remember { mutableStateOf("Proposal Ring") }
     var showInventoryDialog by remember { mutableStateOf(false) }
     var isPurchasing by remember { mutableStateOf(false) }
     var previewVideoItem by remember { mutableStateOf<StoreItem?>(null) }
+    var itemToSendIntimacyProposal by remember { mutableStateOf<StoreItem?>(null) }
 
     // When category changes, auto-select its first sub-category
     LaunchedEffect(selectedCategory) {
         selectedSubCategory = when (selectedCategory) {
-            StoreCategory.INTIMACY -> "Ring"
+            StoreCategory.INTIMACY -> "Proposal Ring"
             StoreCategory.AVATAR -> "Avatar Frame"
             StoreCategory.PROFILE_FRAME -> "Monthly Card"
             StoreCategory.MIC_EFFECTS -> "All Effects"
@@ -80,11 +85,11 @@ fun LuxuryStoreDialog(
         when (selectedCategory) {
             StoreCategory.INTIMACY -> {
                 when (selectedSubCategory) {
-                    "Ring" -> LuxuryStoreCatalog.rings.filter { it.subCategory == "Ring" }
+                    "Proposal Ring", "Ring" -> LuxuryStoreCatalog.rings.filter { it.subCategory == "Proposal Ring" || it.subCategory == "Ring" }
                     "Jewelry" -> LuxuryStoreCatalog.rings.filter { it.subCategory == "Jewelry" }
                     "Love Zone" -> LuxuryStoreCatalog.rings.filter { it.subCategory == "Love Zone" }
                     "Mic Link" -> LuxuryStoreCatalog.micLinks
-                    "Special" -> LuxuryStoreCatalog.micLinks
+                    "All Intimacy", "Special" -> LuxuryStoreCatalog.rings + LuxuryStoreCatalog.micLinks
                     else -> LuxuryStoreCatalog.rings + LuxuryStoreCatalog.micLinks
                 }
             }
@@ -338,7 +343,7 @@ fun LuxuryStoreDialog(
 
                 // 4. SUB-CATEGORY TABS
                 val subTabs = when (selectedCategory) {
-                    StoreCategory.INTIMACY -> listOf("Ring", "Jewelry", "Love Zone", "Mic Link", "Special")
+                    StoreCategory.INTIMACY -> listOf("Proposal Ring", "Jewelry", "Love Zone", "Mic Link", "All Intimacy")
                     StoreCategory.AVATAR -> listOf("Avatar Frame", "CP Avatar Frame", "Dynamic Avatar")
                     StoreCategory.PROFILE_FRAME -> listOf("Monthly Card")
                     StoreCategory.MIC_EFFECTS -> listOf("All Effects", "Sound Wave", "Mic Animation")
@@ -405,7 +410,13 @@ fun LuxuryStoreDialog(
                             currentUser = currentUser,
                             isPurchasing = isPurchasing,
                             onPreviewVideo = { previewVideoItem = it },
-                            onSendIntimacyItem = onSendIntimacyItem,
+                            onSendIntimacyItem = { item ->
+                                if (onSendIntimacyItem != null) {
+                                    onSendIntimacyItem.invoke(item)
+                                } else {
+                                    itemToSendIntimacyProposal = item
+                                }
+                            },
                             onEquipToggle = { targetItem ->
                                 if (isPurchasing) return@StoreItemCard
                                 isPurchasing = true
@@ -587,6 +598,21 @@ fun LuxuryStoreDialog(
                 onDismiss = { previewVideoItem = null }
             )
         }
+    }
+
+    // INTIMACY RING RECIPIENT SELECTOR DIALOG (SUGGESTIONS FOR FOLLOWING & CLOSE FRIENDS)
+    itemToSendIntimacyProposal?.let { ringItem ->
+        IntimacyRecipientSelectorDialog(
+            ringItem = ringItem,
+            currentUser = currentUser,
+            db = db,
+            roomId = roomId,
+            onDismiss = { itemToSendIntimacyProposal = null },
+            onProposalSent = { recipientName, updatedBal ->
+                itemToSendIntimacyProposal = null
+                onProfileUpdated(currentUser.copy(diamonds = updatedBal))
+            }
+        )
     }
 }
 
@@ -912,13 +938,13 @@ fun StoreItemCard(
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable(enabled = !isPurchasing && onSendIntimacyItem != null) {
+                            .clickable(enabled = !isPurchasing) {
                                 onSendIntimacyItem?.invoke(item)
                             }
                     ) {
                         Text(
-                            text = if (onSendIntimacyItem != null) "Send" else "Send in a live room",
-                            fontSize = 9.sp,
+                            text = "Send 💍",
+                            fontSize = 9.5.sp,
                             fontWeight = FontWeight.Black,
                             color = Color.White,
                             textAlign = TextAlign.Center,
@@ -1226,6 +1252,399 @@ fun InventoryBackpackDialog(
                                             fontWeight = FontWeight.Bold,
                                             color = if (isEquipped) Color(0xFFFFD700) else Color.White
                                         )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+// ---------------------------------------------------------------------
+// INTIMACY RECIPIENT SELECTOR DIALOG
+// Real-time suggestions for Following, Close Intimacy Friends, and Search
+// ---------------------------------------------------------------------
+
+data class IntimacyRecipientItem(
+    val uid: String,
+    val name: String,
+    val photo: String,
+    val relationType: String = "Following" // "Following", "Close Friend"
+)
+
+@Composable
+fun IntimacyRecipientSelectorDialog(
+    ringItem: StoreItem,
+    currentUser: UserProfile,
+    db: FirebaseFirestore,
+    roomId: String = "",
+    onDismiss: () -> Unit,
+    onProposalSent: (recipientName: String, updatedBalance: Long) -> Unit
+) {
+    val context = LocalContext.current
+    var searchQuery by remember { mutableStateOf("") }
+    val friendSuggestions = remember { mutableStateListOf<IntimacyRecipientItem>() }
+    var isLoading by remember { mutableStateOf(true) }
+    var isSending by remember { mutableStateOf(false) }
+
+    // Load following list & close intimacy friends
+    DisposableEffect(currentUser.uid) {
+        if (currentUser.uid.isBlank()) return@DisposableEffect onDispose {}
+
+        val seenUids = mutableSetOf(currentUser.uid)
+        val list = mutableListOf<IntimacyRecipientItem>()
+
+        // 1. Fetch active intimacy bonds (Close Friends)
+        val bondsReg = db.collection("intimacy_bonds")
+            .whereEqualTo("status", "active")
+            .addSnapshotListener { snap, _ ->
+                if (snap != null) {
+                    for (doc in snap.documents) {
+                        val u1 = doc.getString("user1Id") ?: ""
+                        val u2 = doc.getString("user2Id") ?: ""
+                        val otherUid = if (u1 == currentUser.uid) u2 else if (u2 == currentUser.uid) u1 else ""
+                        if (otherUid.isNotBlank() && !seenUids.contains(otherUid)) {
+                            seenUids.add(otherUid)
+                            val otherName = if (u1 == currentUser.uid) doc.getString("user2Name") ?: "Friend" else doc.getString("user1Name") ?: "Friend"
+                            val otherPhoto = if (u1 == currentUser.uid) doc.getString("user2Photo") ?: "" else doc.getString("user1Photo") ?: ""
+                            list.add(0, IntimacyRecipientItem(uid = otherUid, name = otherName, photo = otherPhoto, relationType = "Close Friend"))
+                        }
+                    }
+                    friendSuggestions.clear()
+                    friendSuggestions.addAll(list)
+                }
+            }
+
+        // 2. Fetch Following list
+        val followReg = db.collection("users").document(currentUser.uid)
+            .collection("following")
+            .addSnapshotListener { snap, _ ->
+                if (snap != null) {
+                    for (doc in snap.documents) {
+                        val targetUid = doc.getString("hostUid") ?: doc.getString("uid") ?: doc.id
+                        if (targetUid.isNotBlank() && !seenUids.contains(targetUid)) {
+                            seenUids.add(targetUid)
+                            val targetName = doc.getString("hostName") ?: doc.getString("name") ?: "Friend"
+                            val targetPhoto = doc.getString("hostPhoto") ?: doc.getString("photo") ?: ""
+                            list.add(IntimacyRecipientItem(uid = targetUid, name = targetName, photo = targetPhoto, relationType = "Following"))
+                        }
+                    }
+                    friendSuggestions.clear()
+                    friendSuggestions.addAll(list)
+                }
+                isLoading = false
+            }
+
+        onDispose {
+            bondsReg.remove()
+            followReg.remove()
+        }
+    }
+
+    val filteredFriends = remember(searchQuery, friendSuggestions) {
+        if (searchQuery.isBlank()) {
+            friendSuggestions
+        } else {
+            friendSuggestions.filter { it.name.contains(searchQuery.trim(), ignoreCase = true) }
+        }
+    }
+
+    androidx.compose.ui.window.Dialog(onDismissRequest = { if (!isSending) onDismiss() }) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = Color(0xFF140F24),
+            border = BorderStroke(1.5.dp, Brush.linearGradient(listOf(Color(0xFFFFD700), Color(0xFFFF4081)))),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(6.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                // Header with ring preview
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF281C3F)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(ringItem.iconEmoji.ifBlank { "💍" }, fontSize = 20.sp)
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "Send ${ringItem.name}",
+                                color = Color(0xFFFFD700),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                            Text(
+                                text = "💎 ${formatCompactDiamonds(ringItem.diamondPrice)} Diamonds",
+                                color = Color(0xFFFF8DA1),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Search Bar
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search friends or following...", color = Color.Gray, fontSize = 11.5.sp) },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFFFFD700),
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
+                        focusedContainerColor = Color(0xFF1D1630),
+                        unfocusedContainerColor = Color(0xFF1D1630)
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp)
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Text(
+                    text = "Suggestions (Following & Close Friends)",
+                    color = Color.White.copy(alpha = 0.8f),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                if (isLoading) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(160.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(color = Color(0xFFFFD700), modifier = Modifier.size(30.dp))
+                    }
+                } else if (filteredFriends.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(140.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = if (searchQuery.isNotBlank()) "No users matched \"$searchQuery\"" else "No friends or followed users found yet.\nFollow members to send them intimacy rings!",
+                            color = Color.Gray,
+                            fontSize = 12.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 280.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(filteredFriends) { friend ->
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = Color(0xFF1F1735),
+                                border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // Avatar
+                                    Box(
+                                        modifier = Modifier
+                                            .size(42.dp)
+                                            .clip(CircleShape)
+                                            .border(1.5.dp, Color(0xFFFFD700), CircleShape)
+                                    ) {
+                                        AsyncImage(
+                                            model = friend.photo.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80" },
+                                            contentDescription = friend.name,
+                                            modifier = Modifier.fillMaxSize().clip(CircleShape),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(10.dp))
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = friend.name,
+                                            color = Color.White,
+                                            fontSize = 12.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                        )
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = if (friend.relationType == "Close Friend") "💕 Close Friend" else "⭐ Following",
+                                                color = if (friend.relationType == "Close Friend") Color(0xFFFF4081) else Color(0xFFFFD700),
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(8.dp))
+
+                                    // Send Ring Button
+                                    Button(
+                                        onClick = {
+                                            if (isSending) return@Button
+                                            if (currentUser.bestFriends.contains(friend.uid)) {
+                                                Toast.makeText(context, "You are already soulmates with this person", Toast.LENGTH_LONG).show()
+                                                onDismiss()
+                                                return@Button
+                                            }
+                                            if (currentUser.diamonds < ringItem.diamondPrice) {
+                                                Toast.makeText(context, "Insufficient diamonds! Need ${ringItem.diamondPrice} 💎", Toast.LENGTH_SHORT).show()
+                                                return@Button
+                                            }
+
+                                            isSending = true
+                                            val senderRef = db.collection("users").document(currentUser.uid)
+                                            val requestId = java.util.UUID.randomUUID().toString()
+                                            val requestRef = db.collection("intimacy_requests").document(requestId)
+
+                                            val bondType = when {
+                                                ringItem.id.contains("bestie", true) -> "bestie"
+                                                ringItem.id.contains("soulmate", true) -> "soulmate"
+                                                ringItem.id.contains("eternal", true) -> "eternal"
+                                                else -> "couple"
+                                            }
+
+                                            db.runTransaction { transaction ->
+                                                val sortedKey = listOf(currentUser.uid, friend.uid).sorted().joinToString("_")
+                                                val b1 = transaction.get(db.collection("intimacy_bonds").document(sortedKey))
+                                                val b2 = transaction.get(db.collection("intimacy_bonds").document("bond_$sortedKey"))
+                                                if (b1.exists() || b2.exists()) {
+                                                    throw IllegalStateException("ALREADY_SOULMATES")
+                                                }
+                                                val senderSnap = transaction.get(senderRef)
+                                                if (!senderSnap.exists()) throw IllegalStateException("Sender profile unavailable")
+                                                val bal = senderSnap.getLong("diamonds") ?: 0L
+                                                if (bal < ringItem.diamondPrice) return@runTransaction null
+                                                val newBal = bal - ringItem.diamondPrice
+                                                transaction.update(
+                                                    senderRef,
+                                                    mapOf(
+                                                        "diamonds" to newBal,
+                                                        "wealthXp" to FieldValue.increment(ringItem.diamondPrice * 10L)
+                                                    )
+                                                )
+                                                transaction.set(
+                                                    requestRef,
+                                                    mapOf(
+                                                        "id" to requestId,
+                                                        "requestType" to "ring_intimacy",
+                                                        "roomId" to roomId,
+                                                        "senderUid" to currentUser.uid,
+                                                        "senderId" to currentUser.uid,
+                                                        "senderName" to currentUser.name,
+                                                        "senderPhoto" to (currentUser.photo ?: ""),
+                                                        "recipientUid" to friend.uid,
+                                                        "receiverId" to friend.uid,
+                                                        "recipientName" to friend.name,
+                                                        "recipientPhoto" to friend.photo,
+                                                        "giftId" to ringItem.id,
+                                                        "giftName" to ringItem.name,
+                                                        "giftEmoji" to "💍",
+                                                        "bondType" to bondType,
+                                                        "status" to "pending",
+                                                        "timestamp" to System.currentTimeMillis()
+                                                    )
+                                                )
+                                                val notifId = java.util.UUID.randomUUID().toString()
+                                                transaction.set(
+                                                    db.collection("notifications").document(notifId),
+                                                    mapOf(
+                                                        "id" to notifId,
+                                                        "targetUserId" to friend.uid,
+                                                        "senderId" to currentUser.uid,
+                                                        "senderName" to currentUser.name,
+                                                        "senderPhoto" to (currentUser.photo ?: ""),
+                                                        "type" to "intimacy_request",
+                                                        "title" to "💍 Intimacy Proposal Ring!",
+                                                        "message" to "${currentUser.name} sent you a proposal with ${ringItem.name}!",
+                                                        "timestamp" to System.currentTimeMillis(),
+                                                        "isRead" to false,
+                                                        "giftId" to ringItem.id,
+                                                        "giftName" to ringItem.name
+                                                    )
+                                                )
+                                                newBal
+                                            }.addOnSuccessListener { updatedBal ->
+                                                isSending = false
+                                                if (updatedBal != null) {
+                                                    Toast.makeText(context, "💍 Sent ${ringItem.name} to ${friend.name}!", Toast.LENGTH_SHORT).show()
+                                                    onProposalSent(friend.name, updatedBal)
+                                                    onDismiss()
+                                                } else {
+                                                    Toast.makeText(context, "Insufficient diamonds!", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }.addOnFailureListener { err ->
+                                                isSending = false
+                                                if (err.message?.contains("ALREADY_SOULMATES") == true) {
+                                                    Toast.makeText(context, "You are already soulmates with this person", Toast.LENGTH_LONG).show()
+                                                    onDismiss()
+                                                } else {
+                                                    Toast.makeText(context, "Failed: ${err.message}", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        },
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                        modifier = Modifier.height(32.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .background(
+                                                    Brush.horizontalGradient(listOf(Color(0xFFFFD700), Color(0xFFFF4081))),
+                                                    shape = RoundedCornerShape(12.dp)
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = if (isSending) "..." else "Send 💍",
+                                                color = Color.Black,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Black
+                                            )
+                                        }
                                     }
                                 }
                             }

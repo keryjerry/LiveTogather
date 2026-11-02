@@ -160,6 +160,7 @@ fun FlowingAvatarFrame(
         R.drawable.vip2_avatar_master -> 2.57f
         R.drawable.vip3_avatar_master -> 2.86f
         R.drawable.vip4_avatar_master -> 2.83f
+        R.drawable.vip5_avatar_master -> 2.80f
         R.drawable.frame_livetogather_founder -> 2.27f
         else -> 1.86f
     }
@@ -169,8 +170,9 @@ fun FlowingAvatarFrame(
         R.drawable.vip1_avatar_master,
         R.drawable.vip2_avatar_master,
         R.drawable.vip3_avatar_master,
-        R.drawable.vip4_avatar_master
-    )
+        R.drawable.vip4_avatar_master,
+        R.drawable.vip5_avatar_master
+    ) || effectiveVip in 1..5
 
     val frameTrimFactor = 0.88f // Fine-tuned scale factor for neat, trimmed fitment around mic slots
 
@@ -292,11 +294,7 @@ fun FlowingAvatarFrame(
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer(
-                            alpha = 1.0f,
-                            translationY = wingLift,
-                            rotationZ = wingSkew * 0.4f,
-                            scaleX = if (isVipSuiteFrame) 1f else pulseScale * 1.08f,
-                            scaleY = if (isVipSuiteFrame) 1f else pulseScale * 1.08f
+                            alpha = 1.0f
                         ),
                     contentScale = ContentScale.Fit,
                     alpha = 1.0f

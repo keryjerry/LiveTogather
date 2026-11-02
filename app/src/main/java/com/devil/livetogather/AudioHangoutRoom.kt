@@ -3870,13 +3870,38 @@ private fun UserFullProfileDialog(profile: UserProfile, viewer: UserProfile, onD
     )
     val canSeeEmail = isSelf || isViewerAdmin || profile.emailPrivacy == "public"
 
+    val targetVipLvl = profile.getVipLevel()
+    val vipBgRes = getVipMobileBackgroundDrawable(targetVipLvl)
+    val vipSlimBorderRes = getVipSlimBorderDrawable(targetVipLvl)
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        Surface(modifier = Modifier.fillMaxSize(), color = BrandDark) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            // 1. VIP Wallpaper or Dark Background
+            if (vipBgRes != 0) {
+                Image(
+                    painter = painterResource(id = vipBgRes),
+                    contentDescription = "VIP Wallpaper",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.55f))
+                )
+            } else {
+                Surface(modifier = Modifier.fillMaxSize(), color = BrandDark) {}
+            }
+
+            // 2. Full Profile Content
             Column(
-                modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 28.dp, vertical = 20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Row(
@@ -3922,6 +3947,16 @@ private fun UserFullProfileDialog(profile: UserProfile, viewer: UserProfile, onD
                 Button(onClick = onDismiss, colors = ButtonDefaults.buttonColors(containerColor = BrandCoral)) {
                     Text("Close", color = Color.White, fontWeight = FontWeight.Bold)
                 }
+            }
+
+            // 3. VIP Slim Border Frame Overlay (32px pillars flush to edges)
+            if (vipSlimBorderRes != 0) {
+                Image(
+                    painter = painterResource(id = vipSlimBorderRes),
+                    contentDescription = "VIP Slim Border Frame",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.FillBounds
+                )
             }
         }
     }
@@ -8318,11 +8353,22 @@ fun AudioHangoutRoomDialog(
                             OutlinedButton(
                                 onClick = {
                                     if (isSendingIntimacyStoreItem) return@OutlinedButton
+                                    if (currentUser.bestFriends.contains(recipient.uid)) {
+                                        Toast.makeText(context, "You are already soulmates with this person", Toast.LENGTH_LONG).show()
+                                        intimacyStoreItemToSend = null
+                                        return@OutlinedButton
+                                    }
                                     isSendingIntimacyStoreItem = true
                                     val requestId = UUID.randomUUID().toString()
                                     val senderRef = db.collection("users").document(currentUser.uid)
                                     val requestRef = db.collection("intimacy_requests").document(requestId)
                                     db.runTransaction { transaction ->
+                                        val sortedKey = listOf(currentUser.uid, recipient.uid).sorted().joinToString("_")
+                                        val b1 = transaction.get(db.collection("intimacy_bonds").document(sortedKey))
+                                        val b2 = transaction.get(db.collection("intimacy_bonds").document("bond_$sortedKey"))
+                                        if (b1.exists() || b2.exists()) {
+                                            throw IllegalStateException("ALREADY_SOULMATES")
+                                        }
                                         val sender = transaction.get(senderRef)
                                         if (!sender.exists()) throw IllegalStateException("Sender profile is unavailable.")
                                         val balance = sender.getLong("diamonds") ?: 0L
@@ -8375,8 +8421,13 @@ fun AudioHangoutRoomDialog(
                                         }
                                     }.addOnFailureListener { error ->
                                         isSendingIntimacyStoreItem = false
-                                        Log.e("AudioHangoutRoom", "Failed to send intimacy item ${item.id}", error)
-                                        Toast.makeText(context, "Could not send request: ${error.localizedMessage ?: "Please try again."}", Toast.LENGTH_LONG).show()
+                                        if (error.message?.contains("ALREADY_SOULMATES") == true) {
+                                            Toast.makeText(context, "You are already soulmates with this person", Toast.LENGTH_LONG).show()
+                                            intimacyStoreItemToSend = null
+                                        } else {
+                                            Log.e("AudioHangoutRoom", "Failed to send intimacy item ${item.id}", error)
+                                            Toast.makeText(context, "Could not send request: ${error.localizedMessage ?: "Please try again."}", Toast.LENGTH_LONG).show()
+                                        }
                                     }
                                 },
                                 enabled = !isSendingIntimacyStoreItem,
@@ -10330,6 +10381,10 @@ fun StageFourSeatsRow(
                     (b.user1Id == seatLeft.uid && b.user2Id == seatRight.uid) ||
                     (b.user1Id == seatRight.uid && b.user2Id == seatLeft.uid)
                 }
+                val isPairCouple = pairBond != null && (pairBond.bondType.equals("couple", ignoreCase = true) || pairBond.bondType.equals("love", ignoreCase = true) || pairBond.bondType.equals("proposal", ignoreCase = true))
+                if (!isPairCouple) {
+                    continue // Strictly NO RING for Besties or unbonded users! Ring is reserved strictly for Couples.
+                }
                 val linkDesignId = pairBond?.activeMicLinkId?.ifBlank { activeMicLinkId } ?: activeMicLinkId
                 val (dRes, pCol, sCol) = when (linkDesignId) {
                     "mic_link_twin_besties" -> Triple(R.drawable.photoreal_link_twin_besties, Color(0xFF00E5FF), Color(0xFFFF4081))
@@ -10563,7 +10618,8 @@ fun VipRoyalStageCanvas(
                     (bond.user1Id == seat1.uid && bond.user2Id == seat0.uid)
             }
         } else null
-        if (seat0And1Bond != null) {
+        val isSeat0And1Couple = seat0And1Bond != null && (seat0And1Bond.bondType.equals("couple", ignoreCase = true) || seat0And1Bond.bondType.equals("love", ignoreCase = true) || seat0And1Bond.bondType.equals("proposal", ignoreCase = true))
+        if (isSeat0And1Couple && seat0And1Bond != null) {
             val linkDesignId = seat0And1Bond.activeMicLinkId.ifBlank { activeMicLinkId }
             val (dRes, pCol, sCol) = when (linkDesignId) {
                 "mic_link_twin_besties" -> Triple(R.drawable.photoreal_link_twin_besties, Color(0xFF00E5FF), Color(0xFFFF4081))
@@ -11124,9 +11180,12 @@ fun IntimacyGiftingAcceptanceDialog(
 
                             val batch = db.batch()
                             batch.set(db.collection("intimacy_bonds").document(bondId), newBond)
+                            batch.set(db.collection("intimacy_bonds").document("bond_$bondId"), newBond)
                             batch.update(db.collection("intimacy_requests").document(reqId), "status", "accepted")
                             batch.update(db.collection("users").document(senderUid), "activeIntimacyBadge", giftName)
                             batch.update(db.collection("users").document(currentUser.uid), "activeIntimacyBadge", giftName)
+                            batch.update(db.collection("users").document(senderUid), "bestFriends", com.google.firebase.firestore.FieldValue.arrayUnion(currentUser.uid))
+                            batch.update(db.collection("users").document(currentUser.uid), "bestFriends", com.google.firebase.firestore.FieldValue.arrayUnion(senderUid))
 
                             batch.commit().addOnSuccessListener {
                                 Toast.makeText(context, "💖 Intimacy Bond Activated in Real-Time!", Toast.LENGTH_SHORT).show()

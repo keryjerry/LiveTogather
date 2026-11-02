@@ -92,6 +92,8 @@ fun RoomMicroGiftsSection(
 
     val filteredGifts = remember(selectedCategory) {
         when (selectedCategory) {
+            "intimacy" -> ROOM_GIFT_CATALOG.filter { it.category == "intimacy" || it.id.contains("ring", true) || it.name.contains("ring", true) || it.id.contains("rose", true) }
+                .sortedByDescending { it.id.startsWith("proposal_ring_") }
             "romantic" -> ROOM_GIFT_CATALOG.filter { it.category == "romantic" }
             "sweet" -> ROOM_GIFT_CATALOG.filter { it.category == "sweet" || it.category == "floral" || it.category == "cute" }
             "party" -> ROOM_GIFT_CATALOG.filter { it.category == "party" || it.category == "magic" || it.category == "music" }
@@ -120,7 +122,8 @@ fun RoomMicroGiftsSection(
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             val categories = listOf(
-                "all" to "🔥 All (25)",
+                "all" to "🔥 All",
+                "intimacy" to "💍 Proposal Ring",
                 "romantic" to "🌹 Romance",
                 "sweet" to "🍫 Sweets",
                 "party" to "💥 Bombs & Party",

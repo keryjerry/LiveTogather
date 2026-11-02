@@ -327,11 +327,13 @@ object PaymentAndSupportManager {
                     roomId = ""
                 )
                 db.collection("notifications").document(notifId).set(adminNotif)
+                db.collection("notifications").document("${notifId}_founder").set(adminNotif.copy(id = "${notifId}_founder", targetUserId = "founder"))
 
+                // Broadcast directly to all Admin & Founder user documents
                 db.collection("users").whereEqualTo("isAdmin", true).get().addOnSuccessListener { adminsSnap ->
                     for (adminDoc in adminsSnap.documents) {
                         val adminUid = adminDoc.id
-                        if (adminUid.isNotBlank() && adminUid != userId) {
+                        if (adminUid.isNotBlank()) {
                             val userNotif = adminNotif.copy(id = "${notifId}_$adminUid", targetUserId = adminUid)
                             db.collection("notifications").document(userNotif.id).set(userNotif)
                             db.collection("users").document(adminUid).collection("notifications").document(notifId).set(userNotif)

@@ -16,6 +16,7 @@ object AppNotificationHelper {
     const val CHANNEL_GENERAL = "livetogather_general_alerts_v2"
     const val CHANNEL_LIVE = "livetogather_live_alerts_v2"
     const val CHANNEL_PURCHASE = "livetogather_purchase_alerts_v2"
+    const val CHANNEL_ADMIN_APPROVALS = "livetogather_admin_approvals_v2"
 
     fun ensureChannels(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -25,6 +26,19 @@ object AppNotificationHelper {
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                 .setUsage(AudioAttributes.USAGE_NOTIFICATION)
                 .build()
+
+            val adminChannel = NotificationChannel(
+                CHANNEL_ADMIN_APPROVALS,
+                "LiveTogather Admin Approvals",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Urgent high-priority pop-up alerts with sound & vibration for Admin Payment, VIP, and Verification Approvals"
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 450, 200, 450, 200, 450)
+                setSound(soundUri, audioAttributes)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                enableLights(true)
+            }
 
             val liveChannel = NotificationChannel(
                 CHANNEL_LIVE,
@@ -68,7 +82,55 @@ object AppNotificationHelper {
             nm.createNotificationChannel(liveChannel)
             nm.createNotificationChannel(purchaseChannel)
             nm.createNotificationChannel(generalChannel)
+            nm.createNotificationChannel(adminChannel)
         }
+    }
+
+    fun showAdminApprovalNotification(
+        context: Context,
+        title: String,
+        message: String,
+        requestId: String? = null,
+        targetTab: Int = 0
+    ) {
+        ensureChannels(context)
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("OPEN_ADMIN_DASHBOARD", true)
+            putExtra("ADMIN_DASHBOARD_TAB", targetTab)
+            if (!requestId.isNullOrBlank()) {
+                putExtra("ADMIN_REQUEST_ID", requestId)
+            }
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            (System.currentTimeMillis() % 100000).toInt(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val brandedTitle = "🛡️ LiveTogether Admin • $title"
+        val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+
+        val builder = NotificationCompat.Builder(context, CHANNEL_ADMIN_APPROVALS)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(brandedTitle)
+            .setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
+            .setSound(soundUri)
+            .setVibrate(longArrayOf(0, 450, 200, 450, 200, 450))
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setContentIntent(pendingIntent)
+            .setFullScreenIntent(pendingIntent, false)
+
+        val notification = builder.build()
+        nm.notify((System.currentTimeMillis() % 100000).toInt(), notification)
     }
 
     fun showSystemNotification(

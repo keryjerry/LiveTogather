@@ -67,7 +67,7 @@ data class VipChatFrameItem(
 val VIP_CHAT_FRAMES_CATALOG: List<VipChatFrameItem> = listOf(
     VipChatFrameItem(
         id = "chat_frame_silver_knight",
-        name = "Silver Knight (VIP 1)",
+        name = "Silver Archangel (VIP 1)",
         vipLevel = 1,
         borderBrush = Brush.horizontalGradient(
             listOf(Color(0xFFE2E8F0), Color(0xFF94A3B8), Color(0xFFCBD5E1), Color(0xFFE2E8F0))
@@ -82,12 +82,12 @@ val VIP_CHAT_FRAMES_CATALOG: List<VipChatFrameItem> = listOf(
         cornerWingColor = Color(0xFF94A3B8),
         badgeLabel = "VIP 1",
         badgeBgColor = Color(0xFF334155),
-        cornerGemEmoji = "💎",
-        description = "Beveled silver crystal bubble with winged steel crest for VIP 1"
+        cornerGemEmoji = "⚔️",
+        description = "Silver Archangel & Diamond frame for VIP 1"
     ),
     VipChatFrameItem(
         id = "chat_frame_golden_paladin",
-        name = "Golden Paladin (VIP 2)",
+        name = "Solar Sunburst (VIP 2)",
         vipLevel = 2,
         borderBrush = Brush.horizontalGradient(
             listOf(Color(0xFFFFE082), Color(0xFFFFB300), Color(0xFFFFD700), Color(0xFFFFE082))
@@ -102,88 +102,68 @@ val VIP_CHAT_FRAMES_CATALOG: List<VipChatFrameItem> = listOf(
         cornerWingColor = Color(0xFFFFD700),
         badgeLabel = "VIP 2",
         badgeBgColor = Color(0xFFB45309),
-        cornerGemEmoji = "\u2b50",
-        description = "Regal golden baroque frame with imperial amber glow for VIP 2"
+        cornerGemEmoji = "👑",
+        description = "Solar Sunburst & 24K Royal Gold frame for VIP 2"
     ),
     VipChatFrameItem(
-        id = "chat_frame_imperial_amethyst",
-        name = "Imperial Amethyst (VIP 3)",
+        id = "chat_frame_imperial_obsidian",
+        name = "Obsidian & Ruby (VIP 3)",
         vipLevel = 3,
         borderBrush = Brush.horizontalGradient(
-            listOf(Color(0xFFE879F9), Color(0xFFA855F7), Color(0xFFFFD700), Color(0xFFE879F9))
+            listOf(Color(0xFFFF1744), Color(0xFFE50914), Color(0xFFFFD700), Color(0xFFFF1744))
         ),
         backgroundBrush = Brush.verticalGradient(
-            listOf(Color(0xFF2C103A), Color(0xFF14061C))
-        ),
-        textColor = Color(0xFFFAF5FF),
-        accentColor = Color(0xFFE879F9),
-        secondaryAccentColor = Color(0xFFFFD700),
-        gemColor = Color(0xFFA855F7),
-        cornerWingColor = Color(0xFFE879F9),
-        badgeLabel = "VIP 3",
-        badgeBgColor = Color(0xFF7E22CE),
-        cornerGemEmoji = "🔮",
-        description = "Royal amethyst crystal with gold embellishments for VIP 3"
-    ),
-    VipChatFrameItem(
-        id = "chat_frame_celestial_dragon",
-        name = "Celestial Dragon (VIP 4+)",
-        vipLevel = 4,
-        borderBrush = Brush.horizontalGradient(
-            listOf(Color(0xFFFFD700), Color(0xFFFF2A55), Color(0xFFFF7A00), Color(0xFFFFD700))
-        ),
-        backgroundBrush = Brush.verticalGradient(
-            listOf(Color(0xFF26081B), Color(0xFF13040E))
+            listOf(Color(0xFF1F0505), Color(0xFF0A0202))
         ),
         textColor = Color(0xFFFFF1F2),
-        accentColor = Color(0xFFFF2A55),
+        accentColor = Color(0xFFE50914),
         secondaryAccentColor = Color(0xFFFFD700),
-        gemColor = Color(0xFFFFD700),
-        cornerWingColor = Color(0xFFFF7A00),
-        badgeLabel = "VIP 👑",
-        badgeBgColor = Color(0xFF991B1B),
-        cornerGemEmoji = "🐉",
-        description = "Celestial Dragon Ruby & 24K Gold velvet bubble with 3D winged sword crest"
+        gemColor = Color(0xFFFF1744),
+        cornerWingColor = Color(0xFFE50914),
+        badgeLabel = "VIP 3",
+        badgeBgColor = Color(0xFF7F1D1D),
+        cornerGemEmoji = "💎",
+        description = "Imperial Black Obsidian & Crimson Ruby frame for VIP 3"
     ),
     VipChatFrameItem(
-        id = "chat_frame_mystic_scorpio",
-        name = "Mystic Scorpio (Monthly Card)",
-        vipLevel = 1,
-        borderBrush = Brush.linearGradient(
-            listOf(Color(0xFF00E5FF), Color(0xFF4F46E5), Color(0xFFFFD700), Color(0xFF00E5FF))
+        id = "chat_frame_warrior_crimson",
+        name = "Warrior 24K Gold (VIP 4)",
+        vipLevel = 4,
+        borderBrush = Brush.horizontalGradient(
+            listOf(Color(0xFFFF5252), Color(0xFFFF3B30), Color(0xFFFFD700), Color(0xFFFF5252))
         ),
-        backgroundBrush = Brush.linearGradient(
-            listOf(Color(0xFF0A1D2E), Color(0xFF050E17))
+        backgroundBrush = Brush.verticalGradient(
+            listOf(Color(0xFF2B0A0A), Color(0xFF120303))
         ),
-        accentColor = Color(0xFF00E5FF),
+        textColor = Color(0xFFFFF5F5),
+        accentColor = Color(0xFFFF3B30),
         secondaryAccentColor = Color(0xFFFFD700),
+        gemColor = Color(0xFFFF5252),
+        cornerWingColor = Color(0xFFFF3B30),
+        badgeLabel = "VIP 4",
+        badgeBgColor = Color(0xFF991B1B),
+        cornerGemEmoji = "🔥",
+        description = "24K Gold & Crimson Ruby Warrior frame for VIP 4"
+    ),
+    VipChatFrameItem(
+        id = "chat_frame_celestial_sapphire",
+        name = "Sapphire Crystal (VIP 5)",
+        vipLevel = 5,
+        borderBrush = Brush.horizontalGradient(
+            listOf(Color(0xFF00E5FF), Color(0xFF0077FE), Color(0xFFE0F7FA), Color(0xFF00E5FF))
+        ),
+        backgroundBrush = Brush.verticalGradient(
+            listOf(Color(0xFF06182C), Color(0xFF020B14))
+        ),
+        textColor = Color(0xFFF0FDFF),
+        accentColor = Color(0xFF00E5FF),
+        secondaryAccentColor = Color(0xFF0077FE),
         gemColor = Color(0xFF00E5FF),
         cornerWingColor = Color(0xFF00E5FF),
-        badgeLabel = "SCORPIO 🦂",
-        badgeBgColor = Color(0xFF0284C7),
+        badgeLabel = "VIP 5",
+        badgeBgColor = Color(0xFF0369A1),
         cornerGemEmoji = "✨",
-        description = "Seasonal Monthly Card exclusive cyan & gold baroque frame"
-    ),
-    VipChatFrameItem(
-        id = "chat_frame_founder_supreme",
-        name = "LiveTogather Founder Supreme",
-        vipLevel = 10,
-        isFounder = true,
-        borderBrush = Brush.sweepGradient(
-            listOf(Color(0xFFFFD700), Color(0xFFFF1744), Color(0xFFA855F7), Color(0xFFFFEA00), Color(0xFFFFD700))
-        ),
-        backgroundBrush = Brush.linearGradient(
-            listOf(Color(0xFF2E0938), Color(0xFF1B0522), Color(0xFF330C16))
-        ),
-        textColor = Color(0xFFFFFDF5),
-        accentColor = Color(0xFFFFD700),
-        secondaryAccentColor = Color(0xFFFF1744),
-        gemColor = Color(0xFFFFEA00),
-        cornerWingColor = Color(0xFFFFD700),
-        badgeLabel = "FOUNDER 👑",
-        badgeBgColor = Color(0xFF8B1838),
-        cornerGemEmoji = "⚡",
-        description = "Supreme Founder & CEO Exclusive Masterpiece with baroque gold wings & glowing ruby gems"
+        description = "Celestial Sapphire Blue & Platinum Silver frame for VIP 5"
     )
 )
 
@@ -196,10 +176,11 @@ fun getVipChatFrame(frameId: String?, vipLevel: Int = 0, isFounder: Boolean = fa
         if (frameId.contains("vip2") || frameId.contains("paladin")) return VIP_CHAT_FRAMES_CATALOG.find { it.vipLevel == 2 }
         if (frameId.contains("vip1") || frameId.contains("silver")) return VIP_CHAT_FRAMES_CATALOG.find { it.vipLevel == 1 }
     }
-    if (vipLevel in 1..4) {
+    if (vipLevel in 1..5) {
         val tierFrameId = when (vipLevel) {
-            4 -> "chat_frame_celestial_dragon"
-            3 -> "chat_frame_imperial_amethyst"
+            5 -> "chat_frame_celestial_sapphire"
+            4 -> "chat_frame_warrior_crimson"
+            3 -> "chat_frame_imperial_obsidian"
             2 -> "chat_frame_golden_paladin"
             1 -> "chat_frame_silver_knight"
             else -> null
@@ -430,18 +411,12 @@ fun VipRoomChatBarEntry(
     modifier: Modifier = Modifier
 ) {
     val effVip = when {
-        vipLevel in 1..4 -> vipLevel
-        isFounder -> 4
+        vipLevel in 1..5 -> vipLevel
+        isFounder -> 5
         else -> 1
     }
 
-    val bubbleFrameRes = when (effVip) {
-        1 -> R.drawable.vip1_chat_bubble_frame
-        2 -> R.drawable.vip2_chat_bubble_frame
-        3 -> R.drawable.vip3_chat_bubble_frame
-        4 -> R.drawable.vip4_chat_bubble_frame
-        else -> R.drawable.vip2_chat_bubble_frame
-    }
+    val bubbleFrameRes = getVipChatBubbleDrawable(effVip)
 
     val vipBadgeLabel = when (effVip) {
         1 -> "VIP 1"
@@ -563,22 +538,17 @@ fun VipStyledChatBubble(
 
     if (hasVipFrame) {
         val effVip = when {
-            frameItem?.vipLevel in 1..4 -> frameItem!!.vipLevel
-            vipLevel in 1..4 -> vipLevel
-            frameItem?.id == "chat_frame_celestial_dragon" -> 4
-            frameItem?.id == "chat_frame_imperial_amethyst" -> 3
+            frameItem?.vipLevel in 1..5 -> frameItem!!.vipLevel
+            vipLevel in 1..5 -> vipLevel
+            frameItem?.id == "chat_frame_celestial_sapphire" -> 5
+            frameItem?.id == "chat_frame_warrior_crimson" -> 4
+            frameItem?.id == "chat_frame_imperial_obsidian" -> 3
             frameItem?.id == "chat_frame_golden_paladin" -> 2
             frameItem?.id == "chat_frame_silver_knight" -> 1
-            else -> 2
+            else -> 1
         }
 
-        val bubbleFrameRes = when (effVip) {
-            1 -> R.drawable.vip1_chat_bubble_frame
-            2 -> R.drawable.vip2_chat_bubble_frame
-            3 -> R.drawable.vip3_chat_bubble_frame
-            4 -> R.drawable.vip4_chat_bubble_frame
-            else -> R.drawable.vip2_chat_bubble_frame
-        }
+        val bubbleFrameRes = getVipChatBubbleDrawable(effVip)
 
         val startPad = when (effVip) {
             4 -> 48.dp
@@ -846,6 +816,55 @@ fun OrnateLuxuryEntranceCard(
                 spotColor = Color(0xFFFFD700)
             )
     ) {
+        // If user has VIP 1..5, render the authentic 3D Entry Announcement Banner
+        val entryBannerRes = getVipEntryBannerDrawable(effVip)
+        if (entryBannerRes != 0) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 7.5f)
+                    .clip(RoundedCornerShape(16.dp))
+            ) {
+                Image(
+                    painter = painterResource(id = entryBannerRes),
+                    contentDescription = "VIP $effVip Entry Banner",
+                    contentScale = ContentScale.FillBounds,
+                    modifier = Modifier.fillMaxSize()
+                )
+                // Overlay user identity on the entry banner
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FlowingAvatarFrame(
+                        photoUrl = avatarUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                        frameId = "vip_suite_frame_$effVip",
+                        avatarSize = 46.dp,
+                        frameSize = 78.dp,
+                        vipLevel = effVip
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = userName,
+                            color = Color.White,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 15.sp,
+                            maxLines = 1
+                        )
+                        Text(
+                            text = "👑 Entered the room in VIP $effVip Majesty!",
+                            color = Color(0xFFFFD700),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+        } else {
         // Main Container Card with Golden Filigree Metallic Border
         Box(
             modifier = Modifier
@@ -1057,6 +1076,7 @@ fun OrnateLuxuryEntranceCard(
                 .align(Alignment.BottomEnd)
                 .offset(x = 3.dp, y = 3.dp)
         )
+        }
     }
 }
 
@@ -1251,7 +1271,7 @@ fun VipCenterDialog(
                 } else {
                     pendingVipLevels = snapshot?.documents
                         ?.filter { it.getString("purchaseType") == "vip" && it.getString("status").equals("pending", true) }
-                        ?.mapNotNull { (it.getLong("vipLevel") ?: 0L).toInt().takeIf { level -> level in 1..4 } }
+                        ?.mapNotNull { (it.getLong("vipLevel") ?: 0L).toInt().takeIf { level -> level in 1..5 } }
                         ?.toSet()
                         ?: emptySet()
                 }
@@ -1271,39 +1291,79 @@ fun VipCenterDialog(
     var checkoutPackage by remember { mutableStateOf<CoinPackageItem?>(null) }
     val isFounder = currentUser.isFounder()
 
-    val tiers = remember {
+        // Dynamic Real-Time Firebase VIP Pricing Observer with Official Fallbacks
+    var dynamicPrices by remember {
+        mutableStateOf(
+            mapOf(
+                1 to 3500L,
+                2 to 7000L,
+                3 to 10000L,
+                4 to 15000L,
+                5 to 20000L
+            )
+        )
+    }
+
+    DisposableEffect(db) {
+        val configDoc = db.collection("config").document("vip_pricing")
+        val registration = configDoc.addSnapshotListener { snapshot, error ->
+            if (error == null && snapshot != null && snapshot.exists()) {
+                val p1 = snapshot.getLong("vip_1") ?: 3500L
+                val p2 = snapshot.getLong("vip_2") ?: 7000L
+                val p3 = snapshot.getLong("vip_3") ?: 10000L
+                val p4 = snapshot.getLong("vip_4") ?: 15000L
+                val p5 = snapshot.getLong("vip_5") ?: 20000L
+                dynamicPrices = mapOf(1 to p1, 2 to p2, 3 to p3, 4 to p4, 5 to p5)
+            } else if (snapshot != null && !snapshot.exists()) {
+                // Seed official pricing to Firebase Firestore
+                configDoc.set(
+                    mapOf(
+                        "vip_1" to 3500L,
+                        "vip_2" to 7000L,
+                        "vip_3" to 10000L,
+                        "vip_4" to 15000L,
+                        "vip_5" to 20000L,
+                        "updatedAt" to System.currentTimeMillis()
+                    )
+                )
+            }
+        }
+        onDispose { registration.remove() }
+    }
+
+    val tiers = remember(dynamicPrices) {
         listOf(
             VipSuiteTierModel(
                 level = 1,
                 name = "VIP 1",
-                subtitle = "Frost Valkyrie & Silver Knight",
+                subtitle = "Silver Archangel & Platinum Diamond",
                 expText = "Exp 1000",
-                inrPrice = 2500L,
-                formattedPrice = "₹2,500",
+                inrPrice = dynamicPrices[1] ?: 3500L,
+                formattedPrice = "₹${dynamicPrices[1] ?: 3500L}",
                 avatarRes = R.drawable.vip1_avatar_master,
-                bubbleRes = R.drawable.vip1_bubble_master,
-                swordRes = R.drawable.vip1_chat_sword_master,
-                archRes = R.drawable.vip1_header_arch_master,
-                coverRes = R.drawable.vip1_cover_master,
-                mockupRes = R.drawable.vip1_profile_mockup,
+                bubbleRes = R.drawable.vip1_chat_bubble,
+                swordRes = R.drawable.vip1_chat_bubble,
+                archRes = R.drawable.vip1_half_border_arch,
+                coverRes = R.drawable.vip1_mobile_background,
+                mockupRes = R.drawable.vip1_border_frame_slim,
                 frameId = "vip_suite_frame_1",
                 chatFrameId = "chat_frame_silver_knight",
-                primaryColor = Color(0xFF00E5FF),
-                secondaryColor = Color(0xFFE2E8F0)
+                primaryColor = Color(0xFFE2E8F0),
+                secondaryColor = Color(0xFF94A3B8)
             ),
             VipSuiteTierModel(
                 level = 2,
                 name = "VIP 2",
-                subtitle = "Solar Phoenix & Golden Paladin",
+                subtitle = "Solar Sunburst & 24K Royal Gold",
                 expText = "Exp 2500",
-                inrPrice = 5000L,
-                formattedPrice = "₹5,000",
+                inrPrice = dynamicPrices[2] ?: 7000L,
+                formattedPrice = "₹${dynamicPrices[2] ?: 7000L}",
                 avatarRes = R.drawable.vip2_avatar_master,
-                bubbleRes = R.drawable.vip2_bubble_master,
-                swordRes = R.drawable.vip2_chat_sword_master,
-                archRes = R.drawable.vip2_header_arch_master,
-                coverRes = R.drawable.vip2_cover_master,
-                mockupRes = R.drawable.vip2_profile_mockup,
+                bubbleRes = R.drawable.vip2_chat_bubble,
+                swordRes = R.drawable.vip2_chat_bubble,
+                archRes = R.drawable.vip2_half_border_arch,
+                coverRes = R.drawable.vip2_mobile_background,
+                mockupRes = R.drawable.vip2_border_frame_slim,
                 frameId = "vip_suite_frame_2",
                 chatFrameId = "chat_frame_golden_paladin",
                 primaryColor = Color(0xFFFFD700),
@@ -1312,38 +1372,56 @@ fun VipCenterDialog(
             VipSuiteTierModel(
                 level = 3,
                 name = "VIP 3",
-                subtitle = "Imperial Amethyst Monarch",
+                subtitle = "Imperial Obsidian & Crimson Ruby",
                 expText = "Exp 5000",
-                inrPrice = 15000L,
-                formattedPrice = "₹15,000",
+                inrPrice = dynamicPrices[3] ?: 10000L,
+                formattedPrice = "₹${dynamicPrices[3] ?: 10000L}",
                 avatarRes = R.drawable.vip3_avatar_master,
-                bubbleRes = R.drawable.vip3_bubble_master,
-                swordRes = R.drawable.vip3_chat_sword_master,
-                archRes = R.drawable.vip3_header_arch_master,
-                coverRes = R.drawable.vip3_cover_master,
-                mockupRes = R.drawable.vip3_profile_mockup,
+                bubbleRes = R.drawable.vip3_chat_bubble,
+                swordRes = R.drawable.vip3_chat_bubble,
+                archRes = R.drawable.vip3_half_border_arch,
+                coverRes = R.drawable.vip3_mobile_background,
+                mockupRes = R.drawable.vip3_border_frame_slim,
                 frameId = "vip_suite_frame_3",
-                chatFrameId = "chat_frame_imperial_amethyst",
-                primaryColor = Color(0xFFA855F7),
+                chatFrameId = "chat_frame_imperial_obsidian",
+                primaryColor = Color(0xFFE50914),
                 secondaryColor = Color(0xFFFFD700)
             ),
             VipSuiteTierModel(
                 level = 4,
                 name = "VIP 4",
-                subtitle = "Sovereign Celestial Dragon",
+                subtitle = "24K Gold & Crimson Ruby Warrior",
                 expText = "Exp 10000",
-                inrPrice = 20000L,
-                formattedPrice = "₹20,000",
+                inrPrice = dynamicPrices[4] ?: 15000L,
+                formattedPrice = "₹${dynamicPrices[4] ?: 15000L}",
                 avatarRes = R.drawable.vip4_avatar_master,
-                bubbleRes = R.drawable.vip4_bubble_master,
-                swordRes = R.drawable.vip4_chat_sword_master,
-                archRes = R.drawable.vip4_header_arch_master,
-                coverRes = R.drawable.vip4_cover_master,
-                mockupRes = R.drawable.vip4_profile_mockup,
+                bubbleRes = R.drawable.vip4_chat_bubble,
+                swordRes = R.drawable.vip4_chat_bubble,
+                archRes = R.drawable.vip4_half_border_arch,
+                coverRes = R.drawable.vip4_mobile_background,
+                mockupRes = R.drawable.vip4_border_frame_slim,
                 frameId = "vip_suite_frame_4",
-                chatFrameId = "chat_frame_celestial_dragon",
-                primaryColor = Color(0xFFFF1744),
+                chatFrameId = "chat_frame_warrior_crimson",
+                primaryColor = Color(0xFFFF3B30),
                 secondaryColor = Color(0xFFFFD700)
+            ),
+            VipSuiteTierModel(
+                level = 5,
+                name = "VIP 5",
+                subtitle = "Celestial Sapphire & Platinum Silver",
+                expText = "Exp 20000",
+                inrPrice = dynamicPrices[5] ?: 20000L,
+                formattedPrice = "₹${dynamicPrices[5] ?: 20000L}",
+                avatarRes = R.drawable.vip5_avatar_master,
+                bubbleRes = R.drawable.vip5_chat_bubble,
+                swordRes = R.drawable.vip5_chat_bubble,
+                archRes = R.drawable.vip5_half_border_arch,
+                coverRes = R.drawable.vip5_mobile_background,
+                mockupRes = R.drawable.vip5_border_frame_slim,
+                frameId = "vip_suite_frame_5",
+                chatFrameId = "chat_frame_celestial_sapphire",
+                primaryColor = Color(0xFF00E5FF),
+                secondaryColor = Color(0xFF0077FE)
             )
         )
     }
@@ -1594,8 +1672,7 @@ fun VipCenterDialog(
                                 val cards = listOf(
                                     Triple(0, currentTier.swordRes, "Entry Effects"),
                                     Triple(1, currentTier.bubbleRes, "Chat Bubbles"),
-                                    Triple(2, currentTier.avatarRes, "Profile/Avatar Frames"),
-                                    Triple(3, currentTier.avatarRes, "Border/Seat Frames")
+                                    Triple(2, currentTier.avatarRes, "Avatar Frames")
                                 )
 
                                 cards.forEach { (idx, resId, label) ->

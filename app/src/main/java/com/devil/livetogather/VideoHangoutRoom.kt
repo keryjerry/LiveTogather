@@ -2518,6 +2518,23 @@ fun VideoHangoutRoomDialog(
                                 timestamp = System.currentTimeMillis()
                             )
                             db.collection("reports").document(report.reportId).set(report)
+                            // Send real-time notification to Admins
+                            val notifId = "report_${report.reportId}"
+                            val adminNotif = NotificationItem(
+                                id = notifId,
+                                targetUserId = "admin",
+                                senderId = currentUser.uid,
+                                senderName = currentUser.name,
+                                senderPhoto = currentUser.photo,
+                                type = "user_reported",
+                                title = "🚨 Room Reported: ${room.hostName}",
+                                message = "${currentUser.name} reported room ${room.id} (${room.title}) for inappropriate content.",
+                                timestamp = System.currentTimeMillis(),
+                                isRead = false,
+                                roomId = room.id
+                            )
+                            db.collection("notifications").document(notifId).set(adminNotif)
+                            db.collection("notifications").document("${notifId}_founder").set(adminNotif.copy(id = "${notifId}_founder", targetUserId = "founder"))
                             Toast.makeText(context, "ðŸš© Report submitted. Moderation team notified.", Toast.LENGTH_SHORT).show()
                             showRoomSettingsDialog = false
                         },

@@ -1235,6 +1235,8 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
         val l = (v as? Number)?.toLong()
         if (k is String && l != null) k to l else null
     }?.toMap() ?: emptyMap()
+    @Suppress("UNCHECKED_CAST")
+    val parsedBestFriends = (doc.get("bestFriends") as? List<String>) ?: emptyList()
 
     return UserProfile(
         uid = uid,
@@ -1338,7 +1340,8 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
         ownedVipTiers = ownedVipTiers,
         vipExpiries = vipExpiries,
         activeProfileBorderFrame = activeProfileBorderFrame,
-        profileFrameExpiries = profileFrameExpiries
+        profileFrameExpiries = profileFrameExpiries,
+        bestFriends = parsedBestFriends
     )
 }
 
@@ -1376,8 +1379,12 @@ fun saveProfileToPrefs(prefs: SharedPreferences, user: UserProfile) {
         .putLong("profile_host_trial_start", user.hostTrialStartDate)
         .putString("profile_active_frame", user.activeFrame)
         .putString("profile_active_chat_frame", user.activeChatFrame)
+        .putString("profile_active_mic_effect", user.activeMicEffect)
+        .putString("profile_active_border_frame", user.activeProfileBorderFrame)
+        .putStringSet("profile_best_friends", user.bestFriends.toSet())
         .putStringSet("profile_owned_frames", user.ownedFrames.toSet())
         .putStringSet("profile_owned_chat_frames", user.ownedChatFrames.toSet())
+        .putStringSet("profile_owned_mic_effects", user.ownedMicEffects.toSet())
         .putLong("profile_diamonds", user.diamonds)
         .putLong("profile_coins", user.coins)
         .putLong("profile_vip_trial_start", user.vipTrialStartDate)
@@ -1496,7 +1503,15 @@ val ROOM_GIFT_CATALOG = listOf(
     RoomGiftItem("gift_sports_car", "Neon Exotic Supercar", "नियॉन स्पोर्ट्स कार", "🏎️", 40L, "luxury", R.drawable.gift_sports_car, "car", "Candy-apple red supercar with cyan neon underglow"),
     RoomGiftItem("gift_angel_wings", "Luminous Angel Wings", "गोल्डन एंजेल विंग्स", "🪽", 42L, "divine", R.drawable.gift_angel_wings, "micro_gift", "Giant 3D feathered wings of glowing golden light"),
     RoomGiftItem("gift_crystal_carriage", "Crystal Royal Carriage", "क्रिस्टल बग्गी कैरिज", "🪞", 45L, "royal", R.drawable.gift_crystal_carriage, "micro_gift", "Cinderella-style glowing crystal carriage"),
-    RoomGiftItem("gift_golden_phoenix", "Mythical Golden Phoenix", "गोल्डन फीनिक्स", "🦅", 50L, "royal", R.drawable.gift_golden_phoenix, "micro_gift", "Legendary golden firebird with blazing flame aura")
+    RoomGiftItem("gift_golden_phoenix", "Mythical Golden Phoenix", "गोल्डन फीनिक्स", "🦅", 50L, "royal", R.drawable.gift_golden_phoenix, "micro_gift", "Legendary golden firebird with blazing flame aura"),
+
+    // Proposal Rings (Intimacy Section)
+    RoomGiftItem("proposal_ring_golden_rose", "Proposal Ring • Golden Rose", "प्रपोजल रिंग • गोल्डन रोज़", "💍", 50000L, "intimacy", R.drawable.thumb_proposal_ring_golden_rose, "video_mp4", "3D Rotating Golden Rose & Pearl Solitaire Proposal Ring"),
+    RoomGiftItem("proposal_ring_crimson_rose", "Proposal Ring • Crimson Rose", "प्रपोजल रिंग • क्रिमसन रोज़", "💍", 55000L, "intimacy", R.drawable.thumb_proposal_ring_crimson_rose, "video_mp4", "3D Rotating Crimson Rose & Diamond Proposal Ring"),
+    RoomGiftItem("proposal_ring_velvet_rose", "Proposal Ring • Velvet Rose", "प्रपोजल रिंग • वेलवेट रोज़", "💍", 60000L, "intimacy", R.drawable.thumb_proposal_ring_velvet_rose, "video_mp4", "3D Rotating Velvet Rose & Pearl Diamond Proposal Ring"),
+    RoomGiftItem("proposal_ring_royal_floral", "Proposal Ring • Royal Floral", "प्रपोजल रिंग • रॉयल फ्लोरल", "💍", 65000L, "intimacy", R.drawable.thumb_proposal_ring_royal_floral, "video_mp4", "3D Rotating Royal Floral Multi-Gem Proposal Ring"),
+    RoomGiftItem("proposal_ring_sapphire_blossom", "Proposal Ring • Sapphire Blossom", "प्रपोजल रिंग • सफायर ब्लॉसम", "💍", 70000L, "intimacy", R.drawable.thumb_proposal_ring_sapphire_blossom, "video_mp4", "3D Rotating Sapphire & Ruby Blossom Proposal Ring"),
+    RoomGiftItem("proposal_ring_imperial_lotus", "Proposal Ring • Imperial Lotus", "प्रपोजल रिंग • इम्पीरियल लोटस", "💍", 80000L, "intimacy", R.drawable.thumb_proposal_ring_imperial_lotus, "video_mp4", "3D Rotating Imperial Lotus Diamond Filigree Proposal Ring")
 )
 
 
@@ -1545,6 +1560,13 @@ val VIDEO_GIFT_CATALOG = listOf(
     VideoGiftItem("gift_cyber_arena_mp4", "Cyber Gift Arena", "⚡", 60000L, "video_mp4", "A vivid futuristic arena filled with electric color", R.raw.gift_cyber_arena, R.drawable.thumb_gift_cyber_arena),
     VideoGiftItem("gift_royal_chest_mp4", "Royal Treasure Chest", "🧰", 75000L, "video_mp4", "A royal chest opens to reveal a dazzling treasure", R.raw.gift_royal_chest, R.drawable.thumb_gift_royal_chest),
     VideoGiftItem("gift_cosmic_clock_mp4", "Cosmic Timekeeper", "🌌", 90000L, "video_mp4", "A celestial timepiece glowing among the stars", R.raw.gift_cosmic_clock, R.drawable.thumb_gift_cosmic_clock),
+    // Proposal Rings (Intimacy Section)
+    VideoGiftItem("proposal_ring_golden_rose", "Proposal Ring • Golden Rose", "💍", 50000L, "video_mp4", "3D Rotating Golden Rose & Pearl Solitaire Proposal Ring", R.raw.proposal_ring_golden_rose, R.drawable.thumb_proposal_ring_golden_rose, "intimacy"),
+    VideoGiftItem("proposal_ring_crimson_rose", "Proposal Ring • Crimson Rose", "💍", 55000L, "video_mp4", "3D Rotating Crimson Rose & Diamond Proposal Ring", R.raw.proposal_ring_crimson_rose, R.drawable.thumb_proposal_ring_crimson_rose, "intimacy"),
+    VideoGiftItem("proposal_ring_velvet_rose", "Proposal Ring • Velvet Rose", "💍", 60000L, "video_mp4", "3D Rotating Velvet Rose & Pearl Diamond Proposal Ring", R.raw.proposal_ring_velvet_rose, R.drawable.thumb_proposal_ring_velvet_rose, "intimacy"),
+    VideoGiftItem("proposal_ring_royal_floral", "Proposal Ring • Royal Floral", "💍", 65000L, "video_mp4", "3D Rotating Royal Floral Multi-Gem Proposal Ring", R.raw.proposal_ring_royal_floral, R.drawable.thumb_proposal_ring_royal_floral, "intimacy"),
+    VideoGiftItem("proposal_ring_sapphire_blossom", "Proposal Ring • Sapphire Blossom", "💍", 70000L, "video_mp4", "3D Rotating Sapphire & Ruby Blossom Proposal Ring", R.raw.proposal_ring_sapphire_blossom, R.drawable.thumb_proposal_ring_sapphire_blossom, "intimacy"),
+    VideoGiftItem("proposal_ring_imperial_lotus", "Proposal Ring • Imperial Lotus", "💍", 80000L, "video_mp4", "3D Rotating Imperial Lotus Diamond Filigree Proposal Ring", R.raw.proposal_ring_imperial_lotus, R.drawable.thumb_proposal_ring_imperial_lotus, "intimacy"),
     VideoGiftItem("intimacy_diamond_rain_mp4", "Diamond Rain of Love", "💎", 30000L, "video_mp4", "A cascade of sparkling diamonds for a special connection", R.raw.intimacy_diamond_rain, R.drawable.thumb_intimacy_diamond_rain, "intimacy"),
     VideoGiftItem("intimacy_soulmate_cloud_mp4", "Cloudborne Soulmates", "☁️", 35000L, "video_mp4", "Two soulmates meet beneath a glowing celestial sky", R.raw.intimacy_soulmate_cloud, R.drawable.thumb_intimacy_soulmate_cloud, "intimacy"),
     VideoGiftItem("intimacy_sunrise_embrace_mp4", "Sunrise Embrace", "🌅", 40000L, "video_mp4", "A warm sunrise illuminates a romantic embrace", R.raw.intimacy_sunrise_embrace, R.drawable.thumb_intimacy_sunrise_embrace, "intimacy"),
@@ -1554,6 +1576,45 @@ val VIDEO_GIFT_CATALOG = listOf(
     VideoGiftItem("intimacy_couple_vows_mp4", "Together Forever", "💞", 60000L, "video_mp4", "A couple celebrates their vows in a storybook setting", R.raw.intimacy_couple_vows, R.drawable.thumb_intimacy_couple_vows, "intimacy"),
     VideoGiftItem("intimacy_waterfall_walk_mp4", "Waterfall Getaway", "🌿", 65000L, "video_mp4", "A quiet couple's escape beside a cascading waterfall", R.raw.intimacy_waterfall_walk, R.drawable.thumb_intimacy_waterfall_walk, "intimacy")
 )
+
+fun getProposalRingVideoRes(ringOrGiftId: String): Int {
+    val id = ringOrGiftId.lowercase()
+    return when {
+        id.contains("crimson_rose") || id.contains("rose_gold_solitaire") -> R.raw.proposal_ring_crimson_rose
+        id.contains("velvet_rose") || id.contains("blooming_rose") -> R.raw.proposal_ring_velvet_rose
+        id.contains("royal_floral") || id.contains("twin_hearts") -> R.raw.proposal_ring_royal_floral
+        id.contains("sapphire_blossom") || id.contains("angel_wings") -> R.raw.proposal_ring_sapphire_blossom
+        id.contains("imperial_lotus") || id.contains("ruby_crown") -> R.raw.proposal_ring_imperial_lotus
+        id.contains("golden_rose") -> R.raw.proposal_ring_golden_rose
+        else -> R.raw.proposal_ring_golden_rose
+    }
+}
+
+fun getProposalRingStripRes(ringOrGiftId: String): Int {
+    val id = ringOrGiftId.lowercase()
+    return when {
+        id.contains("crimson_rose") || id.contains("rose_gold_solitaire") -> R.drawable.strip_proposal_ring_crimson_rose
+        id.contains("velvet_rose") || id.contains("blooming_rose") -> R.drawable.strip_proposal_ring_velvet_rose
+        id.contains("royal_floral") || id.contains("twin_hearts") -> R.drawable.strip_proposal_ring_royal_floral
+        id.contains("sapphire_blossom") || id.contains("angel_wings") -> R.drawable.strip_proposal_ring_sapphire_blossom
+        id.contains("imperial_lotus") || id.contains("ruby_crown") -> R.drawable.strip_proposal_ring_imperial_lotus
+        id.contains("golden_rose") -> R.drawable.strip_proposal_ring_golden_rose
+        else -> R.drawable.strip_proposal_ring_golden_rose
+    }
+}
+
+fun getProposalRingThumbRes(ringOrGiftId: String): Int {
+    val id = ringOrGiftId.lowercase()
+    return when {
+        id.contains("crimson_rose") || id.contains("rose_gold_solitaire") -> R.drawable.thumb_proposal_ring_crimson_rose
+        id.contains("velvet_rose") || id.contains("blooming_rose") -> R.drawable.thumb_proposal_ring_velvet_rose
+        id.contains("royal_floral") || id.contains("twin_hearts") -> R.drawable.thumb_proposal_ring_royal_floral
+        id.contains("sapphire_blossom") || id.contains("angel_wings") -> R.drawable.thumb_proposal_ring_sapphire_blossom
+        id.contains("imperial_lotus") || id.contains("ruby_crown") -> R.drawable.thumb_proposal_ring_imperial_lotus
+        id.contains("golden_rose") -> R.drawable.thumb_proposal_ring_golden_rose
+        else -> R.drawable.thumb_proposal_ring_golden_rose
+    }
+}
 
 fun giftThumbnailResourceId(giftId: String): Int =
     VIDEO_GIFT_CATALOG.firstOrNull { it.id == giftId }?.thumbnailResId
@@ -2549,20 +2610,20 @@ val AVATAR_FRAMES_CATALOG = listOf(
     // -------------------------------------------------------------
     // EXCLUSIVE VIP 3D SUITE FRAMES (VIP 1 to VIP 4 - DIRECT SUITE ACCESS)
     // -------------------------------------------------------------
-    AvatarFrameItem(
+        AvatarFrameItem(
         id = "vip_suite_frame_1",
-        name = "VIP 1 • Frost Valkyrie Ring",
-        description = "Royal 3D silver frost valkyrie winged ring with diamond halo",
+        name = "VIP 1 — Silver Archangel Ring",
+        description = "Royal 3D silver archangel winged ring with diamond halo",
         cost = 0L,
         drawableRes = R.drawable.vip1_avatar_master,
         isAnimated = true,
         vipLevel = 1,
-        auraColors = listOf(0xFF00E5FF, 0xFFE2E8F0, 0xFF0288D1, 0xFF00E5FF)
+        auraColors = listOf(0xFFE2E8F0, 0xFF94A3B8, 0xFFCBD5E1, 0xFFE2E8F0)
     ),
     AvatarFrameItem(
         id = "vip_suite_frame_2",
-        name = "VIP 2 • Solar Phoenix Ring",
-        description = "Royal 3D 24K solar phoenix golden crest with ruby crown",
+        name = "VIP 2 — Solar Sunburst 24K Gold",
+        description = "Royal 3D 24K solar sunburst golden wings with royal crown",
         cost = 0L,
         drawableRes = R.drawable.vip2_avatar_master,
         isAnimated = true,
@@ -2571,23 +2632,33 @@ val AVATAR_FRAMES_CATALOG = listOf(
     ),
     AvatarFrameItem(
         id = "vip_suite_frame_3",
-        name = "VIP 3 • Imperial Amethyst Ring",
-        description = "Royal 3D amethyst crystal monarch frame with purple aura",
+        name = "VIP 3 — Imperial Obsidian & Crimson Ruby",
+        description = "Royal 3D obsidian winged frame embedded with crimson ruby crystals",
         cost = 0L,
         drawableRes = R.drawable.vip3_avatar_master,
         isAnimated = true,
         vipLevel = 3,
-        auraColors = listOf(0xFFA855F7, 0xFF7C3AED, 0xFFFFD700, 0xFFA855F7)
+        auraColors = listOf(0xFFE50914, 0xFF212121, 0xFFFFD700, 0xFFE50914)
     ),
     AvatarFrameItem(
         id = "vip_suite_frame_4",
-        name = "VIP 4 • Sovereign Celestial Dragon",
-        description = "Royal 3D fiery celestial dragon ring with golden horns & crown",
+        name = "VIP 4 — 24K Gold & Crimson Ruby Warrior",
+        description = "Royal 3D 24K gold warrior wings with ruby embers and obsidian steel",
         cost = 0L,
         drawableRes = R.drawable.vip4_avatar_master,
         isAnimated = true,
         vipLevel = 4,
-        auraColors = listOf(0xFFFF1744, 0xFFFFD700, 0xFFFF6D00, 0xFFFF1744)
+        auraColors = listOf(0xFFFF3B30, 0xFFFFD700, 0xFFFF6D00, 0xFFFF3B30)
+    ),
+    AvatarFrameItem(
+        id = "vip_suite_frame_5",
+        name = "VIP 5 — Celestial Sapphire & Platinum Silver",
+        description = "Royal 3D celestial sapphire crystal wings with pure platinum filigree",
+        cost = 0L,
+        drawableRes = R.drawable.vip5_avatar_master,
+        isAnimated = true,
+        vipLevel = 5,
+        auraColors = listOf(0xFF00E5FF, 0xFF0077FE, 0xFFE0F7FA, 0xFF00E5FF)
     ),
 
     // -------------------------------------------------------------
@@ -2800,19 +2871,64 @@ fun getAvatarFrameDrawable(frameId: String): Int {
         "vip_suite_frame_1", "frame_vip1_archangel" -> R.drawable.vip1_avatar_master
         "vip_suite_frame_2", "frame_vip2_sunburst" -> R.drawable.vip2_avatar_master
         "vip_suite_frame_3", "frame_vip3_sapphire" -> R.drawable.vip3_avatar_master
-        "vip_suite_frame_4", "frame_vip4_amethyst", "frame_vip5_god_emperor", "frame_vip6_imperial_eagle" -> R.drawable.vip4_avatar_master
+        "vip_suite_frame_4", "frame_vip4_amethyst" -> R.drawable.vip4_avatar_master
+        "vip_suite_frame_5", "frame_vip5_god_emperor" -> R.drawable.vip5_avatar_master
         else -> AVATAR_FRAMES_CATALOG.find { it.id == frameId }?.drawableRes ?: R.drawable.frame_angel_wings
     }
 }
 
-fun getVipHeaderFrameDrawable(vipLevel: Int): Int {
-    return when (vipLevel) {
-        1 -> R.drawable.vip1_header_frame
-        2 -> R.drawable.vip2_header_frame
-        3 -> R.drawable.vip3_header_frame
-        4 -> R.drawable.vip4_header_frame
-        else -> 0
-    }
+fun getVipHeaderFrameDrawable(vipLevel: Int): Int = when (vipLevel) {
+    1 -> R.drawable.vip1_half_border_arch
+    2 -> R.drawable.vip2_half_border_arch
+    3 -> R.drawable.vip3_half_border_arch
+    4 -> R.drawable.vip4_half_border_arch
+    5 -> R.drawable.vip5_half_border_arch
+    else -> 0
+}
+
+fun getVipSlimBorderDrawable(vipLevel: Int): Int = when (vipLevel) {
+    1 -> R.drawable.vip1_border_frame_slim
+    2 -> R.drawable.vip2_border_frame_slim
+    3 -> R.drawable.vip3_border_frame_slim
+    4 -> R.drawable.vip4_border_frame_slim
+    5 -> R.drawable.vip5_border_frame_slim
+    else -> 0
+}
+
+fun getVipEntryBannerDrawable(vipLevel: Int): Int = when (vipLevel) {
+    1 -> R.drawable.vip1_entry_banner
+    2 -> R.drawable.vip2_entry_banner
+    3 -> R.drawable.vip3_entry_banner
+    4 -> R.drawable.vip4_entry_banner
+    5 -> R.drawable.vip5_entry_banner
+    else -> 0
+}
+
+fun getVipChatBubbleDrawable(vipLevel: Int): Int = when (vipLevel) {
+    1 -> R.drawable.vip1_chat_bubble
+    2 -> R.drawable.vip2_chat_bubble
+    3 -> R.drawable.vip3_chat_bubble
+    4 -> R.drawable.vip4_chat_bubble
+    5 -> R.drawable.vip5_chat_bubble
+    else -> 0
+}
+
+fun getVipMobileBackgroundDrawable(vipLevel: Int): Int = when (vipLevel) {
+    1 -> R.drawable.vip1_mobile_background
+    2 -> R.drawable.vip2_mobile_background
+    3 -> R.drawable.vip3_mobile_background
+    4 -> R.drawable.vip4_mobile_background
+    5 -> R.drawable.vip5_mobile_background
+    else -> 0
+}
+
+fun getVipVideoAvatarDrawable(vipLevel: Int): Int = when (vipLevel) {
+    1 -> R.drawable.vip1_video_avatar
+    2 -> R.drawable.vip2_video_avatar
+    3 -> R.drawable.vip3_video_avatar
+    4 -> R.drawable.vip4_video_avatar
+    5 -> R.drawable.vip5_video_avatar
+    else -> 0
 }
 
 fun getAvatarFrameItem(frameId: String): AvatarFrameItem? {
@@ -2820,7 +2936,8 @@ fun getAvatarFrameItem(frameId: String): AvatarFrameItem? {
         "frame_vip1_archangel" -> "vip_suite_frame_1"
         "frame_vip2_sunburst" -> "vip_suite_frame_2"
         "frame_vip3_sapphire" -> "vip_suite_frame_3"
-        "frame_vip4_amethyst", "frame_vip5_god_emperor", "frame_vip6_imperial_eagle" -> "vip_suite_frame_4"
+        "frame_vip4_amethyst" -> "vip_suite_frame_4"
+        "frame_vip5_god_emperor" -> "vip_suite_frame_5"
         else -> frameId
     }
     return AVATAR_FRAMES_CATALOG.find { it.id == resolvedId }

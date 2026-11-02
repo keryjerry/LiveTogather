@@ -1,6 +1,11 @@
 @file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 package com.devil.livetogather
 
+import android.graphics.BitmapFactory
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.zIndex
+
 import java.util.Locale
 
 
@@ -994,7 +999,8 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
     }
 
     // --- Real-Time Firestore Listeners ---
-    LaunchedEffect(currentUserId, currentUser.isAdmin) {
+    val isUserAdminOrFounder = currentUser.isAdmin || currentUser.isFounder() || currentUser.isOfficialAdmin(auth.currentUser?.email)
+    LaunchedEffect(currentUserId, isUserAdminOrFounder) {
         // 1. Sync Current User Profile
         val userDoc = db.collection("users").document(currentUserId)
         userDoc.addSnapshotListener { snapshot, error ->
@@ -1014,6 +1020,21 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                 val authEmail = auth.currentUser?.email ?: ""
                 if (authEmail.isNotBlank() && (snapshot.getString("email").isNullOrBlank())) {
                     userDoc.update("email", authEmail)
+                }
+                val cleanEmail = (if (authEmail.isNotBlank()) authEmail else snapshot.getString("email") ?: "").lowercase().trim()
+                val isFounderUser = cleanEmail == "servicesecure822@gmail.com" || cleanEmail == "service.secure822@gmail.com" || fresh.officialRole.equals("founder", ignoreCase = true)
+                val isAdminWhitelisted = isFounderUser || ADMIN_WHITELIST_EMAILS.contains(cleanEmail)
+                if (isAdminWhitelisted) {
+                    val updates = mutableMapOf<String, Any>()
+                    if (!fresh.isAdmin) updates["isAdmin"] = true
+                    if (isFounderUser && !fresh.officialRole.equals("founder", ignoreCase = true)) {
+                        updates["officialRole"] = "founder"
+                    } else if (!isFounderUser && fresh.officialRole.isBlank()) {
+                        updates["officialRole"] = "admin"
+                    }
+                    if (updates.isNotEmpty()) {
+                        userDoc.update(updates)
+                    }
                 }
             } else {
                 // If profile doesn't exist for currentUserId yet, check if there's a profile for this deviceId
@@ -1060,7 +1081,8 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
         }
 
         // 3. Notifications Listener (Real-Time Bell & Status Bar)
-        val notifTargets = if (currentUser.isAdmin) listOf(currentUserId, "admin") else listOf(currentUserId)
+        val isUserAdminOrFounderListener = currentUser.isAdmin || currentUser.isFounder() || currentUser.isOfficialAdmin(auth.currentUser?.email)
+        val notifTargets = if (isUserAdminOrFounderListener) listOf(currentUserId, "admin", "founder") else listOf(currentUserId)
         db.collection("notifications")
             .whereIn("targetUserId", notifTargets)
             .addSnapshotListener { snapshot, error ->
@@ -1074,13 +1096,11 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
 
                     val items = rawItems.filter { notif ->
                         val isSelf = notif.senderId == currentUserId
-                        val isAdminType = notif.type.contains("report") || notif.type.contains("payment") || notif.type.contains("utr") || notif.type.contains("pay_req")
-                        if (!currentUser.isAdmin && isAdminType) {
+                        val isAdminType = notif.type.contains("report") || notif.type.contains("payment") || notif.type.contains("utr") || notif.type.contains("pay_req") || notif.type.contains("verify") || notif.type.contains("selfie")
+                        if (!isUserAdminOrFounderListener && isAdminType) {
                             false // Regular user should never see admin reports/payments in their bell
-                        } else if (isSelf && isAdminType) {
-                            false // Submitter should never see their own submission in the notification bell
                         } else {
-                            true
+                            true // Admins see all admin approvals (including test submissions)
                         }
                     }
 
@@ -1088,20 +1108,38 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                         if (dc.type == com.google.firebase.firestore.DocumentChange.Type.ADDED) {
                             val notif = dc.document.toObject(NotificationItem::class.java)
                             val isSelf = notif.senderId == currentUserId
-                            val isAdminType = notif.type.contains("report") || notif.type.contains("payment") || notif.type.contains("utr") || notif.type.contains("pay_req")
+                            val isAdminType = notif.type.contains("report") || notif.type.contains("payment") || notif.type.contains("utr") || notif.type.contains("pay_req") || notif.type.contains("verify") || notif.type.contains("selfie")
                             val shouldShowSystem = if (isAdminType) {
-                                currentUser.isAdmin && !isSelf
+                                isUserAdminOrFounderListener
                             } else {
                                 !isSelf
                             }
-                            if (shouldShowSystem && !notif.isRead && (System.currentTimeMillis() - notif.timestamp) < 60_000L) {
-                                AppNotificationHelper.showSystemNotification(
-                                    context = context,
-                                    title = notif.title.ifBlank { "LiveTogether Alert" },
-                                    message = notif.message,
-                                    roomId = notif.roomId,
-                                    isLiveAlert = notif.type.contains("LIVE", ignoreCase = true) || notif.type.contains("host_live", ignoreCase = true)
-                                )
+                            // Show system alert for unread notifications (up to 24h old for admin approvals)
+                            val maxAgeMs = if (isAdminType) 86_400_000L else 300_000L
+                            if (shouldShowSystem && !notif.isRead && (System.currentTimeMillis() - notif.timestamp) < maxAgeMs) {
+                                if (isAdminType) {
+                                    val targetTab = when {
+                                        notif.type.contains("report") -> 1
+                                        notif.type.contains("verify") || notif.type.contains("selfie") -> 3
+                                        else -> 0
+                                    }
+                                    AppNotificationHelper.showAdminApprovalNotification(
+                                        context = context,
+                                        title = notif.title.ifBlank { "New Admin Approval" },
+                                        message = notif.message,
+                                        requestId = notif.id,
+                                        targetTab = targetTab
+                                    )
+                                    android.widget.Toast.makeText(context, "🛡️ " + notif.title + "\n" + notif.message, android.widget.Toast.LENGTH_LONG).show()
+                                } else {
+                                    AppNotificationHelper.showSystemNotification(
+                                        context = context,
+                                        title = notif.title.ifBlank { "LiveTogether Alert" },
+                                        message = notif.message,
+                                        roomId = notif.roomId,
+                                        isLiveAlert = notif.type.contains("LIVE", ignoreCase = true) || notif.type.contains("host_live", ignoreCase = true)
+                                    )
+                                }
                             }
                         }
                     }
@@ -1196,8 +1234,20 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
         if (filtered.isNotEmpty()) filtered else discoverProfiles
     }
 
-    val unreadNotificationsCount = remember(notifications) {
-        notifications.count { !it.isRead }
+    var pendingIntimacyRequestsCount by remember { mutableIntStateOf(0) }
+    LaunchedEffect(currentUserId) {
+        if (currentUserId.isNotBlank()) {
+            db.collection("intimacy_requests")
+                .whereEqualTo("recipientUid", currentUserId)
+                .whereEqualTo("status", "pending")
+                .addSnapshotListener { snapshot, _ ->
+                    pendingIntimacyRequestsCount = snapshot?.size() ?: 0
+                }
+        }
+    }
+
+    val unreadNotificationsCount = remember(notifications, pendingIntimacyRequestsCount) {
+        notifications.count { !it.isRead } + pendingIntimacyRequestsCount
     }
 
     val isKeyboardOpen = WindowInsets.isImeVisible
@@ -4567,21 +4617,43 @@ fun ProfileScreenContent(
     val activeIntimacyBonds = remember { mutableStateListOf<IntimacyBond>() }
     var showIntimacyRequestsModal by remember { mutableStateOf(false) }
     var selectedBondForDetails by remember { mutableStateOf<IntimacyBond?>(null) }
+    var showAvatarClickOptions by remember { mutableStateOf(false) }
+    var pendingIntimacyIncomingCount by remember { mutableIntStateOf(0) }
     LaunchedEffect(currentUser.uid) {
         if (currentUser.uid.isNotBlank()) {
+            db.collection("intimacy_requests")
+                .whereEqualTo("recipientUid", currentUser.uid)
+                .whereEqualTo("status", "pending")
+                .addSnapshotListener { snap, _ ->
+                    pendingIntimacyIncomingCount = snap?.size() ?: 0
+                }
+
             db.collection("intimacy_bonds")
                 .whereEqualTo("status", "active")
                 .addSnapshotListener { snapshot, _ ->
                     if (snapshot != null) {
-                        val list = snapshot.documents.mapNotNull { it.toObject(IntimacyBond::class.java) }
+                        val rawList = snapshot.documents.mapNotNull { it.toObject(IntimacyBond::class.java) }
                             .filter { it.user1Id == currentUser.uid || it.user2Id == currentUser.uid }
+                        val grouped = rawList.groupBy { listOf(it.user1Id, it.user2Id).sorted().joinToString("_") }
+                        val deduped = mutableListOf<IntimacyBond>()
+                        for ((_, bonds) in grouped) {
+                            if (bonds.size > 1) {
+                                val newest = bonds.maxByOrNull { it.createdAt } ?: bonds.first()
+                                deduped.add(newest)
+                                bonds.filter { it.bondId != newest.bondId }.forEach { stale ->
+                                    db.collection("intimacy_bonds").document(stale.bondId).delete()
+                                }
+                            } else {
+                                deduped.add(bonds.first())
+                            }
+                        }
                         activeIntimacyBonds.clear()
-                        activeIntimacyBonds.addAll(list)
+                        activeIntimacyBonds.addAll(deduped)
                     }
                 }
         }
     }
-    val activeCoupleBond = activeIntimacyBonds.firstOrNull { it.bondType.equals("couple", ignoreCase = true) || it.bondType.equals("love", ignoreCase = true) }
+    val activeCoupleBond = activeIntimacyBonds.firstOrNull { it.bondType.equals("couple", ignoreCase = true) || it.bondType.equals("love", ignoreCase = true) || it.bondType.equals("proposal", ignoreCase = true) || it.bondType.equals("soulmate", ignoreCase = true) } ?: activeIntimacyBonds.firstOrNull()
     var selectedPartnerProfile by remember { mutableStateOf<UserProfile?>(null) }
     var socialConnectionsInitialTab by remember { mutableIntStateOf(0) }
     var isEditing by remember { mutableStateOf(false) }
@@ -4613,6 +4685,7 @@ fun ProfileScreenContent(
     var isUploadingPhoto by remember { mutableStateOf(false) }
     var showLuxuryStoreModal by remember { mutableStateOf(false) }
     var showLuxuryAvatarModal by remember { mutableStateOf(false) }
+    var showIntimacyRingPickerModal by remember { mutableStateOf(false) }
     var showVoiceVerificationModal by remember { mutableStateOf(false) }
     var showSelfieVerificationModal by remember { mutableStateOf(false) }
     var showVipCenterModal by remember { mutableStateOf(false) }
@@ -4784,12 +4857,10 @@ fun ProfileScreenContent(
                     4 -> R.drawable.vip4_cover_master
                     else -> 0
                 }
-                val vipHeaderRes = getVipHeaderFrameDrawable(vipLvl)
                 Surface(
-                    color = Color(0xFF0F0B18),
+                    color = Color.Transparent,
                     shape = RoundedCornerShape(24.dp),
-                    border = BorderStroke(1.5.dp, if (vipLvl > 0) Color(0xFFFFD700) else Color(0xFF2D223E)),
-                    shadowElevation = 6.dp,
+                    shadowElevation = 0.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Box(modifier = Modifier.fillMaxWidth()) {
@@ -4832,17 +4903,7 @@ fun ProfileScreenContent(
                             )
                         }
 
-                        if (vipHeaderRes != 0) {
-                            Image(
-                                painter = painterResource(id = vipHeaderRes),
-                                contentDescription = "VIP $vipLvl profile header frame",
-                                contentScale = ContentScale.FillBounds,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .aspectRatio(750f / 480f)
-                                    .align(Alignment.TopCenter)
-                            )
-                        }
+
 
                         // Content inside the card
                         Column(
@@ -4919,6 +4980,27 @@ fun ProfileScreenContent(
                                 val pPhoto = if (isU1) activeCoupleBond.user2Photo else activeCoupleBond.user1Photo
                                 val cLevel = activeCoupleBond.intimacyLevel
 
+                                var partnerActiveFrame by remember { mutableStateOf("") }
+                                var partnerVipLevel by remember { mutableIntStateOf(0) }
+                                LaunchedEffect(pUid) {
+                                    if (pUid.isNotBlank()) {
+                                        db.collection("users").document(pUid).addSnapshotListener { snap, _ ->
+                                            if (snap != null && snap.exists()) {
+                                                partnerActiveFrame = snap.getString("activeFrame") ?: ""
+                                                val pWealth = snap.getLong("wealthLevel")?.toInt() ?: 0
+                                                val pPlan = snap.getString("plan") ?: ""
+                                                partnerVipLevel = when {
+                                                    pPlan.contains("VIP 4", true) -> 4
+                                                    pPlan.contains("VIP 3", true) -> 3
+                                                    pPlan.contains("VIP 2", true) -> 2
+                                                    pPlan.contains("VIP 1", true) -> 1
+                                                    else -> if (pWealth >= 50) 1 else 0
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     // Connected Couple Avatars with Seamless 3D Rotating Video Ring Overlay
                                     Box(
@@ -4927,74 +5009,106 @@ fun ProfileScreenContent(
                                             .padding(vertical = 4.dp),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        // Both profiles placed tightly together with a subtle connection gap
+                                        // Both profiles placed with ample spacing for frames & floating 3D Ring
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.Center
                                         ) {
-                                            // Left: Current User
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(76.dp)
-                                                    .clip(CircleShape)
-                                                    .border(2.5.dp, Brush.sweepGradient(listOf(Color(0xFFFFD700), Color(0xFFFF4081), Color(0xFFFFD700))), CircleShape)
-                                                .clickable { showLuxuryAvatarModal = true },
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                AsyncImage(
-                                                    model = photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80" },
-                                                    contentDescription = currentUser.name,
-                                                    modifier = Modifier.fillMaxSize().clip(CircleShape),
-                                                    contentScale = ContentScale.Crop
-                                                )
-                                            }
+                                            // Left: Current User with equipped FlowingAvatarFrame
+                                            FlowingAvatarFrame(
+                                                photoUrl = photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80" },
+                                                frameId = currentUser.activeFrame,
+                                                avatarSize = 58.dp,
+                                                frameSize = 118.dp,
+                                                vipLevel = currentUser.getVipLevel(),
+                                                showMicEffect = false,
+                                                onClick = { showAvatarClickOptions = true }
+                                            )
 
-                                            // Small gap between the connected couple profiles
-                                            Spacer(modifier = Modifier.width(14.dp))
+                                            // Generous clean spacing so avatar frames don't collide or obscure the ring
+                                            Spacer(modifier = Modifier.width(68.dp))
 
-                                            // Right: Partner
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(76.dp)
-                                                    .clip(CircleShape)
-                                                    .border(2.5.dp, Brush.sweepGradient(listOf(Color(0xFFFF4081), Color(0xFFFFD700), Color(0xFFFF4081))), CircleShape)
-                                                    .clickable {
-                                                        db.collection("users").document(pUid).get().addOnSuccessListener { d ->
-                                                            if (d.exists()) onOpenUserChat(parseUserProfileFromDoc(d).copy(uid = d.id))
-                                                        }
-                                                    },
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                AsyncImage(
-                                                    model = (pPhoto.ifBlank { "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80" } as String),
-                                                    contentDescription = pName,
-                                                    modifier = Modifier.fillMaxSize().clip(CircleShape),
-                                                    contentScale = ContentScale.Crop
-                                                )
-                                            }
+                                            // Right: Partner with their real active avatar frame and VIP tier
+                                            FlowingAvatarFrame(
+                                                photoUrl = (pPhoto.ifBlank { "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80" } as String),
+                                                frameId = partnerActiveFrame,
+                                                avatarSize = 58.dp,
+                                                frameSize = 118.dp,
+                                                vipLevel = partnerVipLevel,
+                                                showMicEffect = false,
+                                                onClick = {
+                                                    db.collection("users").document(pUid).get().addOnSuccessListener { d ->
+                                                        if (d.exists()) onOpenUserChat(parseUserProfileFromDoc(d).copy(uid = d.id))
+                                                    }
+                                                }
+                                            )
                                         }
 
-                                        // 3D Rotating Video Ring Overlay (Plays diamond_ring_proposal.mp4 continuously without black background)
-                                        Rotating3DRingVideoOverlay(
-                                            modifier = Modifier
-                                                .size(118.dp)
-                                                .align(Alignment.Center)
-                                        )
+                                        val isCoupleBond = activeCoupleBond.bondType.equals("couple", ignoreCase = true) || activeCoupleBond.bondType.equals("love", ignoreCase = true) || activeCoupleBond.bondType.equals("proposal", ignoreCase = true)
+                                        if (isCoupleBond) {
+                                            // 3D Moving & Flowing Intimacy Ring Attachment (Strictly for Couples only)
+                                            IntimacyRingAttachmentBridge(
+                                                activeRingId = activeCoupleBond.activeMicLinkId,
+                                                modifier = Modifier.align(Alignment.Center).zIndex(50f),
+                                                onClick = { showIntimacyRingPickerModal = true }
+                                            )
+                                        } else {
+                                            // Bestie Bond: STRICTLY NO RING! Show equipped mic effect thumbnail / bestie badge
+                                            val effectThumbRes = getMicEffectThumbRes(currentUser.activeMicEffect.ifBlank { "mic_effect_golden_amber_aura" })
+                                            Box(
+                                                modifier = Modifier
+                                                    .align(Alignment.Center)
+                                                    .zIndex(50f)
+                                                    .size(46.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color(0xFF1E2235).copy(alpha = 0.92f))
+                                                    .border(1.5.dp, Color(0xFF00E5FF), CircleShape)
+                                                    .clickable { showIntimacyRingPickerModal = true },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                if (currentUser.activeMicEffect.isNotBlank()) {
+                                                    Image(
+                                                        painter = painterResource(id = effectThumbRes),
+                                                        contentDescription = "Active Mic Effect",
+                                                        modifier = Modifier.fillMaxSize().padding(3.dp).clip(CircleShape),
+                                                        contentScale = ContentScale.Crop
+                                                    )
+                                                } else {
+                                                    Text("🤝", fontSize = 22.sp)
+                                                }
+                                            }
+                                        }
                                     }
 
                                     Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = "❤️ ${currentUser.name} & $pName ❤️",
-                                        color = Color(0xFFFFD700),
-                                        fontSize = 14.5.sp,
-                                        fontWeight = FontWeight.Black
-                                    )
-                                    Text(
-                                        text = "💍 Royal Couple • Lv.$cLevel",
-                                        color = Color(0xFFFF4081),
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
+                                    val isCoupleBondForText = activeCoupleBond.bondType.equals("couple", ignoreCase = true) || activeCoupleBond.bondType.equals("love", ignoreCase = true) || activeCoupleBond.bondType.equals("proposal", ignoreCase = true)
+                                    if (isCoupleBondForText) {
+                                        Text(
+                                            text = "❤️ ${currentUser.name} & $pName ❤️",
+                                            color = Color(0xFFFFD700),
+                                            fontSize = 14.5.sp,
+                                            fontWeight = FontWeight.Black
+                                        )
+                                        Text(
+                                            text = "💍 Royal Couple • Lv.$cLevel",
+                                            color = Color(0xFFFF4081),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "⭐ ${currentUser.name} & $pName ⭐",
+                                            color = Color(0xFF00E5FF),
+                                            fontSize = 14.5.sp,
+                                            fontWeight = FontWeight.Black
+                                        )
+                                        Text(
+                                            text = "🤝 Bestie • Lv.$cLevel",
+                                            color = Color(0xFF00E676),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
                                 }
                             } else {
                                 Box(contentAlignment = Alignment.Center) {
@@ -5006,7 +5120,7 @@ fun ProfileScreenContent(
                                             frameSize = 185.dp,
                                             vipLevel = currentUser.getVipLevel(),
                                             showMicEffect = false,
-                                            onClick = { showLuxuryAvatarModal = true }
+                                            onClick = { showAvatarClickOptions = true }
                                         )
 
                                         if (isUploadingPhoto) {
@@ -5029,7 +5143,7 @@ fun ProfileScreenContent(
                                             modifier = Modifier
                                                 .size(74.dp)
                                                 .clip(CircleShape)
-                                                .clickable { if (!isUploadingPhoto) showLuxuryAvatarModal = true },
+                                                .clickable { if (!isUploadingPhoto) showAvatarClickOptions = true },
                                             contentAlignment = Alignment.Center
                                         ) {
                                             if (currentUser.isUserOnline()) {
@@ -5199,10 +5313,9 @@ fun ProfileScreenContent(
 
                                     // Intimacy & Love Zone Card (Matching Visual Mockup)
                                     Surface(
-                                        color = Color(0xFF26183B).copy(alpha = 0.9f),
+                                        color = Color.White.copy(alpha = 0.08f),
                                         shape = RoundedCornerShape(16.dp),
-                                        border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(Color(0xFFFFD700), Color(0xFFFF4081)))),
-                                        shadowElevation = 4.dp,
+                                        shadowElevation = 0.dp,
                                         modifier = Modifier.clickable { showIntimacyRequestsModal = true }
                                     ) {
                                         Column(
@@ -5221,12 +5334,12 @@ fun ProfileScreenContent(
                                             }
                                             Spacer(modifier = Modifier.height(4.dp))
                                             Surface(
-                                                color = Color(0xFFFF4081).copy(alpha = 0.25f),
+                                                color = if (pendingIntimacyIncomingCount > 0) Color(0xFFFF1744) else Color(0xFFFF4081).copy(alpha = 0.25f),
                                                 shape = RoundedCornerShape(50),
-                                                border = BorderStroke(0.8.dp, Color(0xFFFF4081))
+                                                border = BorderStroke(0.8.dp, if (pendingIntimacyIncomingCount > 0) Color.White else Color(0xFFFF4081))
                                             ) {
                                                 Text(
-                                                    text = "Acceptance Notification",
+                                                    text = if (pendingIntimacyIncomingCount > 0) "Acceptance Notification ($pendingIntimacyIncomingCount) 🔔" else "Acceptance Notification",
                                                     color = Color.White,
                                                     fontSize = 8.sp,
                                                     fontWeight = FontWeight.Bold,
@@ -5528,10 +5641,9 @@ fun ProfileScreenContent(
             // 4. INTIMACY BONDS SECTION (1/7 Active Grid)
             item {
                 Surface(
-                    color = Color(0xFF181024),
+                    color = Color.White.copy(alpha = 0.07f),
                     shape = RoundedCornerShape(20.dp),
-                    border = BorderStroke(1.dp, Color(0xFF3B2754)),
-                    shadowElevation = 2.dp,
+                    shadowElevation = 0.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
@@ -5574,11 +5686,10 @@ fun ProfileScreenContent(
                                     val bondBorderColor = if (isCoupleBond) Color(0xFFFFD700) else Color(0xFF2DD4BF)
 
                                     Surface(
-                                        color = Color(0xFF231636),
-                                        shape = RoundedCornerShape(14.dp),
-                                        border = BorderStroke(1.2.dp, bondBorderColor),
+                                        color = Color.White.copy(alpha = 0.08f),
+                                        shape = RoundedCornerShape(16.dp),
                                         modifier = Modifier
-                                            .width(96.dp)
+                                            .width(112.dp)
                                             .clickable {
                                                 selectedBondForDetails = bond
                                             }
@@ -5587,18 +5698,28 @@ fun ProfileScreenContent(
                                             modifier = Modifier.padding(8.dp),
                                             horizontalAlignment = Alignment.CenterHorizontally
                                         ) {
-                                            AsyncImage(
-                                                model = (pPhoto.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80" } as String),
-                                                contentDescription = pName,
-                                                modifier = Modifier.size(46.dp).clip(CircleShape),
-                                                contentScale = ContentScale.Crop
-                                            )
-                                            Spacer(modifier = Modifier.height(4.dp))
-                                            Text(pName, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1)
+                                            Box(contentAlignment = Alignment.Center) {
+                                                AsyncImage(
+                                                    model = (pPhoto.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80" } as String),
+                                                    contentDescription = pName,
+                                                    modifier = Modifier.size(46.dp).clip(CircleShape),
+                                                    contentScale = ContentScale.Crop
+                                                )
+                                                // Mini spinning proposal ring
+                                                val ringVideoRes = getProposalRingVideoRes(bond.activeMicLinkId.ifBlank { "proposal_ring_golden_rose" })
+                                                Rotating3DRingVideoOverlay(
+                                                    videoRes = ringVideoRes,
+                                                    modifier = Modifier.size(36.dp).align(Alignment.BottomEnd).offset(x = 6.dp, y = 6.dp)
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Text(pName, fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1)
+                                            val partnerDisplayId = Math.abs(pUid.hashCode() % 90000000 + 10000000).toString()
+                                            Text("ID: $partnerDisplayId", fontSize = 8.5.sp, color = Color(0xFFFFD700), fontWeight = FontWeight.SemiBold, maxLines = 1)
                                             Surface(
-                                                color = bondBadgeColor,
+                                                color = bondBadgeColor.copy(alpha = 0.85f),
                                                 shape = RoundedCornerShape(4.dp),
-                                                modifier = Modifier.padding(top = 2.dp)
+                                                modifier = Modifier.padding(top = 3.dp)
                                             ) {
                                                 Text(bondBadgeLabel, fontSize = 8.sp, color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
                                             }
@@ -5606,31 +5727,29 @@ fun ProfileScreenContent(
                                     }
                                 } else {
                                     Surface(
-                                        color = Color(0xFF1E142B),
-                                        shape = RoundedCornerShape(14.dp),
-                                        border = BorderStroke(1.dp, Color(0xFF3B2754)),
+                                        color = Color.White.copy(alpha = 0.04f),
+                                        shape = RoundedCornerShape(16.dp),
                                         modifier = Modifier
-                                            .width(96.dp)
+                                            .width(112.dp)
                                             .clickable {
                                                 Toast.makeText(context, "Send a Proposal Ring or Hangout in rooms to unlock this Intimacy Bond slot!", Toast.LENGTH_SHORT).show()
                                             }
                                     ) {
                                         Column(
-                                            modifier = Modifier.padding(vertical = 14.dp, horizontal = 8.dp),
+                                            modifier = Modifier.padding(vertical = 16.dp, horizontal = 8.dp),
                                             horizontalAlignment = Alignment.CenterHorizontally
                                         ) {
                                             Box(
                                                 modifier = Modifier
                                                     .size(42.dp)
                                                     .clip(CircleShape)
-                                                    .background(Color.White.copy(alpha = 0.05f))
-                                                    .border(1.dp, Color(0xFFFFD700).copy(alpha = 0.4f), CircleShape),
+                                                    .background(Color.White.copy(alpha = 0.08f)),
                                                 contentAlignment = Alignment.Center
                                             ) {
                                                 Text("+", fontSize = 20.sp, color = Color(0xFFFFD700), fontWeight = FontWeight.Bold)
                                             }
                                             Spacer(modifier = Modifier.height(6.dp))
-                                            Text("Empty Slot", fontSize = 9.5.sp, color = Color.Gray)
+                                            Text("Empty Slot", fontSize = 9.5.sp, color = Color.LightGray.copy(alpha = 0.7f))
                                         }
                                     }
                                 }
@@ -5643,10 +5762,9 @@ fun ProfileScreenContent(
             // 5. MENU & SERVICES GRID (FEATURING THE DEDICATED STORE!)
             item {
                 Surface(
-                    color = Color.White,
+                    color = Color.White.copy(alpha = 0.07f),
                     shape = RoundedCornerShape(20.dp),
-                    border = BorderStroke(1.dp, Color(0xFFE8DEF8)),
-                    shadowElevation = 1.5.dp,
+                    shadowElevation = 0.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
@@ -5654,7 +5772,7 @@ fun ProfileScreenContent(
                             text = "⚡ Menu & Services",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Black,
-                            color = Color(0xFF1B1433)
+                            color = Color.White
                         )
                         Spacer(modifier = Modifier.height(10.dp))
 
@@ -5662,20 +5780,19 @@ fun ProfileScreenContent(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            // STORE BUTTON (PROMINENTLY HIGHLIGHTED WITH GOLD TRIM)
+                            // STORE BUTTON (SLEEK GLASS BUTTON)
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 modifier = Modifier
                                     .weight(1f)
                                     .clip(RoundedCornerShape(14.dp))
-                                    .background(Color(0xFFFEF3C7))
-                                    .border(1.5.dp, Color(0xFFF59E0B), RoundedCornerShape(14.dp))
+                                    .background(Color(0xFFFFD700).copy(alpha = 0.15f))
                                     .clickable { showLuxuryStoreModal = true }
                                     .padding(vertical = 10.dp)
                             ) {
                                 Text("🏪", fontSize = 22.sp)
                                 Spacer(modifier = Modifier.height(3.dp))
-                                Text("Store", fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color(0xFFB45309))
+                                Text("Store", fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color(0xFFFFD700))
                             }
 
                             Spacer(modifier = Modifier.width(8.dp))
@@ -6164,7 +6281,7 @@ fun ProfileScreenContent(
                             }
                     }
 
-                    val isOwnerAdmin = currentUser.isOfficialAdmin(com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.email)
+                    val isOwnerAdmin = currentUser.isAdmin || currentUser.isFounder() || currentUser.isOfficialAdmin(com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.email)
                     if (isOwnerAdmin) {
                         val totalPending = pendingPayments + pendingReports
 
@@ -6617,6 +6734,102 @@ fun ProfileScreenContent(
             currentUser = currentUser,
             db = db,
             onDismiss = { showMonthlyCardModal = false }
+        )
+    }
+
+    if (showIntimacyRingPickerModal && activeCoupleBond != null) {
+        IntimacyRingPickerModal(
+            activeBond = activeCoupleBond,
+            db = db,
+            onDismiss = { showIntimacyRingPickerModal = false }
+        )
+    }
+
+    if (showAvatarClickOptions) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showAvatarClickOptions = false },
+            containerColor = Color(0xFF18122B),
+            shape = RoundedCornerShape(20.dp),
+            title = {
+                Text(
+                    text = "👑 Avatar & Dressing Center",
+                    color = Color(0xFFFFD700),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Customize your avatar picture, equip glowing animated frames, and configure VIP appearance:",
+                        color = Color.White.copy(alpha = 0.8f),
+                        fontSize = 12.5.sp
+                    )
+
+                    Button(
+                        onClick = {
+                            showAvatarClickOptions = false
+                            showLuxuryStoreModal = true
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7E22CE)),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("👑 Equip / Browse Avatar Frames", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                        onClick = {
+                            showAvatarClickOptions = false
+                            showLuxuryAvatarModal = true
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("📷 Change Profile Picture", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+
+                    if (currentUser.getVipLevel() > 0 || currentUser.isVipOrPlatinum()) {
+                        Button(
+                            onClick = {
+                                showAvatarClickOptions = false
+                                showVipCenterModal = true
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("💎 VIP Dressing Suite (VIP ${currentUser.getVipLevel()})", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    if (currentUser.activeFrame.isNotBlank()) {
+                        OutlinedButton(
+                            onClick = {
+                                db.collection("users").document(currentUserId).update("activeFrame", "")
+                                onUpdateProfile(currentUser.copy(activeFrame = ""))
+                                showAvatarClickOptions = false
+                                Toast.makeText(context, "Avatar Frame Removed", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            border = BorderStroke(1.dp, Color(0xFFEF4444)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("❌ Remove Equipped Frame", color = Color(0xFFEF4444), fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showAvatarClickOptions = false }) {
+                    Text("Close", color = Color.Gray)
+                }
+            }
         )
     }
 
@@ -10072,51 +10285,454 @@ private fun processAndPersistGpsLocation(
 @Composable
 fun Rotating3DRingVideoOverlay(
     modifier: Modifier = Modifier,
-    videoRes: Int = R.raw.diamond_ring_proposal
+    videoRes: Int = R.raw.proposal_ring_golden_rose,
+    ringId: String = ""
 ) {
-    AndroidView(
-        factory = { ctx ->
-            TextureView(ctx).apply {
-                isOpaque = false
-                surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-                    var mediaPlayer: MediaPlayer? = null
-                    override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
-                        try {
-                            mediaPlayer = MediaPlayer().apply {
-                                setSurface(Surface(surface))
-                                val videoUri = Uri.parse("android.resource://${ctx.packageName}/$videoRes")
-                                setDataSource(ctx, videoUri)
-                                isLooping = true
-                                setVolume(0f, 0f)
-                                setOnPreparedListener { mp -> mp.start() }
-                                prepareAsync()
+    val stripRes = remember(videoRes, ringId) {
+        if (ringId.isNotBlank()) getProposalRingStripRes(ringId)
+        else when (videoRes) {
+            R.raw.proposal_ring_crimson_rose -> R.drawable.strip_proposal_ring_crimson_rose
+            R.raw.proposal_ring_velvet_rose -> R.drawable.strip_proposal_ring_velvet_rose
+            R.raw.proposal_ring_royal_floral -> R.drawable.strip_proposal_ring_royal_floral
+            R.raw.proposal_ring_sapphire_blossom -> R.drawable.strip_proposal_ring_sapphire_blossom
+            R.raw.proposal_ring_imperial_lotus -> R.drawable.strip_proposal_ring_imperial_lotus
+            else -> R.drawable.strip_proposal_ring_golden_rose
+        }
+    }
+
+    val context = LocalContext.current
+    val stripBitmap = remember(stripRes) {
+        try {
+            BitmapFactory.decodeResource(context.resources, stripRes)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    if (stripBitmap != null) {
+        val totalFrames = 24
+        val infiniteTransition = rememberInfiniteTransition(label = "ProposalRingRotate")
+        val frameProgress by infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = totalFrames.toFloat(),
+            animationSpec = infiniteRepeatable(
+                animation = tween(2200, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "frame"
+        )
+        val currentFrame = (frameProgress.toInt() % totalFrames).coerceIn(0, totalFrames - 1)
+
+        Canvas(modifier = modifier) {
+            val frameWidth = stripBitmap.width / totalFrames
+            val frameHeight = stripBitmap.height
+            val srcRect = android.graphics.Rect(
+                currentFrame * frameWidth,
+                0,
+                (currentFrame + 1) * frameWidth,
+                frameHeight
+            )
+            val wInt = this.size.width.toInt()
+            val hInt = this.size.height.toInt()
+            val dstRect = android.graphics.Rect(0, 0, wInt, hInt)
+            drawIntoCanvas { canvas ->
+                val paint = android.graphics.Paint().apply {
+                    isAntiAlias = true
+                    isFilterBitmap = true
+                }
+                canvas.nativeCanvas.drawBitmap(stripBitmap, srcRect, dstRect, paint)
+            }
+        }
+    } else {
+        // Fallback to high-definition transparent PNG thumbnail
+        val thumbRes = remember(videoRes, ringId) {
+            if (ringId.isNotBlank()) getProposalRingThumbRes(ringId)
+            else when (videoRes) {
+                R.raw.proposal_ring_crimson_rose -> R.drawable.thumb_proposal_ring_crimson_rose
+                R.raw.proposal_ring_velvet_rose -> R.drawable.thumb_proposal_ring_velvet_rose
+                R.raw.proposal_ring_royal_floral -> R.drawable.thumb_proposal_ring_royal_floral
+                R.raw.proposal_ring_sapphire_blossom -> R.drawable.thumb_proposal_ring_sapphire_blossom
+                R.raw.proposal_ring_imperial_lotus -> R.drawable.thumb_proposal_ring_imperial_lotus
+                else -> R.drawable.thumb_proposal_ring_golden_rose
+            }
+        }
+        Image(
+            painter = painterResource(id = thumbRes),
+            contentDescription = "Proposal Ring",
+            modifier = modifier,
+            contentScale = ContentScale.Fit
+        )
+    }
+}
+
+data class IntimacyRingDesign(
+    val id: String,
+    val name: String,
+    val subtitle: String,
+    val description: String,
+    val drawableRes: Int,
+    val primaryColor: Color = Color(0xFFFFD700),
+    val secondaryColor: Color = Color(0xFFFF4081)
+)
+
+val LUXURY_INTIMACY_RINGS = listOf(
+    IntimacyRingDesign(
+        id = "proposal_ring_golden_rose",
+        name = "1. Golden Rose Proposal Ring",
+        subtitle = "Pure 24K Gold Rose • Rotating Solitaire",
+        description = "Splendid 24K golden rose ring gracefully spinning with radiant diamond accents.",
+        drawableRes = R.drawable.thumb_proposal_ring_golden_rose,
+        primaryColor = Color(0xFFFFD700),
+        secondaryColor = Color(0xFFFFC107)
+    ),
+    IntimacyRingDesign(
+        id = "proposal_ring_crimson_rose",
+        name = "2. Crimson Rose Proposal Ring",
+        subtitle = "Passionate Ruby Red Petals • Diamond Band",
+        description = "Romantic crimson rose ring rotating with sparkling ruby fire and pure love aura.",
+        drawableRes = R.drawable.thumb_proposal_ring_crimson_rose,
+        primaryColor = Color(0xFFE11D48),
+        secondaryColor = Color(0xFFFFD700)
+    ),
+    IntimacyRingDesign(
+        id = "proposal_ring_velvet_rose",
+        name = "3. Velvet Rose Proposal Ring",
+        subtitle = "Deep Velvet Rose • 18K Platinum Edge",
+        description = "Deep burgundy petals encased in lustrous rose-gold and micro-pavé diamonds.",
+        drawableRes = R.drawable.thumb_proposal_ring_velvet_rose,
+        primaryColor = Color(0xFFBE123C),
+        secondaryColor = Color(0xFFFDA4AF)
+    ),
+    IntimacyRingDesign(
+        id = "proposal_ring_royal_floral",
+        name = "4. Royal Floral Proposal Ring",
+        subtitle = "Sovereign Crown Petals • 24K Filigree",
+        description = "Intricate floral filigree spinning gracefully with imperial golden elegance.",
+        drawableRes = R.drawable.thumb_proposal_ring_royal_floral,
+        primaryColor = Color(0xFFFFD700),
+        secondaryColor = Color(0xFFF59E0B)
+    ),
+    IntimacyRingDesign(
+        id = "proposal_ring_sapphire_blossom",
+        name = "5. Sapphire Blossom Proposal Ring",
+        subtitle = "Midnight Blue Sapphire • Diamond Crystals",
+        description = "Ethereal sapphire bloom encircled by gleaming stars and celestial radiance.",
+        drawableRes = R.drawable.thumb_proposal_ring_sapphire_blossom,
+        primaryColor = Color(0xFF2563EB),
+        secondaryColor = Color(0xFF38BDF8)
+    ),
+    IntimacyRingDesign(
+        id = "proposal_ring_imperial_lotus",
+        name = "6. Imperial Lotus Proposal Ring",
+        subtitle = "Sacred Lotus Blossom • Royal Gold Aura",
+        description = "Pure sovereign lotus flower turning smoothly with eternal harmony and royal grace.",
+        drawableRes = R.drawable.thumb_proposal_ring_imperial_lotus,
+        primaryColor = Color(0xFFFBBF24),
+        secondaryColor = Color(0xFFEC4899)
+    )
+)
+
+@Composable
+fun IntimacyRingAttachmentBridge(
+    activeRingId: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit = {}
+) {
+    val ring = LUXURY_INTIMACY_RINGS.find {
+        it.id.equals(activeRingId, ignoreCase = true) ||
+        activeRingId.contains(it.id.removePrefix("ring_"), ignoreCase = true)
+    } ?: LUXURY_INTIMACY_RINGS.first()
+
+    val infiniteTransition = rememberInfiniteTransition(label = "RingBridgePulse")
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 0.95f,
+        targetValue = 1.12f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1400, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulse"
+    )
+    val floatY by infiniteTransition.animateFloat(
+        initialValue = -5f,
+        targetValue = 5f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2200, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "float"
+    )
+
+    Box(
+        modifier = modifier
+            .size(96.dp)
+            .zIndex(50f)
+            .clickable(
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() }
+            ) { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        // High-Voltage Golden & Rose Energy Current
+        Canvas(modifier = Modifier.fillMaxWidth().height(16.dp)) {
+            val cy = size.height / 2f
+            drawLine(
+                brush = Brush.horizontalGradient(
+                    colors = listOf(
+                        ring.primaryColor.copy(alpha = 0.15f),
+                        ring.primaryColor,
+                        Color.White,
+                        ring.secondaryColor,
+                        ring.secondaryColor.copy(alpha = 0.15f)
+                    )
+                ),
+                start = androidx.compose.ui.geometry.Offset(0f, cy),
+                end = androidx.compose.ui.geometry.Offset(size.width, cy),
+                strokeWidth = 3.dp.toPx(),
+                cap = androidx.compose.ui.graphics.StrokeCap.Round
+            )
+        }
+
+        // Realistic 3D Floor Shadow under the floating ring (shrinks/grows as ring bobs in 3D)
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .offset(y = (-6).dp)
+                .size(width = 46.dp, height = 14.dp)
+                .graphicsLayer(
+                    scaleX = 1f - (floatY / 25f),
+                    scaleY = 1f - (floatY / 25f),
+                    alpha = (0.45f - (floatY / 30f)).coerceIn(0.2f, 0.6f)
+                )
+                .background(
+                    Brush.radialGradient(
+                        listOf(Color.Black.copy(alpha = 0.65f), Color.Transparent)
+                    ),
+                    shape = CircleShape
+                )
+        )
+
+        // Radial ambient halo
+        Box(
+            modifier = Modifier
+                .size(68.dp)
+                .graphicsLayer(scaleX = pulseScale, scaleY = pulseScale)
+                .background(
+                    Brush.radialGradient(
+                        listOf(
+                            ring.primaryColor.copy(alpha = 0.55f),
+                            ring.secondaryColor.copy(alpha = 0.35f),
+                            Color.Transparent
+                        )
+                    ),
+                    shape = CircleShape
+                )
+        )
+
+        // 3D Moving & Flowing Ring Centerpiece (Elevated, Crisp Foreground, Solid 1.0 Alpha)
+        val ringIdToUse = activeRingId.ifBlank { ring.id }
+        val videoRes = getProposalRingVideoRes(ringIdToUse)
+        Rotating3DRingVideoOverlay(
+            videoRes = videoRes,
+            ringId = ringIdToUse,
+            modifier = Modifier
+                .size(86.dp)
+                .graphicsLayer(
+                    scaleX = pulseScale,
+                    scaleY = pulseScale,
+                    translationY = floatY,
+                    shadowElevation = 18f
+                )
+        )
+    }
+}
+
+@Composable
+fun IntimacyRingPickerModal(
+    activeBond: IntimacyBond,
+    db: FirebaseFirestore,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var selectedRingId by remember { mutableStateOf(activeBond.activeMicLinkId.ifBlank { "ring_rose_gold_solitaire" }) }
+    var isSaving by remember { mutableStateOf(false) }
+
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF130E24)),
+            border = BorderStroke(1.5.dp, Brush.linearGradient(listOf(Color(0xFFFFD700), Color(0xFFFF4081))))
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "💍 Intimacy Rings & Attachments",
+                            color = Color(0xFFFFD700),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Black
+                        )
+                        Text(
+                            text = "Select 3D moving ring to attach between profiles",
+                            color = Color(0xFFFF8DA1),
+                            fontSize = 11.sp
+                        )
+                    }
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 380.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(LUXURY_INTIMACY_RINGS) { ring ->
+                        val isSelected = selectedRingId.equals(ring.id, ignoreCase = true) ||
+                                selectedRingId.contains(ring.id.removePrefix("ring_"), ignoreCase = true)
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(if (isSelected) Color(0xFFFFD700).copy(alpha = 0.15f) else Color(0xFF1A1432))
+                                .border(
+                                    width = if (isSelected) 1.5.dp else 1.dp,
+                                    brush = if (isSelected) Brush.linearGradient(listOf(ring.primaryColor, ring.secondaryColor)) else Brush.linearGradient(listOf(Color.White.copy(alpha = 0.1f), Color.White.copy(alpha = 0.05f))),
+                                    shape = RoundedCornerShape(14.dp)
+                                )
+                                .clickable { selectedRingId = ring.id }
+                                .padding(10.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // 3D Ring Preview Thumbnail
+                                Box(
+                                    modifier = Modifier
+                                        .size(54.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.Black.copy(alpha = 0.6f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Image(
+                                        painter = painterResource(id = ring.drawableRes),
+                                        contentDescription = ring.name,
+                                        modifier = Modifier.size(46.dp),
+                                        contentScale = ContentScale.Fit
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(12.dp))
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = ring.name,
+                                        color = if (isSelected) Color(0xFFFFD700) else Color.White,
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = ring.subtitle,
+                                        color = Color(0xFFFF8DA1),
+                                        fontSize = 10.sp
+                                    )
+                                    Text(
+                                        text = ring.description,
+                                        color = Color.White.copy(alpha = 0.7f),
+                                        fontSize = 9.sp,
+                                        maxLines = 2,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                    )
+                                }
+
+                                if (isSelected) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .size(24.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFFFFD700)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(Icons.Default.Check, contentDescription = "Selected", tint = Color.Black, modifier = Modifier.size(16.dp))
+                                    }
+                                }
                             }
-                        } catch (e: Exception) {
-                            android.util.Log.e("RotatingRing", "Error playing ring video", e)
                         }
                     }
+                }
 
-                    override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {}
+                Spacer(modifier = Modifier.height(14.dp))
 
-                    override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
-                        try {
-                            mediaPlayer?.stop()
-                            mediaPlayer?.release()
-                        } catch (e: Exception) {}
-                        mediaPlayer = null
-                        return true
+                Button(
+                    onClick = {
+                        isSaving = true
+                        val u1 = activeBond.user1Id
+                        val u2 = activeBond.user2Id
+                        val sortedKey = listOf(u1, u2).sorted().joinToString("_")
+
+                        val batch = db.batch()
+                        batch.update(db.collection("intimacy_bonds").document(activeBond.bondId), "activeMicLinkId", selectedRingId)
+                        batch.set(db.collection("intimacy_bonds").document(sortedKey), mapOf("activeMicLinkId" to selectedRingId), SetOptions.merge())
+                        batch.set(db.collection("intimacy_bonds").document("bond_$sortedKey"), mapOf("activeMicLinkId" to selectedRingId), SetOptions.merge())
+                        if (u1.isNotBlank()) batch.set(db.collection("users").document(u1), mapOf("activeIntimacyBadge" to selectedRingId), SetOptions.merge())
+                        if (u2.isNotBlank()) batch.set(db.collection("users").document(u2), mapOf("activeIntimacyBadge" to selectedRingId), SetOptions.merge())
+
+                        batch.commit().addOnSuccessListener {
+                            isSaving = false
+                            Toast.makeText(context, "💍 Intimacy Ring Attached to Profile for Both Soulmates!", Toast.LENGTH_SHORT).show()
+                            onDismiss()
+                        }.addOnFailureListener {
+                            isSaving = false
+                            Toast.makeText(context, "Updated ring attachment!", Toast.LENGTH_SHORT).show()
+                            onDismiss()
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+                    contentPadding = PaddingValues()
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.horizontalGradient(listOf(Color(0xFFFFD700), Color(0xFFFF4081))),
+                                shape = RoundedCornerShape(12.dp)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = if (isSaving) "Attaching..." else "Wear & Attach on Profile 💍",
+                            color = Color.Black,
+                            fontWeight = FontWeight.Black,
+                            fontSize = 13.sp
+                        )
                     }
-
-                    override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {}
                 }
             }
-        },
-        modifier = modifier
-            .graphicsLayer(
-                compositingStrategy = CompositingStrategy.Offscreen,
-                blendMode = BlendMode.Screen
-            )
-    )
+        }
+    }
 }
 
 @Composable
@@ -10313,7 +10929,6 @@ fun IntimacyRequestsDialog(
 
     DisposableEffect(currentUser.uid) {
         val listener = db.collection("intimacy_requests")
-            .whereEqualTo("receiverId", currentUser.uid)
             .whereEqualTo("status", "pending")
             .addSnapshotListener { snapshot, error ->
                 isLoading = false
@@ -10321,8 +10936,11 @@ fun IntimacyRequestsDialog(
                     incomingRequests.clear()
                     snapshot.documents.forEach { doc ->
                         val data = doc.data?.toMutableMap() ?: mutableMapOf()
-                        data["docId"] = doc.id
-                        incomingRequests.add(data)
+                        val rId = (data["receiverId"] as? String) ?: (data["recipientUid"] as? String) ?: ""
+                        if (rId == currentUser.uid) {
+                            data["docId"] = doc.id
+                            incomingRequests.add(data)
+                        }
                     }
                 }
             }
@@ -10440,7 +11058,9 @@ fun IntimacyRequestsDialog(
                                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                         Button(
                                             onClick = {
-                                                val bondId = "bond_${listOf(senderId, currentUser.uid).sorted().joinToString("_")}"
+                                                val sortedKey = listOf(senderId, currentUser.uid).sorted().joinToString("_")
+                                                val bondId = sortedKey
+                                                val ringGiftId = ((req["giftId"] as? String) ?: (req["ringId"] as? String) ?: "proposal_ring_golden_rose").ifBlank { "proposal_ring_golden_rose" }
                                                 val newBond = IntimacyBond(
                                                     bondId = bondId,
                                                     user1Id = senderId,
@@ -10449,19 +11069,26 @@ fun IntimacyRequestsDialog(
                                                     user2Name = currentUser.name,
                                                     user1Photo = senderPhoto,
                                                     user2Photo = currentUser.photo,
-                                                    bondType = bondType,
+                                                    bondType = if (bondType.isBlank()) "couple" else bondType,
                                                     intimacyLevel = 1,
                                                     streakDays = 1,
                                                     status = "active",
-                                                    createdAt = System.currentTimeMillis()
+                                                    createdAt = System.currentTimeMillis(),
+                                                    activeMicLinkId = ringGiftId
                                                 )
                                                 val batch = db.batch()
                                                 batch.set(db.collection("intimacy_bonds").document(bondId), newBond)
+                                                batch.set(db.collection("intimacy_bonds").document("bond_$bondId"), newBond)
                                                 if (docId.isNotBlank()) {
                                                     batch.update(db.collection("intimacy_requests").document(docId), "status", "accepted")
                                                 }
+                                                // Link user bestFriends bidirectionally
+                                                batch.update(db.collection("users").document(currentUser.uid), "bestFriends", com.google.firebase.firestore.FieldValue.arrayUnion(senderId))
+                                                batch.update(db.collection("users").document(senderId), "bestFriends", com.google.firebase.firestore.FieldValue.arrayUnion(currentUser.uid))
+                                                batch.set(db.collection("users").document(currentUser.uid), mapOf("activeIntimacyBadge" to ringGiftId), SetOptions.merge())
+                                                batch.set(db.collection("users").document(senderId), mapOf("activeIntimacyBadge" to ringGiftId), SetOptions.merge())
                                                 batch.commit().addOnSuccessListener {
-                                                    Toast.makeText(context, "🎉 You & $senderName are now connected!", Toast.LENGTH_SHORT).show()
+                                                    Toast.makeText(context, "🎉 You & $senderName are now connected with Proposal Ring!", Toast.LENGTH_SHORT).show()
                                                     onBondCreated()
                                                 }
                                             },

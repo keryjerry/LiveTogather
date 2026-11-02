@@ -78,10 +78,11 @@ fun ProfileFrameMonthlyCardSection(
     val ref = db.collection("users").document(currentUser.uid)
 
     fun setWorn(id: String) {
-        ref.update("activeProfileBorderFrame", id).addOnSuccessListener {
-            onProfileUpdated(currentUser.copy(activeProfileBorderFrame = id))
-            Toast.makeText(context, if (id == "none") "Frame removed" else "Frame applied to your profile", Toast.LENGTH_SHORT).show()
-        }
+        val prefs = context.getSharedPreferences("livetogather_user_prefs", android.content.Context.MODE_PRIVATE)
+        prefs.edit().putString("profile_active_border_frame", id).apply()
+        onProfileUpdated(currentUser.copy(activeProfileBorderFrame = id))
+        ref.set(mapOf("activeProfileBorderFrame" to id), com.google.firebase.firestore.SetOptions.merge())
+        Toast.makeText(context, if (id == "none") "Frame removed" else "Frame applied to your profile ✨", Toast.LENGTH_SHORT).show()
     }
 
     fun buy(theme: ProfileBorderTheme) {
@@ -104,6 +105,11 @@ fun ProfileFrameMonthlyCardSection(
             Pair(newDiamonds, newExp)
         }.addOnSuccessListener { (newDiamonds, newExp) ->
             busy = false
+            val prefs = context.getSharedPreferences("livetogather_user_prefs", android.content.Context.MODE_PRIVATE)
+            prefs.edit()
+                .putLong("profile_diamonds", newDiamonds)
+                .putString("profile_active_border_frame", theme.id)
+                .apply()
             onProfileUpdated(currentUser.copy(
                 diamonds = newDiamonds,
                 profileFrameExpiries = currentUser.profileFrameExpiries + (theme.id to newExp),

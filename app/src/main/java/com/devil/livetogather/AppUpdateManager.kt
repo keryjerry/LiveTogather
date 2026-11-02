@@ -54,8 +54,12 @@ object AppUpdateManager {
     ) {
         val db = FirebaseFirestore.getInstance()
         db.collection("app_config").document("version")
-            .get()
-            .addOnSuccessListener { snapshot ->
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.w(TAG, "Error listening for app updates: ${error.message}")
+                    onNoUpdate()
+                    return@addSnapshotListener
+                }
                 if (snapshot != null && snapshot.exists()) {
                     val latestCode = (snapshot.getLong("latest_version_code")
                         ?: snapshot.getLong("latestVersionCode") ?: 1L).toInt()
@@ -87,10 +91,6 @@ object AppUpdateManager {
                 } else {
                     onNoUpdate()
                 }
-            }
-            .addOnFailureListener { e ->
-                Log.w(TAG, "Error checking for app updates: ${e.message}")
-                onNoUpdate()
             }
     }
 

@@ -676,6 +676,24 @@ fun SelfieVerificationDialog(
                                                 )
 
                                                 batch.commit().addOnSuccessListener {
+                                                    // Dispatch real-time notification to Admins & Founders
+                                                    val notifId = "verify_${currentUser.uid}"
+                                                    val adminNotif = NotificationItem(
+                                                        id = notifId,
+                                                        targetUserId = "admin",
+                                                        senderId = currentUser.uid,
+                                                        senderName = currentUser.name,
+                                                        senderPhoto = currentUser.photo,
+                                                        type = "selfie_verification_submitted",
+                                                        title = "📸 New Selfie Verification Request",
+                                                        message = "${currentUser.name} (#${currentUser.userId}) submitted a selfie for Green Tick verification.",
+                                                        timestamp = now,
+                                                        isRead = false,
+                                                        roomId = ""
+                                                    )
+                                                    db.collection("notifications").document(notifId).set(adminNotif)
+                                                    db.collection("notifications").document("${notifId}_founder").set(adminNotif.copy(id = "${notifId}_founder", targetUserId = "founder"))
+
                                                     val updated = currentUser.copy(
                                                         verificationStatus = "pending",
                                                         verificationSelfieUrl = dataUri,

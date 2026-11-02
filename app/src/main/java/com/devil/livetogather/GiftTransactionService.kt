@@ -41,16 +41,28 @@ object GiftTransactionService {
         val eventId = UUID.randomUUID().toString()
 
         // 2. Execute 100% Client-Side Atomic Firestore Transaction
+        // FIRESTORE RULE: ALL READS (transaction.get) MUST BE EXECUTED BEFORE ANY WRITES (update/set)
         return db.runTransaction { transaction ->
+            // --- STEP A: READ SENDER ---
             val senderDocRef = db.collection("users").document(senderUid)
             val senderSnapshot = transaction.get(senderDocRef)
 
+            // --- STEP B: READ ALL RECIPIENTS (READS MUST PRECEDE ALL WRITES) ---
+            val recipientDataList = distinctRecipients.map { recUid ->
+                val recDocRef = db.collection("users").document(recUid)
+                val recSnap = transaction.get(recDocRef)
+                Triple(recUid, recDocRef, recSnap)
+            }
+
+            // --- STEP C: PROCESS SENDER DATA & BALANCE CHECKS ---
             val senderName = senderSnapshot.getString("name") ?: "Member"
             val senderPhoto = senderSnapshot.getString("photo") ?: ""
             val currentDiamonds = senderSnapshot.getLong("diamonds") ?: 0L
             val currentWealthXp = senderSnapshot.getLong("wealthXp") ?: 0L
 
             var newSenderDiamonds = currentDiamonds
+            var senderBackpackToUpdate: Map<String, Int>? = null
+            var senderFieldUpdates: Map<String, Any>? = null
 
             if (fromBackpack) {
                 // Deduct from sender's backpack inventory
@@ -65,7 +77,7 @@ object GiftTransactionService {
                     throw IllegalStateException("Not enough gifts in backpack! Owned: $availableCount, Needed: $neededCount")
                 }
                 backpack[giftId] = availableCount - neededCount
-                transaction.update(senderDocRef, "backpack", backpack)
+                senderBackpackToUpdate = backpack
             } else {
                 // Check diamond balance
                 if (currentDiamonds < totalCost) {
@@ -76,21 +88,19 @@ object GiftTransactionService {
                 val newWealthXp = currentWealthXp + xpEarned
                 val newWealthLevel = LevelBadgeSystem.calculateLevelFromXp(newWealthXp)
 
-                val senderUpdates = mapOf<String, Any>(
+                senderFieldUpdates = mapOf<String, Any>(
                     "diamonds" to newSenderDiamonds,
                     "wealthXp" to newWealthXp,
                     "wealthLevel" to newWealthLevel
                 )
-                transaction.update(senderDocRef, senderUpdates)
             }
 
-            // 3. Process Each Recipient (Charm XP & Monetization / Commission)
+            // --- STEP D: PROCESS RECIPIENT DATA & CALCULATE COMMISSIONS ---
             val recipientNames = mutableListOf<String>()
             var totalHostCommission = 0.0
+            val recipientWriteList = mutableListOf<Pair<com.google.firebase.firestore.DocumentReference, Map<String, Any>>>()
 
-            distinctRecipients.forEach { recUid ->
-                val recDocRef = db.collection("users").document(recUid)
-                val recSnap = transaction.get(recDocRef)
+            recipientDataList.forEach { (_, recDocRef, recSnap) ->
                 val recName = recSnap.getString("name") ?: "Host"
                 recipientNames.add(recName)
 
@@ -116,7 +126,18 @@ object GiftTransactionService {
                     recUpdates["totalEarningsInr"] = FieldValue.increment(earnings)
                 }
 
-                transaction.update(recDocRef, recUpdates)
+                recipientWriteList.add(recDocRef to recUpdates)
+            }
+
+            // --- STEP E: EXECUTE ALL WRITES (NOW STRICTLY AFTER ALL READS) ---
+            if (senderBackpackToUpdate != null) {
+                transaction.update(senderDocRef, "backpack", senderBackpackToUpdate)
+            } else if (senderFieldUpdates != null) {
+                transaction.update(senderDocRef, senderFieldUpdates)
+            }
+
+            recipientWriteList.forEach { (recRef, updates) ->
+                transaction.update(recRef, updates)
             }
 
             // 4. Construct Gift Event
