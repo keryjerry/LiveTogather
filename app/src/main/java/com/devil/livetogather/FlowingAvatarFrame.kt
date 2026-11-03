@@ -597,7 +597,7 @@ fun CompactFrameThumbnailBox(
                         .padding(horizontal = 4.dp, vertical = 2.dp)
                 ) {
                     Text(
-                        text = if (validityLabel.isNotBlank()) "âœ“ Applied ($validityLabel)" else "âœ“ Applied",
+                        text = if (validityLabel.isNotBlank()) "✓ Applied ($validityLabel)" else "✓ Applied",
                         color = BrandGreen,
                         fontSize = 8.5.sp,
                         fontWeight = FontWeight.Bold
@@ -626,7 +626,7 @@ fun CompactFrameThumbnailBox(
                         .border(0.8.dp, Color.Red.copy(alpha = 0.7f), RoundedCornerShape(6.dp))
                         .padding(horizontal = 4.dp, vertical = 2.dp)
                 ) {
-                    Text("Expired â€¢ Rebuy", color = Color(0xFFFF6B6B), fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                    Text("Expired • Rebuy", color = Color(0xFFFF6B6B), fontSize = 8.sp, fontWeight = FontWeight.Bold)
                 }
             } else {
                 val formattedCost = formatDiamondCost(frameItem.cost)
@@ -637,7 +637,7 @@ fun CompactFrameThumbnailBox(
                         .border(0.8.dp, BrandCoral.copy(alpha = 0.7f), RoundedCornerShape(6.dp))
                         .padding(horizontal = 4.dp, vertical = 2.dp)
                 ) {
-                    Text("ðŸ’Ž $formattedCost (1 Mo)", color = BrandCoral, fontSize = 8.5.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("💎 $formattedCost (1 Mo)", color = BrandCoral, fontSize = 8.5.sp, fontWeight = FontWeight.ExtraBold)
                 }
             }
         }
@@ -769,7 +769,7 @@ fun CompactVideoGiftThumbnailBox(
                                     .size(44.dp)
                                     .graphicsLayer(rotationZ = rotateAngle)
                             ) {
-                                Text(text = "ðŸŒ€", fontSize = 32.sp)
+                                Text(text = "🌀", fontSize = 32.sp)
                             }
                             Text(text = gift.emoji, fontSize = 24.sp)
                         }
@@ -816,7 +816,7 @@ fun CompactVideoGiftThumbnailBox(
                     .padding(horizontal = 6.dp, vertical = 2.dp)
             ) {
                 Text(
-                    text = "ðŸ’Ž $formattedCost",
+                    text = "💎 $formattedCost",
                     color = if (canAfford) BrandGold else Color.LightGray,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold

@@ -4764,100 +4764,110 @@ fun ProfileScreenContent(
                 contentScale = ContentScale.FillBounds
             )
         }
+
+        // Fixed 3D Transparent Status & Wallet Bar (Sits on top of the border line at zIndex 30f)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 6.dp)
+                .zIndex(30f),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                color = Color.Black.copy(alpha = 0.45f),
+                shape = RoundedCornerShape(18.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
+                shadowElevation = 4.dp
+            ) {
+                Text(
+                    text = " @${(name.ifBlank { "member" }).lowercase().replace(" ", "_")} ",
+                    color = Color.White,
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.Black,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                )
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                // Shimmering Compact 3D Diamonds Wallet Pill
+                Surface(
+                    color = Color.Black.copy(alpha = 0.45f),
+                    shape = RoundedCornerShape(18.dp),
+                    border = BorderStroke(1.dp, Color(0xFFC084FC).copy(alpha = 0.6f)),
+                    shadowElevation = 4.dp,
+                    modifier = Modifier.clickable { showCoinStoreModal = true }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("💎", fontSize = 12.sp)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = formatCompactDiamonds(currentUser.diamonds),
+                            color = Color(0xFFE9D5FF),
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("+", color = Color(0xFFC084FC), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                // Compact Coins Wallet Pill
+                Surface(
+                    color = Color.Black.copy(alpha = 0.45f),
+                    shape = RoundedCornerShape(18.dp),
+                    border = BorderStroke(1.dp, Color(0xFFFFD700).copy(alpha = 0.6f)),
+                    shadowElevation = 4.dp,
+                    modifier = Modifier.clickable { showCoinStoreModal = true }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("🪙", fontSize = 12.sp)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = formatCompactDiamonds(currentUser.coins),
+                            color = Color(0xFFFFD700),
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                }
+
+                // Settings Button (3D Transparent)
+                Surface(
+                    color = Color.Black.copy(alpha = 0.45f),
+                    shape = CircleShape,
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
+                    shadowElevation = 4.dp,
+                    modifier = Modifier.size(34.dp).clickable { onOpenSettings() }
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White, modifier = Modifier.size(17.dp))
+                    }
+                }
+            }
+        }
+
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
                 .imePadding(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 16.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 48.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // 1. TOP STATUS & WALLET BAR (Handle, Shimmering Compact Diamonds, Coins & Settings)
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "@${(name.ifBlank { "member" }).lowercase().replace(" ", "_")}",
-                        color = Color.White,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Black,
-                        maxLines = 1,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-
-                    Spacer(modifier = Modifier.width(6.dp))
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        // Shimmering Compact 3D Diamonds Wallet Pill
-                        Surface(
-                            color = Color(0xFF1E1728).copy(alpha = 0.45f),
-                            shape = RoundedCornerShape(16.dp),
-                            border = BorderStroke(1.dp, Color(0xFF9333EA)),
-                            shadowElevation = 2.dp,
-                            modifier = Modifier.clickable { showCoinStoreModal = true }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("💎", fontSize = 12.sp)
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text(
-                                    text = formatCompactDiamonds(currentUser.diamonds),
-                                    color = Color(0xFFE9D5FF),
-                                    fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.ExtraBold
-                                )
-                                Spacer(modifier = Modifier.width(2.dp))
-                                Text("+", color = Color(0xFFC084FC), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-
-                        // Compact Coins Wallet Pill
-                        Surface(
-                            color = Color(0xFF1E1728).copy(alpha = 0.45f),
-                            shape = RoundedCornerShape(16.dp),
-                            border = BorderStroke(1.dp, Color(0xFFFFD700)),
-                            shadowElevation = 2.dp,
-                            modifier = Modifier.clickable { showCoinStoreModal = true }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("🪙", fontSize = 12.sp)
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text(
-                                    text = formatCompactDiamonds(currentUser.coins),
-                                    color = Color(0xFFFFD700),
-                                    fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.ExtraBold
-                                )
-                            }
-                        }
-
-                        // Settings Button (Cleanly spaced)
-                        IconButton(
-                            onClick = onOpenSettings,
-                            modifier = Modifier
-                                .size(30.dp)
-                                .background(Color(0xFF1E1728).copy(alpha = 0.45f), CircleShape)
-                                .border(1.dp, Color(0xFF3D2C54), CircleShape)
-                        ) {
-                            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White, modifier = Modifier.size(16.dp))
-                        }
-                    }
-                }
-            }
 
             // 2. SOULMATE / COUPLE DUAL-AVATAR HEADER & VOICE INTRO (MATCHING REFERENCE IMAGES)
             item {
