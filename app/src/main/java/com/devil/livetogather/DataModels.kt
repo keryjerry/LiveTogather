@@ -866,7 +866,9 @@ data class UserProfile(
     val ownedVipTiers: List<Int> = emptyList(),
     val vipExpiries: Map<String, Long> = emptyMap(),
     val activeProfileBorderFrame: String = "",
-    val profileFrameExpiries: Map<String, Long> = emptyMap()
+    val profileFrameExpiries: Map<String, Long> = emptyMap(),
+    val activeIntimacyBadge: String = "",
+    val giftsReceivedCount: Int = 0
 ) {
     fun ownsProfileFrame(id: String): Boolean =
         isFounder() || (profileFrameExpiries[id] ?: 0L) > System.currentTimeMillis()

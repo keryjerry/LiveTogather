@@ -41,24 +41,8 @@ data class StoreItem(
 
 object LuxuryStoreCatalog {
 
-    // --- A. RINGS & ROMANTIC PROPOSALS (DISTINCT REAL ITEMS & VIDEOS) ---
+    // --- A. RINGS & ROMANTIC PROPOSALS (100% CRISP TRANSPARENT PNG RINGS) ---
     val rings = listOf(
-        StoreItem(
-            id = "proposal_ring_golden_rose",
-            name = "Proposal Ring • Golden Rose",
-            category = "ring",
-            subCategory = "Proposal Ring",
-            diamondPrice = 50000L,
-            rankTier = "S",
-            durationDays = 30,
-            iconEmoji = "💍",
-            isIntimacyBondOnly = true,
-            drawableRes = R.drawable.thumb_proposal_ring_golden_rose,
-            videoRes = R.raw.proposal_ring_golden_rose,
-            primaryColor = 0xFFFFD700,
-            secondaryColor = 0xFFFFF8E1,
-            description = "3D Rotating Golden Rose & Pearl Solitaire Proposal Ring with sparkling orbit."
-        ),
         StoreItem(
             id = "proposal_ring_crimson_rose",
             name = "Proposal Ring • Crimson Rose",
@@ -70,14 +54,30 @@ object LuxuryStoreCatalog {
             iconEmoji = "💍",
             isIntimacyBondOnly = true,
             drawableRes = R.drawable.thumb_proposal_ring_crimson_rose,
-            videoRes = R.raw.proposal_ring_crimson_rose,
+            videoRes = 0,
             primaryColor = 0xFFFF1744,
             secondaryColor = 0xFFFFD700,
-            description = "3D Rotating Crimson Rose & Brilliant Diamond Proposal Ring in 24K Gold."
+            description = "Crimson Rose & Brilliant Diamond Proposal Ring in 24K Gold."
+        ),
+        StoreItem(
+            id = "proposal_ring_golden_rose",
+            name = "Proposal Ring • Golden Rose",
+            category = "ring",
+            subCategory = "Proposal Ring",
+            diamondPrice = 50000L,
+            rankTier = "S",
+            durationDays = 30,
+            iconEmoji = "💍",
+            isIntimacyBondOnly = true,
+            drawableRes = R.drawable.thumb_proposal_ring_golden_rose,
+            videoRes = 0,
+            primaryColor = 0xFFFFD700,
+            secondaryColor = 0xFFFFF8E1,
+            description = "Golden Blooming Rose & Pink Sapphire Proposal Ring."
         ),
         StoreItem(
             id = "proposal_ring_velvet_rose",
-            name = "Proposal Ring • Velvet Rose",
+            name = "Proposal Ring • Ruby Crown",
             category = "ring",
             subCategory = "Proposal Ring",
             diamondPrice = 60000L,
@@ -86,14 +86,14 @@ object LuxuryStoreCatalog {
             iconEmoji = "💍",
             isIntimacyBondOnly = true,
             drawableRes = R.drawable.thumb_proposal_ring_velvet_rose,
-            videoRes = R.raw.proposal_ring_velvet_rose,
+            videoRes = 0,
             primaryColor = 0xFFE91E63,
             secondaryColor = 0xFFFFD700,
-            description = "3D Rotating Velvet Rose with Dewdrops, Pearls & Solitaire Diamond."
+            description = "Royal Ruby Heart Crown & 24K Gold Filigree Proposal Ring."
         ),
         StoreItem(
             id = "proposal_ring_royal_floral",
-            name = "Proposal Ring • Royal Floral",
+            name = "Proposal Ring • Diamond Solitaire",
             category = "ring",
             subCategory = "Proposal Ring",
             diamondPrice = 65000L,
@@ -102,14 +102,14 @@ object LuxuryStoreCatalog {
             iconEmoji = "💍",
             isIntimacyBondOnly = true,
             drawableRes = R.drawable.thumb_proposal_ring_royal_floral,
-            videoRes = R.raw.proposal_ring_royal_floral,
+            videoRes = 0,
             primaryColor = 0xFFFFD700,
             secondaryColor = 0xFF00E676,
-            description = "3D Rotating Cushion Diamond Proposal Ring with Ruby, Emerald & Sapphire Flowers."
+            description = "Rose Gold Infinity Band with Brilliant Solitaire Diamond."
         ),
         StoreItem(
             id = "proposal_ring_sapphire_blossom",
-            name = "Proposal Ring • Sapphire Blossom",
+            name = "Proposal Ring • Twin Hearts",
             category = "ring",
             subCategory = "Proposal Ring",
             diamondPrice = 70000L,
@@ -118,14 +118,14 @@ object LuxuryStoreCatalog {
             iconEmoji = "💍",
             isIntimacyBondOnly = true,
             drawableRes = R.drawable.thumb_proposal_ring_sapphire_blossom,
-            videoRes = R.raw.proposal_ring_sapphire_blossom,
+            videoRes = 0,
             primaryColor = 0xFF2979FF,
             secondaryColor = 0xFFFF4081,
-            description = "3D Rotating Multi-Gemstone Floral Halo Solitaire Proposal Ring."
+            description = "Twin Heart-Cut Diamond & Pink Sapphire Interlocking Proposal Ring."
         ),
         StoreItem(
             id = "proposal_ring_imperial_lotus",
-            name = "Proposal Ring • Imperial Lotus",
+            name = "Proposal Ring • Angel Wings",
             category = "ring",
             subCategory = "Proposal Ring",
             diamondPrice = 80000L,
@@ -134,26 +134,10 @@ object LuxuryStoreCatalog {
             iconEmoji = "💍",
             isIntimacyBondOnly = true,
             drawableRes = R.drawable.thumb_proposal_ring_imperial_lotus,
-            videoRes = R.raw.proposal_ring_imperial_lotus,
+            videoRes = 0,
             primaryColor = 0xFFFFD700,
             secondaryColor = 0xFFE040FB,
-            description = "3D Rotating Imperial Lotus Diamond & Jeweled Filigree Proposal Ring."
-        ),
-        StoreItem(
-            id = "ring_diamond_proposal",
-            name = "Diamond Proposal Ring",
-            category = "ring",
-            subCategory = "Proposal Ring",
-            diamondPrice = 150000L,
-            rankTier = "S",
-            durationDays = 30,
-            iconEmoji = "💍",
-            isIntimacyBondOnly = true,
-            drawableRes = R.drawable.thumb_diamond_ring_proposal,
-            videoRes = R.raw.diamond_ring_proposal,
-            primaryColor = 0xFF00E5FF,
-            secondaryColor = 0xFFE0F7FA,
-            description = "3D Sparkling Solitaire Diamond Proposal Ring with prism dispersion."
+            description = "24K Golden Angel Wings & Pear-Cut Diamond Proposal Ring."
         ),
         StoreItem(
             id = "ring_rose_proposal",
