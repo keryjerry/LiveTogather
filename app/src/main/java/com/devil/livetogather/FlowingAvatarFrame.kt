@@ -73,7 +73,7 @@ import android.widget.ImageView
  * and infinite smooth looping on Android 9+ (API 28+).
  */
 @Composable
-fun LiveVideoAvatarFrame(
+fun LiveVideoAvatarFrameRaw(
     resId: Int,
     modifier: Modifier = Modifier
 ) {
@@ -84,7 +84,7 @@ fun LiveVideoAvatarFrame(
             modifier = modifier,
             factory = { ctx ->
                 ImageView(ctx).apply {
-                    scaleType = ImageView.ScaleType.FIT_CENTER
+                    scaleType = ImageView.ScaleType.FIT_XY
                     tag = resId
                     try {
                         val source = ImageDecoder.createSource(resources, resId)
@@ -361,7 +361,8 @@ fun FlowingAvatarFrame(
                 val videoFrameRes = if (effectiveVip in 1..5) getVipVideoAvatarDrawable(effectiveVip) else 0
                 if (videoFrameRes != 0) {
                     LiveVideoAvatarFrame(
-                        resId = videoFrameRes,
+                        resId = videoFrameRes,
+                        avatarSize = targetAvatarSize,
                         modifier = Modifier.size(targetFrameSize)
                     )
                 } else {
@@ -890,3 +891,50 @@ fun VideoMicMagicEffectOverlay(
         )
     }
 }
+
+
+/**
+ * Inner transparent aperture of each VIP video avatar frame (measured on the 360x228 source frames).
+ * Values are (centerX, centerY, width, height) in source pixels.
+ */
+private const val VIP_VIDEO_SRC_W = 360f
+private const val VIP_VIDEO_SRC_H = 228f
+
+private fun vipVideoAperture(resId: Int): FloatArray = when (resId) {
+    R.drawable.vip1_video_avatar -> floatArrayOf(181.5f, 112.0f, 127f, 122f)
+    R.drawable.vip2_video_avatar -> floatArrayOf(181.5f, 115.0f, 127f, 128f)
+    R.drawable.vip3_video_avatar -> floatArrayOf(181.0f, 116.0f, 104f, 106f)
+    R.drawable.vip4_video_avatar -> floatArrayOf(181.5f, 120.5f, 67f, 67f)
+    R.drawable.vip5_video_avatar -> floatArrayOf(181.0f, 121.0f, 68f, 68f)
+    else -> floatArrayOf(VIP_VIDEO_SRC_W / 2f, VIP_VIDEO_SRC_H / 2f, 128f, 128f)
+}
+
+/**
+ * Edge-to-edge fitted animated VIP frame: the frame's transparent hole is scaled and centered
+ * so it exactly matches the avatar circle (avatarSize), with a tiny 3% overlap so no gap shows.
+ * Rendered on top of the avatar, never affects surrounding layout (requiredSize + offset).
+ */
+@Composable
+fun LiveVideoAvatarFrame(
+    resId: Int,
+    avatarSize: Dp,
+    modifier: Modifier = Modifier
+) {
+    if (resId == 0) return
+    val ap = vipVideoAperture(resId)
+    val overlap = 1.03f
+    val sx = avatarSize.value / (ap[2] * overlap)
+    val sy = avatarSize.value / (ap[3] * overlap)
+    val frameW = (VIP_VIDEO_SRC_W * sx).dp
+    val frameH = (VIP_VIDEO_SRC_H * sy).dp
+    val dx = ((VIP_VIDEO_SRC_W / 2f - ap[0]) * sx).dp
+    val dy = ((VIP_VIDEO_SRC_H / 2f - ap[1]) * sy).dp
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        LiveVideoAvatarFrameRaw(
+            resId = resId,
+            modifier = Modifier
+                .requiredSize(frameW, frameH)
+                .offset(x = dx, y = dy)
+        )
+    }
+}
