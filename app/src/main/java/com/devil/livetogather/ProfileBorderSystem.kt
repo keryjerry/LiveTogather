@@ -85,7 +85,12 @@ object ProfileBorderRegistry {
         ProfileBorderTheme("amethyst_purple", "Imperial Amethyst Gold", "शाही बैंगनी नीलम", "Royal Luxury", R.drawable.profile_border_amethyst_purple, Color(0xFF7C4DFF)),
         ProfileBorderTheme("solar_gold", "24K Solar Sovereign", "अखंड सूर्य सम्राट सोना", "Royal Luxury", R.drawable.profile_border_solar_gold, Color(0xFFFFC107)),
         ProfileBorderTheme("sakura_pink", "Sakura Rose Gold", "साकुरा चेरी ब्लॉसम", "Romance & Flowers", R.drawable.profile_border_sakura_pink, Color(0xFFFF80AB)),
-        ProfileBorderTheme("emerald_green", "Imperial Emerald Gold", "शाही पन्ना रत्न", "Royal Luxury", R.drawable.profile_border_emerald_green, Color(0xFF00E676))
+        ProfileBorderTheme("emerald_green", "Imperial Emerald Gold", "शाही पन्ना रत्न", "Royal Luxury", R.drawable.profile_border_emerald_green, Color(0xFF00E676)),
+        ProfileBorderTheme("vip_border_1", "VIP 1 Frost Silver Slim Border", "वीआईपी 1 सिल्वर बॉर्डर", "VIP Suite", R.drawable.vip1_border_frame_slim, Color(0xFFE2E8F0)),
+        ProfileBorderTheme("vip_border_2", "VIP 2 24K Gold Slim Border", "वीआईपी 2 गोल्ड बॉर्डर", "VIP Suite", R.drawable.vip2_border_frame_slim, Color(0xFFFFD700)),
+        ProfileBorderTheme("vip_border_3", "VIP 3 Obsidian Ruby Slim Border", "वीआईपी 3 रूबी बॉर्डर", "VIP Suite", R.drawable.vip3_border_frame_slim, Color(0xFFFF1744)),
+        ProfileBorderTheme("vip_border_4", "VIP 4 Crimson Gold Slim Border", "वीआईपी 4 वॉरियर बॉर्डर", "VIP Suite", R.drawable.vip4_border_frame_slim, Color(0xFFFF3B30)),
+        ProfileBorderTheme("vip_border_5", "VIP 5 Sapphire Cyan Slim Border", "वीआईपी 5 सेलेस्टियल बॉर्डर", "VIP Suite", R.drawable.vip5_border_frame_slim, Color(0xFF00E5FF))
     )
 
     fun getDrawableForId(id: String): Int {

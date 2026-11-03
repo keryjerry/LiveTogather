@@ -416,13 +416,14 @@ fun VipRoomChatBarEntry(
         else -> 1
     }
 
-    val bubbleFrameRes = getVipChatBubbleDrawable(effVip)
+    val bannerRes = getVipEntryBannerDrawable(effVip)
 
     val vipBadgeLabel = when (effVip) {
         1 -> "VIP 1"
         2 -> "VIP 2"
         3 -> "VIP 3"
         4 -> "VIP 4"
+        5 -> "VIP 5"
         else -> "VIP"
     }
 
@@ -431,52 +432,48 @@ fun VipRoomChatBarEntry(
         2 -> Color(0xFFFFB300)
         3 -> Color(0xFFA855F7)
         4 -> Color(0xFFFF1744)
+        5 -> Color(0xFF00E5FF)
         else -> Color(0xFFFFB300)
     }
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 2.dp)
-            .height(52.dp),
+            .padding(vertical = 3.dp)
+            .height(56.dp),
         contentAlignment = Alignment.CenterStart
     ) {
-        // Safe translucent backdrop matching chat bar bounds
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .padding(horizontal = 10.dp, vertical = 3.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(Color.Black.copy(alpha = 0.65f))
-        )
-
-        // Master 3D VIP Chat Frame Asset
+        // Master 3D VIP Entry Banner Graphic
         Image(
-            painter = painterResource(id = bubbleFrameRes),
-            contentDescription = "VIP Chat Bar",
-            modifier = Modifier.matchParentSize(),
+            painter = painterResource(id = bannerRes),
+            contentDescription = "VIP Entry Banner",
+            modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.FillBounds
         )
 
-        // Content Row: Avatar + Name & VIP Badge + Action Text
+        // Content Row: Profile avatar set squarely inside the banner's aperture on left + details
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 22.dp, vertical = 4.dp),
+                .padding(start = 14.dp, end = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // User Avatar
-            AsyncImage(
-                model = avatarUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
-                contentDescription = userName,
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .border(1.dp, vipBadgeColor, CircleShape),
-                contentScale = ContentScale.Crop
-            )
+            // User Avatar sitting inside the banner circular crest
+            Box(
+                modifier = Modifier.size(34.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                AsyncImage(
+                    model = avatarUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                    contentDescription = userName,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape),
+                    contentScale = ContentScale.Crop
+                )
+            }
 
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(10.dp))
 
             Column(
                 modifier = Modifier.weight(1f),
@@ -493,28 +490,30 @@ fun VipRoomChatBarEntry(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Surface(
-                        color = vipBadgeColor.copy(alpha = 0.85f),
-                        shape = RoundedCornerShape(50),
-                        border = BorderStroke(0.5.dp, Color(0xFFFFD700))
+                        color = vipBadgeColor.copy(alpha = 0.25f),
+                        shape = RoundedCornerShape(4.dp),
+                        border = BorderStroke(0.6.dp, vipBadgeColor)
                     ) {
                         Text(
                             text = vipBadgeLabel,
-                            color = Color.White,
-                            fontSize = 8.sp,
-                            fontWeight = FontWeight.Black,
-                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                            color = vipBadgeColor,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                         )
                     }
                 }
 
-                Text(
-                    text = actionText,
-                    color = Color(0xFFFFD700),
-                    fontSize = 10.5.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                if (actionText.isNotBlank()) {
+                    Text(
+                        text = actionText,
+                        color = Color(0xFFFFD700),
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
     }
@@ -526,7 +525,9 @@ fun VipRoomChatBarEntry(
 @Composable
 fun VipStyledChatBubble(
     messageText: String,
-    isMe: Boolean,
+    avatarUrl: String = "",
+    userName: String = "",
+    isMe: Boolean = false,
     chatFrameId: String? = null,
     vipLevel: Int = 0,
     isFounder: Boolean = false,
@@ -534,140 +535,103 @@ fun VipStyledChatBubble(
     modifier: Modifier = Modifier
 ) {
     val frameItem = getVipChatFrame(chatFrameId, vipLevel, isFounder)
-    val hasVipFrame = frameItem != null || vipLevel in 1..4 || isFounder
+    val hasVipFrame = frameItem != null || vipLevel in 1..5 || isFounder
 
     if (hasVipFrame) {
         val effVip = when {
             frameItem?.vipLevel in 1..5 -> frameItem!!.vipLevel
             vipLevel in 1..5 -> vipLevel
-            frameItem?.id == "chat_frame_celestial_sapphire" -> 5
-            frameItem?.id == "chat_frame_warrior_crimson" -> 4
-            frameItem?.id == "chat_frame_imperial_obsidian" -> 3
-            frameItem?.id == "chat_frame_golden_paladin" -> 2
-            frameItem?.id == "chat_frame_silver_knight" -> 1
             else -> 1
         }
 
-        val bubbleFrameRes = getVipChatBubbleDrawable(effVip)
-
-        val startPad = when (effVip) {
-            4 -> 48.dp
-            3 -> 44.dp
-            2 -> 40.dp
-            else -> 36.dp
-        }
-        val endPad = when (effVip) {
-            4 -> 42.dp
-            3 -> 38.dp
-            2 -> 34.dp
-            else -> 30.dp
-        }
-        val topPad = when (effVip) {
-            4 -> 20.dp
-            3 -> 18.dp
-            2 -> 16.dp
-            else -> 14.dp
-        }
-        val bottomPad = when (effVip) {
-            4 -> 24.dp
-            3 -> 22.dp
-            2 -> 18.dp
-            else -> 16.dp
+        val (primaryColor, accentColor, bgGradient) = when (effVip) {
+            1 -> Triple(Color(0xFF94A3B8), Color(0xFFCBD5E1), listOf(Color(0xFF0F172A).copy(alpha = 0.90f), Color(0xFF1E293B).copy(alpha = 0.82f)))
+            2 -> Triple(Color(0xFFFFB300), Color(0xFFFFD54F), listOf(Color(0xFF261A00).copy(alpha = 0.90f), Color(0xFF382600).copy(alpha = 0.82f)))
+            3 -> Triple(Color(0xFFA855F7), Color(0xFFD8B4FE), listOf(Color(0xFF1D0635).copy(alpha = 0.90f), Color(0xFF330B5C).copy(alpha = 0.82f)))
+            4 -> Triple(Color(0xFFFF1744), Color(0xFFFF8A80), listOf(Color(0xFF2D0009).copy(alpha = 0.90f), Color(0xFF47000E).copy(alpha = 0.82f)))
+            5 -> Triple(Color(0xFF00E5FF), Color(0xFF80D8FF), listOf(Color(0xFF001F2B).copy(alpha = 0.90f), Color(0xFF00384D).copy(alpha = 0.82f)))
+            else -> Triple(Color(0xFFFFB300), Color(0xFFFFD54F), listOf(Color(0xFF261A00).copy(alpha = 0.90f), Color(0xFF382600).copy(alpha = 0.82f)))
         }
 
-        Box(
-            modifier = modifier
-                .padding(vertical = 4.dp)
-                .widthIn(min = 140.dp, max = 310.dp),
-            contentAlignment = Alignment.CenterStart
+        // Integrated Chat Frame: Profile Avatar inside circle on left + Naturally Expandable Bubble
+        Row(
+            modifier = modifier.padding(vertical = 3.dp),
+            verticalAlignment = Alignment.Top
         ) {
-            // Inner safe translucent backdrop ensuring crystal clarity & contrast behind text
+            // 1. Profile Photo embedded inside VIP circular crest
             Box(
                 modifier = Modifier
-                    .matchParentSize()
-                    .padding(
-                        start = startPad - 4.dp,
-                        end = endPad - 4.dp,
-                        top = topPad - 3.dp,
-                        bottom = bottomPad - 3.dp
-                    )
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color.Black.copy(alpha = 0.65f))
-            )
-
-            // Master 3D Luxury VIP Chat Frame Image (Exact Art Match)
-            Image(
-                painter = painterResource(id = bubbleFrameRes),
-                contentDescription = "VIP Chat Frame",
-                modifier = Modifier.matchParentSize(),
-                contentScale = ContentScale.FillBounds
-            )
-
-            // Message text container strictly padded inside decorative borders
-            Column(
-                modifier = Modifier
-                    .padding(
-                        start = startPad,
-                        end = endPad,
-                        top = topPad,
-                        bottom = bottomPad
-                    )
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.6f))
+                    .border(1.5.dp, Brush.sweepGradient(listOf(primaryColor, accentColor, primaryColor)), CircleShape),
+                contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = messageText,
-                    color = Color.White,
-                    fontSize = if (messageText.length > 55) 12.sp else if (messageText.length > 30) 13.sp else 13.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    lineHeight = if (messageText.length > 55) 16.sp else if (messageText.length > 30) 17.sp else 19.sp,
-                    softWrap = true,
-                    overflow = TextOverflow.Ellipsis
+                AsyncImage(
+                    model = avatarUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                    contentDescription = userName,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape),
+                    contentScale = ContentScale.Crop
                 )
+            }
 
-                if (timestampText.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = timestampText,
-                        fontSize = 8.5.sp,
-                        color = Color.White.copy(alpha = 0.6f),
-                        textAlign = if (isMe) TextAlign.End else TextAlign.Start,
-                        modifier = Modifier.fillMaxWidth()
+            Spacer(modifier = Modifier.width(6.dp))
+
+            // 2. Expandable Bubble Container that grows automatically with text without clipping or fixed black boxes
+            Box(
+                modifier = Modifier
+                    .widthIn(min = 50.dp, max = 265.dp)
+                    .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 16.dp, bottomEnd = 16.dp, bottomStart = 14.dp))
+                    .background(Brush.horizontalGradient(bgGradient))
+                    .border(
+                        1.2.dp,
+                        Brush.horizontalGradient(listOf(primaryColor, accentColor)),
+                        RoundedCornerShape(topStart = 4.dp, topEnd = 16.dp, bottomEnd = 16.dp, bottomStart = 14.dp)
                     )
+                    .padding(horizontal = 12.dp, vertical = 7.dp)
+            ) {
+                Column {
+                    Text(
+                        text = messageText,
+                        color = Color.White,
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        lineHeight = 18.sp,
+                        softWrap = true
+                    )
+                    if (timestampText.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = timestampText,
+                            fontSize = 8.5.sp,
+                            color = Color.White.copy(alpha = 0.6f),
+                            textAlign = if (isMe) TextAlign.End else TextAlign.Start,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 }
             }
         }
     } else {
-        // Standard Chat Bubble for Non-VIP / unequipped
+        // Fallback default message box
         Box(
             modifier = modifier
-                .clip(RoundedCornerShape(14.dp))
-                .background(if (isMe) BrandCoral else Color.Black.copy(alpha = 0.55f))
-                .padding(horizontal = 14.dp, vertical = 9.dp)
+                .padding(vertical = 4.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color.Black.copy(alpha = 0.55f))
+                .padding(horizontal = 12.dp, vertical = 6.dp)
         ) {
-            Column {
-                Text(
-                    text = messageText,
-                    color = Color.White,
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp
-                )
-                if (timestampText.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = timestampText,
-                        fontSize = 8.5.sp,
-                        color = Color.White.copy(alpha = 0.5f),
-                        textAlign = if (isMe) TextAlign.End else TextAlign.Start,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            }
+            Text(
+                text = messageText,
+                color = Color.White,
+                fontSize = 13.sp
+            )
         }
     }
 }
 
-// -------------------------------------------------------------
-// USER CHAT BADGES ROW (Displays 3D Founder, CEO, Tier, VIP Badges)
-// -------------------------------------------------------------
 @Composable
 fun UserChatBadgesRow(
     userProfile: UserProfile?,
@@ -1664,74 +1628,85 @@ fun VipCenterDialog(
 
                             Spacer(modifier = Modifier.height(10.dp))
 
-                            // VIP suite categories
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                val cards = listOf(
-                                    Triple(0, currentTier.swordRes, "Entry Effects"),
-                                    Triple(1, currentTier.bubbleRes, "Chat Bubbles"),
-                                    Triple(2, currentTier.avatarRes, "Avatar Frames")
-                                )
+                            // All 5 VIP Suite Items in Smooth Horizontal Scroll Row with Clear Bilingual Labels
+                            data class VipPieceCard(val idx: Int, val resId: Int, val engLabel: String, val hindiLabel: String)
+                            val suiteCards = listOf(
+                                VipPieceCard(0, currentTier.avatarRes, "Avatar Frame", "अवतार फ्रेम"),
+                                VipPieceCard(1, currentTier.bubbleRes, "Chat Bubble", "चैट फ्रेम"),
+                                VipPieceCard(2, currentTier.swordRes, "Entry Effect", "एंट्री इफेक्ट"),
+                                VipPieceCard(3, currentTier.archRes, "Half Border Arch", "हाफ बॉर्डर आर्क"),
+                                VipPieceCard(4, currentTier.mockupRes, "Full Profile Border", "फुल प्रोफाइल बॉर्डर")
+                            )
 
-                                cards.forEach { (idx, resId, label) ->
-                                    val isCardSelected = selectedSuitePiece == idx
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                suiteCards.forEach { card ->
+                                    val isCardSelected = selectedSuitePiece == card.idx
                                     Surface(
-                                        color = Color(0xFF141022),
+                                        color = if (isCardSelected) Color(0xFF26183B) else Color(0xFF141022),
                                         shape = RoundedCornerShape(14.dp),
                                         border = BorderStroke(
-                                            width = if (isCardSelected) 1.5.dp else 1.dp,
-                                            color = if (isCardSelected) Color(0xFFFFD700) else Color(0xFF28203D)
+                                            width = if (isCardSelected) 1.8.dp else 1.dp,
+                                            color = if (isCardSelected) Color(0xFFFFD700) else Color(0xFF2E2445)
                                         ),
+                                        shadowElevation = if (isCardSelected) 6.dp else 2.dp,
                                         modifier = Modifier
-                                            .weight(1f)
-                                            .height(96.dp)
+                                            .width(115.dp)
+                                            .height(118.dp)
                                             .clickable {
-                                                selectedSuitePiece = idx
+                                                selectedSuitePiece = card.idx
                                                 showEnlargedPreview = true
                                             }
                                     ) {
-                                        Box(modifier = Modifier.fillMaxSize()) {
-                                            if (idx == 3) {
-                                                FlowingAvatarFrame(
-                                                    photoUrl = currentUser.photo,
-                                                    frameId = currentTier.frameId,
-                                                    modifier = Modifier
-                                                        .size(60.dp)
-                                                        .align(Alignment.TopCenter),
-                                                    avatarSize = 30.dp,
-                                                    frameSize = 56.dp,
-                                                    vipLevel = currentTier.level,
-                                                    showAnimation = false,
-                                                    showVipBadge = false
-                                                )
-                                            } else {
-                                                Image(
-                                                    painter = painterResource(id = resId),
-                                                    contentDescription = label,
-                                                    contentScale = ContentScale.Fit,
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .height(64.dp)
-                                                        .align(Alignment.TopCenter)
-                                                        .padding(horizontal = 4.dp, vertical = 2.dp)
-                                                )
-                                            }
-                                            Text(
-                                                text = label,
-                                                fontSize = 8.sp,
-                                                lineHeight = 9.sp,
-                                                textAlign = TextAlign.Center,
-                                                maxLines = 2,
-                                                overflow = TextOverflow.Ellipsis,
-                                                color = Color.White,
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(6.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Box(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
-                                                    .align(Alignment.BottomCenter)
-                                                    .background(Color.Black.copy(alpha = 0.55f))
-                                                    .padding(horizontal = 2.dp, vertical = 4.dp)
-                                            )
+                                                    .height(68.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Image(
+                                                    painter = painterResource(id = card.resId),
+                                                    contentDescription = card.engLabel,
+                                                    contentScale = ContentScale.Fit,
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
+                                            }
+                                            Column(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(6.dp))
+                                                    .padding(vertical = 3.dp, horizontal = 2.dp),
+                                                horizontalAlignment = Alignment.CenterHorizontally
+                                            ) {
+                                                Text(
+                                                    text = card.engLabel,
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    textAlign = TextAlign.Center,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    color = if (isCardSelected) Color(0xFFFFD700) else Color.White
+                                                )
+                                                Text(
+                                                    text = card.hindiLabel,
+                                                    fontSize = 8.sp,
+                                                    textAlign = TextAlign.Center,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    color = Color(0xFFD1D5DB)
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -2104,12 +2079,14 @@ fun VipCenterDialog(
                                             "activeChatBar" to "",
                                             "activeProfileArch" to "",
                                             "activeProfileCover" to "",
-                                            "activeEntranceEffect" to ""
+                                            "activeEntranceEffect" to "",
+                                            "activeProfileBorderFrame" to ""
                                         )
                                         db.collection("users").document(vipUser.uid).update(updates)
                                         val updatedUser = vipUser.copy(
                                             activeFrame = "",
-                                            activeChatFrame = ""
+                                            activeChatFrame = "",
+                                            activeProfileBorderFrame = ""
                                         )
                                         onProfileUpdated(updatedUser)
                                         Toast.makeText(context, "VIP Suite Unworn (हटा दिया गया)", Toast.LENGTH_SHORT).show()
@@ -2121,6 +2098,7 @@ fun VipCenterDialog(
                                         val newArch = "arch_vip_${currentTier.level}"
                                         val newCover = "cover_vip_${currentTier.level}"
                                         val newEntrance = "entrance_vip_${currentTier.level}"
+                                        val newBorder = "vip_border_${currentTier.level}"
 
                                         val updates = mapOf(
                                             "activeFrame" to newFrame,
@@ -2128,12 +2106,14 @@ fun VipCenterDialog(
                                             "activeChatBar" to newChatBar,
                                             "activeProfileArch" to newArch,
                                             "activeProfileCover" to newCover,
-                                            "activeEntranceEffect" to newEntrance
+                                            "activeEntranceEffect" to newEntrance,
+                                            "activeProfileBorderFrame" to newBorder
                                         )
                                         db.collection("users").document(vipUser.uid).update(updates)
                                         val updatedUser = vipUser.copy(
                                             activeFrame = newFrame,
-                                            activeChatFrame = newChatFrame
+                                            activeChatFrame = newChatFrame,
+                                            activeProfileBorderFrame = newBorder
                                         )
                                         onProfileUpdated(updatedUser)
                                         Toast.makeText(context, "👑 ${currentTier.name} Suite Worn (वियर हो गया)!", Toast.LENGTH_SHORT).show()

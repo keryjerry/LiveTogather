@@ -7262,6 +7262,8 @@ fun AudioHangoutRoomDialog(
                                     } else {
                                         val activeF = commenterProfile?.activeFrame ?: ""
                                         val commenterAvatarFrame = if (activeF.isNotBlank()) activeF else if (isCommentFounder) "frame_livetogather_founder" else ""
+                                        val commentFrameId = comment.chatFrameId.ifEmpty { commenterProfile?.activeChatFrame ?: if (comment.userId == currentUser.uid) currentUser.activeChatFrame else "" }
+                                        val vipChatFrameItem = getVipChatFrame(commentFrameId, commentVipLevel, isCommentFounder)
 
                                         Row(
                                             modifier = Modifier
@@ -7277,17 +7279,19 @@ fun AudioHangoutRoomDialog(
                                                 .padding(vertical = 4.dp),
                                             verticalAlignment = Alignment.Top
                                         ) {
-                                            // 1. User Avatar (Clean circular photo only, no frame in comments)
-                                            AsyncImage(
-                                                model = comment.userPhoto.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
-                                                contentDescription = "User Avatar",
-                                                modifier = Modifier
-                                                    .size(34.dp)
-                                                    .clip(CircleShape)
-                                                    .border(1.dp, Color(0x33FFFFFF), CircleShape),
-                                                contentScale = ContentScale.Crop
-                                            )
-                                            Spacer(modifier = Modifier.width(8.dp))
+                                            // Non-VIP comments show regular circular avatar on left; VIP comments have avatar embedded inside frame!
+                                            if (vipChatFrameItem == null) {
+                                                AsyncImage(
+                                                    model = comment.userPhoto.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                                                    contentDescription = "User Avatar",
+                                                    modifier = Modifier
+                                                        .size(34.dp)
+                                                        .clip(CircleShape)
+                                                        .border(1.dp, Color(0x33FFFFFF), CircleShape),
+                                                    contentScale = ContentScale.Crop
+                                                )
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                            }
 
                                             Column(
                                                 verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -7344,25 +7348,12 @@ fun AudioHangoutRoomDialog(
                                                     }
                                                 }
 
-                                                // Line 2: 3D Badges Row (Founder, CEO, Official, Tier, VIP, Swords, Level, Charm, Medal)
-                                                UserChatBadgesRow(
-                                                    userProfile = commenterProfile,
-                                                    level = commenterLevel,
-                                                    charm = commenterCharm,
-                                                    pkLevel = commenterPkLevel,
-                                                    medal = commenterMedal,
-                                                    isFounder = isCommentFounder,
-                                                    isCeo = commenterProfile?.isCeo() == true,
-                                                    vipLevel = commentVipLevel
-                                                )
-
-                                                // Line 3: Ornate Luxury Chat Bubble Container
-                                                val commentFrameId = comment.chatFrameId.ifEmpty { commenterProfile?.activeChatFrame ?: if (comment.userId == currentUser.uid) currentUser.activeChatFrame else "" }
-                                                val vipChatFrameItem = getVipChatFrame(commentFrameId, commentVipLevel, isCommentFounder)
-
+                                                // Line 2: Ornate Luxury VIP Chat Frame Container (With Profile Avatar in circle on left)
                                                 if (vipChatFrameItem != null) {
                                                     VipStyledChatBubble(
                                                         messageText = comment.message,
+                                                        avatarUrl = comment.userPhoto.ifEmpty { commenterProfile?.photo ?: "" },
+                                                        userName = comment.userName,
                                                         isMe = comment.userId == currentUser.uid,
                                                         chatFrameId = commentFrameId,
                                                         vipLevel = commentVipLevel,
@@ -7382,6 +7373,21 @@ fun AudioHangoutRoomDialog(
                                                         )
                                                     }
                                                 }
+
+
+                                                // Line 3: 3D Badges Row (All badges placed strictly UNDER the chat frame)
+                                                UserChatBadgesRow(
+                                                    userProfile = commenterProfile,
+                                                    level = commenterLevel,
+                                                    charm = commenterCharm,
+                                                    pkLevel = commenterPkLevel,
+                                                    medal = commenterMedal,
+                                                    isFounder = isCommentFounder,
+                                                    isCeo = commenterProfile?.isCeo() == true,
+                                                    vipLevel = commentVipLevel
+                                                )
+
+
                                             }
                                         }
                                     }
@@ -10872,7 +10878,7 @@ fun MicSeatView(
             .clickable { onClick() }
             .padding(vertical = 1.dp)
     ) {
-        val seatBoxSize = if (shouldShowFrame) 62.dp else 52.dp
+        val seatBoxSize = if (shouldShowFrame) 54.dp else 44.dp
 
         Box(
             modifier = Modifier
@@ -10893,7 +10899,7 @@ fun MicSeatView(
                 FlowingAvatarFrame(
                     photoUrl = seat.photo.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
                     frameId = seatFrameId,
-                    avatarSize = 48.dp,
+                    avatarSize = 38.dp,
                     isSpeaking = isSpeaking,
                     vipLevel = seatVipLvl,
                     showAnimation = true,

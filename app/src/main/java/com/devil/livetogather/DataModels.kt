@@ -878,11 +878,10 @@ data class UserProfile(
     }
 
     fun getEffectiveProfileBorderFrame(): String {
-        if (activeProfileBorderFrame == "none") return ""
-        if (activeProfileBorderFrame.isNotBlank()) {
-            return if (ownsProfileFrame(activeProfileBorderFrame)) activeProfileBorderFrame else ""
-        }
-        return if (isFounder()) "ice_butterfly" else ""
+        if (activeProfileBorderFrame == "none" || activeProfileBorderFrame.isBlank()) return ""
+        if (activeProfileBorderFrame.startsWith("vip_border_")) return activeProfileBorderFrame
+        if (ownsProfileFrame(activeProfileBorderFrame)) return activeProfileBorderFrame
+        return ""
     }
 
     fun hasActiveProfileBorderFrame(): Boolean = getEffectiveProfileBorderFrame().isNotBlank()

@@ -1277,7 +1277,7 @@ fun VideoHangoutRoomDialog(
                                     .padding(vertical = 2.dp),
                                 verticalAlignment = Alignment.Top
                             ) {
-                                // 1. User Avatar (Clean circular photo only, no frame in comments)
+                                // 1. User Avatar (Clean circular photo on left)
                                 AsyncImage(
                                     model = avatarUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
                                     contentDescription = "User Avatar",
@@ -1345,21 +1345,7 @@ fun VideoHangoutRoomDialog(
                                                 )
                                             }
                                         }
-                                    }
-
-                                    // Line 2: 3D Badges Row (Founder, CEO, Official, Tier, VIP, Swords, Level, Charm, Medal)
-                                    UserChatBadgesRow(
-                                        userProfile = commenterProfile,
-                                        level = commenterLevel,
-                                        charm = commenterCharm,
-                                        pkLevel = commenterPkLevel,
-                                        medal = commenterMedal,
-                                        isFounder = isCommentFounder,
-                                        isCeo = commenterProfile?.isCeo() == true,
-                                        vipLevel = commentVipLevel
-                                    )
-
-                                    // Line 3: Ornate Luxury Chat Bubble Container
+                                    }                                    // Line 2: Ornate Luxury Chat Bubble Container
                                     val commentFrameId = comment.chatFrameId.ifEmpty { commenterProfile?.activeChatFrame ?: "" }
                                     val vipChatFrameItem = getVipChatFrame(commentFrameId, commentVipLevel, isCommentFounder)
 
@@ -1369,7 +1355,8 @@ fun VideoHangoutRoomDialog(
                                             isMe = comment.userId == currentUser.uid,
                                             chatFrameId = commentFrameId,
                                             vipLevel = commentVipLevel,
-                                            isFounder = isCommentFounder && !vipChatFrameItem.id.startsWith("chat_frame_")
+                                            isFounder = isCommentFounder && !vipChatFrameItem.id.startsWith("chat_frame_"),
+                                            avatarUrl = comment.userPhoto
                                         )
                                     } else {
                                         Box(
@@ -1387,6 +1374,21 @@ fun VideoHangoutRoomDialog(
                                             )
                                         }
                                     }
+
+
+                                    // Line 3: 3D Badges Row (All badges placed strictly UNDER the chat frame)
+                                    UserChatBadgesRow(
+                                        userProfile = commenterProfile,
+                                        level = commenterLevel,
+                                        charm = commenterCharm,
+                                        pkLevel = commenterPkLevel,
+                                        medal = commenterMedal,
+                                        isFounder = isCommentFounder,
+                                        isCeo = commenterProfile?.isCeo() == true,
+                                        vipLevel = commentVipLevel
+                                    )
+
+
                                 }
                             }
                         }
