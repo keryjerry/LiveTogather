@@ -4875,20 +4875,14 @@ fun ProfileScreenContent(
                 val partnerUid = currentUser.bestFriends.firstOrNull() ?: ""
                 val isVoiceVerified = currentUser.voiceVerificationStatus == "verified" || currentUser.voiceIntroUrl.isNotBlank()
                 val vipLvl = currentUser.getVipLevel()
-                val vipCoverRes = when (vipLvl) {
-                    1 -> R.drawable.vip1_cover_master
-                    2 -> R.drawable.vip2_cover_master
-                    3 -> R.drawable.vip3_cover_master
-                    4 -> R.drawable.vip4_cover_master
-                    else -> 0
-                }
+                val vipCoverRes = getVipMobileBackgroundDrawable(if (vipLvl in 1..5) vipLvl else 3)
                 Surface(
                     color = Color.Transparent,
                     shape = RoundedCornerShape(24.dp),
                     shadowElevation = 0.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Box(modifier = Modifier.fillMaxWidth()) {
+                    Box(modifier = Modifier.fillMaxWidth().heightIn(min = 320.dp)) {
                         // FULL-CARD 3D PALACE BACKGROUND (Edge-to-edge covering the entire card!)
                         if (vipCoverRes != 0) {
                             Image(

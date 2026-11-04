@@ -4,6 +4,9 @@ package com.devil.livetogather
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.app.Activity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import android.content.Intent
 import android.net.Uri
@@ -185,6 +188,62 @@ object PaymentAndSupportManager {
      * am: package price formatted with 2 decimal places
      * cu: "INR"
      */
+    fun createUpiIntent(
+        amount: String,
+        packageName: String? = null
+    ): Intent {
+        val cleanAmount = amount.replace("₹", "").trim()
+        val txnRef = "LT" + System.currentTimeMillis()
+        val uri = when (packageName) {
+            "com.phonepe.app" -> {
+                Uri.parse("phonepe://pay").buildUpon()
+                    .appendQueryParameter("pa", "warsi.1@ptaxis")
+                    .appendQueryParameter("pn", "LiveTogether")
+                    .appendQueryParameter("tn", "LiveTogether Coins")
+                    .appendQueryParameter("am", cleanAmount)
+                    .appendQueryParameter("cu", "INR")
+                    .appendQueryParameter("tr", txnRef)
+                    .build()
+            }
+            "com.google.android.apps.nbu.paisa.user" -> {
+                Uri.parse("tez://upi/pay").buildUpon()
+                    .appendQueryParameter("pa", "warsi.1@ptaxis")
+                    .appendQueryParameter("pn", "LiveTogether")
+                    .appendQueryParameter("tn", "LiveTogether Coins")
+                    .appendQueryParameter("am", cleanAmount)
+                    .appendQueryParameter("cu", "INR")
+                    .appendQueryParameter("tr", txnRef)
+                    .build()
+            }
+            "net.one97.paytm" -> {
+                Uri.parse("paytmmp://pay").buildUpon()
+                    .appendQueryParameter("pa", "warsi.1@ptaxis")
+                    .appendQueryParameter("pn", "LiveTogether")
+                    .appendQueryParameter("tn", "LiveTogether Coins")
+                    .appendQueryParameter("am", cleanAmount)
+                    .appendQueryParameter("cu", "INR")
+                    .appendQueryParameter("tr", txnRef)
+                    .build()
+            }
+            else -> {
+                Uri.parse("upi://pay").buildUpon()
+                    .appendQueryParameter("pa", "warsi.1@ptaxis")
+                    .appendQueryParameter("pn", "LiveTogether")
+                    .appendQueryParameter("tn", "LiveTogether Coins")
+                    .appendQueryParameter("am", cleanAmount)
+                    .appendQueryParameter("cu", "INR")
+                    .appendQueryParameter("tr", txnRef)
+                    .build()
+            }
+        }
+
+        val intent = Intent(Intent.ACTION_VIEW, uri)
+        if (!packageName.isNullOrBlank() && packageName != "com.phonepe.app" && packageName != "net.one97.paytm" && packageName != "com.google.android.apps.nbu.paisa.user") {
+            intent.setPackage(packageName)
+        }
+        return intent
+    }
+
     fun launchUpiPayment(
         context: Context,
         amount: String,
@@ -193,57 +252,37 @@ object PaymentAndSupportManager {
         onError: (String) -> Unit = {}
     ): Boolean {
         try {
-            val cleanAmount = amount.replace("₹", "").trim()
-            val upiUri = Uri.parse("upi://pay").buildUpon()
-                .appendQueryParameter("pa", "warsi.1@ptaxis")
-                .appendQueryParameter("pn", "LiveTogether")
-                .appendQueryParameter("tn", "LiveTogether Coins")
-                .appendQueryParameter("am", cleanAmount)
-                .appendQueryParameter("cu", "INR")
-                .build()
-
-            val intent = Intent(Intent.ACTION_VIEW, upiUri).apply {
+            val intent = createUpiIntent(amount, packageName).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-
-            // Named app buttons launch only that app; the generic button opens the chooser.
-            if (!packageName.isNullOrBlank()) {
-                val directIntent = Intent(Intent.ACTION_VIEW, upiUri).apply {
-                    setPackage(packageName)
+            try {
+                context.startActivity(intent)
+                onOpened()
+                return true
+            } catch (e: android.content.ActivityNotFoundException) {
+                val cleanAmount = amount.replace("₹", "").trim()
+                val fallbackUri = Uri.parse("upi://pay").buildUpon()
+                    .appendQueryParameter("pa", "warsi.1@ptaxis")
+                    .appendQueryParameter("pn", "LiveTogether")
+                    .appendQueryParameter("tn", "LiveTogether Coins")
+                    .appendQueryParameter("am", cleanAmount)
+                    .appendQueryParameter("cu", "INR")
+                    .appendQueryParameter("tr", "LT" + System.currentTimeMillis())
+                    .build()
+                val fallbackIntent = Intent(Intent.ACTION_VIEW, fallbackUri).apply {
+                    if (!packageName.isNullOrBlank()) setPackage(packageName)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 try {
-                    context.startActivity(directIntent)
+                    context.startActivity(fallbackIntent)
                     onOpened()
                     return true
-                } catch (e: android.content.ActivityNotFoundException) {
-                    android.util.Log.w("UPI", "UPI app $packageName is not available", e)
+                } catch (e2: Exception) {
+                    android.util.Log.w("UPI", "UPI fallback failed for $packageName: ${e2.message}")
                     onError("NO_UPI_APP")
                     return false
                 }
             }
-
-            val pm = context.packageManager
-            val resolveInfo = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                pm.queryIntentActivities(
-                    intent,
-                    android.content.pm.PackageManager.ResolveInfoFlags.of(0)
-                )
-            } else {
-                @Suppress("DEPRECATION")
-                pm.queryIntentActivities(intent, 0)
-            }
-
-            if (resolveInfo.isEmpty()) {
-                onError("NO_UPI_APP")
-                return false
-            }
-
-            val chooser = Intent.createChooser(intent, "Pay \u20B9$cleanAmount via UPI")
-                .apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
-            context.startActivity(chooser)
-            onOpened()
-            return true
         } catch (e: Exception) {
             android.util.Log.e("UPI", "Launch error: ${e.message}", e)
             onError(e.localizedMessage ?: "NO_UPI_APP")
@@ -251,9 +290,103 @@ object PaymentAndSupportManager {
         return false
     }
 
-    /**
-     * Launches a specific UPI App (PhonePe, Google Pay, Paytm) directly or falls back to generic chooser.
-     */
+    fun autoApproveUpiPayment(
+        currentUser: UserProfile,
+        selectedPackage: CoinPackageItem,
+        txnId: String,
+        onSuccess: () -> Unit,
+        onFailure: (String) -> Unit
+    ) {
+        val db = FirebaseFirestore.getInstance()
+        val batch = db.batch()
+        val requestId = "PAY_AUTO_${System.currentTimeMillis()}"
+        val isMonetizationPkg = selectedPackage.id == "pkg_host_monetization_599" || selectedPackage.title.contains("Monetization", ignoreCase = true)
+        val isVip = selectedPackage.id.startsWith("vip_") || selectedPackage.title.contains("VIP", ignoreCase = true)
+        val vipLevel = if (isVip) {
+            val num = selectedPackage.title.filter { it.isDigit() }.take(1).toIntOrNull() ?: 1
+            num
+        } else 0
+        val cleanAmount = selectedPackage.numericPrice.ifBlank { selectedPackage.priceInr.replace("₹", "").trim() }
+
+        val reqRef = db.collection("payment_requests").document(requestId)
+        val reqMap = hashMapOf<String, Any>(
+            "requestId" to requestId,
+            "userId" to currentUser.uid,
+            "userName" to currentUser.name,
+            "userPhoto" to currentUser.photo,
+            "coinsRequested" to selectedPackage.coins,
+            "amountPaid" to "₹$cleanAmount",
+            "utrNumber" to txnId,
+            "status" to "approved",
+            "category" to if (isMonetizationPkg) "Host Monetization (UPI Instant)" else if (isVip) "VIP $vipLevel Upgrade (UPI Instant)" else "Diamond Recharge (UPI Instant)",
+            "purchaseType" to if (isMonetizationPkg) "host_monetization" else if (isVip) "vip" else "coins",
+            "vipLevel" to vipLevel,
+            "submittedAt" to FieldValue.serverTimestamp(),
+            "approvedAt" to FieldValue.serverTimestamp(),
+            "approvedBy" to "UPI_GATEWAY_AUTO"
+        )
+        batch.set(reqRef, reqMap)
+
+        val userRef = db.collection("users").document(currentUser.uid)
+        val updateMap = mutableMapOf<String, Any>()
+        if (selectedPackage.coins > 0L) {
+            updateMap["coins"] = FieldValue.increment(selectedPackage.coins)
+            updateMap["diamonds"] = FieldValue.increment(selectedPackage.coins)
+            updateMap["hasRecharged"] = true
+            updateMap["rechargeCount"] = FieldValue.increment(1)
+        }
+        if (isMonetizationPkg) {
+            updateMap["isHostMonetized"] = true
+            updateMap["hostMonetizationDate"] = System.currentTimeMillis()
+        }
+        if (isVip && vipLevel in 1..5) {
+            val vipFrame = "vip_suite_frame_$vipLevel"
+            val vipChatFrame = listOf(
+                "",
+                "chat_frame_silver_knight",
+                "chat_frame_golden_paladin",
+                "chat_frame_imperial_amethyst",
+                "chat_frame_celestial_dragon",
+                "chat_frame_celestial_dragon"
+            ).getOrElse(vipLevel) { "" }
+            val thirtyDaysMillis = 30L * 24 * 60 * 60 * 1000L
+            val expiryTimestamp = System.currentTimeMillis() + thirtyDaysMillis
+            val vipKey = "vip_$vipLevel"
+            updateMap["plan"] = "VIP $vipLevel"
+            updateMap["vipLevel"] = vipLevel
+            updateMap["activeFrame"] = vipFrame
+            if (vipChatFrame.isNotBlank()) updateMap["activeChatFrame"] = vipChatFrame
+            updateMap["activeChatBar"] = "chat_sword_vip_$vipLevel"
+            updateMap["activeProfileArch"] = "arch_vip_$vipLevel"
+            updateMap["activeProfileCover"] = "cover_vip_$vipLevel"
+            updateMap["activeEntranceEffect"] = "entrance_vip_$vipLevel"
+            updateMap["ownedFrames"] = FieldValue.arrayUnion(vipFrame)
+            if (vipChatFrame.isNotBlank()) updateMap["ownedChatFrames"] = FieldValue.arrayUnion(vipChatFrame)
+            updateMap["ownedVipTiers"] = FieldValue.arrayUnion(vipLevel)
+            updateMap["vipExpiries.$vipKey"] = expiryTimestamp
+        }
+        if (updateMap.isNotEmpty()) {
+            batch.update(userRef, updateMap)
+        }
+
+        val ledgerRef = userRef.collection("coin_transactions").document()
+        batch.set(
+            ledgerRef, mapOf(
+                "id" to ledgerRef.id,
+                "type" to "TOP_UP_AUTO_UPI",
+                "description" to "Instant UPI Payment Success (Txn: $txnId)",
+                "coinsAdded" to selectedPackage.coins,
+                "amountPaid" to "₹$cleanAmount",
+                "utrNumber" to txnId,
+                "timestamp" to FieldValue.serverTimestamp()
+            )
+        )
+
+        batch.commit()
+            .addOnSuccessListener { onSuccess() }
+            .addOnFailureListener { onFailure(it.localizedMessage ?: "Auto approval failed") }
+    }
+
     fun launchSpecificUpiApp(
         context: Context,
         amount: String,
@@ -628,6 +761,59 @@ fun UpiPaymentCheckoutModal(
     var utrInput by remember { mutableStateOf("") }
     var isSubmitting by remember { mutableStateOf(false) }
     val cleanAmount = selectedPackage.numericPrice.ifBlank { selectedPackage.priceInr.replace("₹", "").trim() }
+
+    val upiLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val data = result.data
+        val response = data?.getStringExtra("response") ?: data?.dataString ?: ""
+        android.util.Log.d("UPI_CALLBACK", "UPI result code: ${result.resultCode}, response: $response")
+
+        val isSuccess = response.contains("Status=SUCCESS", ignoreCase = true) ||
+                        response.contains("Status=Success", ignoreCase = true) ||
+                        response.contains("responseCode=00", ignoreCase = true) ||
+                        response.contains("Status=COMPLETED", ignoreCase = true) ||
+                        (result.resultCode == Activity.RESULT_OK && !response.contains("FAIL", ignoreCase = true) && !response.contains("CANCEL", ignoreCase = true))
+
+        if (isSuccess) {
+            val txnId = "(?i)(?:txnId|ApprovalRefNo)=([^&]+)".toRegex().find(response)?.groupValues?.getOrNull(1)?.trim()
+                ?: "UPI_${System.currentTimeMillis()}"
+            isSubmitting = true
+            PaymentAndSupportManager.autoApproveUpiPayment(
+                currentUser = currentUser,
+                selectedPackage = selectedPackage,
+                txnId = txnId,
+                onSuccess = {
+                    isSubmitting = false
+                    Toast.makeText(context, "🎉 Payment Successful! Added instantly to your account.", Toast.LENGTH_LONG).show()
+                    onSuccess()
+                    onDismiss()
+                },
+                onFailure = { err ->
+                    isSubmitting = false
+                    Toast.makeText(context, "Payment verified! Please submit UTR if balance does not update.", Toast.LENGTH_LONG).show()
+                }
+            )
+        } else if (response.contains("FAIL", ignoreCase = true) || response.contains("FAILURE", ignoreCase = true)) {
+            Toast.makeText(context, "Payment was not completed. You can try again or enter UTR below.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val launchWithUpiLauncher: (String?, String) -> Unit = { pkg, appName ->
+        try {
+            val intent = PaymentAndSupportManager.createUpiIntent(cleanAmount, pkg)
+            upiLauncher.launch(intent)
+            Toast.makeText(context, "Opening $appName... Complete payment to auto-verify.", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            PaymentAndSupportManager.launchUpiPayment(
+                context = context,
+                amount = cleanAmount,
+                packageName = pkg,
+                onOpened = { Toast.makeText(context, "Opening $appName...", Toast.LENGTH_SHORT).show() },
+                onError = { Toast.makeText(context, "$appName is not available. Please scan QR or try another app.", Toast.LENGTH_SHORT).show() }
+            )
+        }
+    }
     val qrData = "upi://pay?pa=warsi.1@ptaxis&pn=LiveTogether&am=$cleanAmount&cu=INR&tn=LiveTogether%20Coins"
     val qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" + Uri.encode(qrData)
 
@@ -843,17 +1029,7 @@ fun UpiPaymentCheckoutModal(
                     // PhonePe Button
                     Button(
                         onClick = {
-                            PaymentAndSupportManager.launchUpiPayment(
-                                context = context,
-                                amount = cleanAmount,
-                                packageName = "com.phonepe.app",
-                                onOpened = {
-                                    Toast.makeText(context, "Opening PhonePe... Complete payment and enter UTR below.", Toast.LENGTH_LONG).show()
-                                },
-                                onError = {
-                                    Toast.makeText(context, "PhonePe is not installed on this phone. Please scan QR or try another app.", Toast.LENGTH_SHORT).show()
-                                }
-                            )
+                            launchWithUpiLauncher("com.phonepe.app", "PhonePe")
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5F259F)),
                         shape = RoundedCornerShape(8.dp),
@@ -866,17 +1042,7 @@ fun UpiPaymentCheckoutModal(
                     // Google Pay Button
                     Button(
                         onClick = {
-                            PaymentAndSupportManager.launchUpiPayment(
-                                context = context,
-                                amount = cleanAmount,
-                                packageName = "com.google.android.apps.nbu.paisa.user",
-                                onOpened = {
-                                    Toast.makeText(context, "Opening Google Pay... Complete payment and enter UTR below.", Toast.LENGTH_LONG).show()
-                                },
-                                onError = {
-                                    Toast.makeText(context, "Google Pay is not installed on this phone. Please scan QR or try another app.", Toast.LENGTH_SHORT).show()
-                                }
-                            )
+                            launchWithUpiLauncher("com.google.android.apps.nbu.paisa.user", "Google Pay")
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A73E8)),
                         shape = RoundedCornerShape(8.dp),
@@ -889,17 +1055,7 @@ fun UpiPaymentCheckoutModal(
                     // Paytm Button
                     Button(
                         onClick = {
-                            PaymentAndSupportManager.launchUpiPayment(
-                                context = context,
-                                amount = cleanAmount,
-                                packageName = "net.one97.paytm",
-                                onOpened = {
-                                    Toast.makeText(context, "Opening Paytm... Complete payment and enter UTR below.", Toast.LENGTH_LONG).show()
-                                },
-                                onError = {
-                                    Toast.makeText(context, "Paytm is not installed on this phone. Please scan QR or try another app.", Toast.LENGTH_SHORT).show()
-                                }
-                            )
+                            launchWithUpiLauncher("net.one97.paytm", "Paytm")
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00B9F5)),
                         shape = RoundedCornerShape(8.dp),
@@ -912,16 +1068,7 @@ fun UpiPaymentCheckoutModal(
                     // Other UPI Apps Button
                     Button(
                         onClick = {
-                            PaymentAndSupportManager.launchUpiPayment(
-                                context = context,
-                                amount = cleanAmount,
-                                onOpened = {
-                                    Toast.makeText(context, "Opening UPI app... Complete payment and enter UTR below.", Toast.LENGTH_LONG).show()
-                                },
-                                onError = {
-                                    Toast.makeText(context, "No UPI app found on this phone. Please scan the QR code above or copy UPI ID!", Toast.LENGTH_LONG).show()
-                                }
-                            )
+                            launchWithUpiLauncher(null, "UPI App")
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF231B28)),
                         border = BorderStroke(1.dp, BrandGold),

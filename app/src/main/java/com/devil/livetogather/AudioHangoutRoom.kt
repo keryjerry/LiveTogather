@@ -2753,7 +2753,7 @@ fun RoomMemberProfileSheet(
         val memberAge = (if (isSelf) currentUser.age else (userProfile?.age ?: 24)).coerceAtLeast(18)
         val memberGender = if (isSelf) currentUser.gender else (userProfile?.gender ?: "Female")
         val isMemberFemale = memberGender.equals("Female", ignoreCase = true)
-        val memberBio = (if (isSelf) currentUser.bio else (userProfile?.bio ?: "")).ifBlank { "Chahat ki duniya" }
+        val memberBio = (if (isSelf) currentUser.bio else activeTargetProfile.bio).ifBlank { "LiveTogether Member" }
 
         Box(
             modifier = Modifier
@@ -2805,7 +2805,7 @@ fun RoomMemberProfileSheet(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .verticalScroll(rememberScrollState())
-                                .padding(top = 54.dp, bottom = 16.dp, start = 14.dp, end = 14.dp),
+                                .padding(top = 95.dp, bottom = 16.dp, start = 14.dp, end = 14.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             // Row 1: Centered Username + Level Circle & Right-Aligned Intimacy Pill
@@ -3064,6 +3064,11 @@ fun RoomMemberProfileSheet(
                                     horizontalArrangement = Arrangement.SpaceEvenly,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("${activeTargetProfile.followingCount}", color = Color(0xFF1E293B), fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                                        Text("Following", color = Color(0xFF64748B), fontSize = 11.sp)
+                                    }
+                                    Box(modifier = Modifier.width(1.dp).height(24.dp).background(Color(0xFFCBD5E1)))
                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                         Text("$memberFollowerCount", color = Color(0xFF1E293B), fontSize = 15.sp, fontWeight = FontWeight.Bold)
                                         Text("Followers", color = Color(0xFF64748B), fontSize = 11.sp)
@@ -3417,14 +3422,23 @@ fun RoomMemberProfileSheet(
 
         if (showFullProfileDialog) {
             UserFullProfileDialog(
-                profile = userProfile ?: UserProfile(
-                    uid = member.uid,
-                    userId = member.userId,
-                    name = member.name,
-                    photo = member.photoUrl
-                ),
+                profile = activeTargetProfile,
                 viewer = currentUser,
-                onDismiss = { showFullProfileDialog = false }
+                onDismiss = { showFullProfileDialog = false },
+                onOpenGiftCenter = { mem ->
+                    showFullProfileDialog = false
+                    onDismiss()
+                    if (onOpenGiftCenter != null) {
+                        onOpenGiftCenter(mem)
+                    } else {
+                        showProfileGiftPicker = true
+                    }
+                },
+                onDirectMessage = { mem ->
+                    showFullProfileDialog = false
+                    onDismiss()
+                    onDirectMessage()
+                }
             )
         }
     }
@@ -3456,6 +3470,9 @@ private fun UserFullProfileDialog(
         mutableStateOf(profile.activeIntimacyBadge.ifBlank { "proposal_ring_crimson_rose" })
     }
     var intimacyLvl by remember(profile.uid) { mutableIntStateOf(0) }
+    var partnerUser by remember(profile.uid) { mutableStateOf<UserProfile?>(null) }
+    var partnerName by remember(profile.uid) { mutableStateOf("") }
+    var isCoupleBond by remember(profile.uid) { mutableStateOf(true) }
 
     // 3. Real Received Gifts list
     val receivedGiftsList = remember(profile.uid) { mutableStateListOf<Map<String, Any>>() }
@@ -3510,11 +3527,29 @@ private fun UserFullProfileDialog(
                     }
                     if (doc != null) {
                         val isU1 = doc.getString("user1Id") == profile.uid
+                        val pUid = if (isU1) doc.getString("user2Id") else doc.getString("user1Id")
+                        val pName = if (isU1) doc.getString("user2Name") else doc.getString("user1Name")
                         val pUrl = if (isU1) doc.getString("user2Photo") else doc.getString("user1Photo")
+                        val bType = doc.getString("bondType") ?: "couple"
+                        isCoupleBond = !bType.contains("bestie", ignoreCase = true)
+                        if (!pName.isNullOrBlank()) partnerName = pName
                         if (!pUrl.isNullOrBlank()) partnerPhoto = pUrl
                         val rId = doc.getString("activeMicLinkId")
                         if (!rId.isNullOrBlank()) activeRingId = rId
                         intimacyLvl = (doc.getLong("intimacyLevel") ?: 1L).toInt()
+
+                        if (!pUid.isNullOrBlank()) {
+                            db.collection("users").document(pUid).get().addOnSuccessListener { pSnap ->
+                                if (pSnap != null && pSnap.exists()) {
+                                    val pu = pSnap.toObject(UserProfile::class.java)
+                                    if (pu != null) {
+                                        partnerUser = pu
+                                        if (pu.name.isNotBlank()) partnerName = pu.name
+                                        if (pu.photo.isNotBlank()) partnerPhoto = pu.photo
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -3586,7 +3621,7 @@ private fun UserFullProfileDialog(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(260.dp)
+                        .height(300.dp)
                 ) {
                     if (vipBgRes != 0) {
                         Image(
@@ -3703,19 +3738,19 @@ private fun UserFullProfileDialog(
                                 contentScale = ContentScale.Fit
                             )
 
-                            // Partner Avatar Circle
+                            // Partner Avatar with Animated Frame (matching user avatar)
                             Box(
                                 modifier = Modifier
                                     .offset(x = (-10).dp, y = 0.dp)
-                                    .size(60.dp)
-                                    .clip(CircleShape)
-                                    .border(2.dp, Color.White, CircleShape)
+                                    .size(105.dp),
+                                contentAlignment = Alignment.Center
                             ) {
-                                AsyncImage(
-                                    model = partnerPhoto,
-                                    contentDescription = "Partner Avatar",
-                                    modifier = Modifier.fillMaxSize().clip(CircleShape),
-                                    contentScale = ContentScale.Crop
+                                FlowingAvatarFrame(
+                                    photoUrl = partnerPhoto.ifBlank { "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80" },
+                                    frameId = partnerUser?.activeFrame ?: "",
+                                    avatarSize = 64.dp,
+                                    frameSize = 118.dp,
+                                    vipLevel = partnerUser?.getVipLevel() ?: 0
                                 )
                             }
                         }
@@ -4181,7 +4216,7 @@ private fun UserFullProfileDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (!isSelf) {
-                        // Follow / Following Button
+                        // Follow / Following Button (High contrast, bold, visible)
                         Button(
                             onClick = {
                                 if (viewer.uid.isNotBlank() && profile.uid.isNotBlank()) {
@@ -4204,16 +4239,17 @@ private fun UserFullProfileDialog(
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isFollowing) Color(0xFF334155) else Color(0xFF2563EB)
+                                containerColor = if (isFollowing) Color(0xFF1E293B) else Color(0xFF2563EB)
                             ),
+                            border = BorderStroke(1.2.dp, if (isFollowing) Color(0xFF64748B) else Color(0xFF60A5FA)),
                             shape = RoundedCornerShape(50),
-                            modifier = Modifier.weight(1f).height(42.dp)
+                            modifier = Modifier.weight(1f).height(44.dp)
                         ) {
                             Text(
-                                text = if (isFollowing) "✓ Following" else "👤+ Follow",
+                                text = if (isFollowing) "✓ Following" else "+ Follow",
                                 color = Color.White,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Black
                             )
                         }
 
