@@ -184,7 +184,7 @@ object PaymentAndSupportManager {
      * pn: "LiveTogether"
      * mc: "5411"
      * tr: unique transaction reference
-     * tn: "LiveTogether Coins"
+     * tn: "LiveTogether"
      * am: package price formatted with 2 decimal places
      * cu: "INR"
      */
@@ -199,7 +199,7 @@ object PaymentAndSupportManager {
                 Uri.parse("phonepe://pay").buildUpon()
                     .appendQueryParameter("pa", "warsi.1@ptaxis")
                     .appendQueryParameter("pn", "LiveTogether")
-                    .appendQueryParameter("tn", "LiveTogether Coins")
+                    .appendQueryParameter("tn", "LiveTogether")
                     .appendQueryParameter("am", cleanAmount)
                     .appendQueryParameter("cu", "INR")
                     .appendQueryParameter("tr", txnRef)
@@ -209,7 +209,7 @@ object PaymentAndSupportManager {
                 Uri.parse("tez://upi/pay").buildUpon()
                     .appendQueryParameter("pa", "warsi.1@ptaxis")
                     .appendQueryParameter("pn", "LiveTogether")
-                    .appendQueryParameter("tn", "LiveTogether Coins")
+                    .appendQueryParameter("tn", "LiveTogether")
                     .appendQueryParameter("am", cleanAmount)
                     .appendQueryParameter("cu", "INR")
                     .appendQueryParameter("tr", txnRef)
@@ -219,7 +219,7 @@ object PaymentAndSupportManager {
                 Uri.parse("paytmmp://pay").buildUpon()
                     .appendQueryParameter("pa", "warsi.1@ptaxis")
                     .appendQueryParameter("pn", "LiveTogether")
-                    .appendQueryParameter("tn", "LiveTogether Coins")
+                    .appendQueryParameter("tn", "LiveTogether")
                     .appendQueryParameter("am", cleanAmount)
                     .appendQueryParameter("cu", "INR")
                     .appendQueryParameter("tr", txnRef)
@@ -229,7 +229,7 @@ object PaymentAndSupportManager {
                 Uri.parse("upi://pay").buildUpon()
                     .appendQueryParameter("pa", "warsi.1@ptaxis")
                     .appendQueryParameter("pn", "LiveTogether")
-                    .appendQueryParameter("tn", "LiveTogether Coins")
+                    .appendQueryParameter("tn", "LiveTogether")
                     .appendQueryParameter("am", cleanAmount)
                     .appendQueryParameter("cu", "INR")
                     .appendQueryParameter("tr", txnRef)
@@ -264,7 +264,7 @@ object PaymentAndSupportManager {
                 val fallbackUri = Uri.parse("upi://pay").buildUpon()
                     .appendQueryParameter("pa", "warsi.1@ptaxis")
                     .appendQueryParameter("pn", "LiveTogether")
-                    .appendQueryParameter("tn", "LiveTogether Coins")
+                    .appendQueryParameter("tn", "LiveTogether")
                     .appendQueryParameter("am", cleanAmount)
                     .appendQueryParameter("cu", "INR")
                     .appendQueryParameter("tr", "LT" + System.currentTimeMillis())
@@ -385,6 +385,33 @@ object PaymentAndSupportManager {
         batch.commit()
             .addOnSuccessListener { onSuccess() }
             .addOnFailureListener { onFailure(it.localizedMessage ?: "Auto approval failed") }
+    }
+
+    fun recordFailedOrCancelledPayment(
+        currentUser: UserProfile,
+        selectedPackage: CoinPackageItem,
+        status: String,
+        reason: String = ""
+    ) {
+        try {
+            val db = FirebaseFirestore.getInstance()
+            val userRef = db.collection("users").document(currentUser.uid)
+            val ledgerRef = userRef.collection("coin_transactions").document()
+            val cleanAmount = selectedPackage.numericPrice.ifBlank { selectedPackage.priceInr.replace("₹", "").trim() }
+            ledgerRef.set(
+                mapOf(
+                    "id" to ledgerRef.id,
+                    "type" to "TOP_UP_UPI_$status",
+                    "status" to status,
+                    "description" to "UPI Payment $status: ${selectedPackage.title} ($reason)".take(150),
+                    "coinsAdded" to 0L,
+                    "amountPaid" to "₹$cleanAmount",
+                    "timestamp" to FieldValue.serverTimestamp()
+                )
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("UPI_PAYMENT", "Error recording transaction status", e)
+        }
     }
 
     fun launchSpecificUpiApp(
@@ -760,6 +787,9 @@ fun UpiPaymentCheckoutModal(
     val context = LocalContext.current
     var utrInput by remember { mutableStateOf("") }
     var isSubmitting by remember { mutableStateOf(false) }
+    var showPaymentFailedDialog by remember { mutableStateOf(false) }
+    var paymentFailureTitle by remember { mutableStateOf("Payment Failed / Incomplete") }
+    var paymentFailureMessage by remember { mutableStateOf("") }
     val cleanAmount = selectedPackage.numericPrice.ifBlank { selectedPackage.priceInr.replace("₹", "").trim() }
 
     val upiLauncher = rememberLauncherForActivityResult(
@@ -794,8 +824,27 @@ fun UpiPaymentCheckoutModal(
                     Toast.makeText(context, "Payment verified! Please submit UTR if balance does not update.", Toast.LENGTH_LONG).show()
                 }
             )
-        } else if (response.contains("FAIL", ignoreCase = true) || response.contains("FAILURE", ignoreCase = true)) {
-            Toast.makeText(context, "Payment was not completed. You can try again or enter UTR below.", Toast.LENGTH_SHORT).show()
+        } else {
+            val isCancelled = response.contains("CANCEL", ignoreCase = true) ||
+                    response.contains("User cancelled", ignoreCase = true) ||
+                    (result.resultCode == Activity.RESULT_CANCELED && response.isBlank())
+            val status = if (isCancelled) "CANCELLED" else "FAILED"
+            val cleanReason = if (isCancelled) "Payment cancelled by user" else if (response.isNotBlank()) "UPI: $response" else "Payment was not completed"
+
+            PaymentAndSupportManager.recordFailedOrCancelledPayment(
+                currentUser = currentUser,
+                selectedPackage = selectedPackage,
+                status = status,
+                reason = cleanReason
+            )
+
+            paymentFailureTitle = if (isCancelled) "Payment Cancelled" else "Payment Failed / Incomplete"
+            paymentFailureMessage = if (isCancelled) {
+                "The UPI transaction was cancelled. If money was not deducted, you can try again."
+            } else {
+                "Your payment could not be completed or was rejected by your UPI app. If money was deducted, enter your 12-digit UTR below for instant auto-approval."
+            }
+            showPaymentFailedDialog = true
         }
     }
 
@@ -814,7 +863,7 @@ fun UpiPaymentCheckoutModal(
             )
         }
     }
-    val qrData = "upi://pay?pa=warsi.1@ptaxis&pn=LiveTogether&am=$cleanAmount&cu=INR&tn=LiveTogether%20Coins"
+    val qrData = "upi://pay?pa=warsi.1@ptaxis&pn=LiveTogether&am=$cleanAmount&cu=INR&tn=LiveTogether"
     val qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" + Uri.encode(qrData)
 
     val isKeyboardOpen = WindowInsets.isImeVisible
@@ -1245,7 +1294,62 @@ fun UpiPaymentCheckoutModal(
             }
         }
     }
-}
+    }
+
+    if (showPaymentFailedDialog) {
+        AlertDialog(
+            onDismissRequest = { showPaymentFailedDialog = false },
+            containerColor = Color(0xFF1E1628),
+            shape = RoundedCornerShape(20.dp),
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = if (paymentFailureTitle.contains("Cancelled")) "⚠️" else "❌",
+                        fontSize = 22.sp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = paymentFailureTitle,
+                        color = Color.White,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = paymentFailureMessage,
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
+                    )
+                    Text(
+                        text = "Package: ${selectedPackage.title} • ₹$cleanAmount",
+                        color = BrandGold,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showPaymentFailedDialog = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Retry Payment", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showPaymentFailedDialog = false }
+                ) {
+                    Text("Enter UTR Below", color = BrandGold, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                }
+            }
+        )
+    }
 }
 
 /**
@@ -1543,7 +1647,7 @@ fun HelpDeskModal(
                             if (showQrCodeInHelpDesk) {
                                 val cleanPrice = selectedPackage.numericPrice.ifBlank { selectedPackage.priceInr.replace("₹", "").trim() }
                                 val qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=" +
-                                    Uri.encode("upi://pay?pa=warsi.1@ptaxis&pn=LiveTogether&am=$cleanPrice&cu=INR&tn=LiveTogether%20Coins")
+                                    Uri.encode("upi://pay?pa=warsi.1@ptaxis&pn=LiveTogether&am=$cleanPrice&cu=INR&tn=LiveTogether")
                                 Column(
                                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
