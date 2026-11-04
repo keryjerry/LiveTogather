@@ -1392,7 +1392,7 @@ fun EditRoomDialog(
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = Color.White,
                         unfocusedTextColor = Color.White,
-                        focusedBorderColor = BrandGold,
+                        focusedBorderColor = Color(0xFF8B5CF6),
                         unfocusedBorderColor = BrandBorder,
                         focusedContainerColor = BrandDark,
                         unfocusedContainerColor = BrandDark
@@ -2010,7 +2010,7 @@ fun TrackSelectorDialog(
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = Color.White,
                         unfocusedTextColor = Color.White,
-                        focusedBorderColor = BrandGold,
+                        focusedBorderColor = Color(0xFF8B5CF6),
                         unfocusedBorderColor = BrandBorder,
                         focusedContainerColor = BrandDark,
                         unfocusedContainerColor = BrandDark
@@ -4536,7 +4536,7 @@ fun RoomSettingsDialog(
                                         colors = OutlinedTextFieldDefaults.colors(
                                             focusedTextColor = Color.White,
                                             unfocusedTextColor = Color.White,
-                                            focusedBorderColor = BrandGold,
+                                            focusedBorderColor = Color(0xFF8B5CF6),
                                             unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
                                             focusedContainerColor = Color(0xFF141720),
                                             unfocusedContainerColor = Color(0xFF141720)
@@ -4572,7 +4572,7 @@ fun RoomSettingsDialog(
                                 } else {
                                     Text(
                                         text = if (room.announcement.isNotBlank()) room.announcement else "No active announcement at this moment.",
-                                        color = if (room.announcement.isNotBlank()) BrandGold else Color.LightGray,
+                                        color = if (room.announcement.isNotBlank()) Color(0xFFC084FC) else Color.LightGray,
                                         fontSize = 12.sp
                                     )
                                 }
@@ -4743,7 +4743,7 @@ fun RoomSettingsDialog(
                                         colors = ButtonDefaults.buttonColors(
                                             containerColor = if (!room.isHostLive) Color(0xFF2A281E) else Color(0xFF202433)
                                         ),
-                                        border = BorderStroke(1.dp, if (!room.isHostLive) BrandGold else Color.White.copy(alpha = 0.1f)),
+                                        border = BorderStroke(1.dp, if (!room.isHostLive) Color(0xFF8B5CF6) else Color.White.copy(alpha = 0.1f)),
                                         shape = RoundedCornerShape(10.dp),
                                         modifier = Modifier.weight(1f).height(40.dp)
                                     ) {
@@ -4777,7 +4777,7 @@ fun RoomSettingsDialog(
                                         colors = OutlinedTextFieldDefaults.colors(
                                             focusedTextColor = Color.White,
                                             unfocusedTextColor = Color.White,
-                                            focusedBorderColor = BrandGold,
+                                            focusedBorderColor = Color(0xFF8B5CF6),
                                             unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
                                             focusedContainerColor = Color(0xFF141720),
                                             unfocusedContainerColor = Color(0xFF141720)
@@ -4838,7 +4838,7 @@ fun RoomSettingsDialog(
                                                 selectedPrivacy = key
                                                 db.collection("rooms").document(room.id).update("privacy", key)
                                             },
-                                            colors = RadioButtonDefaults.colors(selectedColor = BrandGold)
+                                            colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF8B5CF6))
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text(label, color = if (isSelected) Color.White else Color.LightGray, fontSize = 12.sp, fontWeight = FontWeight.Medium)
@@ -4890,7 +4890,7 @@ fun RoomSettingsDialog(
                                             Text("⭐ Room Premium (VIP)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                             Text(
                                                 text = if (isRoomVip) "Exclusive VIP room mode enabled ⭐" else "Standard room mode",
-                                                color = if (isRoomVip) BrandGold else Color.Gray,
+                                                color = if (isRoomVip) Color(0xFFC084FC) else Color.Gray,
                                                 fontSize = 10.sp
                                             )
                                         }
@@ -4908,7 +4908,7 @@ fun RoomSettingsDialog(
                                             },
                                             colors = SwitchDefaults.colors(
                                                 checkedThumbColor = Color.Black,
-                                                checkedTrackColor = BrandGold
+                                                checkedTrackColor = Color(0xFF8B5CF6)
                                             )
                                         )
                                     }
@@ -4964,7 +4964,7 @@ fun RoomSettingsDialog(
                                                     .clip(RoundedCornerShape(10.dp))
                                                     .border(
                                                         2.dp,
-                                                        if (isCurrent) BrandGold else Color.Transparent,
+                                                        if (isCurrent) Color(0xFF8B5CF6) else Color.Transparent,
                                                         RoundedCornerShape(10.dp)
                                                     ),
                                                 contentScale = ContentScale.Crop
@@ -4972,7 +4972,7 @@ fun RoomSettingsDialog(
                                             Spacer(modifier = Modifier.height(4.dp))
                                             Text(
                                                 text = preset.name.take(10),
-                                                color = if (isCurrent) BrandGold else Color.Gray,
+                                                color = if (isCurrent) Color(0xFFC084FC) else Color.Gray,
                                                 fontSize = 9.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
@@ -5193,7 +5193,7 @@ fun RoomSettingsDialog(
                                     colors = OutlinedTextFieldDefaults.colors(
                                         focusedTextColor = Color.White,
                                         unfocusedTextColor = Color.White,
-                                        focusedBorderColor = BrandGold,
+                                        focusedBorderColor = Color(0xFF8B5CF6),
                                         unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
                                         focusedContainerColor = Color(0xFF141720),
                                         unfocusedContainerColor = Color(0xFF141720)
@@ -6849,7 +6849,7 @@ fun AudioHangoutRoomDialog(
                                             modifier = Modifier
                                                 .size(width = 46.dp, height = 38.dp)
                                                 .clip(RoundedCornerShape(8.dp))
-                                                .border(1.2.dp, BrandGold, RoundedCornerShape(8.dp))
+                                                .border(1.2.dp, Color(0xFF8B5CF6), RoundedCornerShape(8.dp))
                                                 .clickable(enabled = isUserHost) {
                                                     roomImagePickerLauncher.launch("image/*")
                                                 },
@@ -6880,7 +6880,7 @@ fun AudioHangoutRoomDialog(
                                             }
                                         }
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Column(modifier = Modifier.widthIn(max = 120.dp)) {
+                                        Column(modifier = Modifier.widthIn(max = 100.dp)) {
                                             Text(
                                                 text = room.title.ifBlank { room.roomName.ifBlank { "Live Lounge" } },
                                                 color = Color.White,
@@ -6902,7 +6902,7 @@ fun AudioHangoutRoomDialog(
                                         Surface(
                                             color = if (isFollowingHost) Color(0x334CAF50) else if (isUserHost) Color(0x33FFB300) else BrandCoral,
                                             shape = RoundedCornerShape(8.dp),
-                                            border = if (isFollowingHost) BorderStroke(1.dp, Color(0xFF4CAF50)) else if (isUserHost) BorderStroke(0.8.dp, BrandGold.copy(alpha = 0.6f)) else null,
+                                            border = if (isFollowingHost) BorderStroke(1.dp, Color(0xFF4CAF50)) else if (isUserHost) BorderStroke(0.8.dp, Color(0xFF8B5CF6).copy(alpha = 0.6f)) else null,
                                             modifier = Modifier.clickable {
                                                 if (isUserHost) {
                                                     Toast.makeText(context, "👑 You are the Host ($hostFollowerCount followers)", Toast.LENGTH_SHORT).show()
@@ -6953,7 +6953,7 @@ fun AudioHangoutRoomDialog(
                                                 }
                                                 Text(
                                                     text = if (isFollowingHost) "✓ Following" else if (isUserHost) "👑 Host" else "Follow",
-                                                    color = if (isFollowingHost) Color(0xFF81C784) else if (isUserHost) BrandGold else Color.White,
+                                                    color = if (isFollowingHost) Color(0xFF81C784) else if (isUserHost) Color(0xFFC084FC) else Color.White,
                                                     fontSize = 9.5.sp,
                                                     fontWeight = FontWeight.Bold
                                                 )

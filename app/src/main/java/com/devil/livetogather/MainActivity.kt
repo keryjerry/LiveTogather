@@ -1753,43 +1753,13 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
             }
         },
         bottomBar = {
-                if (activeAudioRoom == null || isAudioRoomMinimized) {
-                    NavigationBar(
-                        containerColor = BrandCard,
-                        contentColor = Color.White
-                    ) {
-                        val items = listOf(
-                            Triple("discover", "Discover", Icons.Default.LocalFireDepartment),
-                            Triple("likes", "Likes", Icons.Default.Favorite),
-                            Triple("chats", "Chats", Icons.Default.ChatBubble),
-                            Triple("moments", "Moments", Icons.Default.CameraAlt),
-                            Triple("profile", "Profile", Icons.Default.Person)
-                        )
-                        items.forEach { (route, label, icon) ->
-                            val selected = currentScreen == route
-                            val unselectedColor = Color.Gray
-                            NavigationBarItem(
-                                selected = selected,
-                                onClick = { currentScreen = route },
-                                icon = {
-                                    Icon(
-                                        icon,
-                                        contentDescription = label,
-                                        tint = if (selected) BrandCoral else unselectedColor
-                                    )
-                                },
-                                label = {
-                                    Text(
-                                        label,
-                                        fontSize = 10.sp,
-                                        color = if (selected) BrandCoral else unselectedColor
-                                    )
-                                }
-                            )
-                        }
-                    }
-                }
+            if (activeAudioRoom == null || isAudioRoomMinimized) {
+                GalaxyGlossyBottomNavigationBar(
+                    currentScreen = currentScreen,
+                    onNavigate = { route -> currentScreen = route }
+                )
             }
+        }
         ) { paddingValues ->
             PullToRefreshBox(
                 isRefreshing = refreshEngine.isRefreshing,
@@ -5876,13 +5846,14 @@ fun ProfileScreenContent(
                                 modifier = Modifier
                                     .weight(1f)
                                     .clip(RoundedCornerShape(14.dp))
-                                    .background(Color(0xFFFFD700).copy(alpha = 0.15f))
+                                    .background(Color(0xFF0F172A))
+                                    .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(14.dp))
                                     .clickable { showLuxuryStoreModal = true }
                                     .padding(vertical = 10.dp)
                             ) {
                                 Text("🏪", fontSize = 22.sp)
                                 Spacer(modifier = Modifier.height(3.dp))
-                                Text("Store", fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color(0xFFFFD700))
+                                Text("Store", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
                             }
 
                             Spacer(modifier = Modifier.width(8.dp))
@@ -6025,12 +5996,12 @@ fun ProfileScreenContent(
                 Button(
                     onClick = { showVipStatusDialog = true },
                     colors = ButtonDefaults.buttonColors(containerColor = BrandCardSubtle),
-                    border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.6f)),
+                    border = BorderStroke(1.dp, Color(0xFF8B5CF6).copy(alpha = 0.6f)),
                     shape = RoundedCornerShape(10.dp),
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                     modifier = Modifier.weight(1.1f).height(38.dp)
                 ) {
-                    Text("👑 VIP Club", color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text("👑 VIP Club", color = Color(0xFFC084FC), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -6257,7 +6228,7 @@ fun ProfileScreenContent(
                                     .size(38.dp)
                                     .clip(CircleShape)
                                     .background(BrandGold.copy(alpha = 0.15f))
-                                    .border(1.dp, BrandGold.copy(alpha = 0.35f), CircleShape),
+                                    .border(1.dp, Color(0xFF8B5CF6).copy(alpha = 0.35f), CircleShape),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text("💎", fontSize = 18.sp)
@@ -6502,7 +6473,7 @@ fun ProfileScreenContent(
                                             listOf(BrandGold.copy(alpha = 0.35f), BrandGold.copy(alpha = 0.1f))
                                         )
                                     )
-                                    .border(1.5.dp, BrandGold, CircleShape),
+                                    .border(1.5.dp, Color(0xFF8B5CF6), CircleShape),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text("👑", fontSize = 24.sp)
@@ -6522,7 +6493,7 @@ fun ProfileScreenContent(
                                     Surface(
                                         color = BrandGold.copy(alpha = 0.2f),
                                         shape = RoundedCornerShape(4.dp),
-                                        border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.6f))
+                                        border = BorderStroke(1.dp, Color(0xFF8B5CF6).copy(alpha = 0.6f))
                                     ) {
                                         Text(
                                             if (currentUser.isVipTrialActive()) "TRIAL (${currentUser.getVipTrialDaysLeft()}D LEFT)" else currentUser.plan.uppercase(),
@@ -7077,7 +7048,7 @@ fun ProfileScreenContent(
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White,
-                            focusedBorderColor = BrandGold,
+                            focusedBorderColor = Color(0xFF8B5CF6),
                             unfocusedBorderColor = BrandBorder,
                             cursorColor = BrandGold
                         ),
@@ -7104,7 +7075,7 @@ fun ProfileScreenContent(
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White,
-                            focusedBorderColor = BrandGold,
+                            focusedBorderColor = Color(0xFF8B5CF6),
                             unfocusedBorderColor = BrandBorder,
                             cursorColor = BrandGold
                         ),
@@ -7502,7 +7473,7 @@ fun ProfileScreenContent(
                                     focusManager.clearFocus()
                                 },
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = BrandGold),
-                                border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.6f)),
+                                border = BorderStroke(1.dp, Color(0xFF8B5CF6).copy(alpha = 0.6f)),
                                 shape = RoundedCornerShape(50),
                                 modifier = Modifier.fillMaxWidth().height(36.dp)
                             ) {
@@ -8466,7 +8437,7 @@ fun LocationSetupDialog(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(if (isSelected) BrandGold.copy(alpha = 0.2f) else BrandCardSubtle)
-                                    .border(1.dp, if (isSelected) BrandGold else BrandBorder, RoundedCornerShape(8.dp))
+                                    .border(1.dp, if (isSelected) Color(0xFF8B5CF6) else BrandBorder, RoundedCornerShape(8.dp))
                                     .clickable {
                                         locationArea = "$area, $selectedCity"
                                     }
@@ -8539,7 +8510,7 @@ fun LocationSetupDialog(
                             Surface(
                                 color = if (isSel) Color(0xFF7E22CE) else BrandCardSubtle,
                                 shape = RoundedCornerShape(10.dp),
-                                border = BorderStroke(1.dp, if (isSel) BrandGold else BrandBorder),
+                                border = BorderStroke(1.dp, if (isSel) Color(0xFF8B5CF6) else BrandBorder),
                                 modifier = Modifier
                                     .weight(1f)
                                     .clickable { locationPrivacy = key }
@@ -8598,6 +8569,198 @@ fun LocationSetupDialog(
 
 // -------------------------------------------------------------
 // SETTINGS DIALOG WITH TOPIC SELECTION
+// -------------------------------------------------------------
+// GALAXY GLOSSY BOTTOM NAVIGATION BAR WITH ANIMATED UNDERLINE
+// -------------------------------------------------------------
+@Composable
+fun GalaxyGlossyBottomNavigationBar(
+    currentScreen: String,
+    onNavigate: (String) -> Unit
+) {
+    val items = listOf(
+        Triple("discover", "Discover", Icons.Default.LocalFireDepartment),
+        Triple("likes", "Likes", Icons.Default.Favorite),
+        Triple("chats", "Chats", Icons.Default.ChatBubble),
+        Triple("moments", "Moments", Icons.Default.CameraAlt),
+        Triple("profile", "Profile", Icons.Default.Person)
+    )
+
+    // Animated Galaxy Cosmic Nebula Gradient & Pulse
+    val infiniteTransition = rememberInfiniteTransition(label = "galaxyNavLoop")
+    val cosmicShift by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 7000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "cosmicShift"
+    )
+    val starlightPulse by infiniteTransition.animateFloat(
+        initialValue = 0.65f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 2600, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "starlightPulse"
+    )
+
+    val galaxyGradient = Brush.horizontalGradient(
+        colors = listOf(
+            Color(0xFF0B061A), // Deep Cosmic Night
+            Color(0xFF1B0B33), // Galactic Indigo
+            Color(0xFF0F172A), // Midnight Space Blue
+            Color(0xFF280C46), // Purple Stardust Nebula
+            Color(0xFF0B061A)  // Deep Cosmic Night Loop
+        ),
+        startX = cosmicShift * 300f,
+        endX = cosmicShift * 300f + 1000f
+    )
+
+    // Outer Container with Top Rounded Corners, Glossy Border & Navigation Bar insets
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+            .background(galaxyGradient)
+            .border(
+                width = 1.2.dp,
+                brush = Brush.verticalGradient(
+                    listOf(
+                        Color(0xFFC084FC).copy(alpha = 0.55f * starlightPulse),
+                        Color(0xFF38BDF8).copy(alpha = 0.25f),
+                        Color.Transparent
+                    )
+                ),
+                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+            )
+            .navigationBarsPadding()
+    ) {
+        // Specular Top Gloss Highlight Line
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.5.dp)
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(
+                            Color.Transparent,
+                            Color(0xFFE879F9).copy(alpha = 0.6f * starlightPulse),
+                            Color(0xFF67E8F9).copy(alpha = 0.7f * starlightPulse),
+                            Color.Transparent
+                        )
+                    )
+                )
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceAround,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            items.forEach { (route, label, icon) ->
+                val selected = currentScreen == route
+
+                // Animated Scale on Select
+                val iconScale by animateFloatAsState(
+                    targetValue = if (selected) 1.15f else 1.0f,
+                    animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
+                    label = "iconScale_$route"
+                )
+
+                // Animated Underline Width & Alpha
+                val underlineWidth by animateDpAsState(
+                    targetValue = if (selected) 28.dp else 0.dp,
+                    animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
+                    label = "underlineWidth_$route"
+                )
+                val underlineAlpha by animateFloatAsState(
+                    targetValue = if (selected) 1.0f else 0.0f,
+                    animationSpec = tween(durationMillis = 250),
+                    label = "underlineAlpha_$route"
+                )
+
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) { onNavigate(route) }
+                        .padding(vertical = 4.dp)
+                ) {
+                    // Icon Container with Subtle Glow
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(28.dp)
+                            .graphicsLayer(scaleX = iconScale, scaleY = iconScale)
+                    ) {
+                        if (selected) {
+                            // Soft Cosmic Aura Glow behind active icon
+                            Box(
+                                modifier = Modifier
+                                    .size(26.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        Brush.radialGradient(
+                                            listOf(
+                                                Color(0xFFFF3366).copy(alpha = 0.35f),
+                                                Color.Transparent
+                                            )
+                                        )
+                                    )
+                            )
+                        }
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = label,
+                            tint = if (selected) Color(0xFFFF4B72) else Color.White.copy(alpha = 0.5f),
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(3.dp))
+
+                    // Text Label
+                    Text(
+                        text = label,
+                        fontSize = 10.sp,
+                        fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.Medium,
+                        color = if (selected) Color.White else Color.White.copy(alpha = 0.5f)
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // Animated Glowing Cosmic Underline Area
+                    Box(
+                        modifier = Modifier
+                            .width(underlineWidth)
+                            .height(3.dp)
+                            .clip(RoundedCornerShape(50))
+                            .alpha(underlineAlpha)
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(
+                                        Color(0xFFFF3366),
+                                        Color(0xFFA855F7),
+                                        Color(0xFF00E5FF)
+                                    )
+                                )
+                            )
+                    )
+                }
+            }
+        }
+    }
+}
+
 // -------------------------------------------------------------
 @Composable
 fun SettingsDialog(

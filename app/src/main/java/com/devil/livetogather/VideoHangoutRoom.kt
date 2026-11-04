@@ -957,136 +957,136 @@ fun VideoHangoutRoomDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Top-Left: Host Avatar Pill & 18+ Badge
+                    // Top-Left: Host Avatar Pill & 18+ Badge (Stable Bounded Layout - Never Shifts Controls)
                     Row(
+                        modifier = Modifier.weight(1f, fill = false),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Surface(
-                        color = Color.Black.copy(alpha = 0.55f),
-                        shape = RoundedCornerShape(50),
-                        border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.6f)),
-                        modifier = Modifier
-                            .height(38.dp)
-                            .clickable {
-                                val targetHostUid = room.hostUid.ifBlank { room.hostId }
-                                val hostMember = activeMembers.find { it.uid == targetHostUid } ?: RoomMember(
-                                    uid = targetHostUid,
-                                    userId = room.hostId,
-                                    name = room.hostName,
-                                    photoUrl = room.hostPhotoUrl,
-                                    role = "host"
-                                )
-                                selectedMemberForProfile = hostMember
-                            }
-
-) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(start = 2.dp, end = 8.dp)
+                            color = Color.Black.copy(alpha = 0.55f),
+                            shape = RoundedCornerShape(50),
+                            border = BorderStroke(1.dp, Color(0xFF8B5CF6).copy(alpha = 0.5f)),
+                            modifier = Modifier
+                                .height(38.dp)
+                                .clickable {
+                                    val targetHostUid = room.hostUid.ifBlank { room.hostId }
+                                    val hostMember = activeMembers.find { it.uid == targetHostUid } ?: RoomMember(
+                                        uid = targetHostUid,
+                                        userId = room.hostId,
+                                        name = room.hostName,
+                                        photoUrl = room.hostPhotoUrl,
+                                        role = "host"
+                                    )
+                                    selectedMemberForProfile = hostMember
+                                }
                         ) {
-                            Box(modifier = Modifier.size(34.dp), contentAlignment = Alignment.Center) {
-                                AsyncImage(
-                                    model = room.hostPhotoUrl.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
-                                    contentDescription = "Host Avatar",
-                                    modifier = Modifier
-                                        .size(30.dp)
-                                        .clip(CircleShape),
-                                    contentScale = ContentScale.Crop
-                                )
-                                Box(
-                                    modifier = Modifier
-                                        .size(34.dp)
-                                        .border(1.2.dp, BrandGold, CircleShape)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Column(modifier = Modifier.widthIn(max = 135.dp)) {
-                                Text(
-                                    text = room.title.ifBlank { room.roomName.ifBlank { "Live Video Stream" } },
-                                    color = Color.White,
-                                    fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = "👑 ${room.hostName.ifBlank { "Host" }}",
-                                        color = Color.LightGray,
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f, fill = false)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(start = 2.dp, end = 7.dp)
+                            ) {
+                                Box(modifier = Modifier.size(34.dp), contentAlignment = Alignment.Center) {
+                                    AsyncImage(
+                                        model = room.hostPhotoUrl.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                                        contentDescription = "Host Avatar",
+                                        modifier = Modifier
+                                            .size(30.dp)
+                                            .clip(CircleShape),
+                                        contentScale = ContentScale.Crop
                                     )
-                                    Text(
-                                        text = " • ID: $displayRoomId",
-                                        color = BrandGold,
-                                        fontSize = 8.5.sp,
-                                        fontWeight = FontWeight.SemiBold
+                                    Box(
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .border(1.2.dp, Color(0xFF8B5CF6), CircleShape)
                                     )
                                 }
-                            }
-
-                            if (!isUserHost) {
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Surface(
-                                    color = if (isFollowingHost) Color.White.copy(alpha = 0.2f) else BrandCoral,
-                                    shape = RoundedCornerShape(50),
-                                    modifier = Modifier.clickable { toggleFollowHost() }
-                                ) {
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Column(modifier = Modifier.widthIn(max = 95.dp)) {
                                     Text(
-                                        text = if (isFollowingHost) "✓ Following" else "+ Follow",
+                                        text = room.title.ifBlank { room.roomName.ifBlank { "Live Video Stream" } },
                                         color = Color.White,
-                                        fontSize = 10.sp,
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.ExtraBold,
-                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
-                                }
-                            } else {
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Surface(
-                                    color = Color(0xFFFF1744).copy(alpha = 0.25f),
-                                    shape = RoundedCornerShape(50),
-                                    border = BorderStroke(0.8.dp, Color(0xFFFF1744))
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(6.dp)
-                                                .clip(CircleShape)
-                                                .background(Color(0xFFFF1744))
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
-                                            text = "LIVE",
-                                            color = Color.White,
+                                            text = "👑 ${room.hostName.ifBlank { "Host" }}",
+                                            color = Color.LightGray,
                                             fontSize = 9.sp,
-                                            fontWeight = FontWeight.ExtraBold
+                                            fontWeight = FontWeight.Medium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false)
                                         )
+                                        Text(
+                                            text = " • ID: $displayRoomId",
+                                            color = Color(0xFFC084FC),
+                                            fontSize = 8.5.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
+
+                                if (!isUserHost) {
+                                    Spacer(modifier = Modifier.width(5.dp))
+                                    Surface(
+                                        color = if (isFollowingHost) Color.White.copy(alpha = 0.2f) else BrandCoral,
+                                        shape = RoundedCornerShape(50),
+                                        modifier = Modifier.clickable { toggleFollowHost() }
+                                    ) {
+                                        Text(
+                                            text = if (isFollowingHost) "✓ Following" else "+ Follow",
+                                            color = Color.White,
+                                            fontSize = 9.5.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                        )
+                                    }
+                                } else {
+                                    Spacer(modifier = Modifier.width(5.dp))
+                                    Surface(
+                                        color = Color(0xFFFF1744).copy(alpha = 0.25f),
+                                        shape = RoundedCornerShape(50),
+                                        border = BorderStroke(0.8.dp, Color(0xFFFF1744))
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.5.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(5.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color(0xFFFF1744))
+                                            )
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Text(
+                                                text = "LIVE",
+                                                color = Color.White,
+                                                fontSize = 8.5.sp,
+                                                fontWeight = FontWeight.ExtraBold
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
 
-                    Surface(
-                        color = Color(0xFFFF1744).copy(alpha = 0.25f),
-                        shape = RoundedCornerShape(50),
-                        border = BorderStroke(0.8.dp, Color(0xFFFF1744).copy(alpha = 0.8f))
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                        Surface(
+                            color = Color(0xFFFF1744).copy(alpha = 0.25f),
+                            shape = RoundedCornerShape(50),
+                            border = BorderStroke(0.8.dp, Color(0xFFFF1744).copy(alpha = 0.8f))
                         ) {
-                            Text("🔞 18+ Moderated", color = Color(0xFFFF5252), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.5.dp)
+                            ) {
+                                Text("🔞 18+", color = Color(0xFFFF5252), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
-                }
 
                     // Top-Right: Viewers, Controls (Strictly separated for Host vs Viewer)
                     Row(
@@ -4554,7 +4554,7 @@ fun VideoRoomSettingsSheet(
                                                     db.collection("rooms").document(room.id).update("privacy", key)
                                                 }
                                             },
-                                            colors = RadioButtonDefaults.colors(selectedColor = BrandGold)
+                                            colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF8B5CF6))
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text(label, color = if (isSelected) Color.White else Color.LightGray, fontSize = 12.sp, fontWeight = FontWeight.Medium)
@@ -4606,7 +4606,7 @@ fun VideoRoomSettingsSheet(
                                             Text("⭐ Room Premium (VIP)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                             Text(
                                                 text = if (isRoomVip) "Exclusive VIP room mode enabled ⭐" else "Standard room mode",
-                                                color = if (isRoomVip) BrandGold else Color.Gray,
+                                                color = if (isRoomVip) Color(0xFFC084FC) else Color.Gray,
                                                 fontSize = 10.sp
                                             )
                                         }
@@ -4681,7 +4681,7 @@ fun VideoRoomSettingsSheet(
                                                         .clip(RoundedCornerShape(10.dp))
                                                         .border(
                                                             1.5.dp,
-                                                            if (isCurrent) BrandGold else Color.White.copy(alpha = 0.1f),
+                                                            if (isCurrent) Color(0xFF8B5CF6) else Color.White.copy(alpha = 0.1f),
                                                             RoundedCornerShape(10.dp)
                                                         ),
                                                     contentScale = ContentScale.Crop
@@ -4689,7 +4689,7 @@ fun VideoRoomSettingsSheet(
                                                 Spacer(modifier = Modifier.height(4.dp))
                                                 Text(
                                                     text = preset.name.take(10),
-                                                    color = if (isCurrent) BrandGold else Color.Gray,
+                                                    color = if (isCurrent) Color(0xFFC084FC) else Color.Gray,
                                                     fontSize = 9.sp,
                                                     fontWeight = FontWeight.Bold
                                                 )
