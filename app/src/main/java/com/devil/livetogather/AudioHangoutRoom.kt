@@ -3463,16 +3463,12 @@ private fun UserFullProfileDialog(
     var isFollowing by remember(profile.uid) { mutableStateOf(false) }
 
     // 2. Real-time Couple / Intimacy bond
-    var partnerPhoto by remember(profile.uid) {
-        mutableStateOf("https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80")
-    }
-    var activeRingId by remember(profile.uid) {
-        mutableStateOf(profile.activeIntimacyBadge.ifBlank { "proposal_ring_crimson_rose" })
-    }
+    var partnerPhoto by remember(profile.uid) { mutableStateOf("") }
+    var activeRingId by remember(profile.uid) { mutableStateOf("") }
     var intimacyLvl by remember(profile.uid) { mutableIntStateOf(0) }
     var partnerUser by remember(profile.uid) { mutableStateOf<UserProfile?>(null) }
     var partnerName by remember(profile.uid) { mutableStateOf("") }
-    var isCoupleBond by remember(profile.uid) { mutableStateOf(true) }
+    var isCoupleBond by remember(profile.uid) { mutableStateOf(false) }
 
     // 3. Real Received Gifts list
     val receivedGiftsList = remember(profile.uid) { mutableStateListOf<Map<String, Any>>() }
@@ -4562,12 +4558,12 @@ fun RoomSettingsDialog(
                                                 Toast.makeText(context, "Announcement updated & broadcasted! 📢", Toast.LENGTH_SHORT).show()
                                             }
                                         },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A281E)),
-                                        border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.6f)),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF261042)),
+                                        border = BorderStroke(1.dp, Color(0xFFC084FC).copy(alpha = 0.6f)),
                                         shape = RoundedCornerShape(10.dp),
                                         modifier = Modifier.fillMaxWidth().height(38.dp)
                                     ) {
-                                        Text("Broadcast Announcement 📢", color = BrandGold, fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                                        Text("Broadcast Announcement 📢", color = Color(0xFFE9D5FF), fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
                                     }
                                 } else {
                                     Text(
@@ -4747,7 +4743,7 @@ fun RoomSettingsDialog(
                                         shape = RoundedCornerShape(10.dp),
                                         modifier = Modifier.weight(1f).height(40.dp)
                                     ) {
-                                        Text("⏳ Set Offline", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (!room.isHostLive) BrandGold else Color.LightGray)
+                                        Text("⏳ Set Offline", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (!room.isHostLive) Color(0xFFC084FC) else Color.LightGray)
                                     }
                                 }
                             }
@@ -8372,7 +8368,7 @@ fun AudioHangoutRoomDialog(
                     shape = RoundedCornerShape(24.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .border(1.5.dp, BrandGold, RoundedCornerShape(24.dp))
+                        .border(1.2.dp, Color(0xFFC084FC).copy(alpha = 0.6f), RoundedCornerShape(24.dp))
                 ) {
                     Column(
                         modifier = Modifier

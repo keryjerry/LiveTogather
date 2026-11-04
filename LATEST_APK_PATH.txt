@@ -3,7 +3,7 @@ LIVE TOGATHER - LATEST INSTALLED / BUILT APK PATH
 ==================================================
 
 1. Latest Release APK Full Path:
-C:\Users\user\LiveTogather\app-release-v1.0.14.apk
+C:\Users\user\LiveTogather\LiveTogather.18.apk
 or
 C:\Users\user\LiveTogather\app\build\outputs\apk\release\app-release.apk
 
@@ -11,13 +11,23 @@ C:\Users\user\LiveTogather\app\build\outputs\apk\release\app-release.apk
 C:\Users\user\LiveTogather\app\build\outputs\apk\release
 
 3. Version:
-Version Code: 15
-Version Name: 1.0.14
+Version Code: 18
+Version Name: 1.0.17
 
-4. Key Updates in v1.0.14:
-- Fixed infinite recursion crash bug in DataModels.kt (hasActiveVipTier / getVipLevel StackOverflowError).
-- Added 15 photorealistic 3D full-length mobile profile border frames in app/src/main/res/drawable/.
-- Implemented animated continuous shimmer lighting and glowing luxury border overlay.
-- Enabled 100% full profile scrollability underneath the frame without touch interception.
-- Defaulted Founder profile (servicesecure822@gmail.com) to active Ice Crystal Butterfly frame.
-- Added 🖼️ Luxury Profile Frame picker dialog with all 15 themes so founder and VIP users can switch frames with one click.
+4. Key Updates in v1.0.17 (Build 18):
+- Smart App Update System:
+  * Compares current installed versionCode (17) against latest_version_code in Firestore (18).
+  * If app is already updated (code >= latest), popup is permanently suppressed (Zero harassment).
+  * 12-hour grace period if user clicks 'Remind Me Later' on optional updates.
+  * Supports min_supported_version_code for Critical Force Updates.
+- Unknown Sources & Smart Resume Cache Fix:
+  * Downloaded APK is saved persistently to LiveTogather_v18.apk.
+  * If user enables "Install unknown apps" permission in Settings and returns, it directly opens the installer without re-downloading!
+  * Pre-checks permission and APK existence before downloading.
+- Professional Galaxy Cosmic Purple UI:
+  * Redesigned AppUpdateDialog with sleek Deep Cosmic Night and Purple Nebula glassmorphism (no cartoon icons).
+  * Added high-tech download progress with dynamic byte counter (xx MB / xx MB) and gradient bar.
+  * Applied Galaxy Glossy Dark Purple theme to SettingsDialog and SettingsTopicSelectionDialog.
+  * Removed all outdated yellow (BrandGold) borders in settings and celebration dialogs.
+- 100% Zero-Interference:
+  * No core chatting, voice, audio room, or profile features touched or overwritten.

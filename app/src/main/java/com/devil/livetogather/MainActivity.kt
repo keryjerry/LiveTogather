@@ -619,6 +619,8 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
     // In-App Auto-Update System
     var availableAppUpdate by remember { mutableStateOf<AppUpdateInfo?>(null) }
     var updateDownloadProgress by remember { mutableFloatStateOf(-1f) }
+    var updateDownloadedBytes by remember { mutableLongStateOf(0L) }
+    var updateTotalBytes by remember { mutableLongStateOf(0L) }
     var isDownloadingUpdate by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -2978,15 +2980,19 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
             AppUpdateDialog(
                 updateInfo = availableAppUpdate!!,
                 downloadProgress = updateDownloadProgress,
+                downloadedBytes = updateDownloadedBytes,
+                totalBytes = updateTotalBytes,
                 isDownloading = isDownloadingUpdate,
                 onUpdateClick = { info ->
                     isDownloadingUpdate = true
                     updateDownloadProgress = 0f
                     AppUpdateManager.downloadAndInstallApk(
                         context = context,
-                        apkUrl = info.apkUrl,
-                        onProgress = { progress ->
+                        updateInfo = info,
+                        onProgress = { progress, downloaded, total ->
                             updateDownloadProgress = progress
+                            updateDownloadedBytes = downloaded
+                            updateTotalBytes = total
                         },
                         onSuccess = {
                             isDownloadingUpdate = false
@@ -2995,7 +3001,7 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                         onError = { err ->
                             isDownloadingUpdate = false
                             updateDownloadProgress = -1f
-                            Toast.makeText(context, "Update error: $err", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, err, Toast.LENGTH_LONG).show()
                         }
                     )
                 },
@@ -5100,122 +5106,34 @@ fun ProfileScreenContent(
                                     }
                                 }
                             } else {
-                                Row(
+                                // Single User Profile Header (Clean, Centered, Zero Dummy Data)
+                                Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                        .padding(vertical = 4.dp),
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    // Left-aligned Avatar + Transparent Intimacy Ring + Partner Circle (Reference Image 2)
-                                    Row(
-                                        modifier = Modifier.weight(1f, fill = false),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            FlowingAvatarFrame(
-                                                photoUrl = photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80" },
-                                                frameId = currentUser.activeFrame,
-                                                avatarSize = 64.dp,
-                                                frameSize = 128.dp,
-                                                vipLevel = currentUser.getVipLevel(),
-                                                showMicEffect = false,
-                                                onClick = { showAvatarClickOptions = true }
-                                            )
-                                            if (isUploadingPhoto) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(64.dp)
-                                                        .clip(CircleShape)
-                                                        .background(Color.Black.copy(alpha = 0.55f)),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    CircularProgressIndicator(
-                                                        color = Color(0xFF7E22CE),
-                                                        modifier = Modifier.size(24.dp),
-                                                        strokeWidth = 2.dp
-                                                    )
-                                                }
-                                            }
-                                        }
-
-                                        // Overlapping Crisp Transparent PNG Intimacy Ring
-                                        IntimacyRingAttachmentBridge(
-                                            activeRingId = currentUser.activeIntimacyBadge.ifBlank { "proposal_ring_crimson_rose" },
-                                            ringSize = 52.dp,
-                                            modifier = Modifier
-                                                .offset(x = (-10).dp, y = 2.dp)
-                                                .zIndex(50f),
-                                            onClick = { showIntimacyRingPickerModal = true }
-                                        )
-
-                                        // Partner / Soulmate Avatar Circle
+                                    FlowingAvatarFrame(
+                                        photoUrl = photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80" },
+                                        frameId = currentUser.activeFrame,
+                                        avatarSize = 70.dp,
+                                        frameSize = 140.dp,
+                                        vipLevel = currentUser.getVipLevel(),
+                                        showMicEffect = false,
+                                        onClick = { showAvatarClickOptions = true }
+                                    )
+                                    if (isUploadingPhoto) {
                                         Box(
                                             modifier = Modifier
-                                                .offset(x = (-8).dp)
-                                                .size(60.dp)
+                                                .size(70.dp)
                                                 .clip(CircleShape)
-                                                .border(2.dp, Color.White.copy(alpha = 0.85f), CircleShape)
-                                                .clickable { showIntimacyRequestsModal = true },
+                                                .background(Color.Black.copy(alpha = 0.55f)),
                                             contentAlignment = Alignment.Center
                                         ) {
-                                            AsyncImage(
-                                                model = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80",
-                                                contentDescription = "Soulmate",
-                                                modifier = Modifier.fillMaxSize().clip(CircleShape),
-                                                contentScale = ContentScale.Crop
-                                            )
-                                        }
-                                    }
-
-                                    // Right-aligned Intimacy Pill + Love Zone Badge (Reference Image 2)
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        modifier = Modifier
-                                            .width(80.dp)
-                                            .clickable { showIntimacyRequestsModal = true }
-                                    ) {
-                                        Surface(
-                                            color = Color(0xFFFFF0F5),
-                                            shape = RoundedCornerShape(50),
-                                            border = BorderStroke(1.dp, Color(0xFFFFB6C1)),
-                                            shadowElevation = 2.dp
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Text("❤️", fontSize = 11.sp)
-                                                Spacer(modifier = Modifier.width(3.dp))
-                                                Text("Intimacy ${activeIntimacyBonds.firstOrNull()?.intimacyLevel ?: 0}", color = Color(0xFFBE185D), fontSize = 8.5.sp, fontWeight = FontWeight.Bold, softWrap = false)
-                                            }
-                                        }
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        Text("🏠", fontSize = 22.sp)
-                                        Surface(
-                                            color = Color(0xFFFFF7ED),
-                                            shape = RoundedCornerShape(50),
-                                            border = BorderStroke(0.8.dp, Color(0xFFFDBA74))
-                                        ) {
-                                            Text(
-                                                text = "Love Zone",
-                                                color = Color(0xFFC2410C),
-                                                fontSize = 9.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 1.dp)
-                                            )
-                                        }
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Surface(
-                                            color = Color(0xFFEC4899),
-                                            shape = RoundedCornerShape(50)
-                                        ) {
-                                            Text(
-                                                text = "💖 Lv.60",
-                                                color = Color.White,
-                                                fontSize = 8.5.sp,
-                                                fontWeight = FontWeight.ExtraBold,
-                                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 1.dp)
+                                            CircularProgressIndicator(
+                                                color = Color(0xFF7E22CE),
+                                                modifier = Modifier.size(26.dp),
+                                                strokeWidth = 2.dp
                                             )
                                         }
                                     }
@@ -5371,7 +5289,8 @@ fun ProfileScreenContent(
                                         }
                                     }
 
-                                    // Intimacy & Love Zone Card (Matching Visual Mockup)
+                                    // Intimacy & Love Zone Card (Only when active bond or incoming request exists)
+                                    if (activeCoupleBond != null || pendingIntimacyIncomingCount > 0) {
                                     Surface(
                                         color = Color.White.copy(alpha = 0.08f),
                                         shape = RoundedCornerShape(16.dp),
@@ -5407,6 +5326,7 @@ fun ProfileScreenContent(
                                                 )
                                             }
                                         }
+                                    }
                                     }
                                 }
 
@@ -8819,7 +8739,7 @@ fun SettingsDialog(
         )
     ) {
         Scaffold(
-            containerColor = Color(0xFFF5F5F7),
+            containerColor = Color(0xFF0B061A),
             modifier = Modifier
                 .fillMaxSize()
                 .imePadding()
@@ -8840,11 +8760,11 @@ fun SettingsDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Black)
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color(0xFFC084FC))
                     }
                     Text(
                         "Settings",
-                        color = Color.Black,
+                        color = Color.White,
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -8883,7 +8803,7 @@ fun SettingsDialog(
                         },
                         modifier = Modifier
                             .size(32.dp)
-                            .background(Color.Black, CircleShape)
+                            .background(Color(0xFF7C3AED), CircleShape)
                     ) {
                         Icon(Icons.Default.Check, contentDescription = "Save", tint = Color.White, modifier = Modifier.size(18.dp))
                     }
@@ -8899,8 +8819,9 @@ fun SettingsDialog(
             ) {
                 item {
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                        shape = RoundedCornerShape(16.dp)
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF160A29)),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, Color(0xFF3B1D66).copy(alpha = 0.6f))
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Row(
@@ -8937,8 +8858,9 @@ fun SettingsDialog(
                     Spacer(modifier = Modifier.height(6.dp))
 
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                        shape = RoundedCornerShape(16.dp)
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF160A29)),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, Color(0xFF3B1D66).copy(alpha = 0.6f))
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Row(
@@ -9080,8 +9002,9 @@ fun SettingsDialog(
                     Spacer(modifier = Modifier.height(6.dp))
 
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                        shape = RoundedCornerShape(16.dp)
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF160A29)),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, Color(0xFF3B1D66).copy(alpha = 0.6f))
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Row(
@@ -9130,8 +9053,9 @@ fun SettingsDialog(
                     Spacer(modifier = Modifier.height(6.dp))
 
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                        shape = RoundedCornerShape(16.dp)
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF160A29)),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, Color(0xFF3B1D66).copy(alpha = 0.6f))
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Row(
@@ -9155,8 +9079,9 @@ fun SettingsDialog(
                     Spacer(modifier = Modifier.height(6.dp))
 
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                        shape = RoundedCornerShape(16.dp)
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF160A29)),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, Color(0xFF3B1D66).copy(alpha = 0.6f))
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Row(
@@ -9192,8 +9117,9 @@ fun SettingsDialog(
                     Spacer(modifier = Modifier.height(6.dp))
 
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                        shape = RoundedCornerShape(16.dp)
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF160A29)),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, Color(0xFF3B1D66).copy(alpha = 0.6f))
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Row(
@@ -9266,7 +9192,7 @@ fun SettingsAttributeRow(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(title, color = Color.Black, fontSize = 14.sp)
+        Text(title, color = Color.White, fontSize = 14.sp)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = currentValue.ifBlank { "Select" },
@@ -9308,8 +9234,9 @@ fun SettingsTopicSelectionDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.75f),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            shape = RoundedCornerShape(20.dp)
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF160A29)),
+            shape = RoundedCornerShape(20.dp),
+            border = BorderStroke(1.2.dp, Color(0xFFC084FC).copy(alpha = 0.5f))
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(
@@ -9319,12 +9246,12 @@ fun SettingsTopicSelectionDialog(
                 ) {
                     Text(
                         text = "Select $title",
-                        color = Color.Black,
+                        color = Color.White,
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold
                     )
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Black)
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color(0xFFC084FC))
                     }
                 }
 

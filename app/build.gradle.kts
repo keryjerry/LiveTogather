@@ -14,22 +14,20 @@ android {
         applicationId = "com.devil.livetogather"
         minSdk = 26
         targetSdk = 35
-        versionCode = 15
-        versionName = "1.0.14"
+        versionCode = 18
+        versionName = "1.0.17"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
         create("release") {
-            storeFile = rootProject.file("app/release.jks")
-            storePassword = providers.gradleProperty("RELEASE_STORE_PASSWORD")
-                .orElse(providers.environmentVariable("RELEASE_STORE_PASSWORD"))
-                .getOrElse("livetogather123")
-            keyAlias = "livetogather"
-            keyPassword = providers.gradleProperty("RELEASE_KEY_PASSWORD")
-                .orElse(providers.environmentVariable("RELEASE_KEY_PASSWORD"))
-                .getOrElse("livetogather123")
+            storeFile = rootProject.file("app/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+            enableV1Signing = true
+            enableV2Signing = true
         }
     }
 
