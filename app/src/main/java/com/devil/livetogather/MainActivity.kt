@@ -5482,6 +5482,74 @@ fun ProfileScreenContent(
                                     }
                                 }
 
+                                // 3D Equipped Badges & Honors Section (Matching Reference App Profile Section Image 1)
+                                val userEquippedBadges = currentUser.equippedBadges
+                                val userBadgeList = remember(userEquippedBadges, currentUser) {
+                                    val list = mutableListOf<Pair<Int, String>>()
+                                    if (currentUser.isFounder()) {
+                                        list.add(R.drawable.badge_livetogather_founder to "LiveTogether Founder 👑")
+                                    }
+                                    val wTier = LevelBadgeSystem.getLevelTierInfo(effWealthLvlVal)
+                                    list.add(wTier.badgeDrawableRes to "${wTier.tierName} Badge (Lv.$effWealthLvlVal)")
+
+                                    userEquippedBadges.forEach { bId ->
+                                        val bItem = HonorCatalog.findBadge(bId)
+                                        if (bItem != null && !bItem.isCrown && list.none { it.first == bItem.drawableRes }) {
+                                            list.add(bItem.drawableRes to bItem.title)
+                                        }
+                                    }
+                                    list
+                                }
+
+                                if (userBadgeList.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Surface(
+                                        color = Color(0xFF130E20).copy(alpha = 0.9f),
+                                        shape = RoundedCornerShape(14.dp),
+                                        border = BorderStroke(1.dp, Color(0xFF4C3666).copy(alpha = 0.8f)),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = "🎖️ Badges & Honors (${userBadgeList.size})",
+                                                    fontSize = 11.5.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color(0xFFFFD700)
+                                                )
+                                                Text(
+                                                    text = "Slide ➔",
+                                                    fontSize = 9.5.sp,
+                                                    color = Color(0xFFA498BF)
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            LazyRow(
+                                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                items(userBadgeList) { (bRes, bTitle) ->
+                                                    Image(
+                                                        painter = painterResource(id = bRes),
+                                                        contentDescription = bTitle,
+                                                        modifier = Modifier
+                                                            .size(32.dp)
+                                                            .clickable {
+                                                                Toast.makeText(context, bTitle, Toast.LENGTH_SHORT).show()
+                                                            },
+                                                        contentScale = ContentScale.Fit
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
                                 Spacer(modifier = Modifier.height(14.dp))
 
                                 // Counters Row: Following, Followers, Moments

@@ -875,6 +875,9 @@ data class UserProfile(
     val activeProfileBorderFrame: String = "",
     val profileFrameExpiries: Map<String, Long> = emptyMap(),
     val activeIntimacyBadge: String = "",
+    val activeMicLinkId: String = "",
+    val ownedMicLinks: List<String> = emptyList(),
+    val micLinkExpiries: Map<String, Long> = emptyMap(),
     val giftsReceivedCount: Int = 0
 ) {
     fun ownsProfileFrame(id: String): Boolean =

@@ -3088,6 +3088,74 @@ fun RoomMemberProfileSheet(
                                 SapphireCharmBadgePill(level = targetCharmLvl, modifier = Modifier.scale(0.85f))
                             }
 
+                            // 3D Equipped Badges & Honors Section (Matching Reference App Image 1)
+                            val sheetEquippedBadges = activeTargetProfile.equippedBadges
+                            val sheetBadgeList = remember(sheetEquippedBadges, activeTargetProfile) {
+                                val list = mutableListOf<Pair<Int, String>>()
+                                if (isMemberFounder) {
+                                    list.add(R.drawable.badge_livetogather_founder to "LiveTogether Founder 👑")
+                                }
+                                val wTier = LevelBadgeSystem.getLevelTierInfo(targetWealthLvl)
+                                list.add(wTier.badgeDrawableRes to "${wTier.tierName} Badge (Lv.$targetWealthLvl)")
+
+                                sheetEquippedBadges.forEach { bId ->
+                                    val bItem = HonorCatalog.findBadge(bId)
+                                    if (bItem != null && !bItem.isCrown && list.none { it.first == bItem.drawableRes }) {
+                                        list.add(bItem.drawableRes to bItem.title)
+                                    }
+                                }
+                                list
+                            }
+
+                            if (sheetBadgeList.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Surface(
+                                    color = Color(0xFF0F172A).copy(alpha = 0.7f),
+                                    shape = RoundedCornerShape(14.dp),
+                                    border = BorderStroke(1.dp, Color(0xFF334155).copy(alpha = 0.8f)),
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
+                                ) {
+                                    Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "🎖️ Badges & Honors (${sheetBadgeList.size})",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFFFFD700)
+                                            )
+                                            Text(
+                                                text = "Slide ➔",
+                                                fontSize = 9.sp,
+                                                color = Color(0xFF94A3B8)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        LazyRow(
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            items(sheetBadgeList) { (bRes, bTitle) ->
+                                                Image(
+                                                    painter = painterResource(id = bRes),
+                                                    contentDescription = bTitle,
+                                                    modifier = Modifier
+                                                        .size(32.dp)
+                                                        .clickable {
+                                                            Toast.makeText(context, bTitle, Toast.LENGTH_SHORT).show()
+                                                        },
+                                                    contentScale = ContentScale.Fit
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
                             Spacer(modifier = Modifier.height(10.dp))
 
                             // Real Stats Bar: Followers & Rooms
@@ -7739,48 +7807,6 @@ fun AudioHangoutRoomDialog(
                                                         fontWeight = FontWeight.Bold,
                                                         fontSize = 13.sp
                                                     )
-                                                    // Scrollable Equipped Badges Row under commenter name
-
-                                                    val cBadges = (if (comment.equippedBadges.isNotEmpty()) comment.equippedBadges else commenterProfile?.equippedBadges) ?: emptyList()
-
-                                                    if (cBadges.isNotEmpty()) {
-
-                                                        LazyRow(
-
-                                                            horizontalArrangement = Arrangement.spacedBy(3.dp),
-
-                                                            verticalAlignment = Alignment.CenterVertically,
-
-                                                            modifier = Modifier.padding(start = 2.dp)
-
-                                                        ) {
-
-                                                            items(cBadges) { bId ->
-
-                                                                val bItem = HonorCatalog.findBadge(bId)
-
-                                                                if (bItem != null) {
-
-                                                                    Image(
-
-                                                                        painter = painterResource(id = bItem.drawableRes),
-
-                                                                        contentDescription = bItem.title,
-
-                                                                        modifier = Modifier.size(15.dp),
-
-                                                                        contentScale = ContentScale.Fit
-
-                                                                    )
-
-                                                                }
-
-                                                            }
-
-                                                        }
-
-                                                    }
-
                                                     if (isCommenterHost) {
                                                         Box(
                                                             modifier = Modifier
@@ -7817,6 +7843,42 @@ fun AudioHangoutRoomDialog(
                                                                 contentDescription = "Admin",
                                                                 tint = Color.White,
                                                                 modifier = Modifier.size(12.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+
+                                                // Line 2: Prominent Single Unified 3D Badges Row (Below Name, Size 24.dp, Slideable)
+                                                val cEquippedBadges = (if (comment.equippedBadges.isNotEmpty()) comment.equippedBadges else commenterProfile?.equippedBadges) ?: emptyList()
+                                                val cAllBadgesToShow = remember(cEquippedBadges, comment.level, isCommentFounder) {
+                                                    val bList = mutableListOf<Int>()
+                                                    if (isCommentFounder) {
+                                                        bList.add(R.drawable.badge_livetogather_founder)
+                                                    }
+                                                    val tInfo = LevelBadgeSystem.getLevelTierInfo(comment.level)
+                                                    bList.add(tInfo.badgeDrawableRes)
+                                                    cEquippedBadges.forEach { bId ->
+                                                        val b = HonorCatalog.findBadge(bId)
+                                                        if (b != null && !b.isCrown && !bList.contains(b.drawableRes)) {
+                                                            bList.add(b.drawableRes)
+                                                        }
+                                                    }
+                                                    bList
+                                                }
+                                                if (cAllBadgesToShow.isNotEmpty()) {
+                                                    LazyRow(
+                                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .padding(vertical = 1.dp)
+                                                    ) {
+                                                        items(cAllBadgesToShow) { bRes ->
+                                                            Image(
+                                                                painter = painterResource(id = bRes),
+                                                                contentDescription = "Badge",
+                                                                modifier = Modifier.size(24.dp),
+                                                                contentScale = ContentScale.Fit
                                                             )
                                                         }
                                                     }

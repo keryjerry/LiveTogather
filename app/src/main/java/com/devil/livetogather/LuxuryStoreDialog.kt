@@ -434,25 +434,39 @@ fun LuxuryStoreDialog(
                                 coroutineScope.launch(Dispatchers.IO) {
                                     try {
                                         val isMicEffect = targetItem.category == "mic_effect"
-                                        val targetEquipId = if (isMicEffect) {
-                                            if (currentUser.activeMicEffect == targetItem.id) "" else targetItem.id
-                                        } else {
-                                            if (currentUser.activeFrame == targetItem.id) "" else targetItem.id
+                                        val isMicLink = targetItem.category == "mic_link"
+                                        val isAvatarFrame = targetItem.category == "avatar_frame"
+                                        val targetEquipId = when {
+                                            isMicEffect -> if (currentUser.activeMicEffect == targetItem.id) "" else targetItem.id
+                                            isMicLink -> if (currentUser.activeMicLinkId == targetItem.id || currentUser.activeIntimacyBadge == targetItem.id) "" else targetItem.id
+                                            else -> if (currentUser.activeFrame == targetItem.id) "" else targetItem.id
                                         }
-                                        val fieldName = if (isMicEffect) "activeMicEffect" else "activeFrame"
-                                        db.collection("users").document(currentUser.uid).update(fieldName, targetEquipId)
+                                        val fieldName = when {
+                                            isMicEffect -> "activeMicEffect"
+                                            isMicLink -> "activeMicLinkId"
+                                            else -> "activeFrame"
+                                        }
+                                        val updates = mutableMapOf<String, Any>(fieldName to targetEquipId)
+                                        if (isMicLink) {
+                                            updates["activeIntimacyBadge"] = targetEquipId
+                                        }
+                                        db.collection("users").document(currentUser.uid).update(updates)
                                         val prefs = context.getSharedPreferences("livetogather_user_prefs", android.content.Context.MODE_PRIVATE)
-                                        prefs.edit().putString(if (isMicEffect) "profile_active_mic_effect" else "profile_active_frame", targetEquipId).apply()
+                                        when {
+                                            isMicEffect -> prefs.edit().putString("profile_active_mic_effect", targetEquipId).apply()
+                                            isMicLink -> prefs.edit().putString("profile_active_mic_link", targetEquipId).apply()
+                                            else -> prefs.edit().putString("profile_active_frame", targetEquipId).apply()
+                                        }
                                         withContext(Dispatchers.Main) {
-                                            val updatedUser = if (isMicEffect) {
-                                                currentUser.copy(activeMicEffect = targetEquipId)
-                                            } else {
-                                                currentUser.copy(activeFrame = targetEquipId)
+                                            val updatedUser = when {
+                                                isMicEffect -> currentUser.copy(activeMicEffect = targetEquipId)
+                                                isMicLink -> currentUser.copy(activeMicLinkId = targetEquipId, activeIntimacyBadge = targetEquipId)
+                                                else -> currentUser.copy(activeFrame = targetEquipId)
                                             }
                                             onProfileUpdated(updatedUser)
                                             Toast.makeText(
                                                 context,
-                                                if (targetEquipId.isNotBlank()) "✨ Equipped ${targetItem.name}!" else "${targetItem.name} removed",
+                                                if (targetEquipId.isNotBlank()) "✨ Wearing ${targetItem.name}!" else "${targetItem.name} removed",
                                                 Toast.LENGTH_SHORT
                                             ).show()
                                         }
@@ -514,6 +528,26 @@ fun LuxuryStoreDialog(
                                                 ownedMicEffects = newOwned,
                                                 activeMicEffect = targetItem.id,
                                                 micEffectExpiries = newExpiries
+                                            )
+                                        } else if (targetItem.category == "mic_link") {
+                                            val newOwned = currentUser.ownedMicLinks.toMutableList().apply {
+                                                if (!contains(targetItem.id)) add(targetItem.id)
+                                            }
+                                            val newExpiries = currentUser.micLinkExpiries.toMutableMap().apply {
+                                                put(targetItem.id, expiry)
+                                            }
+                                            updates["ownedMicLinks"] = FieldValue.arrayUnion(targetItem.id)
+                                            updates["activeMicLinkId"] = targetItem.id
+                                            updates["activeIntimacyBadge"] = targetItem.id
+                                            updates["micLinkExpiries"] = newExpiries
+
+                                            updatedUser = currentUser.copy(
+                                                diamonds = newDiamonds,
+                                                diamondsSpentCount = newSpentCount,
+                                                ownedMicLinks = newOwned,
+                                                activeMicLinkId = targetItem.id,
+                                                activeIntimacyBadge = targetItem.id,
+                                                micLinkExpiries = newExpiries
                                             )
                                         } else {
                                             val newOwned = currentUser.ownedFrames.toMutableList().apply {
@@ -643,22 +677,28 @@ fun StoreItemCard(
 ) {
     val now = System.currentTimeMillis()
     val isMicEffect = item.category == "mic_effect"
+    val isMicLink = item.category == "mic_link"
     val isAvatarFrame = item.category == "avatar_frame"
-    val isEquippable = isMicEffect || isAvatarFrame
-    val isIntimacySendable = item.category == "ring" || item.category == "mic_link" || item.isIntimacyBondOnly
-    val expiry = if (isMicEffect) currentUser.micEffectExpiries[item.id] ?: 0L else currentUser.frameExpiries[item.id] ?: 0L
+    val isEquippable = isMicEffect || isAvatarFrame || isMicLink
+    val isIntimacySendable = item.category == "ring" || item.isIntimacyBondOnly
+    val expiry = when {
+        isMicEffect -> currentUser.micEffectExpiries[item.id] ?: 0L
+        isMicLink -> currentUser.micLinkExpiries[item.id] ?: 0L
+        else -> currentUser.frameExpiries[item.id] ?: 0L
+    }
     val isExpired = expiry > 0L && now > expiry
     val isSupremeAccess = currentUser.isFounder()
-    val isOwned = isSupremeAccess || (isEquippable && !isExpired && (if (isMicEffect) {
-        currentUser.ownedMicEffects.contains(item.id) || currentUser.activeMicEffect == item.id
-    } else {
-        currentUser.ownedFrames.contains(item.id) || currentUser.activeFrame == item.id
+    val isOwned = isSupremeAccess || (isEquippable && !isExpired && (when {
+        isMicEffect -> currentUser.ownedMicEffects.contains(item.id) || currentUser.activeMicEffect == item.id
+        isMicLink -> currentUser.ownedMicLinks.contains(item.id) || currentUser.activeMicLinkId == item.id || currentUser.activeIntimacyBadge == item.id
+        else -> currentUser.ownedFrames.contains(item.id) || currentUser.activeFrame == item.id
     }))
-    val isEquipped = if (isMicEffect) {
-        currentUser.activeMicEffect == item.id
-    } else if (isAvatarFrame) {
-        currentUser.activeFrame == item.id
-    } else false
+    val isEquipped = when {
+        isMicEffect -> currentUser.activeMicEffect == item.id
+        isMicLink -> currentUser.activeMicLinkId == item.id || currentUser.activeIntimacyBadge == item.id
+        isAvatarFrame -> currentUser.activeFrame == item.id
+        else -> false
+    }
     val hasVideo = item.videoRes != 0
 
     Surface(
@@ -879,19 +919,25 @@ fun StoreItemCard(
                     Surface(
                         color = Color(0xFF2A1C44),
                         shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, Color(0xFFFFD700)),
+                        border = BorderStroke(1.2.dp, Color(0xFFFFD700)),
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable(enabled = !isPurchasing) { onEquipToggle(item) }
                     ) {
-                        Text(
-                            text = if (item.category == "mic_effect") "Wearing • Tap to Unwear" else "Equipped (Tap to Remove)",
-                            fontSize = 8.sp,
-                            fontWeight = FontWeight.Black,
-                            color = Color(0xFFFFD700),
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(vertical = 4.dp)
-                        )
+                        Row(
+                            modifier = Modifier.padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("✓ ", color = Color(0xFFFFD700), fontSize = 10.sp, fontWeight = FontWeight.Black)
+                            Text(
+                                text = "Wearing",
+                                fontSize = 9.5.sp,
+                                fontWeight = FontWeight.Black,
+                                color = Color(0xFFFFD700),
+                                textAlign = TextAlign.Center
+                            )
+                        }
                     }
                 }
                 isOwned -> {
@@ -903,8 +949,8 @@ fun StoreItemCard(
                             .clickable(enabled = !isPurchasing) { onEquipToggle(item) }
                     ) {
                         Text(
-                            text = if (item.category == "mic_effect") "Wear (Equip)" else "Equip",
-                            fontSize = 9.5.sp,
+                            text = "Wear",
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Black,
                             color = Color.White,
                             textAlign = TextAlign.Center,
