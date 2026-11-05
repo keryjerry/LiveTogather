@@ -408,6 +408,7 @@ fun VipRoomChatBarEntry(
     vipLevel: Int,
     isFounder: Boolean = false,
     actionText: String = "",
+    badges: List<Int> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     val effVip = when {
@@ -501,6 +502,23 @@ fun VipRoomChatBarEntry(
                             fontWeight = FontWeight.ExtraBold,
                             modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                         )
+                    }
+                }
+
+                if (badges.isNotEmpty()) {
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(vertical = 1.dp)
+                    ) {
+                        items(badges) { bRes ->
+                            Image(
+                                painter = painterResource(id = bRes),
+                                contentDescription = "Badge",
+                                modifier = Modifier.size(16.dp),
+                                contentScale = ContentScale.Fit
+                            )
+                        }
                     }
                 }
 

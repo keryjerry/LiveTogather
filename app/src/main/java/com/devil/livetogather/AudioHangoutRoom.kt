@@ -3104,6 +3104,19 @@ fun RoomMemberProfileSheet(
                                         list.add(bItem.drawableRes to bItem.title)
                                     }
                                 }
+                                if (isMemberFounder || sheetEquippedBadges.isEmpty()) {
+                                    listOf(
+                                        "badge_honor_grand_duke", "badge_honor_marquess",
+                                        "badge_honor_count", "badge_honor_viscount",
+                                        "badge_honor_baron", "badge_honor_knight",
+                                        "badge_pk_warlord_champion", "badge_wealth_titan"
+                                    ).forEach { bId ->
+                                        val bItem = HonorCatalog.findBadge(bId)
+                                        if (bItem != null && !bItem.isCrown && list.none { it.first == bItem.drawableRes }) {
+                                            list.add(bItem.drawableRes to bItem.title)
+                                        }
+                                    }
+                                }
                                 list
                             }
 
@@ -3425,6 +3438,22 @@ fun RoomMemberProfileSheet(
                         vipLevel = memberVipLvl,
                         onClick = { showFullProfileDialog = true }
                     )
+
+                    val targetCrown = userProfile?.activeCrown.orEmpty()
+                    if (targetCrown.isNotBlank()) {
+                        val hasMemberFrame = memberFrameId.isNotBlank()
+                        OverheadCrownBadge(
+                            crownId = targetCrown,
+                            crownSize = if (hasMemberFrame) 46.dp else 38.dp,
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .offset(
+                                    x = if (hasMemberFrame) 16.dp else 8.dp,
+                                    y = if (hasMemberFrame) (-22).dp else (-14).dp
+                                )
+                                .graphicsLayer(rotationZ = 14f)
+                        )
+                    }
                 }
             }
         }
@@ -7751,12 +7780,35 @@ fun AudioHangoutRoomDialog(
                                     val isEntranceMessage = comment.message.contains("entered the room") || comment.message.startsWith("✨ Welcome") || comment.message.contains("to the room!") || comment.message.contains("has arrived in")
 
                                     if (isEntranceMessage) {
+                                        val cEquippedB = (if (comment.equippedBadges.isNotEmpty()) comment.equippedBadges else commenterProfile?.equippedBadges) ?: emptyList()
+                                        val entranceBadges = remember(cEquippedB, comment.level, isCommentFounder) {
+                                            val bList = mutableListOf<Int>()
+                                            if (isCommentFounder) bList.add(R.drawable.badge_livetogather_founder)
+                                            val tInfo = LevelBadgeSystem.getLevelTierInfo(comment.level)
+                                            bList.add(tInfo.badgeDrawableRes)
+                                            cEquippedB.forEach { bId ->
+                                                val b = HonorCatalog.findBadge(bId)
+                                                if (b != null && !b.isCrown && !bList.contains(b.drawableRes)) {
+                                                    bList.add(b.drawableRes)
+                                                }
+                                            }
+                                            if (isCommentFounder || cEquippedB.isEmpty()) {
+                                                listOf("badge_honor_grand_duke", "badge_honor_count", "badge_honor_viscount", "badge_pk_warlord_champion").forEach { bId ->
+                                                    val b = HonorCatalog.findBadge(bId)
+                                                    if (b != null && !b.isCrown && !bList.contains(b.drawableRes)) {
+                                                        bList.add(b.drawableRes)
+                                                    }
+                                                }
+                                            }
+                                            bList
+                                        }
                                         VipRoomChatBarEntry(
                                             userName = comment.userName,
                                             avatarUrl = comment.userPhoto.ifEmpty { commenterProfile?.photo ?: "" },
                                             vipLevel = commentVipLevel,
                                             isFounder = isCommentFounder,
                                             actionText = comment.message,
+                                            badges = entranceBadges,
                                             modifier = Modifier.padding(vertical = 2.dp)
                                         )
                                     } else {
@@ -7863,6 +7915,19 @@ fun AudioHangoutRoomDialog(
                                                             bList.add(b.drawableRes)
                                                         }
                                                     }
+                                                    if (isCommentFounder || cEquippedBadges.isEmpty()) {
+                                                        listOf(
+                                                            "badge_honor_grand_duke", "badge_honor_marquess",
+                                                            "badge_honor_count", "badge_honor_viscount",
+                                                            "badge_honor_baron", "badge_honor_knight",
+                                                            "badge_pk_warlord_champion", "badge_wealth_titan"
+                                                        ).forEach { bId ->
+                                                            val b = HonorCatalog.findBadge(bId)
+                                                            if (b != null && !b.isCrown && !bList.contains(b.drawableRes)) {
+                                                                bList.add(b.drawableRes)
+                                                            }
+                                                        }
+                                                    }
                                                     bList
                                                 }
                                                 if (cAllBadgesToShow.isNotEmpty()) {
@@ -7882,6 +7947,17 @@ fun AudioHangoutRoomDialog(
                                                             )
                                                         }
                                                     }
+                                                }
+
+                                                // Line 3: Level Badges Pills Row (Matching Reference App Comment Screenshot)
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                    modifier = Modifier.padding(bottom = 2.dp)
+                                                ) {
+                                                    BlueLevelBadgePill(level = commenterLevel)
+                                                    SapphireCharmBadgePill(level = commenterCharm)
+                                                    GoldenMedalBadgePill(level = commenterMedal)
                                                 }
 
                                                 // Line 2: Ornate Luxury VIP Chat Frame Container (With Profile Avatar in circle on left)
@@ -11489,23 +11565,25 @@ fun MicSeatView(
 
                 val seatCrown = seatOccupantProfile?.activeCrown ?: ""
                 if (seatCrown.isNotBlank()) {
+                    // Right Corner Crown: Rests on the circle's upper-right perimeter (No Frame) or outside the frame (With Frame)
                     OverheadCrownBadge(
                         crownId = seatCrown,
+                        crownSize = if (shouldShowFrame) 24.dp else 21.dp,
                         modifier = Modifier
-                            .align(Alignment.TopStart)
+                            .align(Alignment.TopEnd)
                             .offset(
-                                x = if (shouldShowFrame) (-10).dp else (-6).dp,
-                                y = if (shouldShowFrame) (-18).dp else (-14).dp
+                                x = if (shouldShowFrame) 8.dp else 5.dp,
+                                y = if (shouldShowFrame) (-16).dp else (-12).dp
                             )
-                            .graphicsLayer(rotationZ = -12f)
+                            .graphicsLayer(rotationZ = 12f)
                     )
                 }
 
                 if (isIntimacyLinked) {
                     Box(
                         modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .offset(x = 1.dp, y = (-1).dp)
+                            .align(Alignment.TopStart)
+                            .offset(x = (-2).dp, y = (-2).dp)
                             .size(17.dp)
                             .clip(CircleShape)
                             .background(Color(0xFF3B1027))

@@ -25,6 +25,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -385,44 +387,39 @@ object HonorBadgeManager {
 @Composable
 fun OverheadCrownBadge(
     crownId: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    crownSize: Dp = 38.dp,
+    enableBobbing: Boolean = true
 ) {
     if (crownId.isBlank()) return
 
     val crownItem = remember(crownId) { HonorCatalog.findBadge(crownId) } ?: return
 
     val infiniteTransition = rememberInfiniteTransition(label = "CrownBobbing")
-    val offsetY by infiniteTransition.animateFloat(
-        initialValue = -15f,
-        targetValue = -9f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1400, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "CrownBobbingY"
-    )
-
-    val scaleGlow by infiniteTransition.animateFloat(
-        initialValue = 0.95f,
-        targetValue = 1.05f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1800, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "CrownGlow"
-    )
+    val bobbingOffsetY by if (enableBobbing) {
+        infiniteTransition.animateFloat(
+            initialValue = -2.5f,
+            targetValue = 2.5f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1400, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "CrownBobbingY"
+        )
+    } else {
+        remember { mutableStateOf(0f) }
+    }
 
     Box(
         modifier = modifier
-            .offset(y = offsetY.dp),
+            .offset(y = bobbingOffsetY.dp),
         contentAlignment = Alignment.Center
     ) {
         Image(
             painter = painterResource(id = crownItem.drawableRes),
             contentDescription = crownItem.title,
             modifier = Modifier
-                .size(42.dp)
-                ,
+                .size(crownSize),
             contentScale = ContentScale.Fit
         )
     }
@@ -704,13 +701,13 @@ fun BadgeInspectorDialog(
                                     if (isEquipped) {
                                         currentList.remove(badge.id)
                                     } else {
-                                        if (currentList.size >= 5) currentList.removeAt(0)
+                                        if (currentList.size >= 12) currentList.removeAt(0)
                                         currentList.add(badge.id)
                                     }
                                     updates["equippedBadges"] = currentList
                                     db.collection("users").document(uid).update(updates)
                                     val prefs = context.getSharedPreferences("livetogather_user_prefs", android.content.Context.MODE_PRIVATE)
-                                    prefs.edit().putString("profile_equipped_badges", currentList.joinToString(",")).apply()
+                                    prefs.edit().putStringSet("profile_equipped_badges", currentList.toSet()).putString("profile_equipped_badges_csv", currentList.joinToString(",")).apply()
                                     onProfileUpdated(userProfile.copy(equippedBadges = currentList, unlockedBadges = newUnlockedList))
                                 }
                                 Toast.makeText(context, if (isEquipped) "बैज हटाया गया" else "बैज सक्रिय किया गया! ✨", Toast.LENGTH_SHORT).show()

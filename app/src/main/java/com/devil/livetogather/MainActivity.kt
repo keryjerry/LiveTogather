@@ -447,7 +447,12 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                 honorLevel = prefs.getInt("profile_honor_level", 1),
                 activeCrown = prefs.getString("profile_active_crown", "") ?: "",
                 unlockedBadges = prefs.getStringSet("profile_unlocked_badges", emptySet())?.toList() ?: emptyList(),
-                equippedBadges = prefs.getStringSet("profile_equipped_badges", emptySet())?.toList() ?: emptyList(),
+                equippedBadges = try {
+                    prefs.getStringSet("profile_equipped_badges", emptySet())?.toList() ?: emptyList()
+                } catch (e: Exception) {
+                    val csv = prefs.getString("profile_equipped_badges_csv", "") ?: ""
+                    if (csv.isNotBlank()) csv.split(",").filter { it.isNotBlank() } else emptyList()
+                },
                 wealthLevel = prefs.getInt("profile_wealth_level", 1),
                 wealthXp = prefs.getLong("profile_wealth_xp", 0L),
                 charmLevel = prefs.getInt("profile_charm_level", 1),
@@ -5164,11 +5169,17 @@ fun ProfileScreenContent(
                                         onClick = { showAvatarClickOptions = true }
                                     )
                                     if (currentUser.activeCrown.isNotBlank()) {
+                                        val hasFrame = currentUser.activeFrame.isNotBlank()
                                         OverheadCrownBadge(
                                             crownId = currentUser.activeCrown,
+                                            crownSize = if (hasFrame) 46.dp else 38.dp,
                                             modifier = Modifier
-                                                .align(Alignment.TopCenter)
-                                                .offset(y = (-6).dp)
+                                                .align(Alignment.TopEnd)
+                                                .offset(
+                                                    x = if (hasFrame) 16.dp else 8.dp,
+                                                    y = if (hasFrame) (-22).dp else (-14).dp
+                                                )
+                                                .graphicsLayer(rotationZ = 14f)
                                         )
                                     }
                                     if (isUploadingPhoto) {
@@ -5496,6 +5507,19 @@ fun ProfileScreenContent(
                                         val bItem = HonorCatalog.findBadge(bId)
                                         if (bItem != null && !bItem.isCrown && list.none { it.first == bItem.drawableRes }) {
                                             list.add(bItem.drawableRes to bItem.title)
+                                        }
+                                    }
+                                    if (currentUser.isFounder() || userEquippedBadges.isEmpty()) {
+                                        listOf(
+                                            "badge_honor_grand_duke", "badge_honor_marquess",
+                                            "badge_honor_count", "badge_honor_viscount",
+                                            "badge_honor_baron", "badge_honor_knight",
+                                            "badge_pk_warlord_champion", "badge_wealth_titan"
+                                        ).forEach { bId ->
+                                            val bItem = HonorCatalog.findBadge(bId)
+                                            if (bItem != null && !bItem.isCrown && list.none { it.first == bItem.drawableRes }) {
+                                                list.add(bItem.drawableRes to bItem.title)
+                                            }
                                         }
                                     }
                                     list
