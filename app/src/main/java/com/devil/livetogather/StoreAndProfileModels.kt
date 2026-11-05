@@ -11,7 +11,8 @@ enum class StoreCategory(val id: String, val title: String, val icon: String) {
     AVATAR("avatar", "Avatar", "👑"),
     PROFILE_FRAME("profile_frame", "Profile Frame", "🖼️"),
     MIC_EFFECTS("mic_effects", "Mic Effects", "🌀"),
-    ENTRANCE("entrance", "Entrance", "🚀")
+    ENTRANCE("entrance", "Entrance", "🚀"),
+    HONOR_BADGES("honor_badges", "Badges & Honors", "🎖️")
 }
 
 data class StoreItem(

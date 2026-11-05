@@ -3033,6 +3033,16 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
             AutomatedRewardManager.checkRechargeMilestones(context, currentUser, db) {
                 currentUser = it
             }
+            AutomatedRewardManager.checkDailyEngagementAndLoginXp(context, currentUser, db) {
+                currentUser = it
+            }
+        }
+
+        // Automated Real-Time 3D Badges, Royal Honor Levels & Greeting Notifications
+        LaunchedEffect(currentUser.wealthLevel, currentUser.charmLevel, currentUser.pkWins, currentUser.diamondsSpentCount) {
+            HonorBadgeManager.checkAndUnlockBadges(context, currentUser, db) {
+                currentUser = it
+            }
         }
 
         // Interactive Level-Up Milestone Dialog (+10 Free Diamonds)
@@ -5122,6 +5132,14 @@ fun ProfileScreenContent(
                                         showMicEffect = false,
                                         onClick = { showAvatarClickOptions = true }
                                     )
+                                    if (currentUser.activeCrown.isNotBlank()) {
+                                        OverheadCrownBadge(
+                                            crownId = currentUser.activeCrown,
+                                            modifier = Modifier
+                                                .align(Alignment.TopCenter)
+                                                .offset(y = (-6).dp)
+                                        )
+                                    }
                                     if (isUploadingPhoto) {
                                         Box(
                                             modifier = Modifier

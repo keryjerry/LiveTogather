@@ -736,6 +736,19 @@ fun UserChatBadgesRow(
 
         // 9. 🏅 Golden Medal Follower Pill
         GoldenMedalBadgePill(level = medal)
+
+        // 10. 👑 3D Custom Equipped Badges (Honor Levels, Warlord, Master Badges)
+        userProfile?.equippedBadges?.forEach { bId ->
+            val bItem = HonorCatalog.findBadge(bId)
+            if (bItem != null && !bItem.isCrown) {
+                Image(
+                    painter = painterResource(id = bItem.drawableRes),
+                    contentDescription = bItem.title,
+                    modifier = Modifier.size(20.dp),
+                    contentScale = ContentScale.Fit
+                )
+            }
+        }
     }
 }
 

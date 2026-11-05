@@ -171,6 +171,81 @@ object AutomatedRewardManager {
             Toast.makeText(context, "🎁 Loyal Member Milestone: Starter Frame Unlocked for 10 Days! 🌟🖼️", Toast.LENGTH_LONG).show()
         }
     }
+
+    /**
+     * Daily Engagement & Login Streak XP Engine:
+     * - Daily Login: Day 1 (+10 XP) to Day 7 (+100 XP)
+     * - Room Watch Time: +5 XP per 5 minutes (max 45 XP/day)
+     * - Live Comments: +1 XP per comment (max 10 XP/day)
+     * Calculates new wealthXp and advances wealthLevel automatically in Firestore!
+     */
+    fun checkDailyEngagementAndLoginXp(
+        context: Context,
+        profile: UserProfile,
+        db: FirebaseFirestore,
+        onUpdateProfile: (UserProfile) -> Unit
+    ) {
+        val uid = profile.uid
+        if (uid.isBlank()) return
+
+        val prefs = context.getSharedPreferences("livetogather_daily_xp_prefs", Context.MODE_PRIVATE)
+        val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+        val lastLoginDate = prefs.getString("last_login_date_$uid", "") ?: ""
+        var streak = prefs.getInt("login_streak_$uid", 0)
+
+        var xpToAdd = 0L
+
+        // 1. Daily Login Streak Check
+        if (lastLoginDate != todayStr) {
+            val calYesterday = java.util.Calendar.getInstance().apply { add(java.util.Calendar.DAY_OF_YEAR, -1) }
+            val yesterdayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(calYesterday.time)
+
+            streak = if (lastLoginDate == yesterdayStr) (streak + 1).coerceAtMost(7) else 1
+            prefs.edit()
+                .putString("last_login_date_$uid", todayStr)
+                .putInt("login_streak_$uid", streak)
+                .putInt("watch_xp_awarded_$todayStr", 0)
+                .putInt("comment_xp_awarded_$todayStr", 0)
+                .apply()
+
+            val streakXp = when (streak) {
+                1 -> 10L
+                2 -> 20L
+                3 -> 35L
+                4 -> 50L
+                5 -> 65L
+                6 -> 80L
+                else -> 100L
+            }
+            xpToAdd += streakXp
+        }
+
+        // 2. Room Watch Time XP (5 XP per 5 mins, capped at 45 XP/day)
+        val currentWatchXpAwarded = prefs.getInt("watch_xp_awarded_$todayStr", 0)
+        val eligibleWatchXp = ((profile.totalRoomTimeSeconds / 300L) * 5L).toInt().coerceAtMost(45)
+        if (eligibleWatchXp > currentWatchXpAwarded) {
+            val diff = eligibleWatchXp - currentWatchXpAwarded
+            xpToAdd += diff.toLong()
+            prefs.edit().putInt("watch_xp_awarded_$todayStr", eligibleWatchXp).apply()
+        }
+
+        if (xpToAdd > 0L) {
+            val newWealthXp = profile.wealthXp + xpToAdd
+            val newWealthLevel = LevelBadgeSystem.calculateLevelFromXp(newWealthXp)
+
+            val updates = mutableMapOf<String, Any>(
+                "wealthXp" to newWealthXp,
+                "wealthLevel" to newWealthLevel
+            )
+            db.collection("users").document(uid).update(updates)
+
+            val updatedProfile = profile.copy(wealthXp = newWealthXp, wealthLevel = newWealthLevel)
+            onUpdateProfile(updatedProfile)
+
+            // Trigger badge check immediately
+            HonorBadgeManager.checkAndUnlockBadges(context, updatedProfile, db, onUpdateProfile)
+        }
+    }
 }
 
 @Composable

@@ -55,8 +55,8 @@ import java.util.Locale
 // APP UPDATE DATA MODEL
 // -------------------------------------------------------------
 data class AppUpdateInfo(
-    val latestVersionCode: Int = 18,
-    val latestVersionName: String = "1.0.17",
+    val latestVersionCode: Int = 19,
+    val latestVersionName: String = "1.0.18",
     val minSupportedVersionCode: Int = 0,
     val apkUrl: String = "",
     val releaseNotes: String = "",

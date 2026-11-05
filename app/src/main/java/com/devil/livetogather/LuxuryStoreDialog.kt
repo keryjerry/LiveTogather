@@ -77,6 +77,7 @@ fun LuxuryStoreDialog(
             StoreCategory.PROFILE_FRAME -> "Monthly Card"
             StoreCategory.MIC_EFFECTS -> "All Effects"
             StoreCategory.ENTRANCE -> "All Entrances"
+            StoreCategory.HONOR_BADGES -> "All Honors"
         }
     }
 
@@ -119,6 +120,7 @@ fun LuxuryStoreDialog(
                     else -> LuxuryStoreCatalog.entrances
                 }
             }
+            StoreCategory.HONOR_BADGES -> emptyList()
         }
     }
 
@@ -348,6 +350,7 @@ fun LuxuryStoreDialog(
                     StoreCategory.PROFILE_FRAME -> listOf("Monthly Card")
                     StoreCategory.MIC_EFFECTS -> listOf("All Effects", "Sound Wave", "Mic Animation")
                     StoreCategory.ENTRANCE -> listOf("All Entrances", "Mythic Rides", "Aircrafts", "Banners")
+                    StoreCategory.HONOR_BADGES -> listOf("All Honors")
                 }
 
                 Row(
@@ -392,6 +395,14 @@ fun LuxuryStoreDialog(
                     ProfileFrameMonthlyCardSection(
                         currentUser = currentUser,
                         db = db,
+                        onProfileUpdated = onProfileUpdated,
+                        modifier = Modifier.weight(1f)
+                    )
+                } else if (selectedCategory == StoreCategory.HONOR_BADGES) {
+                    HonorPavilionContent(
+                        currentUser = currentUser,
+                        db = db,
+                        onOpenTopUp = onOpenTopUp,
                         onProfileUpdated = onProfileUpdated,
                         modifier = Modifier.weight(1f)
                     )

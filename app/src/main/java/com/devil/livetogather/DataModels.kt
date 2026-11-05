@@ -830,6 +830,10 @@ data class UserProfile(
     val wealthXp: Long = 0L,
     val charmLevel: Int = 1,
     val charmXp: Long = 0L,
+    val honorLevel: Int = 1,
+    val activeCrown: String = "",
+    val unlockedBadges: List<String> = emptyList(),
+    val equippedBadges: List<String> = emptyList(),
 
     // Real-Time PK Battle Swords Level & Progression
     val pkLevel: Int = 1,

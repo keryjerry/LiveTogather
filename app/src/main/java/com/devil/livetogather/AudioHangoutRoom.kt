@@ -1055,6 +1055,22 @@ fun CreateRoomDialog(
                             Toast.makeText(context, "👑 VIP Room requires VIP Level 1+ membership to create!", Toast.LENGTH_SHORT).show()
                             return@Button
                         }
+                        val effWealthLvl = LevelBadgeSystem.getEffectiveWealthLevel(currentUser)
+                        val effCharmLvl = LevelBadgeSystem.getEffectiveCharmLevel(currentUser)
+                        val highestHostLvl = maxOf(effWealthLvl, effCharmLvl)
+
+                        if (selectedRoomType == "audio" && highestHostLvl < 3 && !currentUser.photoVerifiedChat && !currentUser.isAdmin) {
+                            Toast.makeText(context, "🔒 रूम क्रिएशन नियम: ऑडियो रूम होस्ट करने के लिए न्यूनतम लेवल 3 या सेल्फी वेरिफिकेशन आवश्यक है!", Toast.LENGTH_LONG).show()
+                            return@Button
+                        }
+                        if (selectedCategory == "love_zone" && highestHostLvl < 10 && !currentUser.isAdmin) {
+                            Toast.makeText(context, "💍 लव ज़ोन रूम होस्ट करने के लिए न्यूनतम लेवल 10 आवश्यक है!", Toast.LENGTH_LONG).show()
+                            return@Button
+                        }
+                        if ((selectedRoomType == "video" || selectedRoomType == "video_pk") && highestHostLvl < 5 && !currentUser.isAdmin) {
+                            Toast.makeText(context, "📹 लाइव वीडियो ब्रॉडकास्ट के लिए न्यूनतम लेवल 5 आवश्यक है!", Toast.LENGTH_LONG).show()
+                            return@Button
+                        }
                         if (selectedRoomType == "video" || selectedRoomType == "video_pk") {
                             showVideoSafetyGuidelinesModal = true
                         } else {
@@ -11243,6 +11259,16 @@ fun MicSeatView(
                     micEffectId = seatMicEffectId
                 )
 
+                val seatCrown = seatOccupantProfile?.activeCrown ?: ""
+                if (seatCrown.isNotBlank()) {
+                    OverheadCrownBadge(
+                        crownId = seatCrown,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .offset(y = (-14).dp)
+                    )
+                }
+
                 if (isIntimacyLinked) {
                     Box(
                         modifier = Modifier
@@ -13453,7 +13479,24 @@ fun InviteFollowersDialog(
                                         )
                                         Spacer(modifier = Modifier.width(10.dp))
                                         Column(modifier = Modifier.weight(1f)) {
-                                            Text(follower.name, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(follower.name, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Surface(
+                                                    color = if (follower.isOnline) Color(0xFF00E676).copy(alpha = 0.2f) else Color.White.copy(alpha = 0.08f),
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    border = BorderStroke(0.6.dp, if (follower.isOnline) Color(0xFF00E676) else Color.Gray)
+                                                ) {
+                                                    Text(
+                                                        text = if (follower.isOnline) "🟢 Online" else "⚪ Offline",
+                                                        color = if (follower.isOnline) Color(0xFF00E676) else Color.LightGray,
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                                    )
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.height(2.dp))
                                             Text(
                                                 "ID: ${if (follower.userId.isNotBlank()) follower.userId else follower.uid.take(8)}",
                                                 color = Color.Gray,
@@ -13520,13 +13563,15 @@ fun InviteFollowersDialog(
                         )
                     }
                 }
+
+                Spacer(modifier = Modifier.height(8.dp))
             }
         }
     }
 }
 
 // -------------------------------------------------------------
-// REPORT USER DIALOG (ADMIN REVIEW & TICKET CREATION)
+// REPORT USER DIALOG
 // -------------------------------------------------------------
 @Composable
 fun ReportUserDialog(
