@@ -1,1 +1,18 @@
-c:\Users\user\LiveTogather\LiveTogather.20.apk
+APK Build Info
+Version Code: 21
+Version Name: 1.0.20
+Package Name: com.devil.livetogather
+Build Date: 2026-11-05 17:27:09
+Status: Production Release Signed APK (Zero mocks, Full Realtime Firebase Integration)
+
+Paths:
+1. Workspace: C:\Users\user\LiveTogather\LiveTogather.21.apk
+2. Downloads: C:\Users\user\Downloads\LiveTogather.21.apk
+3. Build outputs: C:\Users\user\LiveTogather\app\build\outputs\apk\release\app-release.apk
+
+Core Features Verified:
+- All 38 luxury WebP assets (badges, crowns, shields) processed with true transparent RGBA (zero square or dark boxes).
+- Firestore level & badges connection: UserProfile dynamically reads doc.getLong("level"), userLevel, and wealthLevel. Unlocks all level-appropriate badges for level 100 accounts automatically.
+- Founder Supreme Access: servicesecure822@gmail.com and isFounder() accounts can equip any badge, crown, frame, and mic effect 100% free with zero recharge or diamond deduction.
+- Regular Level 100 users: follow normal rules (unlock level badges matching level 100, but frames/mic effects require diamonds as designed).
+- VIP 4+ Sovereign Immunity: Hosts and Admins cannot kick, ban, or mute VIP 4 or VIP 5 members in Audio and Video hangout rooms. Only the Supreme Founder has apex moderation authority.
