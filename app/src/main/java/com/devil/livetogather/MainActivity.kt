@@ -443,6 +443,12 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                 hasClaimedWelcomeBonus = prefs.getBoolean("profile_has_claimed_welcome_bonus", false),
                 signupIpAddress = prefs.getString("profile_signup_ip", "") ?: "",
                 isAdmin = isUserWhitelistedAdmin(auth.currentUser?.email ?: prefs.getString("profile_email", "") ?: ""),
+                level = prefs.getInt("profile_level", 1),
+                vipLevel = prefs.getInt("profile_vip_level", 0),
+                honorLevel = prefs.getInt("profile_honor_level", 1),
+                activeCrown = prefs.getString("profile_active_crown", "") ?: "",
+                unlockedBadges = prefs.getStringSet("profile_unlocked_badges", emptySet())?.toList() ?: emptyList(),
+                equippedBadges = prefs.getStringSet("profile_equipped_badges", emptySet())?.toList() ?: emptyList(),
                 wealthLevel = prefs.getInt("profile_wealth_level", 1),
                 wealthXp = prefs.getLong("profile_wealth_xp", 0L),
                 charmLevel = prefs.getInt("profile_charm_level", 1),
@@ -479,8 +485,23 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                             firestoreUserId
                         } else currentUser.userId
 
+                        val rawLvlFromDoc = snapshot.getLong("level")
+                            ?: snapshot.getLong("userLevel")
+                            ?: snapshot.getLong("user_level")
+                            ?: snapshot.getLong("wealthLevel")
+                            ?: snapshot.getLong("wealth_level")
+                            ?: snapshot.getLong("lvl")
+                        val updatedLevel = rawLvlFromDoc?.toInt() ?: currentUser.level
                         val updatedWealthXp = snapshot.getLong("wealthXp") ?: currentUser.wealthXp
-                        val updatedWealthLvl = snapshot.getLong("wealthLevel")?.toInt() ?: LevelBadgeSystem.calculateLevelFromXp(updatedWealthXp)
+                        val rawWealthLvl = snapshot.getLong("wealthLevel")?.toInt() ?: snapshot.getLong("wealth_level")?.toInt() ?: rawLvlFromDoc?.toInt()
+                        val updatedWealthLvl = maxOf(updatedLevel, rawWealthLvl ?: LevelBadgeSystem.calculateLevelFromXp(updatedWealthXp))
+                        val updatedVipLevel = (snapshot.getLong("vipLevel") ?: snapshot.getLong("vip_level") ?: currentUser.vipLevel.toLong()).toInt()
+                        val updatedHonorLvl = (snapshot.getLong("honorLevel") ?: snapshot.getLong("honor_level") ?: currentUser.honorLevel.toLong()).toInt()
+                        val updatedActiveCrown = snapshot.getString("activeCrown") ?: snapshot.getString("active_crown") ?: currentUser.activeCrown
+                        @Suppress("UNCHECKED_CAST")
+                        val updatedUnlockedBadges = (snapshot.get("unlockedBadges") as? List<String>) ?: (snapshot.get("unlocked_badges") as? List<String>) ?: currentUser.unlockedBadges
+                        @Suppress("UNCHECKED_CAST")
+                        val updatedEquippedBadges = (snapshot.get("equippedBadges") as? List<String>) ?: (snapshot.get("equipped_badges") as? List<String>) ?: currentUser.equippedBadges
                         val updatedCharmXp = snapshot.getLong("charmXp") ?: currentUser.charmXp
                         val updatedCharmLvl = snapshot.getLong("charmLevel")?.toInt() ?: LevelBadgeSystem.calculateLevelFromXp(updatedCharmXp)
                         val updatedPkWins = (snapshot.getLong("pkWins") ?: currentUser.pkWins.toLong()).toInt()
@@ -546,6 +567,12 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                                 coins = updatedCoins,
                                 diamonds = updatedDiamonds,
                                 userId = finalUserId,
+                                level = updatedLevel,
+                                vipLevel = updatedVipLevel,
+                                honorLevel = updatedHonorLvl,
+                                activeCrown = updatedActiveCrown,
+                                unlockedBadges = updatedUnlockedBadges,
+                                equippedBadges = updatedEquippedBadges,
                                 wealthLevel = updatedWealthLvl,
                                 wealthXp = updatedWealthXp,
                                 charmLevel = updatedCharmLvl,
@@ -562,6 +589,12 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                                 officialRole = updatedOfficialRole
                             )
                             prefs.edit()
+                                .putInt("profile_level", updatedLevel)
+                                .putInt("profile_vip_level", updatedVipLevel)
+                                .putInt("profile_honor_level", updatedHonorLvl)
+                                .putString("profile_active_crown", updatedActiveCrown)
+                                .putStringSet("profile_unlocked_badges", updatedUnlockedBadges.toSet())
+                                .putStringSet("profile_equipped_badges", updatedEquippedBadges.toSet())
                                 .putString("profile_active_frame", updatedActiveFrame)
                                 .putString("profile_active_border_frame", updatedActiveBorderFrame)
                                 .putString("profile_active_chat_frame", updatedActiveChatFrame)

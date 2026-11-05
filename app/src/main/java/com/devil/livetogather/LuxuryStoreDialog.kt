@@ -648,7 +648,7 @@ fun StoreItemCard(
     val isIntimacySendable = item.category == "ring" || item.category == "mic_link" || item.isIntimacyBondOnly
     val expiry = if (isMicEffect) currentUser.micEffectExpiries[item.id] ?: 0L else currentUser.frameExpiries[item.id] ?: 0L
     val isExpired = expiry > 0L && now > expiry
-    val isSupremeAccess = currentUser.isFounder() || currentUser.isOfficialAdmin()
+    val isSupremeAccess = currentUser.isFounder()
     val isOwned = isSupremeAccess || (isEquippable && !isExpired && (if (isMicEffect) {
         currentUser.ownedMicEffects.contains(item.id) || currentUser.activeMicEffect == item.id
     } else {

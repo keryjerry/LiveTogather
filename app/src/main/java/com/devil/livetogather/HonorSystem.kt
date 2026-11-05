@@ -434,16 +434,16 @@ fun OverheadCrownBadge(
 // -------------------------------------------------------------
 
 fun isBadgeUnlocked(badge: HonorBadgeItem, profile: UserProfile): Boolean {
-    // Supreme Founder & Admin access: all badges and crowns freely unlocked
-    if (profile.isFounder() || profile.isOfficialAdmin() || profile.isStaffMember()) return true
+    // Supreme Founder access: all badges and crowns freely unlocked
+    if (profile.isFounder()) return true
     if (profile.unlockedBadges.contains(badge.id)) return true
 
     val effWealth = LevelBadgeSystem.getEffectiveWealthLevel(profile)
     val effCharm = LevelBadgeSystem.getEffectiveCharmLevel(profile)
     val effPkWins = profile.pkWins
 
-    // Max level 100 players have unlocked the entire pantheon
-    if (effWealth >= 100 || effCharm >= 100) return true
+    // Max level 100 players have unlocked the entire pantheon of badges
+    if (effWealth >= 100 || effCharm >= 100 || profile.level >= 100) return true
 
     return when (badge.category) {
         BadgeCategory.CROWNS -> {

@@ -4747,11 +4747,18 @@ fun VideoRoomSettingsSheet(
                                                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                                         OutlinedButton(
                                                             onClick = {
-                                                                db.collection("rooms").document(room.id)
-                                                                    .collection("members").document(member.uid).delete()
-                                                                db.collection("rooms").document(room.id)
-                                                                    .update("kickedUserIds", FieldValue.arrayUnion(member.uid))
-                                                                Toast.makeText(context, "${member.name} removed.", Toast.LENGTH_SHORT).show()
+                                                                val targetVip = member.vipLevel
+                                                                val isTargetFounder = member.isFounder
+                                                                if ((isTargetFounder || targetVip >= 4) && !currentUser.isFounder()) {
+                                                                    val title = if (isTargetFounder) "Founder 👑" else "VIP $targetVip 🛡️"
+                                                                    Toast.makeText(context, "🛡️ $title has Sovereign Immunity. Cannot kick!", Toast.LENGTH_SHORT).show()
+                                                                } else {
+                                                                    db.collection("rooms").document(room.id)
+                                                                        .collection("members").document(member.uid).delete()
+                                                                    db.collection("rooms").document(room.id)
+                                                                        .update("kickedUserIds", FieldValue.arrayUnion(member.uid))
+                                                                    Toast.makeText(context, "${member.name} removed.", Toast.LENGTH_SHORT).show()
+                                                                }
                                                             },
                                                             border = BorderStroke(1.dp, Color(0xFFFFB74D).copy(alpha = 0.6f)),
                                                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
@@ -4762,11 +4769,18 @@ fun VideoRoomSettingsSheet(
 
                                                         Button(
                                                             onClick = {
-                                                                db.collection("rooms").document(room.id)
-                                                                    .collection("members").document(member.uid).delete()
-                                                                db.collection("rooms").document(room.id)
-                                                                    .update("bannedUserIds", FieldValue.arrayUnion(member.uid))
-                                                                Toast.makeText(context, "${member.name} banned.", Toast.LENGTH_SHORT).show()
+                                                                val targetVip = member.vipLevel
+                                                                val isTargetFounder = member.isFounder
+                                                                if ((isTargetFounder || targetVip >= 4) && !currentUser.isFounder()) {
+                                                                    val title = if (isTargetFounder) "Founder 👑" else "VIP $targetVip 🛡️"
+                                                                    Toast.makeText(context, "🛡️ $title has Sovereign Immunity. Cannot ban!", Toast.LENGTH_SHORT).show()
+                                                                } else {
+                                                                    db.collection("rooms").document(room.id)
+                                                                        .collection("members").document(member.uid).delete()
+                                                                    db.collection("rooms").document(room.id)
+                                                                        .update("bannedUserIds", FieldValue.arrayUnion(member.uid))
+                                                                    Toast.makeText(context, "${member.name} banned.", Toast.LENGTH_SHORT).show()
+                                                                }
                                                             },
                                                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8C2424)),
                                                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),

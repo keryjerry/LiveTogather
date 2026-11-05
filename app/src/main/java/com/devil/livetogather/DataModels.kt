@@ -663,11 +663,12 @@ object LevelBadgeSystem {
     }
 
     fun getEffectiveWealthLevel(user: UserProfile): Int {
+        val rawMax = maxOf(user.level, user.wealthLevel)
         val lower = user.name.lowercase()
         return when {
-            lower.contains("yasmin") || lower.contains("warsi") -> maxOf(35, user.wealthLevel)
-            lower.contains("devil") -> maxOf(70, user.wealthLevel)
-            user.wealthLevel > 1 -> user.wealthLevel
+            rawMax > 1 -> rawMax
+            lower.contains("yasmin") || lower.contains("warsi") -> maxOf(35, rawMax)
+            lower.contains("devil") -> maxOf(70, rawMax)
             user.wealthXp > 0L -> calculateLevelFromXp(user.wealthXp)
             else -> 1
         }
@@ -826,6 +827,8 @@ data class UserProfile(
     val suspensionReason: String = "",
 
     // Level-Up Prestige & Broadcaster Charm System
+    val level: Int = 1,
+    val vipLevel: Int = 0,
     val wealthLevel: Int = 1,
     val wealthXp: Long = 0L,
     val charmLevel: Int = 1,
@@ -1064,6 +1067,7 @@ data class UserProfile(
     }
 
     fun getVipLevel(): Int {
+        if (vipLevel > 0) return vipLevel
         val isTrialActive = isVipTrialActive()
         val frame = AVATAR_FRAMES_CATALOG.find { it.id == activeFrame }
         if (frame != null && frame.vipLevel > 0) {
@@ -1203,10 +1207,26 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
     val suspensionExpiry = doc.getLong("suspensionExpiry") ?: 0L
     val suspensionReason = doc.getString("suspensionReason") ?: ""
 
-    val wealthLevel = (doc.getLong("wealthLevel") ?: 1L).toInt()
+    val rawLvlFromDoc = doc.getLong("level")
+        ?: doc.getLong("userLevel")
+        ?: doc.getLong("user_level")
+        ?: doc.getLong("wealthLevel")
+        ?: doc.getLong("wealth_level")
+        ?: doc.getLong("lvl")
+        ?: 1L
+    val parsedLevel = rawLvlFromDoc.toInt()
+    val rawWealthLevel = (doc.getLong("wealthLevel") ?: doc.getLong("wealth_level") ?: rawLvlFromDoc).toInt()
+    val wealthLevel = maxOf(parsedLevel, rawWealthLevel)
     val wealthXp = doc.getLong("wealthXp") ?: 0L
-    val charmLevel = (doc.getLong("charmLevel") ?: 1L).toInt()
+    val charmLevel = (doc.getLong("charmLevel") ?: doc.getLong("charm_level") ?: 1L).toInt()
     val charmXp = doc.getLong("charmXp") ?: 0L
+    val honorLevel = (doc.getLong("honorLevel") ?: doc.getLong("honor_level") ?: 1L).toInt()
+    val parsedVipLevel = (doc.getLong("vipLevel") ?: doc.getLong("vip_level") ?: 0L).toInt()
+    val activeCrown = doc.getString("activeCrown") ?: doc.getString("active_crown") ?: ""
+    @Suppress("UNCHECKED_CAST")
+    val unlockedBadges = (doc.get("unlockedBadges") as? List<String>) ?: (doc.get("unlocked_badges") as? List<String>) ?: emptyList()
+    @Suppress("UNCHECKED_CAST")
+    val equippedBadges = (doc.get("equippedBadges") as? List<String>) ?: (doc.get("equipped_badges") as? List<String>) ?: emptyList()
 
     val pkWins = (doc.getLong("pkWins") ?: 0L).toInt()
     val pkScore = doc.getLong("pkScore") ?: 0L
@@ -1320,10 +1340,16 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
         isSuspended = isSuspended,
         suspensionExpiry = suspensionExpiry,
         suspensionReason = suspensionReason,
+        level = parsedLevel,
+        vipLevel = parsedVipLevel,
         wealthLevel = wealthLevel,
         wealthXp = wealthXp,
         charmLevel = charmLevel,
         charmXp = charmXp,
+        honorLevel = honorLevel,
+        activeCrown = activeCrown,
+        unlockedBadges = unlockedBadges,
+        equippedBadges = equippedBadges,
         pkLevel = pkLevel,
         pkWins = pkWins,
         pkScore = pkScore,
@@ -1400,6 +1426,12 @@ fun saveProfileToPrefs(prefs: SharedPreferences, user: UserProfile) {
         .putBoolean("profile_is_suspended", user.isSuspended)
         .putLong("profile_suspension_expiry", user.suspensionExpiry)
         .putString("profile_suspension_reason", user.suspensionReason)
+        .putInt("profile_level", user.level)
+        .putInt("profile_vip_level", user.vipLevel)
+        .putInt("profile_honor_level", user.honorLevel)
+        .putString("profile_active_crown", user.activeCrown)
+        .putStringSet("profile_unlocked_badges", user.unlockedBadges.toSet())
+        .putStringSet("profile_equipped_badges", user.equippedBadges.toSet())
         .putInt("profile_wealth_level", user.wealthLevel)
         .putLong("profile_wealth_xp", user.wealthXp)
         .putInt("profile_charm_level", user.charmLevel)

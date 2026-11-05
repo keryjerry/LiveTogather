@@ -5040,12 +5040,20 @@ fun RoomSettingsDialog(
                                                     // Kick Button
                                                     OutlinedButton(
                                                         onClick = {
-                                                            onKickMember?.invoke(member)
-                                                            db.collection("rooms").document(room.id)
-                                                                .collection("members").document(member.uid).delete()
-                                                            db.collection("rooms").document(room.id)
-                                                                .update("kickedUserIds", FieldValue.arrayUnion(member.uid))
-                                                            Toast.makeText(context, "${member.name} kicked out.", Toast.LENGTH_SHORT).show()
+                                                            val targetProfile = allProfiles.find { it.uid == member.uid }
+                                                            val targetVip = targetProfile?.getVipLevel() ?: 0
+                                                            val isTargetFounder = targetProfile?.isFounder() == true
+                                                            if ((isTargetFounder || targetVip >= 4) && !currentUser.isFounder()) {
+                                                                val title = if (isTargetFounder) "Founder 👑" else "VIP $targetVip 🛡️"
+                                                                Toast.makeText(context, "🛡️ $title has Sovereign Immunity. Cannot kick!", Toast.LENGTH_SHORT).show()
+                                                            } else {
+                                                                onKickMember?.invoke(member)
+                                                                db.collection("rooms").document(room.id)
+                                                                    .collection("members").document(member.uid).delete()
+                                                                db.collection("rooms").document(room.id)
+                                                                    .update("kickedUserIds", FieldValue.arrayUnion(member.uid))
+                                                                Toast.makeText(context, "${member.name} kicked out.", Toast.LENGTH_SHORT).show()
+                                                            }
                                                         },
                                                         border = BorderStroke(1.dp, Color(0xFFFFB74D).copy(alpha = 0.6f)),
                                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
@@ -5057,12 +5065,20 @@ fun RoomSettingsDialog(
                                                     // Ban Button
                                                     Button(
                                                         onClick = {
-                                                            onBanMember?.invoke(member)
-                                                            db.collection("rooms").document(room.id)
-                                                                .collection("members").document(member.uid).delete()
-                                                            db.collection("rooms").document(room.id)
-                                                                .update("bannedUserIds", FieldValue.arrayUnion(member.uid))
-                                                            Toast.makeText(context, "${member.name} banned.", Toast.LENGTH_SHORT).show()
+                                                            val targetProfile = allProfiles.find { it.uid == member.uid }
+                                                            val targetVip = targetProfile?.getVipLevel() ?: 0
+                                                            val isTargetFounder = targetProfile?.isFounder() == true
+                                                            if ((isTargetFounder || targetVip >= 4) && !currentUser.isFounder()) {
+                                                                val title = if (isTargetFounder) "Founder 👑" else "VIP $targetVip 🛡️"
+                                                                Toast.makeText(context, "🛡️ $title has Sovereign Immunity. Cannot ban!", Toast.LENGTH_SHORT).show()
+                                                            } else {
+                                                                onBanMember?.invoke(member)
+                                                                db.collection("rooms").document(room.id)
+                                                                    .collection("members").document(member.uid).delete()
+                                                                db.collection("rooms").document(room.id)
+                                                                    .update("bannedUserIds", FieldValue.arrayUnion(member.uid))
+                                                                Toast.makeText(context, "${member.name} permanently banned.", Toast.LENGTH_SHORT).show()
+                                                            }
                                                         },
                                                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B1820)),
                                                         border = BorderStroke(1.dp, Color(0xFFE53935).copy(alpha = 0.8f)),
@@ -8217,22 +8233,38 @@ fun AudioHangoutRoomDialog(
                     selectedMemberForRequest = member
                 },
                 onKickOut = { targetMember ->
-                    room = room.copy(kickedUserIds = room.kickedUserIds + targetMember.uid)
-                    db.collection("rooms").document(room.id)
-                        .collection("members").document(targetMember.uid).delete()
-                    db.collection("rooms").document(room.id)
-                        .update("kickedUserIds", FieldValue.arrayUnion(targetMember.uid))
-                    Toast.makeText(context, "${targetMember.name} kicked out of room.", Toast.LENGTH_SHORT).show()
-                    selectedMemberForSheet = null
+                    val targetProfile = allProfiles.find { it.uid == targetMember.uid }
+                    val targetVip = targetProfile?.getVipLevel() ?: 0
+                    val isTargetFounder = targetProfile?.isFounder() == true
+                    if ((isTargetFounder || targetVip >= 4) && !currentUser.isFounder()) {
+                        val title = if (isTargetFounder) "Founder 👑" else "VIP $targetVip 🛡️"
+                        Toast.makeText(context, "🛡️ $title has Sovereign Immunity. Cannot kick!", Toast.LENGTH_SHORT).show()
+                    } else {
+                        room = room.copy(kickedUserIds = room.kickedUserIds + targetMember.uid)
+                        db.collection("rooms").document(room.id)
+                            .collection("members").document(targetMember.uid).delete()
+                        db.collection("rooms").document(room.id)
+                            .update("kickedUserIds", FieldValue.arrayUnion(targetMember.uid))
+                        Toast.makeText(context, "${targetMember.name} kicked out of room.", Toast.LENGTH_SHORT).show()
+                        selectedMemberForSheet = null
+                    }
                 },
                 onBan = { targetMember ->
-                    room = room.copy(bannedUserIds = room.bannedUserIds + targetMember.uid)
-                    db.collection("rooms").document(room.id)
-                        .collection("members").document(targetMember.uid).delete()
-                    db.collection("rooms").document(room.id)
-                        .update("bannedUserIds", FieldValue.arrayUnion(targetMember.uid))
-                    Toast.makeText(context, "${targetMember.name} permanently banned from room.", Toast.LENGTH_SHORT).show()
-                    selectedMemberForSheet = null
+                    val targetProfile = allProfiles.find { it.uid == targetMember.uid }
+                    val targetVip = targetProfile?.getVipLevel() ?: 0
+                    val isTargetFounder = targetProfile?.isFounder() == true
+                    if ((isTargetFounder || targetVip >= 4) && !currentUser.isFounder()) {
+                        val title = if (isTargetFounder) "Founder 👑" else "VIP $targetVip 🛡️"
+                        Toast.makeText(context, "🛡️ $title has Sovereign Immunity. Cannot ban!", Toast.LENGTH_SHORT).show()
+                    } else {
+                        room = room.copy(bannedUserIds = room.bannedUserIds + targetMember.uid)
+                        db.collection("rooms").document(room.id)
+                            .collection("members").document(targetMember.uid).delete()
+                        db.collection("rooms").document(room.id)
+                            .update("bannedUserIds", FieldValue.arrayUnion(targetMember.uid))
+                        Toast.makeText(context, "${targetMember.name} permanently banned from room.", Toast.LENGTH_SHORT).show()
+                        selectedMemberForSheet = null
+                    }
                 },
                 onBlock = { targetMember ->
                     db.collection("users").document(currentUser.uid)
@@ -8355,20 +8387,36 @@ fun AudioHangoutRoomDialog(
                     showAllViewersDialog = false
                 },
                 onKickOut = { targetMember ->
-                    room = room.copy(kickedUserIds = room.kickedUserIds + targetMember.uid)
-                    db.collection("rooms").document(room.id)
-                        .collection("members").document(targetMember.uid).delete()
-                    db.collection("rooms").document(room.id)
-                        .update("kickedUserIds", FieldValue.arrayUnion(targetMember.uid))
-                    Toast.makeText(context, "${targetMember.name} kicked out of room.", Toast.LENGTH_SHORT).show()
+                    val targetProfile = allProfiles.find { it.uid == targetMember.uid }
+                    val targetVip = targetProfile?.getVipLevel() ?: 0
+                    val isTargetFounder = targetProfile?.isFounder() == true
+                    if ((isTargetFounder || targetVip >= 4) && !currentUser.isFounder()) {
+                        val title = if (isTargetFounder) "Founder 👑" else "VIP $targetVip 🛡️"
+                        Toast.makeText(context, "🛡️ $title has Sovereign Immunity. Cannot kick!", Toast.LENGTH_SHORT).show()
+                    } else {
+                        room = room.copy(kickedUserIds = room.kickedUserIds + targetMember.uid)
+                        db.collection("rooms").document(room.id)
+                            .collection("members").document(targetMember.uid).delete()
+                        db.collection("rooms").document(room.id)
+                            .update("kickedUserIds", FieldValue.arrayUnion(targetMember.uid))
+                        Toast.makeText(context, "${targetMember.name} kicked out of room.", Toast.LENGTH_SHORT).show()
+                    }
                 },
                 onBan = { targetMember ->
-                    room = room.copy(bannedUserIds = room.bannedUserIds + targetMember.uid)
-                    db.collection("rooms").document(room.id)
-                        .collection("members").document(targetMember.uid).delete()
-                    db.collection("rooms").document(room.id)
-                        .update("bannedUserIds", FieldValue.arrayUnion(targetMember.uid))
-                    Toast.makeText(context, "${targetMember.name} permanently banned from room.", Toast.LENGTH_SHORT).show()
+                    val targetProfile = allProfiles.find { it.uid == targetMember.uid }
+                    val targetVip = targetProfile?.getVipLevel() ?: 0
+                    val isTargetFounder = targetProfile?.isFounder() == true
+                    if ((isTargetFounder || targetVip >= 4) && !currentUser.isFounder()) {
+                        val title = if (isTargetFounder) "Founder 👑" else "VIP $targetVip 🛡️"
+                        Toast.makeText(context, "🛡️ $title has Sovereign Immunity. Cannot ban!", Toast.LENGTH_SHORT).show()
+                    } else {
+                        room = room.copy(bannedUserIds = room.bannedUserIds + targetMember.uid)
+                        db.collection("rooms").document(room.id)
+                            .collection("members").document(targetMember.uid).delete()
+                        db.collection("rooms").document(room.id)
+                            .update("bannedUserIds", FieldValue.arrayUnion(targetMember.uid))
+                        Toast.makeText(context, "${targetMember.name} permanently banned from room.", Toast.LENGTH_SHORT).show()
+                    }
                 },
                 onDismiss = { showAllViewersDialog = false }
             )
@@ -8428,6 +8476,8 @@ fun AudioHangoutRoomDialog(
             val seatOccupant = allProfiles.find { it.uid == seat.uid }
             val isTargetFounder = seatOccupant?.isFounder() == true
             val isCurrentFounder = currentUser.isFounder()
+            val targetVip = seatOccupant?.getVipLevel() ?: 0
+            val isTargetImmune = (isTargetFounder || targetVip >= 4)
             val canSovereignModerate = currentUser.isFounder() || currentUser.isCeo() || currentUser.isStaffMember()
 
             HostSeatAdminDialog(
@@ -8438,8 +8488,9 @@ fun AudioHangoutRoomDialog(
                 isTargetFounder = isTargetFounder,
                 onDismiss = { selectedSeatForAdmin = null },
                 onToggleMute = {
-                    if (isTargetFounder && !isCurrentFounder) {
-                        Toast.makeText(context, "🛡️ LiveTogather Founder has Supreme Immunity. Cannot mute! 👑", Toast.LENGTH_SHORT).show()
+                    if (isTargetImmune && !isCurrentFounder) {
+                        val immuneTitle = if (isTargetFounder) "LiveTogather Founder 👑" else "VIP $targetVip Member 🛡️"
+                        Toast.makeText(context, "🛡️ $immuneTitle cannot be muted! Sovereign Immunity active.", Toast.LENGTH_SHORT).show()
                     } else {
                         toggleMuteMicSeat(db, room.id, seat.seatIndex, seat.isMuted)
                     }
@@ -8462,8 +8513,9 @@ fun AudioHangoutRoomDialog(
                     selectedSeatForAdmin = null
                 },
                 onKickToAudience = {
-                    if (isTargetFounder && !isCurrentFounder) {
-                        Toast.makeText(context, "🛡️ LiveTogather Founder has Supreme Immunity. Cannot remove! 👑", Toast.LENGTH_SHORT).show()
+                    if (isTargetImmune && !isCurrentFounder) {
+                        val immuneTitle = if (isTargetFounder) "LiveTogather Founder 👑" else "VIP $targetVip Member 🛡️"
+                        Toast.makeText(context, "🛡️ $immuneTitle has Sovereign Immunity. Cannot remove from mic!", Toast.LENGTH_SHORT).show()
                     } else {
                         vacateMicSeat(db, room.id, seat.seatIndex, seat.isLocked)
                         Toast.makeText(context, "Removed ${seat.name} from stage", Toast.LENGTH_SHORT).show()
@@ -8471,8 +8523,9 @@ fun AudioHangoutRoomDialog(
                     selectedSeatForAdmin = null
                 },
                 onKickOutOfRoom = {
-                    if (isTargetFounder && !isCurrentFounder) {
-                        Toast.makeText(context, "🛡️ LiveTogather Founder has Supreme Immunity. Cannot kick! 👑", Toast.LENGTH_SHORT).show()
+                    if (isTargetImmune && !isCurrentFounder) {
+                        val immuneTitle = if (isTargetFounder) "LiveTogather Founder 👑" else "VIP $targetVip Member 🛡️"
+                        Toast.makeText(context, "🛡️ $immuneTitle has Sovereign Immunity. Cannot kick!", Toast.LENGTH_SHORT).show()
                     } else if (seat.uid.isNotBlank() && (seat.uid != room.hostId || canSovereignModerate)) {
                         db.collection("rooms").document(room.id)
                             .update("kickedUserIds", FieldValue.arrayUnion(seat.uid))
@@ -8482,8 +8535,9 @@ fun AudioHangoutRoomDialog(
                     selectedSeatForAdmin = null
                 },
                 onBanFromRoom = {
-                    if (isTargetFounder && !isCurrentFounder) {
-                        Toast.makeText(context, "🛡️ LiveTogather Founder has Supreme Immunity. Cannot ban! 👑", Toast.LENGTH_SHORT).show()
+                    if (isTargetImmune && !isCurrentFounder) {
+                        val immuneTitle = if (isTargetFounder) "LiveTogather Founder 👑" else "VIP $targetVip Member 🛡️"
+                        Toast.makeText(context, "🛡️ $immuneTitle has Sovereign Immunity. Cannot ban!", Toast.LENGTH_SHORT).show()
                     } else if (seat.uid.isNotBlank() && (seat.uid != room.hostId || canSovereignModerate)) {
                         db.collection("rooms").document(room.id)
                             .update("bannedUserIds", FieldValue.arrayUnion(seat.uid))
