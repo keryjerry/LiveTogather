@@ -142,6 +142,7 @@ fun VideoHangoutRoomDialog(
     val floatingEmojis = remember { mutableStateListOf<Pair<String, Long>>() }
 
     // Modals & Sheets
+    var showSafetyWarningDialog by remember { mutableStateOf(isUserHost) }
     var showExitOrKeepDialog by remember { mutableStateOf(false) }
     var showRoomSettingsDialog by remember { mutableStateOf(false) }
     var showShareInviteDialog by remember { mutableStateOf(false) }
@@ -1947,6 +1948,74 @@ fun VideoHangoutRoomDialog(
             // -------------------------------------------------------------
             // MODALS & DIALOGS
             // -------------------------------------------------------------
+            if (showSafetyWarningDialog) {
+                androidx.compose.ui.window.Dialog(
+                    onDismissRequest = {
+                        showSafetyWarningDialog = false
+                        onDismiss()
+                    },
+                    properties = androidx.compose.ui.window.DialogProperties(dismissOnBackPress = true, dismissOnClickOutside = false)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = Color(0xFF130924),
+                        border = BorderStroke(1.5.dp, Color(0xFFFF5252))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(20.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("🛡️", fontSize = 36.sp)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "LiveTogather Safety & Content Policy",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "Before starting video streaming, you must agree to the community safety rules:\n\n" +
+                                       "• 🔞 18+ STRICT POLICY: Broadcasters must be at least 18 years old.\n" +
+                                       "• 🚫 ZERO TOLERANCE: Nudity, pornography, sexually explicit gestures, or vulgar behavior are strictly prohibited and will result in instant permanent device ban.\n" +
+                                       "• ⚠️ HARASSMENT: Hate speech, violence, or bullying is never tolerated.",
+                                color = Color(0xFFE2E8F0),
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp
+                            )
+                            Spacer(modifier = Modifier.height(18.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = {
+                                        showSafetyWarningDialog = false
+                                        onDismiss()
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, Color.Gray)
+                                ) {
+                                    Text("Decline", color = Color.Gray, fontSize = 12.sp)
+                                }
+                                Button(
+                                    onClick = {
+                                        showSafetyWarningDialog = false
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("Agree & Go Live", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             if (showExitOrKeepDialog) {
                 RoomExitOptionsDialog(
                     roomTitle = room.title,

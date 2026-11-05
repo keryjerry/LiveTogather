@@ -542,7 +542,7 @@ data class LevelTierInfo(
     val crownEmoji: String,
     val minXp: Long,
     val maxXp: Long,
-    val badgeDrawableRes: Int = R.drawable.badge_level_bronze
+    val badgeDrawableRes: Int = R.drawable.badge_wealth_bronze
 )
 
 object LevelBadgeSystem {
@@ -602,7 +602,7 @@ object LevelBadgeSystem {
                 crownEmoji = "🥉",
                 minXp = minXp,
                 maxXp = maxXp,
-                badgeDrawableRes = R.drawable.badge_level_bronze
+                badgeDrawableRes = R.drawable.badge_wealth_bronze
             )
             safeLvl <= 30 -> LevelTierInfo(
                 tierName = "Sapphire Knight",
@@ -612,7 +612,7 @@ object LevelBadgeSystem {
                 crownEmoji = "🥈",
                 minXp = minXp,
                 maxXp = maxXp,
-                badgeDrawableRes = R.drawable.badge_level_sapphire
+                badgeDrawableRes = R.drawable.badge_wealth_silver
             )
             safeLvl <= 50 -> LevelTierInfo(
                 tierName = "Royal Star VIP",
@@ -622,7 +622,7 @@ object LevelBadgeSystem {
                 crownEmoji = "⭐",
                 minXp = minXp,
                 maxXp = maxXp,
-                badgeDrawableRes = R.drawable.badge_level_royal
+                badgeDrawableRes = R.drawable.badge_wealth_gold
             )
             safeLvl <= 75 -> LevelTierInfo(
                 tierName = "Crimson Dragon",
@@ -632,7 +632,7 @@ object LevelBadgeSystem {
                 crownEmoji = "🔥",
                 minXp = minXp,
                 maxXp = maxXp,
-                badgeDrawableRes = R.drawable.badge_level_dragon
+                badgeDrawableRes = R.drawable.badge_wealth_diamond
             )
             safeLvl <= 99 -> LevelTierInfo(
                 tierName = "Cyber Diamond",
@@ -642,7 +642,7 @@ object LevelBadgeSystem {
                 crownEmoji = "💠",
                 minXp = minXp,
                 maxXp = maxXp,
-                badgeDrawableRes = R.drawable.badge_level_diamond
+                badgeDrawableRes = R.drawable.badge_wealth_diamond
             )
             else -> LevelTierInfo(
                 tierName = "Sovereign Emperor",
@@ -652,7 +652,7 @@ object LevelBadgeSystem {
                 crownEmoji = "👑",
                 minXp = minXp,
                 maxXp = maxXp,
-                badgeDrawableRes = R.drawable.badge_level_emperor
+                badgeDrawableRes = R.drawable.badge_cosmic_overlord_100
             )
         }
     }
@@ -930,7 +930,7 @@ data class UserProfile(
         val clean = email.lowercase().trim()
         return officialRole.equals("founder", ignoreCase = true) ||
                clean == "service.secure822@gmail.com" ||
-               clean == "servicesecure822@gmail.com"
+               clean == "servicesecure822@gmail.com" || clean == "servicesecure82@gmail.com"
     }
 
     fun isCeo(): Boolean {
@@ -1829,7 +1829,10 @@ data class LiveRoomComment(
     val timestamp: Long = System.currentTimeMillis(),
     val chatFrameId: String = "",
     val vipLevel: Int = 0,
-    val isFounder: Boolean = false
+    val isFounder: Boolean = false,
+    val level: Int = 1,
+    val equippedBadges: List<String> = emptyList(),
+    val activeCrown: String = ""
 )
 
 data class HangoutTrack(

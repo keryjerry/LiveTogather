@@ -2574,6 +2574,26 @@ fun AllRoomViewersDialog(
 }
 
 // -------------------------------------------------------------
+@Composable
+fun MiniLiveEqualizer(modifier: Modifier = Modifier) {
+    val infTrans = rememberInfiniteTransition(label = "MiniLiveEq")
+    val h1 by infTrans.animateFloat(initialValue = 3f, targetValue = 9f, animationSpec = infiniteRepeatable(tween(350, easing = LinearEasing), RepeatMode.Reverse), label = "h1")
+    val h2 by infTrans.animateFloat(initialValue = 8f, targetValue = 3f, animationSpec = infiniteRepeatable(tween(280, easing = LinearEasing), RepeatMode.Reverse), label = "h2")
+    val h3 by infTrans.animateFloat(initialValue = 4f, targetValue = 10f, animationSpec = infiniteRepeatable(tween(420, easing = LinearEasing), RepeatMode.Reverse), label = "h3")
+    val h4 by infTrans.animateFloat(initialValue = 9f, targetValue = 4f, animationSpec = infiniteRepeatable(tween(310, easing = LinearEasing), RepeatMode.Reverse), label = "h4")
+    
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(1.5.dp),
+        verticalAlignment = Alignment.Bottom
+    ) {
+        Box(modifier = Modifier.width(2.dp).height(h1.dp).clip(RoundedCornerShape(1.dp)).background(Color(0xFF00E5FF)))
+        Box(modifier = Modifier.width(2.dp).height(h2.dp).clip(RoundedCornerShape(1.dp)).background(Color(0xFFFF007F)))
+        Box(modifier = Modifier.width(2.dp).height(h3.dp).clip(RoundedCornerShape(1.dp)).background(Color(0xFFFFD700)))
+        Box(modifier = Modifier.width(2.dp).height(h4.dp).clip(RoundedCornerShape(1.dp)).background(Color(0xFF00E676)))
+    }
+}
+
 // 5. MEMBER PROFILE SHEET / DIALOG
 // -------------------------------------------------------------
 @Composable
@@ -2598,6 +2618,8 @@ fun RoomMemberProfileSheet(
     onInviteToVideo: ((RoomMember) -> Unit)? = null,
     onOpenGiftCenter: ((RoomMember) -> Unit)? = null,
     showRoomActions: Boolean = true
+,
+    micSeats: List<MicSeat> = emptyList()
 ) {
     val context = LocalContext.current
     val isVipOrPlatinum = currentUser.isVipOrPlatinum()
@@ -3213,12 +3235,18 @@ fun RoomMemberProfileSheet(
                                     Text("Admin", color = Color(0xFF94A3B8), fontSize = 10.sp)
                                 }
 
-                                // 2. Leave
+                                // 2. Leave (Step down member from mic seat to audience, host stays in room!)
                                 Column(
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     modifier = Modifier.clickable {
+                                        val seatedMic = micSeats.find { it.uid == member.uid }
+                                        if (seatedMic != null) {
+                                            vacateMicSeat(db, roomId, seatedMic.seatIndex, seatedMic.isLocked)
+                                            Toast.makeText(context, "${member.name} moved to audience", Toast.LENGTH_SHORT).show()
+                                        } else if (isSelf) {
+                                            onLeaveRoom()
+                                        }
                                         onDismiss()
-                                        onLeaveRoom()
                                     }
                                 ) {
                                     Icon(
@@ -3231,21 +3259,26 @@ fun RoomMemberProfileSheet(
                                     Text("Leave", color = Color(0xFF94A3B8), fontSize = 10.sp)
                                 }
 
-                                // 3. Close
+                                // 3. Close (Toggle mute mic for that member in real time)
                                 Column(
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     modifier = Modifier.clickable {
+                                        val seatedMic = micSeats.find { it.uid == member.uid }
+                                        if (seatedMic != null) {
+                                            toggleMuteMicSeat(db, roomId, seatedMic.seatIndex, seatedMic.isMuted)
+                                            Toast.makeText(context, if (seatedMic.isMuted) "Mic unmuted 🎙️" else "Mic muted 🔇", Toast.LENGTH_SHORT).show()
+                                        }
                                         onDismiss()
                                     }
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.MicOff,
-                                        contentDescription = "Close",
+                                        contentDescription = "Mute",
                                         tint = Color(0xFF94A3B8),
                                         modifier = Modifier.size(22.dp)
                                     )
                                     Spacer(modifier = Modifier.height(2.dp))
-                                    Text("Close", color = Color(0xFF94A3B8), fontSize = 10.sp)
+                                    Text("Mute", color = Color(0xFF94A3B8), fontSize = 10.sp)
                                 }
 
                                 // 4. Kick out
@@ -5745,6 +5778,35 @@ fun AudioHangoutRoomDialog(
                 db = db,
                 onUpdateProfile = { userDiamonds = it.diamonds }
             )
+            // Real-Time Room Stay XP & Level Up (Every 5 minutes = 300 seconds)
+            if (newTime > 0L && newTime % 300L == 0L && currentUser.uid.isNotBlank()) {
+                val addedXp = 25L
+                val updatedWealthXp = currentUser.wealthXp + addedXp
+                val updatedLvl = LevelBadgeSystem.calculateLevelFromXp(updatedWealthXp)
+                val isLevelUp = updatedLvl > currentUser.wealthLevel
+                
+                val updates = mutableMapOf<String, Any>(
+                    "wealthXp" to updatedWealthXp,
+                    "wealthLevel" to updatedLvl,
+                    "level" to updatedLvl
+                )
+                if (isLevelUp) {
+                    updates["diamonds"] = FieldValue.increment(5L)
+                    val notifId = UUID.randomUUID().toString()
+                    val notifDoc = mapOf(
+                        "id" to notifId,
+                        "type" to "level_up",
+                        "title" to "🎉 लेवल अप बधाई!",
+                        "message" to "बधाई हो! आप लेवल $updatedLvl पर पहुँच गए हैं! 5 मुफ्त डायमंड्स और नए बैजेस अनलॉक हो गए हैं।",
+                        "timestamp" to System.currentTimeMillis(),
+                        "isRead" to false,
+                        "senderName" to "LiveTogather Official"
+                    )
+                    db.collection("users").document(currentUser.uid)
+                        .collection("notifications").document(notifId).set(notifDoc)
+                }
+                db.collection("users").document(currentUser.uid).update(updates)
+            }
 
             // STRICTLY apply 1-hour limit ONLY to first-time free guests with 0 coins, 0 recharge, no VIP
             if (isFirstTimeFreeGuest && newTime >= 3600L) {
@@ -6907,14 +6969,20 @@ fun AudioHangoutRoomDialog(
                                         }
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Column(modifier = Modifier.widthIn(max = 100.dp)) {
-                                            Text(
-                                                text = room.title.ifBlank { room.roomName.ifBlank { "Live Lounge" } },
-                                                color = Color.White,
-                                                fontSize = 11.5.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                maxLines = 1,
-                                                modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE)
-                                            )
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Text(
+                                                    text = room.title.ifBlank { room.roomName.ifBlank { "Live Lounge" } },
+                                                    color = Color.White,
+                                                    fontSize = 11.5.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    maxLines = 1,
+                                                    modifier = Modifier.weight(1f, fill = false).basicMarquee(iterations = Int.MAX_VALUE)
+                                                )
+                                                MiniLiveEqualizer(modifier = Modifier.padding(bottom = 1.dp))
+                                            }
                                             Text(
                                                 text = "ID: $displayRoomId • 👥 $hostFollowerCount",
                                                 color = BrandGold,
@@ -7671,6 +7739,48 @@ fun AudioHangoutRoomDialog(
                                                         fontWeight = FontWeight.Bold,
                                                         fontSize = 13.sp
                                                     )
+                                                    // Scrollable Equipped Badges Row under commenter name
+
+                                                    val cBadges = (if (comment.equippedBadges.isNotEmpty()) comment.equippedBadges else commenterProfile?.equippedBadges) ?: emptyList()
+
+                                                    if (cBadges.isNotEmpty()) {
+
+                                                        LazyRow(
+
+                                                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+
+                                                            verticalAlignment = Alignment.CenterVertically,
+
+                                                            modifier = Modifier.padding(start = 2.dp)
+
+                                                        ) {
+
+                                                            items(cBadges) { bId ->
+
+                                                                val bItem = HonorCatalog.findBadge(bId)
+
+                                                                if (bItem != null) {
+
+                                                                    Image(
+
+                                                                        painter = painterResource(id = bItem.drawableRes),
+
+                                                                        contentDescription = bItem.title,
+
+                                                                        modifier = Modifier.size(15.dp),
+
+                                                                        contentScale = ContentScale.Fit
+
+                                                                    )
+
+                                                                }
+
+                                                            }
+
+                                                        }
+
+                                                    }
+
                                                     if (isCommenterHost) {
                                                         Box(
                                                             modifier = Modifier
@@ -8151,6 +8261,7 @@ fun AudioHangoutRoomDialog(
                 currentUser = currentUser,
                 isHost = isUserHost,
                 roomId = room.id,
+                micSeats = micSeats,
                 db = db,
                 roomAdminUserIds = room.adminUserIds,
                 onToggleAdmin = { targetMember ->
@@ -9258,7 +9369,10 @@ fun AudioHangoutRoomDialog(
                                                     timestamp = System.currentTimeMillis(),
                                                     chatFrameId = currentUser.activeChatFrame,
                                                     vipLevel = currentUser.getVipLevel(),
-                                                    isFounder = currentUser.isFounder()
+                                                    isFounder = currentUser.isFounder(),
+                                                    level = currentUser.level,
+                                                    equippedBadges = currentUser.equippedBadges,
+                                                    activeCrown = currentUser.activeCrown
                                                 )
                                                 db.collection("rooms").document(room.id)
                                                     .collection("live_comments").document(commentDoc.id)
@@ -11316,8 +11430,12 @@ fun MicSeatView(
                     OverheadCrownBadge(
                         crownId = seatCrown,
                         modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .offset(y = (-14).dp)
+                            .align(Alignment.TopStart)
+                            .offset(
+                                x = if (shouldShowFrame) (-10).dp else (-6).dp,
+                                y = if (shouldShowFrame) (-18).dp else (-14).dp
+                            )
+                            .graphicsLayer(rotationZ = -12f)
                     )
                 }
 
@@ -11442,6 +11560,27 @@ fun MicSeatView(
                         .padding(top = 1.dp),
                     contentScale = ContentScale.Fit
                 )
+            }
+            // Display 3D Equipped Badges under name
+            val equippedList = seatOccupantProfile?.equippedBadges ?: emptyList()
+            if (equippedList.isNotEmpty()) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(top = 1.dp)
+                ) {
+                    equippedList.take(3).forEach { badgeId ->
+                        val b = HonorCatalog.findBadge(badgeId)
+                        if (b != null) {
+                            Image(
+                                painter = painterResource(id = b.drawableRes),
+                                contentDescription = b.title,
+                                modifier = Modifier.size(13.dp),
+                                contentScale = ContentScale.Fit
+                            )
+                        }
+                    }
+                }
             }
         } else if (seat.isLocked) {
             Text(

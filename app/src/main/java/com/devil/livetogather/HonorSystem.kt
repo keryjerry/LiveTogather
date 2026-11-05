@@ -422,7 +422,7 @@ fun OverheadCrownBadge(
             contentDescription = crownItem.title,
             modifier = Modifier
                 .size(42.dp)
-                .shadow(elevation = 6.dp, shape = CircleShape, ambientColor = Color(crownItem.glowColor), spotColor = Color(crownItem.glowColor)),
+                ,
             contentScale = ContentScale.Fit
         )
     }
@@ -583,7 +583,7 @@ fun BadgeInspectorDialog(
                         contentDescription = badge.title,
                         modifier = Modifier
                             .size(86.dp)
-                            .shadow(12.dp, shape = CircleShape, ambientColor = Color(badge.glowColor)),
+                            ,
                         contentScale = ContentScale.Fit
                     )
                 }
@@ -696,6 +696,8 @@ fun BadgeInspectorDialog(
                                     val newCrown = if (isEquipped) "" else badge.id
                                     updates["activeCrown"] = newCrown
                                     db.collection("users").document(uid).update(updates)
+                                    val prefs = context.getSharedPreferences("livetogather_user_prefs", android.content.Context.MODE_PRIVATE)
+                                    prefs.edit().putString("profile_active_crown", newCrown).apply()
                                     onProfileUpdated(userProfile.copy(activeCrown = newCrown, unlockedBadges = newUnlockedList))
                                 } else {
                                     val currentList = userProfile.equippedBadges.toMutableList()
@@ -707,6 +709,8 @@ fun BadgeInspectorDialog(
                                     }
                                     updates["equippedBadges"] = currentList
                                     db.collection("users").document(uid).update(updates)
+                                    val prefs = context.getSharedPreferences("livetogather_user_prefs", android.content.Context.MODE_PRIVATE)
+                                    prefs.edit().putString("profile_equipped_badges", currentList.joinToString(",")).apply()
                                     onProfileUpdated(userProfile.copy(equippedBadges = currentList, unlockedBadges = newUnlockedList))
                                 }
                                 Toast.makeText(context, if (isEquipped) "बैज हटाया गया" else "बैज सक्रिय किया गया! ✨", Toast.LENGTH_SHORT).show()
