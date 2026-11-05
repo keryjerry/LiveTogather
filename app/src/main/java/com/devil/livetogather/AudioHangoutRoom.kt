@@ -5040,9 +5040,8 @@ fun RoomSettingsDialog(
                                                     // Kick Button
                                                     OutlinedButton(
                                                         onClick = {
-                                                            val targetProfile = allProfiles.find { it.uid == member.uid }
-                                                            val targetVip = targetProfile?.getVipLevel() ?: 0
-                                                            val isTargetFounder = targetProfile?.isFounder() == true
+                                                            val targetVip = member.vipLevel
+                                                            val isTargetFounder = member.isFounder
                                                             if ((isTargetFounder || targetVip >= 4) && !currentUser.isFounder()) {
                                                                 val title = if (isTargetFounder) "Founder 👑" else "VIP $targetVip 🛡️"
                                                                 Toast.makeText(context, "🛡️ $title has Sovereign Immunity. Cannot kick!", Toast.LENGTH_SHORT).show()
@@ -5065,9 +5064,8 @@ fun RoomSettingsDialog(
                                                     // Ban Button
                                                     Button(
                                                         onClick = {
-                                                            val targetProfile = allProfiles.find { it.uid == member.uid }
-                                                            val targetVip = targetProfile?.getVipLevel() ?: 0
-                                                            val isTargetFounder = targetProfile?.isFounder() == true
+                                                            val targetVip = member.vipLevel
+                                                            val isTargetFounder = member.isFounder
                                                             if ((isTargetFounder || targetVip >= 4) && !currentUser.isFounder()) {
                                                                 val title = if (isTargetFounder) "Founder 👑" else "VIP $targetVip 🛡️"
                                                                 Toast.makeText(context, "🛡️ $title has Sovereign Immunity. Cannot ban!", Toast.LENGTH_SHORT).show()

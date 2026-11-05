@@ -827,7 +827,7 @@ data class UserProfile(
     val suspensionReason: String = "",
 
     // Level-Up Prestige & Broadcaster Charm System
-    val level: Int = 1,
+    @get:JvmName("getStoredVipLevel")
     val vipLevel: Int = 0,
     val wealthLevel: Int = 1,
     val wealthXp: Long = 0L,
@@ -1340,7 +1340,6 @@ fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
         isSuspended = isSuspended,
         suspensionExpiry = suspensionExpiry,
         suspensionReason = suspensionReason,
-        level = parsedLevel,
         vipLevel = parsedVipLevel,
         wealthLevel = wealthLevel,
         wealthXp = wealthXp,
@@ -1784,6 +1783,8 @@ data class RoomMember(
     val joinedAt: Long = System.currentTimeMillis(),
     val role: String = "listener", // "host" or "listener"
     val tier: String = "Standard", // "VIP", "Platinum", "Standard"
+    val vipLevel: Int = 0,
+    val isFounder: Boolean = false,
     @get:PropertyName("agoraUid") @set:PropertyName("agoraUid") var agoraUid: Int = 0,
     val verificationStatus: String = "unverified"
 ) {
