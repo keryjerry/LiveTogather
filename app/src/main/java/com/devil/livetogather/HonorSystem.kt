@@ -256,9 +256,11 @@ object HonorBadgeManager {
         val effDiamonds = profile.diamondsSpentCount.toLong() * 100L // or total diamonds
         val effPkWins = profile.pkWins
 
+        val isSupremeAccess = profile.isFounder() || profile.isOfficialAdmin() || effWealth >= 100 || effCharm >= 100
+
         HonorCatalog.allBadges.forEach { badge ->
             if (!unlockedNow.contains(badge.id)) {
-                var canUnlock = false
+                var canUnlock = isSupremeAccess || isBadgeUnlocked(badge, profile)
                 when (badge.category) {
                     BadgeCategory.CROWNS -> {
                         when (badge.id) {
@@ -427,6 +429,56 @@ fun OverheadCrownBadge(
 }
 
 // -------------------------------------------------------------
+// -------------------------------------------------------------
+// BADGE & CROWN UNLOCK ACCESS CHECK (FOUNDER / ADMIN / LEVEL 100)
+// -------------------------------------------------------------
+
+fun isBadgeUnlocked(badge: HonorBadgeItem, profile: UserProfile): Boolean {
+    // Supreme Founder & Admin access: all badges and crowns freely unlocked
+    if (profile.isFounder() || profile.isOfficialAdmin() || profile.isStaffMember()) return true
+    if (profile.unlockedBadges.contains(badge.id)) return true
+
+    val effWealth = LevelBadgeSystem.getEffectiveWealthLevel(profile)
+    val effCharm = LevelBadgeSystem.getEffectiveCharmLevel(profile)
+    val effPkWins = profile.pkWins
+
+    // Max level 100 players have unlocked the entire pantheon
+    if (effWealth >= 100 || effCharm >= 100) return true
+
+    return when (badge.category) {
+        BadgeCategory.CROWNS -> {
+            when (badge.id) {
+                "crown_sovereign_emperor" -> effWealth >= 70
+                "crown_phoenix_flame" -> effPkWins >= 25 || profile.pkLevel >= 30
+                "crown_celestial_star" -> effCharm >= 50
+                "crown_romance_tiara" -> profile.bestFriends.isNotEmpty() || profile.unlockedBadges.contains("badge_social_true_love")
+                else -> effWealth >= 50
+            }
+        }
+        BadgeCategory.ROYAL_HONOR -> profile.honorLevel >= badge.minLevel || effWealth >= (badge.minLevel * 15)
+        BadgeCategory.WEALTH -> effWealth >= badge.minLevel
+        BadgeCategory.CHARM -> effCharm >= badge.minLevel
+        BadgeCategory.PK -> effPkWins >= badge.minPkWins || profile.pkLevel >= badge.minLevel
+        BadgeCategory.SOCIAL -> {
+            if (badge.isCoupleOnly) profile.bestFriends.isNotEmpty() || profile.unlockedBadges.contains("badge_social_true_love")
+            else if (badge.id == "badge_social_bestie") profile.bestFriends.isNotEmpty()
+            else if (badge.id == "badge_clan_warrior") effWealth >= 5
+            else if (badge.id == "badge_clan_elite") effWealth >= 15
+            else if (badge.id == "badge_imperial_clan_shield") effWealth >= 25
+            else true
+        }
+        BadgeCategory.LOYALTY -> {
+            if (badge.id == "badge_loyalty_7day") effWealth >= 3
+            else if (badge.id == "badge_loyalty_30day") effWealth >= 10
+            else if (badge.id == "badge_loyalty_100day") effWealth >= 25
+            else if (badge.id == "badge_loyalty_room_master") profile.totalRoomTimeSeconds >= 7200L
+            else if (badge.id == "badge_loyalty_vip_guardian") profile.getVipLevel() > 0
+            else true
+        }
+        BadgeCategory.ALL -> false
+    }
+}
+
 // 5. 3D BADGE INSPECTOR & LEVEL-UP DIALOG (LOCKED / UNLOCKED)
 // -------------------------------------------------------------
 
@@ -440,7 +492,7 @@ fun BadgeInspectorDialog(
     onProfileUpdated: (UserProfile) -> Unit
 ) {
     val context = LocalContext.current
-    val isUnlocked = userProfile.unlockedBadges.contains(badge.id)
+    val isUnlocked = isBadgeUnlocked(badge, userProfile)
     val isEquipped = if (badge.isCrown) userProfile.activeCrown == badge.id else userProfile.equippedBadges.contains(badge.id)
 
     val effWealth = LevelBadgeSystem.getEffectiveWealthLevel(userProfile)
@@ -634,10 +686,17 @@ fun BadgeInspectorDialog(
                         onClick = {
                             val uid = userProfile.uid
                             if (uid.isNotBlank()) {
+                                val updates = mutableMapOf<String, Any>()
+                                val newUnlockedList = if (!userProfile.unlockedBadges.contains(badge.id)) {
+                                    userProfile.unlockedBadges + badge.id
+                                } else userProfile.unlockedBadges
+                                updates["unlockedBadges"] = newUnlockedList
+
                                 if (badge.isCrown) {
                                     val newCrown = if (isEquipped) "" else badge.id
-                                    db.collection("users").document(uid).update("activeCrown", newCrown)
-                                    onProfileUpdated(userProfile.copy(activeCrown = newCrown))
+                                    updates["activeCrown"] = newCrown
+                                    db.collection("users").document(uid).update(updates)
+                                    onProfileUpdated(userProfile.copy(activeCrown = newCrown, unlockedBadges = newUnlockedList))
                                 } else {
                                     val currentList = userProfile.equippedBadges.toMutableList()
                                     if (isEquipped) {
@@ -646,8 +705,9 @@ fun BadgeInspectorDialog(
                                         if (currentList.size >= 5) currentList.removeAt(0)
                                         currentList.add(badge.id)
                                     }
-                                    db.collection("users").document(uid).update("equippedBadges", currentList)
-                                    onProfileUpdated(userProfile.copy(equippedBadges = currentList))
+                                    updates["equippedBadges"] = currentList
+                                    db.collection("users").document(uid).update(updates)
+                                    onProfileUpdated(userProfile.copy(equippedBadges = currentList, unlockedBadges = newUnlockedList))
                                 }
                                 Toast.makeText(context, if (isEquipped) "बैज हटाया गया" else "बैज सक्रिय किया गया! ✨", Toast.LENGTH_SHORT).show()
                                 onDismiss()
@@ -762,7 +822,7 @@ fun HonorPavilionContent(
             contentPadding = PaddingValues(bottom = 24.dp)
         ) {
             items(filteredBadges, key = { it.id }) { badge ->
-                val isUnlocked = currentUser.unlockedBadges.contains(badge.id)
+                val isUnlocked = isBadgeUnlocked(badge, currentUser)
                 val isEquipped = if (badge.isCrown) currentUser.activeCrown == badge.id else currentUser.equippedBadges.contains(badge.id)
 
                 Surface(
