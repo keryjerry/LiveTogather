@@ -5540,7 +5540,7 @@ fun ProfileScreenContent(
                                                 painter = painterResource(id = bRes),
                                                 contentDescription = bTitle,
                                                 modifier = Modifier
-                                                    .size(32.dp)
+                                                    .size(36.dp)
                                                     .clickable {
                                                         Toast.makeText(context, bTitle, Toast.LENGTH_SHORT).show()
                                                     },

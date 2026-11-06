@@ -3135,7 +3135,7 @@ fun RoomMemberProfileSheet(
                                             painter = painterResource(id = bRes),
                                             contentDescription = bTitle,
                                             modifier = Modifier
-                                                .size(32.dp)
+                                                .size(36.dp)
                                                 .clickable {
                                                     Toast.makeText(context, bTitle, Toast.LENGTH_SHORT).show()
                                                 },
@@ -7929,7 +7929,7 @@ fun AudioHangoutRoomDialog(
                                                         Image(
                                                             painter = painterResource(id = bRes),
                                                             contentDescription = "Badge",
-                                                            modifier = Modifier.size(20.dp),
+                                                            modifier = Modifier.size(24.dp),
                                                             contentScale = ContentScale.Fit
                                                         )
                                                     }
