@@ -3106,10 +3106,10 @@ fun RoomMemberProfileSheet(
                                 }
                                 if (isMemberFounder || sheetEquippedBadges.isEmpty()) {
                                     listOf(
-                                        "badge_honor_grand_duke", "badge_honor_marquess",
-                                        "badge_honor_count", "badge_honor_viscount",
-                                        "badge_honor_baron", "badge_honor_knight",
-                                        "badge_pk_warlord_champion", "badge_wealth_titan"
+                                        "badge_honor_supreme_emperor", "badge_honor_grand_duke",
+                                        "badge_honor_earl", "badge_honor_baron",
+                                        "badge_honor_knight", "badge_cosmic_overlord_100",
+                                        "badge_wealth_diamond", "badge_pk_unstoppable_warlord"
                                     ).forEach { bId ->
                                         val bItem = HonorCatalog.findBadge(bId)
                                         if (bItem != null && !bItem.isCrown && list.none { it.first == bItem.drawableRes }) {
@@ -3121,52 +3121,29 @@ fun RoomMemberProfileSheet(
                             }
 
                             if (sheetBadgeList.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(10.dp))
-                                Surface(
-                                    color = Color(0xFF0F172A).copy(alpha = 0.7f),
-                                    shape = RoundedCornerShape(14.dp),
-                                    border = BorderStroke(1.dp, Color(0xFF334155).copy(alpha = 0.8f)),
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                // Completely OPEN Badges Row (NO black card, NO header, uniform 32.dp size)
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 4.dp, vertical = 2.dp)
                                 ) {
-                                    Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = "🎖️ Badges & Honors (${sheetBadgeList.size})",
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = Color(0xFFFFD700)
-                                            )
-                                            Text(
-                                                text = "Slide ➔",
-                                                fontSize = 9.sp,
-                                                color = Color(0xFF94A3B8)
-                                            )
-                                        }
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        LazyRow(
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            items(sheetBadgeList) { (bRes, bTitle) ->
-                                                Image(
-                                                    painter = painterResource(id = bRes),
-                                                    contentDescription = bTitle,
-                                                    modifier = Modifier
-                                                        .size(32.dp)
-                                                        .clickable {
-                                                            Toast.makeText(context, bTitle, Toast.LENGTH_SHORT).show()
-                                                        },
-                                                    contentScale = ContentScale.Fit
-                                                )
-                                            }
-                                        }
+                                    items(sheetBadgeList) { (bRes, bTitle) ->
+                                        Image(
+                                            painter = painterResource(id = bRes),
+                                            contentDescription = bTitle,
+                                            modifier = Modifier
+                                                .size(32.dp)
+                                                .clickable {
+                                                    Toast.makeText(context, bTitle, Toast.LENGTH_SHORT).show()
+                                                },
+                                            contentScale = ContentScale.Fit
+                                        )
                                     }
                                 }
+                                Spacer(modifier = Modifier.height(6.dp))
                             }
 
                             Spacer(modifier = Modifier.height(10.dp))
@@ -7900,27 +7877,29 @@ fun AudioHangoutRoomDialog(
                                                     }
                                                 }
 
-                                                // Line 2: Prominent Single Unified 3D Badges Row (Below Name, Size 24.dp, Slideable)
+                                                // Line 2: EXACTLY ONE SINGLE UNIFIED ROW (Below Name: Level Pill + All Badges with UNIFORM size 20.dp)
                                                 val cEquippedBadges = (if (comment.equippedBadges.isNotEmpty()) comment.equippedBadges else commenterProfile?.equippedBadges) ?: emptyList()
                                                 val cAllBadgesToShow = remember(cEquippedBadges, comment.level, isCommentFounder) {
                                                     val bList = mutableListOf<Int>()
                                                     if (isCommentFounder) {
                                                         bList.add(R.drawable.badge_livetogather_founder)
                                                     }
-                                                    val tInfo = LevelBadgeSystem.getLevelTierInfo(comment.level)
-                                                    bList.add(tInfo.badgeDrawableRes)
                                                     cEquippedBadges.forEach { bId ->
                                                         val b = HonorCatalog.findBadge(bId)
                                                         if (b != null && !b.isCrown && !bList.contains(b.drawableRes)) {
                                                             bList.add(b.drawableRes)
                                                         }
                                                     }
-                                                    if (isCommentFounder || cEquippedBadges.isEmpty()) {
+                                                    if (bList.isEmpty() || (isCommentFounder && bList.size <= 1)) {
                                                         listOf(
-                                                            "badge_honor_grand_duke", "badge_honor_marquess",
-                                                            "badge_honor_count", "badge_honor_viscount",
-                                                            "badge_honor_baron", "badge_honor_knight",
-                                                            "badge_pk_warlord_champion", "badge_wealth_titan"
+                                                            "badge_honor_supreme_emperor",
+                                                            "badge_honor_grand_duke",
+                                                            "badge_honor_earl",
+                                                            "badge_honor_baron",
+                                                            "badge_honor_knight",
+                                                            "badge_cosmic_overlord_100",
+                                                            "badge_wealth_diamond",
+                                                            "badge_pk_unstoppable_warlord"
                                                         ).forEach { bId ->
                                                             val b = HonorCatalog.findBadge(bId)
                                                             if (b != null && !b.isCrown && !bList.contains(b.drawableRes)) {
@@ -7930,37 +7909,33 @@ fun AudioHangoutRoomDialog(
                                                     }
                                                     bList
                                                 }
-                                                if (cAllBadgesToShow.isNotEmpty()) {
-                                                    LazyRow(
-                                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                                        verticalAlignment = Alignment.CenterVertically,
-                                                        modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .padding(vertical = 1.dp)
-                                                    ) {
-                                                        items(cAllBadgesToShow) { bRes ->
-                                                            Image(
-                                                                painter = painterResource(id = bRes),
-                                                                contentDescription = "Badge",
-                                                                modifier = Modifier.size(24.dp),
-                                                                contentScale = ContentScale.Fit
-                                                            )
+
+                                                LazyRow(
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(vertical = 2.dp)
+                                                ) {
+                                                    item {
+                                                        BlueLevelBadgePill(level = commenterLevel)
+                                                    }
+                                                    if (commenterCharm > 1) {
+                                                        item {
+                                                            SapphireCharmBadgePill(level = commenterCharm)
                                                         }
+                                                    }
+                                                    items(cAllBadgesToShow) { bRes ->
+                                                        Image(
+                                                            painter = painterResource(id = bRes),
+                                                            contentDescription = "Badge",
+                                                            modifier = Modifier.size(20.dp),
+                                                            contentScale = ContentScale.Fit
+                                                        )
                                                     }
                                                 }
 
-                                                // Line 3: Level Badges Pills Row (Matching Reference App Comment Screenshot)
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                                    modifier = Modifier.padding(bottom = 2.dp)
-                                                ) {
-                                                    BlueLevelBadgePill(level = commenterLevel)
-                                                    SapphireCharmBadgePill(level = commenterCharm)
-                                                    GoldenMedalBadgePill(level = commenterMedal)
-                                                }
-
-                                                // Line 2: Ornate Luxury VIP Chat Frame Container (With Profile Avatar in circle on left)
+                                                // Line 3: Chat Message Bubble ONLY (NO badges below this!)
                                                 if (vipChatFrameItem != null) {
                                                     VipStyledChatBubble(
                                                         messageText = comment.message,
@@ -7985,19 +7960,6 @@ fun AudioHangoutRoomDialog(
                                                         )
                                                     }
                                                 }
-
-
-                                                // Line 3: 3D Badges Row (All badges placed strictly UNDER the chat frame)
-                                                UserChatBadgesRow(
-                                                    userProfile = commenterProfile,
-                                                    level = commenterLevel,
-                                                    charm = commenterCharm,
-                                                    pkLevel = commenterPkLevel,
-                                                    medal = commenterMedal,
-                                                    isFounder = isCommentFounder,
-                                                    isCeo = commenterProfile?.isCeo() == true,
-                                                    vipLevel = commentVipLevel
-                                                )
 
 
                                             }

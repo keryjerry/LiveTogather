@@ -5511,10 +5511,10 @@ fun ProfileScreenContent(
                                     }
                                     if (currentUser.isFounder() || userEquippedBadges.isEmpty()) {
                                         listOf(
-                                            "badge_honor_grand_duke", "badge_honor_marquess",
-                                            "badge_honor_count", "badge_honor_viscount",
-                                            "badge_honor_baron", "badge_honor_knight",
-                                            "badge_pk_warlord_champion", "badge_wealth_titan"
+                                            "badge_honor_supreme_emperor", "badge_honor_grand_duke",
+                                            "badge_honor_earl", "badge_honor_baron",
+                                            "badge_honor_knight", "badge_cosmic_overlord_100",
+                                            "badge_wealth_diamond", "badge_pk_unstoppable_warlord"
                                         ).forEach { bId ->
                                             val bItem = HonorCatalog.findBadge(bId)
                                             if (bItem != null && !bItem.isCrown && list.none { it.first == bItem.drawableRes }) {
@@ -5526,52 +5526,29 @@ fun ProfileScreenContent(
                                 }
 
                                 if (userBadgeList.isNotEmpty()) {
-                                    Spacer(modifier = Modifier.height(10.dp))
-                                    Surface(
-                                        color = Color(0xFF130E20).copy(alpha = 0.9f),
-                                        shape = RoundedCornerShape(14.dp),
-                                        border = BorderStroke(1.dp, Color(0xFF4C3666).copy(alpha = 0.8f)),
-                                        modifier = Modifier.fillMaxWidth()
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    // Completely OPEN Badges Row (NO black card, NO header text, uniform 32.dp size)
+                                    LazyRow(
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 4.dp, vertical = 2.dp)
                                     ) {
-                                        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Text(
-                                                    text = "🎖️ Badges & Honors (${userBadgeList.size})",
-                                                    fontSize = 11.5.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = Color(0xFFFFD700)
-                                                )
-                                                Text(
-                                                    text = "Slide ➔",
-                                                    fontSize = 9.5.sp,
-                                                    color = Color(0xFFA498BF)
-                                                )
-                                            }
-                                            Spacer(modifier = Modifier.height(6.dp))
-                                            LazyRow(
-                                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                items(userBadgeList) { (bRes, bTitle) ->
-                                                    Image(
-                                                        painter = painterResource(id = bRes),
-                                                        contentDescription = bTitle,
-                                                        modifier = Modifier
-                                                            .size(32.dp)
-                                                            .clickable {
-                                                                Toast.makeText(context, bTitle, Toast.LENGTH_SHORT).show()
-                                                            },
-                                                        contentScale = ContentScale.Fit
-                                                    )
-                                                }
-                                            }
+                                        items(userBadgeList) { (bRes, bTitle) ->
+                                            Image(
+                                                painter = painterResource(id = bRes),
+                                                contentDescription = bTitle,
+                                                modifier = Modifier
+                                                    .size(32.dp)
+                                                    .clickable {
+                                                        Toast.makeText(context, bTitle, Toast.LENGTH_SHORT).show()
+                                                    },
+                                                contentScale = ContentScale.Fit
+                                            )
                                         }
                                     }
+                                    Spacer(modifier = Modifier.height(6.dp))
                                 }
 
                                 Spacer(modifier = Modifier.height(14.dp))
