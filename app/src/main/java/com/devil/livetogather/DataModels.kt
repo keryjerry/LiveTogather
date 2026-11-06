@@ -1550,7 +1550,27 @@ val ROOM_GIFT_CATALOG = listOf(
     RoomGiftItem("proposal_ring_velvet_rose", "Proposal Ring • Velvet Rose", "प्रपोजल रिंग • वेलवेट रोज़", "💍", 60000L, "intimacy", R.drawable.thumb_proposal_ring_velvet_rose, "video_mp4", "3D Rotating Velvet Rose & Pearl Diamond Proposal Ring"),
     RoomGiftItem("proposal_ring_royal_floral", "Proposal Ring • Royal Floral", "प्रपोजल रिंग • रॉयल फ्लोरल", "💍", 65000L, "intimacy", R.drawable.thumb_proposal_ring_royal_floral, "video_mp4", "3D Rotating Royal Floral Multi-Gem Proposal Ring"),
     RoomGiftItem("proposal_ring_sapphire_blossom", "Proposal Ring • Sapphire Blossom", "प्रपोजल रिंग • सफायर ब्लॉसम", "💍", 70000L, "intimacy", R.drawable.thumb_proposal_ring_sapphire_blossom, "video_mp4", "3D Rotating Sapphire & Ruby Blossom Proposal Ring"),
-    RoomGiftItem("proposal_ring_imperial_lotus", "Proposal Ring • Imperial Lotus", "प्रपोजल रिंग • इम्पीरियल लोटस", "💍", 80000L, "intimacy", R.drawable.thumb_proposal_ring_imperial_lotus, "video_mp4", "3D Rotating Imperial Lotus Diamond Filigree Proposal Ring")
+    RoomGiftItem("proposal_ring_imperial_lotus", "Proposal Ring • Imperial Lotus", "प्रपोजल रिंग • इम्पीरियल लोटस", "💍", 80000L, "intimacy", R.drawable.thumb_proposal_ring_imperial_lotus, "video_mp4", "3D Rotating Imperial Lotus Diamond Filigree Proposal Ring"),
+
+        // Hindi Romantic Video Gifts (with sound & transparent playback)
+    RoomGiftItem("hindi_romantic_1", "Badal Awara", "बादल आवारा", "☁️", 25000L, "romantic", R.drawable.thumb_hindi_romantic_1, "video_mp4", "Romantic song video • Badal Awara"),
+    RoomGiftItem("hindi_romantic_2", "Le Jaye Hawayein", "ले जाए हवाएं", "🍃", 30000L, "romantic", R.drawable.thumb_hindi_romantic_2, "video_mp4", "Romantic song video • Le Jaye Hawayein"),
+    RoomGiftItem("hindi_romantic_3", "Janeman Jane Ada", "जानेमन जाने अदा", "🌹", 35000L, "romantic", R.drawable.thumb_hindi_romantic_3, "video_mp4", "Romantic song video • Janeman Jane Ada"),
+    RoomGiftItem("hindi_romantic_4", "Sanam Teri Kasam", "सनम तेरी कसम", "❤️", 40000L, "romantic", R.drawable.thumb_hindi_romantic_4, "video_mp4", "Romantic song video • Sanam Teri Kasam"),
+    RoomGiftItem("hindi_romantic_5", "You Are My Angel", "यू आर माय एंजेल", "🪽", 45000L, "romantic", R.drawable.thumb_hindi_romantic_5, "video_mp4", "Romantic song video • You Are My Angel"),
+    RoomGiftItem("hindi_romantic_6", "Ishq Diwangi", "इश्क़ दीवानगी", "🔥", 50000L, "romantic", R.drawable.thumb_hindi_romantic_6, "video_mp4", "Romantic song video • Ishq Diwangi"),
+    RoomGiftItem("hindi_romantic_7", "Meri Mahbooba", "मेरी महबूबा", "💖", 55000L, "romantic", R.drawable.thumb_hindi_romantic_7, "video_mp4", "Romantic song video • Meri Mahbooba"),
+    RoomGiftItem("hindi_romantic_8", "Tumse Hi Din Hota Hai", "तुमसे ही दिन होता है", "☀️", 60000L, "romantic", R.drawable.thumb_hindi_romantic_8, "video_mp4", "Romantic song video • Tumse Hi Din Hota Hai"),
+    RoomGiftItem("hindi_romantic_9", "Phoolo Ki Malka Hai", "फूलों की मलिका है", "🌸", 65000L, "romantic", R.drawable.thumb_hindi_romantic_9, "video_mp4", "Romantic song video • Phoolo Ki Malka Hai"),
+    RoomGiftItem("hindi_romantic_10", "Ambar Aai Hai", "अंबर आई है", "✨", 70000L, "romantic", R.drawable.thumb_hindi_romantic_10, "video_mp4", "Romantic song video • Ambar Aai Hai"),
+    RoomGiftItem("hindi_romantic_11", "Ek Ladki Mujhe Pasand Hai", "एक लड़की मुझे पसंद है", "👗", 75000L, "romantic", R.drawable.thumb_hindi_romantic_11, "video_mp4", "Romantic song video • Ek Ladki Mujhe Pasand Hai"),
+    RoomGiftItem("hindi_romantic_12", "Kya Pata Kab Mulaqat Ho", "क्या पता कब मुलाक़ात हो", "💌", 80000L, "romantic", R.drawable.thumb_hindi_romantic_12, "video_mp4", "Romantic song video • Kya Pata Kab Mulaqat Ho"),
+    RoomGiftItem("hindi_romantic_13", "Chaand Jaisa Mukhda", "चाँद जैसा मुखड़ा", "🌙", 85000L, "romantic", R.drawable.thumb_hindi_romantic_13, "video_mp4", "Romantic song video • Chaand Jaisa Mukhda"),
+    RoomGiftItem("hindi_romantic_14", "Meri Madam Ka Mood", "मेरी मैडम का मूड", "💃", 90000L, "romantic", R.drawable.thumb_hindi_romantic_14, "video_mp4", "Romantic song video • Meri Madam Ka Mood"),
+    RoomGiftItem("hindi_romantic_15", "Dekha Na Tune Piche", "देखा ना तूने पीछे", "👀", 95000L, "romantic", R.drawable.thumb_hindi_romantic_15, "video_mp4", "Romantic song video • Dekha Na Tune Piche"),
+    RoomGiftItem("hindi_romantic_16", "Kitna Pyara Hai Chehra", "कितना प्यारा है चेहरा", "🥰", 100000L, "romantic", R.drawable.thumb_hindi_romantic_16, "video_mp4", "Romantic song video • Kitna Pyara Hai Chehra"),
+    RoomGiftItem("hindi_romantic_17", "Tu Hi Hai Aashiqui", "तू ही है आशिक़ी", "💞", 110000L, "romantic", R.drawable.thumb_hindi_romantic_17, "video_mp4", "Romantic song video • Tu Hi Hai Aashiqui"),
+    RoomGiftItem("hindi_romantic_18", "Tujhe Chhup Ke Dekha", "तुझे छुप के देखा", "🙈", 120000L, "romantic", R.drawable.thumb_hindi_romantic_18, "video_mp4", "Romantic song video • Tujhe Chhup Ke Dekha")
 )
 
 
@@ -1613,7 +1633,27 @@ val VIDEO_GIFT_CATALOG = listOf(
     VideoGiftItem("intimacy_shadow_proposal_mp4", "Royal Proposal", "💍", 50000L, "video_mp4", "A dramatic royal proposal beneath a castle arch", R.raw.intimacy_shadow_proposal, R.drawable.thumb_intimacy_shadow_proposal, "intimacy"),
     VideoGiftItem("intimacy_royal_wedding_mp4", "Royal Wedding", "💒", 55000L, "video_mp4", "A romantic royal wedding celebration", R.raw.intimacy_royal_wedding, R.drawable.thumb_intimacy_royal_wedding, "intimacy"),
     VideoGiftItem("intimacy_couple_vows_mp4", "Together Forever", "💞", 60000L, "video_mp4", "A couple celebrates their vows in a storybook setting", R.raw.intimacy_couple_vows, R.drawable.thumb_intimacy_couple_vows, "intimacy"),
-    VideoGiftItem("intimacy_waterfall_walk_mp4", "Waterfall Getaway", "🌿", 65000L, "video_mp4", "A quiet couple's escape beside a cascading waterfall", R.raw.intimacy_waterfall_walk, R.drawable.thumb_intimacy_waterfall_walk, "intimacy")
+    VideoGiftItem("intimacy_waterfall_walk_mp4", "Waterfall Getaway", "🌿", 65000L, "video_mp4", "A quiet couple's escape beside a cascading waterfall", R.raw.intimacy_waterfall_walk, R.drawable.thumb_intimacy_waterfall_walk, "intimacy"),
+
+        // Hindi Romantic Video Gifts (18 Clips with Sound)
+    VideoGiftItem("hindi_romantic_1", "Badal Awara", "☁️", 25000L, "video_mp4", "Romantic song video • Badal Awara", R.raw.hindi_romantic_1, R.drawable.thumb_hindi_romantic_1, "romantic"),
+    VideoGiftItem("hindi_romantic_2", "Le Jaye Hawayein", "🍃", 30000L, "video_mp4", "Romantic song video • Le Jaye Hawayein", R.raw.hindi_romantic_2, R.drawable.thumb_hindi_romantic_2, "romantic"),
+    VideoGiftItem("hindi_romantic_3", "Janeman Jane Ada", "🌹", 35000L, "video_mp4", "Romantic song video • Janeman Jane Ada", R.raw.hindi_romantic_3, R.drawable.thumb_hindi_romantic_3, "romantic"),
+    VideoGiftItem("hindi_romantic_4", "Sanam Teri Kasam", "❤️", 40000L, "video_mp4", "Romantic song video • Sanam Teri Kasam", R.raw.hindi_romantic_4, R.drawable.thumb_hindi_romantic_4, "romantic"),
+    VideoGiftItem("hindi_romantic_5", "You Are My Angel", "🪽", 45000L, "video_mp4", "Romantic song video • You Are My Angel", R.raw.hindi_romantic_5, R.drawable.thumb_hindi_romantic_5, "romantic"),
+    VideoGiftItem("hindi_romantic_6", "Ishq Diwangi", "🔥", 50000L, "video_mp4", "Romantic song video • Ishq Diwangi", R.raw.hindi_romantic_6, R.drawable.thumb_hindi_romantic_6, "romantic"),
+    VideoGiftItem("hindi_romantic_7", "Meri Mahbooba", "💖", 55000L, "video_mp4", "Romantic song video • Meri Mahbooba", R.raw.hindi_romantic_7, R.drawable.thumb_hindi_romantic_7, "romantic"),
+    VideoGiftItem("hindi_romantic_8", "Tumse Hi Din Hota Hai", "☀️", 60000L, "video_mp4", "Romantic song video • Tumse Hi Din Hota Hai", R.raw.hindi_romantic_8, R.drawable.thumb_hindi_romantic_8, "romantic"),
+    VideoGiftItem("hindi_romantic_9", "Phoolo Ki Malka Hai", "🌸", 65000L, "video_mp4", "Romantic song video • Phoolo Ki Malka Hai", R.raw.hindi_romantic_9, R.drawable.thumb_hindi_romantic_9, "romantic"),
+    VideoGiftItem("hindi_romantic_10", "Ambar Aai Hai", "✨", 70000L, "video_mp4", "Romantic song video • Ambar Aai Hai", R.raw.hindi_romantic_10, R.drawable.thumb_hindi_romantic_10, "romantic"),
+    VideoGiftItem("hindi_romantic_11", "Ek Ladki Mujhe Pasand Hai", "👗", 75000L, "video_mp4", "Romantic song video • Ek Ladki Mujhe Pasand Hai", R.raw.hindi_romantic_11, R.drawable.thumb_hindi_romantic_11, "romantic"),
+    VideoGiftItem("hindi_romantic_12", "Kya Pata Kab Mulaqat Ho", "💌", 80000L, "video_mp4", "Romantic song video • Kya Pata Kab Mulaqat Ho", R.raw.hindi_romantic_12, R.drawable.thumb_hindi_romantic_12, "romantic"),
+    VideoGiftItem("hindi_romantic_13", "Chaand Jaisa Mukhda", "🌙", 85000L, "video_mp4", "Romantic song video • Chaand Jaisa Mukhda", R.raw.hindi_romantic_13, R.drawable.thumb_hindi_romantic_13, "romantic"),
+    VideoGiftItem("hindi_romantic_14", "Meri Madam Ka Mood", "💃", 90000L, "video_mp4", "Romantic song video • Meri Madam Ka Mood", R.raw.hindi_romantic_14, R.drawable.thumb_hindi_romantic_14, "romantic"),
+    VideoGiftItem("hindi_romantic_15", "Dekha Na Tune Piche", "👀", 95000L, "video_mp4", "Romantic song video • Dekha Na Tune Piche", R.raw.hindi_romantic_15, R.drawable.thumb_hindi_romantic_15, "romantic"),
+    VideoGiftItem("hindi_romantic_16", "Kitna Pyara Hai Chehra", "🥰", 100000L, "video_mp4", "Romantic song video • Kitna Pyara Hai Chehra", R.raw.hindi_romantic_16, R.drawable.thumb_hindi_romantic_16, "romantic"),
+    VideoGiftItem("hindi_romantic_17", "Tu Hi Hai Aashiqui", "💞", 110000L, "video_mp4", "Romantic song video • Tu Hi Hai Aashiqui", R.raw.hindi_romantic_17, R.drawable.thumb_hindi_romantic_17, "romantic"),
+    VideoGiftItem("hindi_romantic_18", "Tujhe Chhup Ke Dekha", "🙈", 120000L, "video_mp4", "Romantic song video • Tujhe Chhup Ke Dekha", R.raw.hindi_romantic_18, R.drawable.thumb_hindi_romantic_18, "romantic")
 )
 
 fun getProposalRingVideoRes(ringOrGiftId: String): Int {

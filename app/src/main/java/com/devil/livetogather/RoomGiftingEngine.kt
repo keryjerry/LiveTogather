@@ -72,11 +72,12 @@ fun RoomMicroGiftsSection(
     onSendGift: (gift: RoomGiftItem, quantity: Int, targetSeatIndex: Int, targetUserName: String) -> Unit,
     onGoToRecharge: () -> Unit
 ) {
-    var selectedCategory by remember { mutableStateOf("all") }
+    var selectedCategory by remember { mutableStateOf("hindi_romantic") }
     var selectedGift by remember { mutableStateOf(ROOM_GIFT_CATALOG[0]) } // Default: Single Rose
     var selectedQuantity by remember { mutableIntStateOf(1) } // 1, 10, 20, 100
     var selectedTargetSeatIndex by remember { mutableIntStateOf(-1) } // -1 = All Mics
     var selectedTargetName by remember { mutableStateOf("All Mics") }
+    var showRecipientGridDialog by remember { mutableStateOf(false) }
 
     val occupiedSeats = remember(seatedUsers) {
         seatedUsers.filter { it.uid.isNotBlank() }
@@ -92,6 +93,9 @@ fun RoomMicroGiftsSection(
 
     val filteredGifts = remember(selectedCategory) {
         when (selectedCategory) {
+            "hindi_romantic" -> ROOM_GIFT_CATALOG.filter {
+                it.id.startsWith("hindi_romantic_") || it.category == "romantic" || it.category == "intimacy" || it.id.contains("rose") || it.id.contains("heart") || it.id.contains("kiss") || it.id.contains("ring") || it.id.contains("lily") || it.id.contains("chocolate") || it.id.contains("teddy")
+            }.sortedByDescending { it.id.startsWith("hindi_romantic_") }
             "intimacy" -> ROOM_GIFT_CATALOG.filter { it.category == "intimacy" || it.id.contains("ring", true) || it.name.contains("ring", true) || it.id.contains("rose", true) }
                 .sortedByDescending { it.id.startsWith("proposal_ring_") }
             "romantic" -> ROOM_GIFT_CATALOG.filter { it.category == "romantic" }
@@ -122,6 +126,7 @@ fun RoomMicroGiftsSection(
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             val categories = listOf(
+                "hindi_romantic" to "❤️ हिंदी रोमांटिक",
                 "all" to "🔥 All",
                 "intimacy" to "💍 Proposal Ring",
                 "romantic" to "🌹 Romance",
@@ -173,6 +178,19 @@ fun RoomMicroGiftsSection(
             }
         }
 
+        if (showRecipientGridDialog) {
+            RecipientSelectionGridDialog(
+                occupiedSeats = occupiedSeats,
+                selectedTargetIndex = selectedTargetSeatIndex,
+                onSelectTarget = { seatIndex, name ->
+                    selectedTargetSeatIndex = seatIndex
+                    selectedTargetName = name
+                    showRecipientGridDialog = false
+                },
+                onDismiss = { showRecipientGridDialog = false }
+            )
+        }
+
         // ROW 4: BOTTOM QUANTITY & ACTION BAR
         BottomGiftActionBar(
             currentDiamonds = currentDiamonds,
@@ -182,6 +200,7 @@ fun RoomMicroGiftsSection(
             selectedTargetName = selectedTargetName,
             canAfford = canAfford,
             onSelectQuantity = { selectedQuantity = it },
+            onOpenRecipientGrid = { showRecipientGridDialog = true },
             onSend = {
                 if (canAfford) {
                     onSendGift(selectedGift, selectedQuantity, selectedTargetSeatIndex, selectedTargetName)
@@ -207,6 +226,7 @@ fun BackpackSection(
     var selectedTargetSeatIndex by remember { mutableIntStateOf(-1) }
     var selectedTargetName by remember { mutableStateOf("All Mics") }
     var selectedQuantity by remember { mutableIntStateOf(1) }
+    var showRecipientGridDialog by remember { mutableStateOf(false) }
 
     val occupiedSeats = remember(seatedUsers) {
         seatedUsers.filter { it.uid.isNotBlank() }
@@ -231,6 +251,19 @@ fun BackpackSection(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        if (showRecipientGridDialog) {
+            RecipientSelectionGridDialog(
+                occupiedSeats = occupiedSeats,
+                selectedTargetIndex = selectedTargetSeatIndex,
+                onSelectTarget = { seatIndex, name ->
+                    selectedTargetSeatIndex = seatIndex
+                    selectedTargetName = name
+                    showRecipientGridDialog = false
+                },
+                onDismiss = { showRecipientGridDialog = false }
+            )
+        }
+
         // Target Selector
         TargetMicSelectorRow(
             occupiedSeats = occupiedSeats,
@@ -526,15 +559,16 @@ private fun Compact3DGiftCard(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
+    val isVideo = gift.animationType == "video_mp4"
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(108.dp)
+            .height(112.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(if (isSelected) Color(0xFF332048) else Color(0xFF1E1529))
             .border(
                 width = if (isSelected) 2.dp else 0.8.dp,
-                color = if (isSelected) BrandGold else Color.White.copy(alpha = 0.1f),
+                color = if (isSelected) BrandGold else Color.White.copy(alpha = 0.12f),
                 shape = RoundedCornerShape(12.dp)
             )
             .clickable { onClick() }
@@ -545,18 +579,40 @@ private fun Compact3DGiftCard(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            // Transparent 3D Cutout Image
-            Image(
-                painter = painterResource(id = gift.drawableResId),
-                contentDescription = gift.name,
+            // Classic Video Thumbnail or 3D Cutout Image
+            Box(
                 modifier = Modifier
                     .size(54.dp)
-                    .graphicsLayer(scaleX = if (isSelected) 1.08f else 1f, scaleY = if (isSelected) 1.08f else 1f),
-                contentScale = ContentScale.Fit
-            )
-            Spacer(modifier = Modifier.height(2.dp))
+                    .clip(if (isVideo) RoundedCornerShape(10.dp) else CircleShape)
+                    .background(Color.White.copy(alpha = 0.05f))
+                    .border(
+                        0.8.dp,
+                        if (isSelected) BrandGold else Color.White.copy(alpha = 0.15f),
+                        if (isVideo) RoundedCornerShape(10.dp) else CircleShape
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Image(
+                    painter = painterResource(id = gift.drawableResId),
+                    contentDescription = gift.name,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = if (isVideo) ContentScale.Crop else ContentScale.Fit
+                )
+                if (isVideo) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(2.dp)
+                            .background(Color.Black.copy(alpha = 0.72f), RoundedCornerShape(4.dp))
+                            .padding(horizontal = 3.dp, vertical = 1.dp)
+                    ) {
+                        Text("▶ 5s", fontSize = 7.sp, color = BrandGold, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(3.dp))
             Text(
-                text = gift.name,
+                text = if (gift.hindiName.isNotBlank()) gift.hindiName else gift.name,
                 color = Color.White,
                 fontSize = 9.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -608,6 +664,7 @@ private fun BottomGiftActionBar(
     selectedTargetName: String,
     canAfford: Boolean,
     onSelectQuantity: (Int) -> Unit,
+    onOpenRecipientGrid: () -> Unit,
     onSend: () -> Unit
 ) {
     Row(
@@ -615,28 +672,57 @@ private fun BottomGiftActionBar(
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .background(Color(0xFF1B1325))
-            .border(1.dp, BrandGold.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
+            .border(1.dp, BrandGold.copy(alpha = 0.4f), RoundedCornerShape(14.dp))
             .padding(horizontal = 8.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Quantity Combo Chips (1x, 10x, 20x, 100x)
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            listOf(1, 10, 20, 100).forEach { qty ->
-                val isSelected = selectedQuantity == qty
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(if (isSelected) BrandGold else Color.White.copy(alpha = 0.08f))
-                        .clickable { onSelectQuantity(qty) }
-                        .padding(horizontal = 7.dp, vertical = 5.dp)
+        // Left Column: Recipient Selector Pill Button & Quantity Combo Chips
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            // Prominent Recipient Selector Pill Button
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = Color(0xFF28193D),
+                border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.7f)),
+                modifier = Modifier.clickable { onOpenRecipientGrid() }
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Text("🎯 To:", color = Color(0xFFA699BF), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "${qty}x",
-                        color = if (isSelected) BrandDark else Color.White,
-                        fontSize = 10.5.sp,
-                        fontWeight = FontWeight.Bold
+                        text = selectedTargetName,
+                        color = Color(0xFFFFD700),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text("▾", color = Color(0xFFFFD700), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            // Quantity Combo Chips (1x, 10x, 20x, 100x)
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                listOf(1, 10, 20, 100).forEach { qty ->
+                    val isSelected = selectedQuantity == qty
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (isSelected) BrandGold else Color.White.copy(alpha = 0.08f))
+                            .clickable { onSelectQuantity(qty) }
+                            .padding(horizontal = 6.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            text = "${qty}x",
+                            color = if (isSelected) BrandDark else Color.White,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
         }
@@ -647,7 +733,7 @@ private fun BottomGiftActionBar(
                 Text(
                     text = "Total: %,d 💎".format(totalCost),
                     color = BrandGold,
-                    fontSize = 11.5.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.ExtraBold
                 )
                 if (multiplier > 1) {
@@ -659,7 +745,7 @@ private fun BottomGiftActionBar(
                 }
             }
 
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(6.dp))
 
             Button(
                 onClick = onSend,
@@ -675,6 +761,154 @@ private fun BottomGiftActionBar(
                     fontSize = 11.5.sp,
                     fontWeight = FontWeight.ExtraBold
                 )
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------------------
+// RECIPIENT SELECTION GRID DIALOG (Modal Grid to pick any seated user or all)
+// -------------------------------------------------------------------------
+@Composable
+fun RecipientSelectionGridDialog(
+    occupiedSeats: List<MicSeat>,
+    selectedTargetIndex: Int,
+    onSelectTarget: (seatIndex: Int, targetName: String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss
+    ) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = Color(0xFF160F24),
+            border = BorderStroke(1.5.dp, BrandGold.copy(alpha = 0.8f)),
+            modifier = Modifier
+                .fillMaxWidth(0.96f)
+                .padding(8.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "🎯 Select Gift Recipient",
+                        color = Color(0xFFFFD700),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(26.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.LightGray)
+                    }
+                }
+                Text(
+                    text = "गिफ्ट किसे भेजना है चुनें (Tap to pick recipient)",
+                    color = Color.White.copy(alpha = 0.65f),
+                    fontSize = 10.5.sp,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Option 1: All Mics
+                val isAllSelected = selectedTargetIndex == -1
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isAllSelected) Color(0xFF3B1E54) else Color(0xFF1E152B),
+                    border = BorderStroke(1.2.dp, if (isAllSelected) BrandGold else Color.White.copy(alpha = 0.15f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            onSelectTarget(-1, "All Mics")
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("🌟", fontSize = 22.sp)
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("All Mics (${maxOf(1, occupiedSeats.size)} Active)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Text("Send gift to all stage mic occupants at once", color = Color.LightGray, fontSize = 9.5.sp)
+                        }
+                        if (isAllSelected) {
+                            Icon(Icons.Default.Check, contentDescription = "Selected", tint = BrandGold, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (occupiedSeats.isEmpty()) {
+                    Text(
+                        text = "No users currently on stage mics.",
+                        color = Color.Gray,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(vertical = 16.dp)
+                    )
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(3),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 240.dp)
+                    ) {
+                        items(occupiedSeats) { seat ->
+                            val isSelected = selectedTargetIndex == seat.seatIndex
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isSelected) Color(0xFF451952) else Color(0xFF201630),
+                                border = BorderStroke(1.2.dp, if (isSelected) BrandGold else Color.White.copy(alpha = 0.12f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        onSelectTarget(seat.seatIndex, seat.name)
+                                    }
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(6.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(42.dp)
+                                            .clip(CircleShape)
+                                            .border(1.5.dp, if (isSelected) BrandGold else Color(0xFF4A3B69), CircleShape)
+                                    ) {
+                                        AsyncImage(
+                                            model = seat.photo.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                                            contentDescription = seat.name,
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(3.dp))
+                                    Text(
+                                        text = seat.name,
+                                        color = Color.White,
+                                        fontSize = 10.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = if (seat.seatIndex == 0) "👑 Host" else "🎤 Mic ${seat.seatIndex}",
+                                        color = if (isSelected) BrandGold else Color(0xFFA495BE),
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

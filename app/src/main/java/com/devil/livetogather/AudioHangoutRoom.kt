@@ -8933,6 +8933,7 @@ fun AudioHangoutRoomDialog(
                     ownedFrames = userOwnedFrames,
                     activeMicEffect = userActiveMicEffect,
                     ownedMicEffects = userOwnedMicEffects,
+                    activeMicLinkId = activeMicLinkDesignId,
                     diamonds = userDiamonds
                 ),
                 db = db,
@@ -8943,6 +8944,9 @@ fun AudioHangoutRoomDialog(
                     userOwnedFrames = updated.ownedFrames
                     userActiveMicEffect = updated.activeMicEffect
                     userOwnedMicEffects = updated.ownedMicEffects
+                    if (updated.activeMicLinkId.isNotBlank()) {
+                        activeMicLinkDesignId = updated.activeMicLinkId
+                    }
                     userDiamonds = updated.diamonds
                 },
                 onSendIntimacyItem = { item -> intimacyStoreItemToSend = item },
@@ -11478,13 +11482,14 @@ fun MicSeatView(
     )
 
     val seatOccupantProfile = if (seat.uid.isNotEmpty()) allProfiles.find { it.uid == seat.uid } else null
-    val seatFrameId = if (isCurrentSelf && userActiveFrame.isNotBlank()) {
+    val rawSeatFrame = if (isCurrentSelf && userActiveFrame.isNotBlank()) {
         userActiveFrame
     } else if (seatOccupantProfile?.activeFrame?.isNotBlank() == true) {
         seatOccupantProfile.activeFrame
     } else {
         ""
     }
+    val seatFrameId = if (rawSeatFrame.startsWith("mic_link_") || getAvatarFrameItem(rawSeatFrame) == null) "" else rawSeatFrame
     val shouldShowFrame = seat.uid.isNotEmpty() && seatFrameId.isNotBlank()
 
     Column(
@@ -12960,7 +12965,7 @@ private fun VideoGiftsSection(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(listOf("3d" to "✨ 3D Gifts", "intimacy" to "💞 Intimacy Gifts")) { (category, label) ->
+            items(listOf("romantic" to "❤️ हिंदी रोमांटिक", "3d" to "✨ 3D Gifts", "intimacy" to "💞 Intimacy Gifts")) { (category, label) ->
                 FilterChip(
                     selected = selectedCategory == category,
                     onClick = { selectedCategory = category },
@@ -13313,25 +13318,54 @@ fun FullScreenGiftAnimationOverlay(
                         "founded_treasure_mp4" -> R.raw.founded_treasure
                         "heaven_ship_mp4" -> R.raw.heaven_ship
                         "royal_jet_mp4" -> R.raw.royal_jet
+                        "hindi_romantic_1" -> R.raw.hindi_romantic_1
+                        "hindi_romantic_2" -> R.raw.hindi_romantic_2
+                        "hindi_romantic_3" -> R.raw.hindi_romantic_3
+                        "hindi_romantic_4" -> R.raw.hindi_romantic_4
+                        "hindi_romantic_5" -> R.raw.hindi_romantic_5
+                        "hindi_romantic_6" -> R.raw.hindi_romantic_6
+                        "hindi_romantic_7" -> R.raw.hindi_romantic_7
+                        "hindi_romantic_8" -> R.raw.hindi_romantic_8
+                        "hindi_romantic_9" -> R.raw.hindi_romantic_9
+                        "hindi_romantic_10" -> R.raw.hindi_romantic_10
+                        "hindi_romantic_11" -> R.raw.hindi_romantic_11
+                        "hindi_romantic_12" -> R.raw.hindi_romantic_12
+                        "hindi_romantic_13" -> R.raw.hindi_romantic_13
+                        "hindi_romantic_14" -> R.raw.hindi_romantic_14
+                        "hindi_romantic_15" -> R.raw.hindi_romantic_15
+                        "hindi_romantic_16" -> R.raw.hindi_romantic_16
+                        "hindi_romantic_17" -> R.raw.hindi_romantic_17
+                        "hindi_romantic_18" -> R.raw.hindi_romantic_18
                         else -> VIDEO_GIFT_CATALOG.find { it.id == giftEvent.giftId }?.rawResId ?: R.raw.lamborgini_car
                     }
                     key(giftEvent.id) {
-                        AndroidView(
-                            factory = { ctx ->
-                                GiftVideoTextureView(
-                                    context = ctx,
-                                    rawResId = rawResId,
-                                    onFinished = onDismiss,
-                                    onFailure = { onDismiss() }
-                                )
-                            },
-                            modifier = Modifier.fillMaxSize().graphicsLayer(
-                                compositingStrategy = CompositingStrategy.Offscreen,
-                                blendMode = BlendMode.Screen
-                            ),
-                            update = { it.isOpaque = false },
-                            onRelease = { it.release() }
-                        )
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            // Reduced transparency by 10-12% so characters and details are crisp and clear without being washed out
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black.copy(alpha = 0.12f))
+                            )
+                            AndroidView(
+                                factory = { ctx ->
+                                    GiftVideoTextureView(
+                                        context = ctx,
+                                        rawResId = rawResId,
+                                        onFinished = onDismiss,
+                                        onFailure = { onDismiss() }
+                                    )
+                                },
+                                modifier = Modifier.fillMaxSize().graphicsLayer(
+                                    compositingStrategy = CompositingStrategy.Offscreen,
+                                    blendMode = BlendMode.Screen
+                                ),
+                                update = { it.isOpaque = false },
+                                onRelease = { it.release() }
+                            )
+                        }
                     }
                 }
 

@@ -434,41 +434,53 @@ fun LuxuryStoreDialog(
                                 coroutineScope.launch(Dispatchers.IO) {
                                     try {
                                         val isMicEffect = targetItem.category == "mic_effect"
-                                        val isMicLink = targetItem.category == "mic_link"
+                                        val isMicLink = targetItem.category == "mic_link" || targetItem.subCategory.contains("Mic Link", ignoreCase = true) || targetItem.id.startsWith("mic_link_")
                                         val isAvatarFrame = targetItem.category == "avatar_frame"
+                                        val isRing = targetItem.category == "ring" || targetItem.category == "proposal_ring"
+
                                         val targetEquipId = when {
                                             isMicEffect -> if (currentUser.activeMicEffect == targetItem.id) "" else targetItem.id
                                             isMicLink -> if (currentUser.activeMicLinkId == targetItem.id || currentUser.activeIntimacyBadge == targetItem.id) "" else targetItem.id
-                                            else -> if (currentUser.activeFrame == targetItem.id) "" else targetItem.id
+                                            isAvatarFrame -> if (currentUser.activeFrame == targetItem.id) "" else targetItem.id
+                                            isRing -> if (currentUser.activeIntimacyBadge == targetItem.id) "" else targetItem.id
+                                            else -> ""
                                         }
                                         val fieldName = when {
                                             isMicEffect -> "activeMicEffect"
                                             isMicLink -> "activeMicLinkId"
-                                            else -> "activeFrame"
+                                            isAvatarFrame -> "activeFrame"
+                                            isRing -> "activeIntimacyBadge"
+                                            else -> ""
                                         }
-                                        val updates = mutableMapOf<String, Any>(fieldName to targetEquipId)
-                                        if (isMicLink) {
-                                            updates["activeIntimacyBadge"] = targetEquipId
-                                        }
-                                        db.collection("users").document(currentUser.uid).update(updates)
-                                        val prefs = context.getSharedPreferences("livetogather_user_prefs", android.content.Context.MODE_PRIVATE)
-                                        when {
-                                            isMicEffect -> prefs.edit().putString("profile_active_mic_effect", targetEquipId).apply()
-                                            isMicLink -> prefs.edit().putString("profile_active_mic_link", targetEquipId).apply()
-                                            else -> prefs.edit().putString("profile_active_frame", targetEquipId).apply()
-                                        }
-                                        withContext(Dispatchers.Main) {
-                                            val updatedUser = when {
-                                                isMicEffect -> currentUser.copy(activeMicEffect = targetEquipId)
-                                                isMicLink -> currentUser.copy(activeMicLinkId = targetEquipId, activeIntimacyBadge = targetEquipId)
-                                                else -> currentUser.copy(activeFrame = targetEquipId)
+
+                                        if (fieldName.isNotBlank()) {
+                                            val updates = mutableMapOf<String, Any>(fieldName to targetEquipId)
+                                            if (isMicLink) {
+                                                updates["activeIntimacyBadge"] = targetEquipId
                                             }
-                                            onProfileUpdated(updatedUser)
-                                            Toast.makeText(
-                                                context,
-                                                if (targetEquipId.isNotBlank()) "✨ Wearing ${targetItem.name}!" else "${targetItem.name} removed",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
+                                            db.collection("users").document(currentUser.uid).update(updates)
+                                            val prefs = context.getSharedPreferences("livetogather_user_prefs", android.content.Context.MODE_PRIVATE)
+                                            when {
+                                                isMicEffect -> prefs.edit().putString("profile_active_mic_effect", targetEquipId).apply()
+                                                isMicLink -> prefs.edit().putString("profile_active_mic_link", targetEquipId).putString("profile_active_intimacy_badge", targetEquipId).apply()
+                                                isAvatarFrame -> prefs.edit().putString("profile_active_frame", targetEquipId).apply()
+                                                isRing -> prefs.edit().putString("profile_active_intimacy_badge", targetEquipId).apply()
+                                            }
+                                            withContext(Dispatchers.Main) {
+                                                val updatedUser = when {
+                                                    isMicEffect -> currentUser.copy(activeMicEffect = targetEquipId)
+                                                    isMicLink -> currentUser.copy(activeMicLinkId = targetEquipId, activeIntimacyBadge = targetEquipId)
+                                                    isAvatarFrame -> currentUser.copy(activeFrame = targetEquipId)
+                                                    isRing -> currentUser.copy(activeIntimacyBadge = targetEquipId)
+                                                    else -> currentUser
+                                                }
+                                                onProfileUpdated(updatedUser)
+                                                Toast.makeText(
+                                                    context,
+                                                    if (targetEquipId.isNotBlank()) "✨ Wearing ${targetItem.name}!" else "${targetItem.name} removed",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
                                         }
                                     } catch (e: Exception) {
                                         withContext(Dispatchers.Main) {
@@ -677,21 +689,24 @@ fun StoreItemCard(
 ) {
     val now = System.currentTimeMillis()
     val isMicEffect = item.category == "mic_effect"
-    val isMicLink = item.category == "mic_link"
+    val isMicLink = item.category == "mic_link" || item.subCategory.contains("Mic Link", ignoreCase = true) || item.id.startsWith("mic_link_")
     val isAvatarFrame = item.category == "avatar_frame"
+    val isRing = item.category == "ring" || item.category == "proposal_ring"
     val isEquippable = isMicEffect || isAvatarFrame || isMicLink
-    val isIntimacySendable = item.category == "ring" || item.isIntimacyBondOnly
+    val isIntimacySendable = isRing && !isMicLink
     val expiry = when {
         isMicEffect -> currentUser.micEffectExpiries[item.id] ?: 0L
         isMicLink -> currentUser.micLinkExpiries[item.id] ?: 0L
-        else -> currentUser.frameExpiries[item.id] ?: 0L
+        isAvatarFrame -> currentUser.frameExpiries[item.id] ?: 0L
+        else -> 0L
     }
     val isExpired = expiry > 0L && now > expiry
     val isSupremeAccess = currentUser.isFounder()
     val isOwned = isSupremeAccess || (isEquippable && !isExpired && (when {
         isMicEffect -> currentUser.ownedMicEffects.contains(item.id) || currentUser.activeMicEffect == item.id
         isMicLink -> currentUser.ownedMicLinks.contains(item.id) || currentUser.activeMicLinkId == item.id || currentUser.activeIntimacyBadge == item.id
-        else -> currentUser.ownedFrames.contains(item.id) || currentUser.activeFrame == item.id
+        isAvatarFrame -> currentUser.ownedFrames.contains(item.id) || currentUser.activeFrame == item.id
+        else -> false
     }))
     val isEquipped = when {
         isMicEffect -> currentUser.activeMicEffect == item.id
@@ -1191,11 +1206,13 @@ fun InventoryBackpackDialog(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                val ownedItems = remember(currentUser.ownedFrames, currentUser.ownedMicEffects, currentUser.activeMicEffect) {
+                val ownedItems = remember(currentUser.ownedFrames, currentUser.ownedMicEffects, currentUser.ownedMicLinks, currentUser.activeMicEffect, currentUser.activeMicLinkId) {
                     LuxuryStoreCatalog.allItems.filter { item ->
-                        when (item.category) {
-                            "avatar_frame" -> currentUser.ownedFrames.contains(item.id) || currentUser.activeFrame == item.id
-                            "mic_effect" -> currentUser.ownedMicEffects.contains(item.id) || currentUser.activeMicEffect == item.id
+                        val isML = item.category == "mic_link" || item.subCategory.contains("Mic Link", ignoreCase = true) || item.id.startsWith("mic_link_")
+                        when {
+                            item.category == "avatar_frame" -> currentUser.ownedFrames.contains(item.id) || currentUser.activeFrame == item.id
+                            item.category == "mic_effect" -> currentUser.ownedMicEffects.contains(item.id) || currentUser.activeMicEffect == item.id
+                            isML -> currentUser.ownedMicLinks.contains(item.id) || currentUser.activeMicLinkId == item.id || currentUser.activeIntimacyBadge == item.id
                             else -> false
                         }
                     }
@@ -1230,7 +1247,14 @@ fun InventoryBackpackDialog(
                     ) {
                         items(ownedItems) { item ->
                             val isMicEffect = item.category == "mic_effect"
-                            val isEquipped = if (isMicEffect) currentUser.activeMicEffect == item.id else currentUser.activeFrame == item.id
+                            val isMicLink = item.category == "mic_link" || item.subCategory.contains("Mic Link", ignoreCase = true) || item.id.startsWith("mic_link_")
+                            val isAvatarFrame = item.category == "avatar_frame"
+                            val isEquipped = when {
+                                isMicEffect -> currentUser.activeMicEffect == item.id
+                                isMicLink -> currentUser.activeMicLinkId == item.id || currentUser.activeIntimacyBadge == item.id
+                                isAvatarFrame -> currentUser.activeFrame == item.id
+                                else -> false
+                            }
                             Surface(
                                 shape = RoundedCornerShape(14.dp),
                                 color = if (isEquipped) Color(0xFF2A1C44) else Color(0xFF201B36),
@@ -1276,19 +1300,39 @@ fun InventoryBackpackDialog(
                                             coroutineScope.launch(Dispatchers.IO) {
                                                 try {
                                                     val targetEquipId = if (isEquipped) "" else item.id
-                                                    val fieldToUpdate = if (isMicEffect) "activeMicEffect" else "activeFrame"
-                                                    db.collection("users").document(currentUser.uid)
-                                                        .update(fieldToUpdate, targetEquipId)
-                                                    val prefs = context.getSharedPreferences("livetogather_user_prefs", android.content.Context.MODE_PRIVATE)
-                                                    prefs.edit().putString(if (isMicEffect) "profile_active_mic_effect" else "profile_active_frame", targetEquipId).apply()
-                                                    withContext(Dispatchers.Main) {
-                                                        val updated = if (isMicEffect) currentUser.copy(activeMicEffect = targetEquipId) else currentUser.copy(activeFrame = targetEquipId)
-                                                        onProfileUpdated(updated)
-                                                        Toast.makeText(
-                                                            context,
-                                                            if (targetEquipId.isNotBlank()) "Equipped ${item.name}!" else "Unequipped!",
-                                                            Toast.LENGTH_SHORT
-                                                        ).show()
+                                                    val fieldToUpdate = when {
+                                                        isMicEffect -> "activeMicEffect"
+                                                        isMicLink -> "activeMicLinkId"
+                                                        isAvatarFrame -> "activeFrame"
+                                                        else -> ""
+                                                    }
+                                                    if (fieldToUpdate.isNotBlank()) {
+                                                        val updates = mutableMapOf<String, Any>(fieldToUpdate to targetEquipId)
+                                                        if (isMicLink) {
+                                                            updates["activeIntimacyBadge"] = targetEquipId
+                                                        }
+                                                        db.collection("users").document(currentUser.uid)
+                                                            .update(updates)
+                                                        val prefs = context.getSharedPreferences("livetogather_user_prefs", android.content.Context.MODE_PRIVATE)
+                                                        when {
+                                                            isMicEffect -> prefs.edit().putString("profile_active_mic_effect", targetEquipId).apply()
+                                                            isMicLink -> prefs.edit().putString("profile_active_mic_link", targetEquipId).putString("profile_active_intimacy_badge", targetEquipId).apply()
+                                                            isAvatarFrame -> prefs.edit().putString("profile_active_frame", targetEquipId).apply()
+                                                        }
+                                                        withContext(Dispatchers.Main) {
+                                                            val updated = when {
+                                                                isMicEffect -> currentUser.copy(activeMicEffect = targetEquipId)
+                                                                isMicLink -> currentUser.copy(activeMicLinkId = targetEquipId, activeIntimacyBadge = targetEquipId)
+                                                                isAvatarFrame -> currentUser.copy(activeFrame = targetEquipId)
+                                                                else -> currentUser
+                                                            }
+                                                            onProfileUpdated(updated)
+                                                            Toast.makeText(
+                                                                context,
+                                                                if (targetEquipId.isNotBlank()) "Equipped ${item.name}!" else "Unequipped!",
+                                                                Toast.LENGTH_SHORT
+                                                            ).show()
+                                                        }
                                                     }
                                                 } finally {
                                                     withContext(Dispatchers.Main) {
