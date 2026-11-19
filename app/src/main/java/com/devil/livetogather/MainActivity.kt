@@ -1913,8 +1913,14 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                         onToggleExpand = { isGlobalCapsuleExpanded = !isGlobalCapsuleExpanded },
                         onNavigate = { route -> currentScreen = route },
                         onCreateRoom = {
-                            createRoomInitialCategory = "voice_party"
-                            showCreateRoomDialog = true
+                            val existingRoom = roomsList.firstOrNull { (it.hostUid.isNotBlank() && it.hostUid == currentUserId) || (it.hostId.isNotBlank() && it.hostId == currentUserId) }
+                            if (existingRoom != null) {
+                                val isVideo = existingRoom.category == "video_stream" || existingRoom.roomType == "video" || existingRoom.roomType == "video_pk" || existingRoom.isVideoRoom
+                                activeAudioRoom = if (isVideo) existingRoom.copy(roomType = "video") else existingRoom.copy(roomType = "audio")
+                            } else {
+                                createRoomInitialCategory = "voice_party"
+                                showCreateRoomDialog = true
+                            }
                         },
                         onOpenMoments = { currentScreen = "moments" }
                     )
@@ -2010,8 +2016,14 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                                 activeAudioRoom = if (isVideo) room.copy(roomType = "video") else room.copy(roomType = "audio")
                             },
                             onCreateRoom = {
-                                createRoomInitialCategory = "voice_party"
-                                showCreateRoomDialog = true
+                                val existingRoom = roomsList.firstOrNull { (it.hostUid.isNotBlank() && it.hostUid == currentUserId) || (it.hostId.isNotBlank() && it.hostId == currentUserId) }
+                                if (existingRoom != null) {
+                                    val isVideo = existingRoom.category == "video_stream" || existingRoom.roomType == "video" || existingRoom.roomType == "video_pk" || existingRoom.isVideoRoom
+                                    activeAudioRoom = if (isVideo) existingRoom.copy(roomType = "video") else existingRoom.copy(roomType = "audio")
+                                } else {
+                                    createRoomInitialCategory = "voice_party"
+                                    showCreateRoomDialog = true
+                                }
                             },
                             onOpenCategoryHub = { category ->
                                 activeCategoryHub = category
@@ -2359,15 +2371,22 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                 currentUser = currentUser,
                 onDismiss = { activeCategoryHub = null },
                 onCreateRoom = {
-                    val isVipCat = cat.id == "vip_room"
-                    val isUserVip = currentUser.isVipOrPlatinum() || currentUser.getVipLevel() >= 1
-                    if (isVipCat && !isUserVip) {
-                        Toast.makeText(context, "👑 VIP Room requires VIP Level 1+ membership to create!", Toast.LENGTH_SHORT).show()
-                        return@CategoryHubLobbyDialog
+                    val existingRoom = roomsList.firstOrNull { (it.hostUid.isNotBlank() && it.hostUid == currentUserId) || (it.hostId.isNotBlank() && it.hostId == currentUserId) }
+                    if (existingRoom != null) {
+                        activeCategoryHub = null
+                        val isVideo = existingRoom.category == "video_stream" || existingRoom.roomType == "video" || existingRoom.roomType == "video_pk" || existingRoom.isVideoRoom
+                        activeAudioRoom = if (isVideo) existingRoom.copy(roomType = "video") else existingRoom.copy(roomType = "audio")
+                    } else {
+                        val isVipCat = cat.id == "vip_room"
+                        val isUserVip = currentUser.isVipOrPlatinum() || currentUser.getVipLevel() >= 1
+                        if (isVipCat && !isUserVip) {
+                            Toast.makeText(context, "👑 VIP Room requires VIP Level 1+ membership to create!", Toast.LENGTH_SHORT).show()
+                            return@CategoryHubLobbyDialog
+                        }
+                        createRoomInitialCategory = cat.id
+                        activeCategoryHub = null
+                        showCreateRoomDialog = true
                     }
-                    createRoomInitialCategory = cat.id
-                    activeCategoryHub = null
-                    showCreateRoomDialog = true
                 },
                 onJoinRoom = { room ->
                     val isVipRoomCategory = room.category == "vip_room" || room.isVipRoom
@@ -4776,6 +4795,37 @@ fun ProfileScreenContent(
             .fillMaxSize()
             .background(BrandDark)
     ) {
+        // 1. 100% FIXED & STATIC TOP BACKGROUND IMAGE (VIP PALACE COVER)
+        val profileVipLvl = currentUser.getVipLevel()
+        val fixedProfileVipCoverRes = getVipMobileBackgroundDrawable(if (profileVipLvl in 1..5) profileVipLvl else 3)
+        if (fixedProfileVipCoverRes != 0) {
+            Image(
+                painter = painterResource(id = fixedProfileVipCoverRes),
+                contentDescription = "Profile Fixed Palace Backdrop",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(380.dp)
+                    .align(Alignment.TopCenter)
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(380.dp)
+                    .align(Alignment.TopCenter)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                Color.Transparent,
+                                Color(0x3309070D),
+                                Color(0x8809070D),
+                                BrandDark
+                            )
+                        )
+                    )
+            )
+        }
+
         // Live animated luxury frame: edge-to-edge, sits BEHIND all profile content
         // so every button / avatar / badge stays visible on top of it.
         if (currentUser.hasActiveProfileBorderFrame()) {
@@ -4912,46 +4962,14 @@ fun ProfileScreenContent(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Box(modifier = Modifier.fillMaxWidth().heightIn(min = 320.dp)) {
-                        // FULL-CARD 3D PALACE BACKGROUND (Edge-to-edge covering the entire card!)
-                        if (vipCoverRes != 0) {
-                            Image(
-                                painter = painterResource(id = vipCoverRes),
-                                contentDescription = "VIP Palace Cover",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.matchParentSize()
-                            )
-                            // Elegant Dark Vertical Gradient so the full palace shows while text remains 100% legible
-                            Box(
-                                modifier = Modifier
-                                    .matchParentSize()
-                                    .background(
-                                        Brush.verticalGradient(
-                                            listOf(
-                                                Color.Transparent,
-                                                Color(0x3309070D),
-                                                Color(0x7709070D),
-                                                Color(0xEE09070D)
-                                            )
-                                        )
-                                    )
-                            )
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .matchParentSize()
-                                    .background(
-                                        Brush.verticalGradient(
-                                            listOf(
-                                                Color(0xFF2E1065),
-                                                Color(0xFF1E1B4B),
-                                                Color(0xFF0F0B18)
-                                            )
-                                        )
-                                    )
-                            )
-                        }
-
-
+                        // Semi-transparent frosted glass sliding card over the fixed palace backdrop
+                        Box(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(Color.White.copy(alpha = 0.08f))
+                                .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(24.dp))
+                        )
 
                         // Content inside the card
                         Column(
@@ -6623,6 +6641,11 @@ fun ProfileScreenContent(
                     }
                 }
             }
+        }
+
+        // Safe bottom padding so Logout & Delete Account buttons are 100% visible above navigation bars
+        item {
+            Spacer(modifier = Modifier.navigationBarsPadding().height(120.dp))
         }
     }
 

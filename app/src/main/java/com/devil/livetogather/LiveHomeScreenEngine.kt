@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -69,6 +70,11 @@ fun LiveTogetherHomeScreen(
 
     // Active Game Selection Dialog state (Ludo, Carrom, Quiz)
     var selectedGameForRoomList by remember { mutableStateOf<Triple<String, String, String>?>(null) }
+
+    // Dual-Mode Search Dialog State (Room ID vs User ID)
+    var showSearchDialog by remember { mutableStateOf(false) }
+    var searchMode by remember { mutableStateOf("room") }
+    var searchQuery by remember { mutableStateOf("") }
 
     var previousIndex by remember { mutableIntStateOf(listState.firstVisibleItemIndex) }
     var previousOffset by remember { mutableIntStateOf(listState.firstVisibleItemScrollOffset) }
@@ -132,6 +138,27 @@ fun LiveTogetherHomeScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color(0xFF070712))) {
+        // High-quality dark/gold luxury palace theme background with dark vignette overlay
+        Image(
+            painter = painterResource(id = R.drawable.vip_royal_stage),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xCC070712),
+                            Color(0x990A0714),
+                            Color(0xDD070712),
+                            Color(0xFF070712)
+                        )
+                    )
+                )
+        )
         
         // 1. TOP ~40% SECTION: FREE EDGE-TO-EDGE FLOATING BUBBLES STAGE (DRIFTS FROM MIDDLE TO VERY TOP GLASS EDGE)
         FreeFloatingAvatarStage(
@@ -485,10 +512,49 @@ fun LiveTogetherHomeScreen(
             roomsCount = realTimeRoomsCount,
             coins = currentUser.diamonds * 10,
             unreadNotificationsCount = unreadNotificationsCount,
-            onOpenSearch = onOpenSearch,
+            onOpenSearch = { showSearchDialog = true },
             onOpenNotifications = onOpenNotifications,
             modifier = Modifier.align(Alignment.TopCenter)
         )
+
+        // DUAL-MODE SEARCH MODAL DIALOG (ROOM ID vs USER ID)
+        if (showSearchDialog) {
+            val filteredRooms = remember(rooms, searchQuery) {
+                if (searchQuery.isBlank()) rooms.take(20)
+                else rooms.filter {
+                    it.title.contains(searchQuery, ignoreCase = true) ||
+                    it.id.contains(searchQuery, ignoreCase = true) ||
+                    it.hostName.contains(searchQuery, ignoreCase = true)
+                }
+            }
+            val filteredUsers = remember(allUsers, searchQuery) {
+                if (searchQuery.isBlank()) allUsers.take(20)
+                else allUsers.filter {
+                    it.name.contains(searchQuery, ignoreCase = true) ||
+                    it.uid.contains(searchQuery, ignoreCase = true) ||
+                    it.bio.contains(searchQuery, ignoreCase = true)
+                }
+            }
+            DualModeSearchDialog(
+                searchMode = searchMode,
+                onSearchModeChange = { searchMode = it },
+                searchQuery = searchQuery,
+                onSearchQueryChange = { searchQuery = it },
+                isSearching = false,
+                searchRoomResults = filteredRooms,
+                searchUserResults = filteredUsers,
+                currentUser = currentUser,
+                onDismiss = { showSearchDialog = false },
+                onJoinRoom = { r ->
+                    showSearchDialog = false
+                    onJoinRoom(r)
+                },
+                onSelectUser = { u ->
+                    showSearchDialog = false
+                    onSelectUserProfile(u)
+                }
+            )
+        }
 
         // GAME ROOMS LIST MODAL DIALOG (SHOWS LIVE GAME ROOMS OR "NO ROOMS PLAYING" EMPTY STATE)
         if (selectedGameForRoomList != null) {
@@ -533,36 +599,6 @@ fun AppTopHeaderOverlay(
             repeatMode = RepeatMode.Reverse
         ),
         label = "blinkAlpha"
-    )
-
-    // Google-Style Vibrantly Animated Magnifying Glass Transitions
-    val googleSearchAnim = rememberInfiniteTransition(label = "googleSearchBlink")
-    val searchPulseScale by googleSearchAnim.animateFloat(
-        initialValue = 0.96f,
-        targetValue = 1.12f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "searchPulse"
-    )
-    val searchBlinkColor by googleSearchAnim.animateColor(
-        initialValue = Color(0xFF4285F4), // Google Blue
-        targetValue = Color(0xFF34A853), // Google Green
-        animationSpec = infiniteRepeatable(
-            animation = tween(1800, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "searchColor"
-    )
-    val searchAlpha by googleSearchAnim.animateFloat(
-        initialValue = 0.80f,
-        targetValue = 1.0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "searchAlpha"
     )
 
     // Real-Time Notification Bell Ringing Animation + Blinking Badge
@@ -667,39 +703,34 @@ fun AppTopHeaderOverlay(
                     )
                 }
 
-                // Single Search Button - Google-Style Animated Magnifying Glass (Border removed, sleek adjusted size)
+                // Single Search Button - Sleek Golden Magnifying Glass
                 Box(
                     modifier = Modifier
-                        .size(34.dp)
+                        .size(40.dp)
                         .clickable(onClick = onOpenSearch),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.Search,
                         contentDescription = "Search",
-                        tint = searchBlinkColor.copy(alpha = searchAlpha),
-                        modifier = Modifier
-                            .size(24.dp)
-                            .graphicsLayer {
-                                scaleX = searchPulseScale
-                                scaleY = searchPulseScale
-                            }
+                        tint = Color(0xFFFFD700),
+                        modifier = Modifier.size(24.dp)
                     )
                 }
 
-                // Single Notification Bell Button with Animated Ring & Blinking Real-Time Number Badge (Border removed, larger size)
+                // Single Notification Bell Button with Animated Ring & Dynamic Number Badge (28dp icon, 42dp touch target)
                 Box(
                     modifier = Modifier
-                        .size(38.dp)
+                        .size(42.dp)
                         .clickable(onClick = onOpenNotifications),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.Notifications,
                         contentDescription = "Alerts",
-                        tint = if (unreadNotificationsCount > 0) Color(0xFFFFB800) else Color.White,
+                        tint = if (unreadNotificationsCount > 0) Color(0xFFFFD700) else Color.White,
                         modifier = Modifier
-                            .size(26.dp)
+                            .size(28.dp)
                             .graphicsLayer {
                                 if (unreadNotificationsCount > 0) {
                                     rotationZ = bellRotation
@@ -710,7 +741,7 @@ fun AppTopHeaderOverlay(
                         Box(
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
-                                .offset(x = 4.dp, y = (-2).dp)
+                                .offset(x = 2.dp, y = (-2).dp)
                                 .graphicsLayer {
                                     scaleX = badgePulseScale
                                     scaleY = badgePulseScale

@@ -51,15 +51,21 @@ fun DenseGalaAudioEqualizer(
     val phase by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = (2 * Math.PI).toFloat(),
-        animationSpec = infiniteRepeatable(tween(1100, easing = LinearEasing), RepeatMode.Restart),
+        animationSpec = infiniteRepeatable(tween(850, easing = LinearEasing), RepeatMode.Restart),
         label = "eq_phase"
+    )
+    val bounceFactor by infiniteTransition.animateFloat(
+        initialValue = 0.6f,
+        targetValue = 1.35f,
+        animationSpec = infiniteRepeatable(tween(400, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "eq_bounce"
     )
 
     val barColors = when (styleTheme.lowercase()) {
-        "cyan", "cyber_neon" -> listOf(Color(0xFF00F0FF), Color(0xFFFF2A6D))
-        "emerald", "liquid_emerald" -> listOf(Color(0xFF00FFA3), Color(0xFF059669))
-        "crimson", "sunset_crimson" -> listOf(Color(0xFFFF3366), Color(0xFFF59E0B))
-        else -> listOf(Color(0xFFFFD700), Color(0xFFF43F5E), Color(0xFF8B5CF6)) // Celestial Gold
+        "cyan", "cyber_neon" -> listOf(Color(0xFF00F0FF), Color(0xFFFF2A6D), Color(0xFF38BDF8))
+        "emerald", "liquid_emerald" -> listOf(Color(0xFF00FFA3), Color(0xFF10B981), Color(0xFF34D399))
+        "crimson", "sunset_crimson" -> listOf(Color(0xFFFF3366), Color(0xFFF59E0B), Color(0xFFEF4444))
+        else -> listOf(Color(0xFFFFD700), Color(0xFFF59E0B), Color(0xFFA855F7), Color(0xFFEC4899)) // MegaStar Cosmic Gold
     }
 
     Canvas(modifier = modifier) {
@@ -72,21 +78,18 @@ fun DenseGalaAudioEqualizer(
 
         for (i in 0 until barCount) {
             val norm = i.toFloat() / barCount.toFloat()
-            val harmonic1 = kotlin.math.sin(phase + norm * 3 * Math.PI).toFloat()
-            val harmonic2 = kotlin.math.cos(phase * 1.5f + norm * 5 * Math.PI).toFloat()
-            val envelope = kotlin.math.sin(norm * Math.PI).toFloat().coerceIn(0.2f, 1f)
-            val combined = ((harmonic1 + harmonic2 + 2f) / 4f) * envelope
-            val h = (combined * maxHeight * 0.92f).coerceAtLeast(3.dp.toPx())
+            val harmonic1 = kotlin.math.sin(phase + norm * 3.5 * Math.PI).toFloat()
+            val harmonic2 = kotlin.math.cos(phase * 1.8f + norm * 5.2 * Math.PI).toFloat()
+            val harmonic3 = kotlin.math.sin(phase * 0.7f + norm * 2.0 * Math.PI).toFloat()
+            val envelope = kotlin.math.sin(norm * Math.PI).toFloat().coerceIn(0.25f, 1f)
+            val combined = ((harmonic1 + harmonic2 + harmonic3 + 3f) / 6f) * envelope * bounceFactor
+            val h = (combined * maxHeight * 0.95f).coerceIn(3.dp.toPx(), maxHeight)
 
             val x = i * (barWidth + gap)
             val y = maxHeight - h
 
             val colorRatio = (norm + (phase / (2 * Math.PI).toFloat())) % 1f
-            val chosenColor = if (barColors.size > 2) {
-                if (colorRatio < 0.5f) barColors[0] else if (colorRatio < 0.8f) barColors[1] else barColors[2]
-            } else {
-                if (colorRatio < 0.5f) barColors[0] else barColors[1]
-            }
+            val chosenColor = barColors[(colorRatio * barColors.size).toInt().coerceIn(0, barColors.size - 1)]
 
             drawRoundRect(
                 color = chosenColor,
@@ -113,6 +116,7 @@ fun OfficialEventArenaHubModal(
     val context = LocalContext.current
     var showSchedulingDialog by remember { mutableStateOf(false) }
     var insufficientDiamondsRoom by remember { mutableStateOf<RoomItem?>(null) }
+    var hubSearchQuery by remember { mutableStateOf("") }
 
     val isUserMonetizedHost = currentUser.isHostMonetized || currentUser.isAdmin || currentUser.isFounder() || currentUser.isOfficialAdmin()
 
@@ -125,6 +129,15 @@ fun OfficialEventArenaHubModal(
              it.title.contains("Official Event", ignoreCase = true)) &&
             !it.statusMessage.equals("DELETED", ignoreCase = true) &&
             !it.statusMessage.equals("CLOSED", ignoreCase = true)
+        }
+    }
+
+    val filteredGalaRooms = remember(galaRooms, hubSearchQuery) {
+        if (hubSearchQuery.isBlank()) galaRooms
+        else galaRooms.filter {
+            it.title.contains(hubSearchQuery, ignoreCase = true) ||
+            it.hostName.contains(hubSearchQuery, ignoreCase = true) ||
+            it.id.contains(hubSearchQuery, ignoreCase = true)
         }
     }
 
@@ -196,7 +209,13 @@ fun OfficialEventArenaHubModal(
                         // ORGANIZE EVENT BUTTON (HOSTS ONLY)
                         Button(
                             onClick = {
-                                if (isUserMonetizedHost) {
+                                val existingUserRoom = allRooms.firstOrNull { 
+                                    (it.hostUid.isNotBlank() && it.hostUid == currentUser.uid) || 
+                                    (it.hostId.isNotBlank() && it.hostId == currentUser.uid) 
+                                }
+                                if (existingUserRoom != null) {
+                                    onJoinRoom(existingUserRoom)
+                                } else if (isUserMonetizedHost) {
                                     showSchedulingDialog = true
                                 } else {
                                     Toast.makeText(context, "👑 Only verified & monetized hosts can organize Official Gala Events!", Toast.LENGTH_LONG).show()
@@ -212,7 +231,27 @@ fun OfficialEventArenaHubModal(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Real-time Search Field
+                OutlinedTextField(
+                    value = hubSearchQuery,
+                    onValueChange = { hubSearchQuery = it },
+                    placeholder = { Text("🔍 Search Mega Star Gala room or host...", color = Color.Gray, fontSize = 12.sp) },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFFF59E0B),
+                        unfocusedBorderColor = Color(0xFF3B2F50),
+                        focusedContainerColor = Color(0xFF130E20),
+                        unfocusedContainerColor = Color(0xFF130E20)
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().height(50.dp)
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
 
                 // ROOMS LIST HEADER
                 Row(
@@ -220,20 +259,20 @@ fun OfficialEventArenaHubModal(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("🎪 Live Official Event Rooms (${galaRooms.size})", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("🎪 Live Official Event Rooms (${filteredGalaRooms.size})", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     Text("Tap to Enter", color = Color(0xFFF472B6), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
                 }
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                if (galaRooms.isEmpty()) {
+                if (filteredGalaRooms.isEmpty()) {
                     Box(
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("🌟", fontSize = 36.sp)
-                            Text("No Official Event Rooms Live Right Now", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Text(if (hubSearchQuery.isBlank()) "No Official Event Rooms Live Right Now" else "No Matching Gala Rooms Found", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                             Text("Verified hosts can tap '+ Organize' above to launch the 15-Mic Gala Stage!", color = Color.Gray, fontSize = 11.sp, maxLines = 2)
                         }
                     }
@@ -242,7 +281,7 @@ fun OfficialEventArenaHubModal(
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        items(galaRooms) { r ->
+                        items(filteredGalaRooms) { r ->
                             val roomTheme = if (r.eventThemeStyle.isNotBlank()) r.eventThemeStyle else "gold"
                             val cardBorder = when (roomTheme.lowercase()) {
                                 "cyan", "cyber_neon" -> Color(0xFF00F0FF)

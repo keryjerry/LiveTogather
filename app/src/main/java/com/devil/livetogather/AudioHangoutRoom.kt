@@ -5845,7 +5845,7 @@ fun AudioHangoutRoomDialog(
                                 .collection("rooms").document(room.id).update("banner_image_url", dataUri)
                         }
                         withContext(Dispatchers.Main) {
-                            Toast.makeText(context, "Room picture updated from storage! 🖼️", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Room wallpaper updated! 🖼️", Toast.LENGTH_SHORT).show()
                         }
                     }
                 } catch (e: Exception) {
@@ -5855,6 +5855,42 @@ fun AudioHangoutRoomDialog(
                 } finally {
                     withContext(Dispatchers.Main) {
                         isUploadingRoomBanner = false
+                    }
+                }
+            }
+        }
+    }
+
+    // Dedicated Room Icon / DP Upload from Local Storage (Completely separate from wallpaper theme)
+    var isUploadingRoomIcon by remember { mutableStateOf(false) }
+    val roomIconPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            isUploadingRoomIcon = true
+            coroutineScope.launch(Dispatchers.IO) {
+                try {
+                    val dataUri = ImageUploadManager.convertImageToFirestoreDataUri(context, uri)
+                    if (!dataUri.isNullOrBlank()) {
+                        withContext(Dispatchers.Main) {
+                            room = room.copy(hostPhotoUrl = dataUri)
+                        }
+                        db.collection("rooms").document(room.id).update("hostPhotoUrl", dataUri)
+                        if (room.category.isNotBlank()) {
+                            db.collection("intent_categories").document(room.category)
+                                .collection("rooms").document(room.id).update("hostPhotoUrl", dataUri)
+                        }
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "Room Icon / DP updated! 👤", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Failed to upload icon: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                } finally {
+                    withContext(Dispatchers.Main) {
+                        isUploadingRoomIcon = false
                     }
                 }
             }
@@ -7139,25 +7175,25 @@ fun AudioHangoutRoomDialog(
                                         modifier = Modifier.padding(start = 4.dp, top = 3.dp, bottom = 3.dp, end = 5.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        // Wider Room Dedicated Image Box with Local Storage Picker
-                                        val displayRoomBanner = room.banner_image_url.ifBlank { hostPhoto }.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" }
+                                        // Dedicated Room DP / Icon Box with Local Storage Picker
+                                        val displayRoomIcon = room.hostPhotoUrl.ifBlank { hostPhoto }.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" }
                                         Box(
                                             modifier = Modifier
                                                 .size(width = 46.dp, height = 38.dp)
                                                 .clip(RoundedCornerShape(8.dp))
                                                 .border(1.2.dp, Color(0xFF8B5CF6), RoundedCornerShape(8.dp))
                                                 .clickable(enabled = isUserHost) {
-                                                    roomImagePickerLauncher.launch("image/*")
+                                                    roomIconPickerLauncher.launch("image/*")
                                                 },
                                             contentAlignment = Alignment.Center
                                         ) {
                                             AsyncImage(
-                                                model = displayRoomBanner,
+                                                model = displayRoomIcon,
                                                 contentDescription = hostName,
                                                 modifier = Modifier.fillMaxSize(),
                                                 contentScale = ContentScale.Crop
                                             )
-                                            if (isUploadingRoomBanner) {
+                                            if (isUploadingRoomIcon) {
                                                 Box(
                                                     modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)),
                                                     contentAlignment = Alignment.Center
