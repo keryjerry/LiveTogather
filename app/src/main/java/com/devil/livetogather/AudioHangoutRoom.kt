@@ -7643,46 +7643,6 @@ fun AudioHangoutRoomDialog(
                                 ) {
                                     Text("😊", fontSize = 17.sp)
                                 }
-
-                                // 6. LUXURY STORE BUTTON (Avatar Frames, Rings, Mic Links)
-                                Box(
-                                    modifier = Modifier
-                                        .size(42.dp)
-                                        .clip(CircleShape)
-                                        .background(Color(0xFF7E22CE).copy(alpha = 0.85f))
-                                        .border(1.2.dp, BrandGold, CircleShape)
-                                        .clickable { showLuxuryStoreDialog = true },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text("🛍️", fontSize = 18.sp)
-                                }
-
-                                // 6.5 IN-ROOM 3D GAME CLUB LAUNCHER BUTTON (Ludo, Carrom, Truth & Dare, Lucky 7)
-                                Animated3DGameLauncherButton(
-                                    onClick = { showInRoomGameLauncher = true }
-                                )
-
-                                // 7. GIFT STORE BUTTON
-                                Box(
-                                    modifier = Modifier
-                                        .size(42.dp)
-                                        .clip(CircleShape)
-                                        .background(
-                                            Brush.sweepGradient(
-                                                listOf(
-                                                    Color(0xFFFF1744),
-                                                    Color(0xFFFFB300),
-                                                    Color(0xFFFF4081),
-                                                    Color(0xFFFF1744)
-                                                )
-                                            )
-                                        )
-                                        .border(1.2.dp, BrandGold, CircleShape)
-                                        .clickable { showGiftStoreDialog = true },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text("🎁", fontSize = 19.sp)
-                                }
                             }
                         }
                     }
@@ -8559,6 +8519,58 @@ fun AudioHangoutRoomDialog(
                         }
                     }
                 }
+
+                // RIGHT-SIDE FLOATING 3-BUTTON STACK (Store Bag, 3D Game Club, Gift Box) — Well-spaced above bottom bar
+                if (activeInRoomGame == null) {
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(end = 10.dp, bottom = 12.dp)
+                            .zIndex(25f),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        // 1. LUXURY STORE / BAG BUTTON
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF7E22CE).copy(alpha = 0.88f))
+                                .border(1.2.dp, BrandGold, CircleShape)
+                                .clickable { showLuxuryStoreDialog = true },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("🛍️", fontSize = 18.sp)
+                        }
+
+                        // 2. IN-ROOM 3D GAME CLUB LAUNCHER BUTTON
+                        Animated3DGameLauncherButton(
+                            onClick = { showInRoomGameLauncher = true }
+                        )
+
+                        // 3. GIFT STORE BUTTON
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    Brush.sweepGradient(
+                                        listOf(
+                                            Color(0xFFFF1744),
+                                            Color(0xFFFFB300),
+                                            Color(0xFFFF4081),
+                                            Color(0xFFFF1744)
+                                        )
+                                    )
+                                )
+                                .border(1.2.dp, BrandGold, CircleShape)
+                                .clickable { showGiftStoreDialog = true },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("🎁", fontSize = 19.sp)
+                        }
+                    }
+                }
             }
         }
     }
@@ -9362,7 +9374,7 @@ fun AudioHangoutRoomDialog(
                         allProfiles = allProfiles
                     )
                 },
-                onCarromSelected = { maxPlayers, _ ->
+                onCarromSelected = { maxPlayers, betDiamonds ->
                     showInRoomGameLauncher = false
                     launchInRoomGame(
                         roomId = room.id,
@@ -9370,6 +9382,7 @@ fun AudioHangoutRoomDialog(
                         currentUser = currentUser,
                         db = db,
                         maxPlayers = maxPlayers,
+                        betDiamonds = betDiamonds,
                         allProfiles = allProfiles
                     )
                 }

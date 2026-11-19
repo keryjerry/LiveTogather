@@ -109,28 +109,20 @@ fun InRoomGameArenaOverlay(
         // -------------------------------------------------------------
         val maxPlayers = if (gameState.maxPlayers in listOf(2, 4)) gameState.maxPlayers else 2
         val participants = gameState.participants
-        val isGameWaiting = gameState.gameStage == "WAITING" && participants.size < 2
-
-        // Auto-join other users when they view the room so Player 2 slot is instantly active!
-        LaunchedEffect(participants, currentUser.uid) {
-            if (currentUser.uid.isNotBlank() && !participants.contains(currentUser.uid) && participants.size < maxPlayers) {
-                db.collection("rooms").document(roomId)
-                    .collection("inRoomGame").document("active")
-                    .update("participants", FieldValue.arrayUnion(currentUser.uid))
-            }
-        }
+        val isGameWaiting = gameState.gameStage != "PLAYING"
+        val betDiamonds = (gameState.playerScores["betDiamonds"] ?: 0).toLong()
 
         val isUserInGame = participants.contains(currentUser.uid) || gameState.startedBy == currentUser.uid
         val canJoinMatch = !isUserInGame && participants.size < maxPlayers
         val isHostOrStarter = canEndGame || gameState.startedBy == currentUser.uid
 
-        // Real-time Roster: Slot 0..3
+        // STRICT REAL-TIME ROSTER (ZERO DUMMY PROFILES): Slot 0..3
         val p1Uid = gameState.startedBy.ifBlank { participants.firstOrNull() ?: "" }
         val p1Profile = remember(allProfiles, p1Uid, currentUser) {
             allProfiles.find { it.uid == p1Uid } ?: currentUser
         }
 
-        val p2Uid = participants.getOrNull(1) ?: allProfiles.firstOrNull { it.uid != p1Uid }?.uid
+        val p2Uid = participants.getOrNull(1)
         val p2Profile = remember(allProfiles, p2Uid) {
             if (!p2Uid.isNullOrBlank()) allProfiles.find { it.uid == p2Uid } ?: UserProfile(name = "Player 2", uid = p2Uid) else null
         }
@@ -145,18 +137,55 @@ fun InRoomGameArenaOverlay(
             if (!p4Uid.isNullOrBlank()) allProfiles.find { it.uid == p4Uid } ?: UserProfile(name = "Player 4", uid = p4Uid) else null
         }
 
-        // Active Shooter Calculation
+        // Active Shooter Calculation & 40-Second Real-Time Turn Countdown Timer
         val currentTurnUserUid = gameState.currentTurnUserId.ifBlank { participants.firstOrNull() ?: "" }
-        val isMyTurn = (gameState.gameStage == "PLAYING" || gameState.gameStage == "ACTIVE" || !isGameWaiting) && (currentTurnUserUid == currentUser.uid)
+        val isMyTurn = !isGameWaiting && (currentTurnUserUid == currentUser.uid)
         val currentShooterProfile = allProfiles.find { it.uid == currentTurnUserUid } ?: if (currentTurnUserUid == currentUser.uid) currentUser else null
         val currentShooterName = currentShooterProfile?.name ?: if (isMyTurn) "You" else "Player"
 
+        var turnSecondsLeft by remember(gameState.currentTurnUserId, gameState.currentTurnIndex, gameState.lastShotTimestamp, isGameWaiting) {
+            mutableIntStateOf(40)
+        }
+        LaunchedEffect(gameState.currentTurnUserId, gameState.currentTurnIndex, gameState.lastShotTimestamp, isGameWaiting, participants.size) {
+            if (!isGameWaiting && participants.size >= 2) {
+                turnSecondsLeft = 40
+                while (turnSecondsLeft > 0) {
+                    kotlinx.coroutines.delay(1000L)
+                    turnSecondsLeft -= 1
+                }
+                // 40-second turn expired -> Auto-switch turn in Firestore to next player
+                if (isMyTurn || isHostOrStarter) {
+                    val nextIdx = (gameState.currentTurnIndex + 1) % participants.size
+                    val nextUid = participants.getOrNull(nextIdx) ?: participants.first()
+                    db.collection("rooms").document(roomId)
+                        .collection("inRoomGame").document("active")
+                        .update(
+                            mapOf(
+                                "currentTurnIndex" to nextIdx,
+                                "currentTurnUserId" to nextUid,
+                                "timerRemaining" to 40,
+                                "lastShotTimestamp" to System.currentTimeMillis()
+                            )
+                        )
+                    carromWebView?.evaluateJavascript("if (window.forceSwitchTurn) window.forceSwitchTurn();", null)
+                }
+            } else {
+                turnSecondsLeft = 40
+            }
+        }
+
+        // MIDDLE-SCREEN EDGE-TO-EDGE CARROM CONTAINER (Top header & top mics stay 100% visible above!)
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.74f)
+                .fillMaxSize()
+                .padding(top = 136.dp, bottom = 74.dp),
+            contentAlignment = Alignment.Center
         ) {
-            Column(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xEE0B0E1A))
+            ) {
                 // ROW 1: TOP CONTROL BAR (TITLE, CHIP, SOUND TOGGLE, END MATCH) - ZERO OVERLAP
                 Row(
                     modifier = Modifier
@@ -347,7 +376,8 @@ fun InRoomGameArenaOverlay(
                             slotName = "P1",
                             coinSymbol = "⚪",
                             isTurn = !isGameWaiting && (currentTurnUserUid == p1Profile.uid),
-                            score = carromP1Score
+                            score = carromP1Score,
+                            turnSecondsLeft = turnSecondsLeft
                         )
 
                         // Center Turn Status Badge
@@ -359,11 +389,11 @@ fun InRoomGameArenaOverlay(
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                         ) {
                             Text(
-                                text = if (isGameWaiting) "⏳ Waiting for Player 2"
-                                       else if (isMyTurn) "👉 Your Turn!"
-                                       else "⏳ ${currentShooterName.take(8)}'s Turn",
+                                text = if (isGameWaiting) "⏳ Waiting (${participants.size}/$maxPlayers)"
+                                       else if (isMyTurn) "👉 Your Turn (${turnSecondsLeft}s)"
+                                       else "⏳ ${currentShooterName.take(8)} (${turnSecondsLeft}s)",
                                 color = Color(0xFFFFD700),
-                                fontSize = 10.5.sp,
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.ExtraBold
                             )
                         }
@@ -375,7 +405,8 @@ fun InRoomGameArenaOverlay(
                                 slotName = "P2",
                                 coinSymbol = "⚫",
                                 isTurn = !isGameWaiting && (currentTurnUserUid == p2Profile.uid),
-                                score = carromP2Score
+                                score = carromP2Score,
+                                turnSecondsLeft = turnSecondsLeft
                             )
                         } else {
                             Button(
@@ -443,17 +474,56 @@ fun InRoomGameArenaOverlay(
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "Players joined: ${participants.size} / $maxPlayers",
+                                    text = "Players joined: ${participants.size} / $maxPlayers • ${if (betDiamonds > 0L) "💎 Bet: $betDiamonds" else "🆓 Free Play"}",
                                     color = Color(0xFFFFD700),
-                                    fontSize = 12.sp,
+                                    fontSize = 11.5.sp,
                                     fontWeight = FontWeight.SemiBold
                                 )
-                                Spacer(modifier = Modifier.height(14.dp))
 
-                                // Join Button for in-room members
+                                // Host/Starter Real-Time Free vs Diamond Bet Selector
+                                if (isHostOrStarter) {
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    val betOptions = listOf(0L to "🆓 Free", 50L to "💎 50", 100L to "💎 100", 500L to "💎 500", 1000L to "💎 1K")
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        betOptions.forEach { (amt, label) ->
+                                            val isSelected = betDiamonds == amt
+                                            Surface(
+                                                color = if (isSelected) Color(0xFFFFD700) else Color.White.copy(alpha = 0.12f),
+                                                shape = RoundedCornerShape(12.dp),
+                                                border = BorderStroke(1.dp, if (isSelected) Color.White else Color.White.copy(alpha = 0.25f)),
+                                                modifier = Modifier.clickable {
+                                                    val updatedScores = gameState.playerScores.toMutableMap()
+                                                    updatedScores["betDiamonds"] = amt.toInt()
+                                                    db.collection("rooms").document(roomId)
+                                                        .collection("inRoomGame").document("active")
+                                                        .update("playerScores", updatedScores)
+                                                }
+                                            ) {
+                                                Text(
+                                                    text = label,
+                                                    color = if (isSelected) Color.Black else Color.White,
+                                                    fontSize = 9.5.sp,
+                                                    fontWeight = FontWeight.Black,
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                // Join Button for in-room members (verifies diamond balance if Diamond Bet mode)
                                 if (canJoinMatch) {
                                     Button(
                                         onClick = {
+                                            if (betDiamonds > 0L && currentUser.diamonds < betDiamonds) {
+                                                Toast.makeText(context, "💎 You need at least $betDiamonds diamonds to join this bet match!", Toast.LENGTH_LONG).show()
+                                                return@Button
+                                            }
                                             db.collection("rooms").document(roomId)
                                                 .collection("inRoomGame").document("active")
                                                 .update("participants", FieldValue.arrayUnion(currentUser.uid))
@@ -462,16 +532,26 @@ fun InRoomGameArenaOverlay(
                                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
                                         shape = RoundedCornerShape(20.dp)
                                     ) {
-                                        Text("+ Join Carrom Match", fontWeight = FontWeight.Bold, color = Color.White)
+                                        Text(
+                                            text = if (betDiamonds > 0L) "+ Join Match (💎 $betDiamonds)" else "+ Join Free Match",
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
                                     }
                                     Spacer(modifier = Modifier.height(10.dp))
                                 }
 
-                                // Start Match Button (Host / Starter only, when at least 2 players have joined)
+                                // Start Match Button (Host / Starter only, strictly requires >= 2 real players)
                                 if (isHostOrStarter) {
                                     if (participants.size >= 2) {
                                         Button(
                                             onClick = {
+                                                if (betDiamonds > 0L) {
+                                                    participants.forEach { pUid ->
+                                                        db.collection("users").document(pUid)
+                                                            .update("diamonds", FieldValue.increment(-betDiamonds))
+                                                    }
+                                                }
                                                 db.collection("rooms").document(roomId)
                                                     .collection("inRoomGame").document("active")
                                                     .update(
@@ -480,16 +560,18 @@ fun InRoomGameArenaOverlay(
                                                             "gameStage" to "PLAYING",
                                                             "currentTurnIndex" to 0,
                                                             "currentTurnUserId" to participants.first(),
-                                                            "playerScores" to mapOf("p1" to 0, "p2" to 0)
+                                                            "timerRemaining" to 40,
+                                                            "lastShotTimestamp" to System.currentTimeMillis(),
+                                                            "playerScores" to mapOf("p1" to 0, "p2" to 0, "betDiamonds" to betDiamonds.toInt())
                                                         )
                                                     )
-                                                Toast.makeText(context, "🚀 Starting Carrom Match!", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, "🚀 Starting Carrom Match! (40s turn timer)", Toast.LENGTH_SHORT).show()
                                             },
                                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE11D48)),
                                             shape = RoundedCornerShape(20.dp),
                                             modifier = Modifier.padding(horizontal = 16.dp)
                                         ) {
-                                            Text("🚀 Start Match Now (${participants.size} Players)", fontWeight = FontWeight.Bold, color = Color.White)
+                                            Text("🚀 Start Match (${participants.size} Players)", fontWeight = FontWeight.Bold, color = Color.White)
                                         }
                                     } else {
                                         Text(
@@ -1459,32 +1541,62 @@ fun CarromSlotBadge(
     slotName: String,
     coinSymbol: String,
     isTurn: Boolean,
-    score: Int
+    score: Int,
+    turnSecondsLeft: Int = 40
 ) {
+    val timerFraction = (turnSecondsLeft.coerceIn(0, 40) / 40f)
+    val timerColor = when {
+        turnSecondsLeft <= 10 -> Color(0xFFEF4444)
+        turnSecondsLeft <= 20 -> Color(0xFFF59E0B)
+        else -> Color(0xFF10B981)
+    }
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.Black.copy(alpha = 0.75f))
+            .background(Color.Black.copy(alpha = 0.78f))
             .border(
                 if (isTurn) 1.8.dp else 0.8.dp,
-                if (isTurn) Color(0xFFFFD700) else Color.White.copy(alpha = 0.2f),
+                if (isTurn) timerColor else Color.White.copy(alpha = 0.2f),
                 RoundedCornerShape(16.dp)
             )
             .padding(horizontal = 6.dp, vertical = 3.dp)
     ) {
         Box(
-            modifier = Modifier
-                .size(24.dp)
-                .clip(CircleShape)
-                .border(1.2.dp, if (coinSymbol == "⚪") Color.White else Color.Gray, CircleShape)
+            modifier = Modifier.size(30.dp),
+            contentAlignment = Alignment.Center
         ) {
-            AsyncImage(
-                model = profile.photo.ifBlank { "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde" },
-                contentDescription = profile.name,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
-            )
+            if (isTurn) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    drawArc(
+                        color = Color.White.copy(alpha = 0.2f),
+                        startAngle = -90f,
+                        sweepAngle = 360f,
+                        useCenter = false,
+                        style = Stroke(width = 2.6.dp.toPx(), cap = StrokeCap.Round)
+                    )
+                    drawArc(
+                        color = timerColor,
+                        startAngle = -90f,
+                        sweepAngle = 360f * timerFraction,
+                        useCenter = false,
+                        style = Stroke(width = 2.6.dp.toPx(), cap = StrokeCap.Round)
+                    )
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .size(23.dp)
+                    .clip(CircleShape)
+                    .border(1.dp, if (coinSymbol == "⚪") Color.White else Color.Gray, CircleShape)
+            ) {
+                AsyncImage(
+                    model = profile.photo.ifBlank { "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde" },
+                    contentDescription = profile.name,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            }
         }
         Spacer(modifier = Modifier.width(4.dp))
         Column {
@@ -1492,7 +1604,7 @@ fun CarromSlotBadge(
                 Text(coinSymbol, fontSize = 9.sp)
                 Spacer(modifier = Modifier.width(2.dp))
                 Text(
-                    text = profile.name.take(6),
+                    text = profile.name.take(7),
                     color = Color.White,
                     fontSize = 9.5.sp,
                     fontWeight = FontWeight.Bold,
@@ -1500,10 +1612,10 @@ fun CarromSlotBadge(
                 )
             }
             Text(
-                text = if (isTurn) "👉 Turn" else "Score: $score",
-                color = if (isTurn) Color(0xFFFFD700) else Color.LightGray,
+                text = if (isTurn) "⏱️ ${turnSecondsLeft}s • $score" else "Score: $score",
+                color = if (isTurn) timerColor else Color.LightGray,
                 fontSize = 8.sp,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.Bold
             )
         }
     }
@@ -2294,14 +2406,12 @@ fun launchInRoomGame(
     currentUser: UserProfile,
     db: FirebaseFirestore,
     maxPlayers: Int = 2,
+    betDiamonds: Long = 0L,
     allProfiles: List<UserProfile> = emptyList()
 ) {
-    val opponent = allProfiles.firstOrNull { it.uid.isNotBlank() && it.uid != currentUser.uid }
-    val initialParticipants = if (opponent != null) {
-        listOf(currentUser.uid, opponent.uid)
-    } else {
-        listOf(currentUser.uid)
-    }
+    // STRICT REAL-TIME POLICY: Zero dummy/fake opponents! Only the host/starter joins initially;
+    // real players must tap Join Match, and the game stays in WAITING until >= 2 real players join & Start is tapped.
+    val initialParticipants = listOf(currentUser.uid)
 
     val initialGameState = InRoomGameState(
         gameType = gameType,
@@ -2313,18 +2423,18 @@ fun launchInRoomGame(
             else -> "🎮 In-Room Game Club"
         },
         status = "ACTIVE",
-        gameStage = "PLAYING",
+        gameStage = if (gameType == "carrom" || gameType == "ludo") "WAITING" else "PLAYING",
         maxPlayers = maxPlayers,
         startedBy = currentUser.uid,
         startedByName = currentUser.name,
         startedAt = System.currentTimeMillis(),
         currentTurnIndex = 0,
         currentTurnUserId = currentUser.uid,
-        timerRemaining = 30,
+        timerRemaining = 40,
         diceValue = 1,
         bottleAngle = 0f,
         selectedPlayerId = "",
-        playerScores = mapOf("p1" to 0, "p2" to 0),
+        playerScores = mapOf("p1" to 0, "p2" to 0, "betDiamonds" to betDiamonds.toInt()),
         participants = initialParticipants
     )
     db.collection("rooms").document(roomId)
