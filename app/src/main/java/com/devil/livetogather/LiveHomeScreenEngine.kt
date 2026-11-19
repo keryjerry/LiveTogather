@@ -506,17 +506,6 @@ fun LiveTogetherHomeScreen(
             }
         }
 
-        // 100% FULLY TRANSPARENT TOP HEADER OVERLAY (NO BLACKHEAD, FLOATS DIRECTLY OVER DRIFTING BUBBLES)
-        AppTopHeaderOverlay(
-            liveUsersCount = realTimeUsersCount,
-            roomsCount = realTimeRoomsCount,
-            coins = currentUser.diamonds * 10,
-            unreadNotificationsCount = unreadNotificationsCount,
-            onOpenSearch = { showSearchDialog = true },
-            onOpenNotifications = onOpenNotifications,
-            modifier = Modifier.align(Alignment.TopCenter)
-        )
-
         // DUAL-MODE SEARCH MODAL DIALOG (ROOM ID vs USER ID)
         if (showSearchDialog) {
             val filteredRooms = remember(rooms, searchQuery) {

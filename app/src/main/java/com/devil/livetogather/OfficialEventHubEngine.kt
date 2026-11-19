@@ -210,11 +210,12 @@ fun OfficialEventArenaHubModal(
                         Button(
                             onClick = {
                                 val existingUserRoom = allRooms.firstOrNull { 
-                                    (it.hostUid.isNotBlank() && it.hostUid == currentUser.uid) || 
-                                    (it.hostId.isNotBlank() && it.hostId == currentUser.uid) 
+                                    ((it.hostUid.isNotBlank() && it.hostUid == currentUser.uid) || 
+                                     (it.hostId.isNotBlank() && it.hostId == currentUser.uid)) &&
+                                    it.category != "video_stream" && it.roomType != "video" && !it.isVideoRoom
                                 }
                                 if (existingUserRoom != null) {
-                                    onJoinRoom(existingUserRoom)
+                                    onJoinRoom(existingUserRoom.copy(roomType = "audio"))
                                 } else if (isUserMonetizedHost) {
                                     showSchedulingDialog = true
                                 } else {
@@ -303,7 +304,7 @@ fun OfficialEventArenaHubModal(
                                         if (currentUser.diamonds < 200000L && !isOwner && !isStaff) {
                                             insufficientDiamondsRoom = r
                                         } else {
-                                            onJoinRoom(r)
+                                            onJoinRoom(r.copy(roomType = "audio"))
                                         }
                                     }
                             ) {

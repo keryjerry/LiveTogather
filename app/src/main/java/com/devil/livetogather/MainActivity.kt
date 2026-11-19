@@ -1325,7 +1325,7 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
         }
     }
 
-    val unreadNotificationsCount by remember(pendingIntimacyRequestsCount) {
+    val unreadNotificationsCount by remember(notifications.size, notifications.map { it.isRead }, pendingIntimacyRequestsCount) {
         derivedStateOf {
             notifications.count { !it.isRead } + pendingIntimacyRequestsCount
         }
@@ -1440,7 +1440,7 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
         Scaffold(
             containerColor = BrandDark,
             topBar = {
-                if (currentScreen != "discover" && !isProfileScreen && (activeAudioRoom == null || isAudioRoomMinimized)) {
+                if (!isProfileScreen && (activeAudioRoom == null || isAudioRoomMinimized)) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1543,32 +1543,31 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                                 label = "badgeAlphaTop"
                             )
 
-                            // Sleek Dual-Mode Search Button (Google Style, No Borders)
-                            IconButton(onClick = {
-                                isSearchExpanded = !isSearchExpanded
-                                if (!isSearchExpanded) {
-                                    searchQuery = ""
-                                    searchRoomResults.clear()
-                                    searchUserResults.clear()
-                                }
-                            }) {
+                            // Sleek Dual-Mode Search Button
+                            IconButton(
+                                onClick = {
+                                    isSearchExpanded = !isSearchExpanded
+                                    if (!isSearchExpanded) {
+                                        searchQuery = ""
+                                        searchRoomResults.clear()
+                                        searchUserResults.clear()
+                                    }
+                                },
+                                modifier = Modifier.size(42.dp)
+                            ) {
                                 Icon(
                                     imageVector = if (isSearchExpanded) Icons.Default.Close else Icons.Default.Search,
                                     contentDescription = "Search",
-                                    tint = if (isSearchExpanded) Color(0xFFEA4335) else searchBlinkColorTop,
-                                    modifier = Modifier
-                                        .size(24.dp)
-                                        .graphicsLayer {
-                                            if (!isSearchExpanded) {
-                                                scaleX = searchPulseScaleTop
-                                                scaleY = searchPulseScaleTop
-                                            }
-                                        }
+                                    tint = if (isSearchExpanded) Color(0xFFEA4335) else Color(0xFFFFD700),
+                                    modifier = Modifier.size(26.dp)
                                 )
                             }
 
                             // Real-time Notification Bell with Blinking Number Badge
-                            IconButton(onClick = { showNotificationsDialog = true }) {
+                            IconButton(
+                                onClick = { showNotificationsDialog = true },
+                                modifier = Modifier.size(42.dp)
+                            ) {
                                 BadgedBox(
                                     badge = {
                                         if (unreadNotificationsCount > 0) {
@@ -1593,9 +1592,9 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                                     Icon(
                                         imageVector = Icons.Default.Notifications,
                                         contentDescription = "Notifications",
-                                        tint = if (unreadNotificationsCount > 0) Color(0xFFFFB800) else topBarIconTint,
+                                        tint = if (unreadNotificationsCount > 0) Color(0xFFFFD700) else topBarIconTint,
                                         modifier = Modifier
-                                            .size(24.dp)
+                                            .size(28.dp)
                                             .graphicsLayer {
                                                 if (unreadNotificationsCount > 0) {
                                                     rotationZ = bellRotationTop
@@ -1662,7 +1661,7 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                                                 .padding(horizontal = 16.dp, vertical = 5.dp)
                                         ) {
                                             Text(
-                                                text = "🎙️ Room",
+                                                text = "🎙️ Room ID",
                                                 fontSize = 12.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = if (searchMode == "room") Color.White else Color.Gray
@@ -1676,7 +1675,7 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                                                 .padding(horizontal = 16.dp, vertical = 5.dp)
                                         ) {
                                             Text(
-                                                text = "👤 User",
+                                                text = "👤 User ID",
                                                 fontSize = 12.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = if (searchMode == "user") Color.White else Color.Gray
@@ -1913,10 +1912,12 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                         onToggleExpand = { isGlobalCapsuleExpanded = !isGlobalCapsuleExpanded },
                         onNavigate = { route -> currentScreen = route },
                         onCreateRoom = {
-                            val existingRoom = roomsList.firstOrNull { (it.hostUid.isNotBlank() && it.hostUid == currentUserId) || (it.hostId.isNotBlank() && it.hostId == currentUserId) }
-                            if (existingRoom != null) {
-                                val isVideo = existingRoom.category == "video_stream" || existingRoom.roomType == "video" || existingRoom.roomType == "video_pk" || existingRoom.isVideoRoom
-                                activeAudioRoom = if (isVideo) existingRoom.copy(roomType = "video") else existingRoom.copy(roomType = "audio")
+                            val existingVoiceRoom = roomsList.firstOrNull { 
+                                ((it.hostUid.isNotBlank() && it.hostUid == currentUserId) || (it.hostId.isNotBlank() && it.hostId == currentUserId)) &&
+                                it.category != "video_stream" && it.roomType != "video" && it.roomType != "video_pk" && !it.isVideoRoom
+                            }
+                            if (existingVoiceRoom != null) {
+                                activeAudioRoom = existingVoiceRoom.copy(roomType = "audio")
                             } else {
                                 createRoomInitialCategory = "voice_party"
                                 showCreateRoomDialog = true
@@ -1934,7 +1935,7 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(
-                        if (currentScreen == "discover" || currentScreen == "profile")
+                        if (currentScreen == "profile")
                             PaddingValues(0.dp)
                         else
                             PaddingValues(top = paddingValues.calculateTopPadding(), bottom = 0.dp)
@@ -2016,10 +2017,12 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                                 activeAudioRoom = if (isVideo) room.copy(roomType = "video") else room.copy(roomType = "audio")
                             },
                             onCreateRoom = {
-                                val existingRoom = roomsList.firstOrNull { (it.hostUid.isNotBlank() && it.hostUid == currentUserId) || (it.hostId.isNotBlank() && it.hostId == currentUserId) }
-                                if (existingRoom != null) {
-                                    val isVideo = existingRoom.category == "video_stream" || existingRoom.roomType == "video" || existingRoom.roomType == "video_pk" || existingRoom.isVideoRoom
-                                    activeAudioRoom = if (isVideo) existingRoom.copy(roomType = "video") else existingRoom.copy(roomType = "audio")
+                                val existingVoiceRoom = roomsList.firstOrNull { 
+                                    ((it.hostUid.isNotBlank() && it.hostUid == currentUserId) || (it.hostId.isNotBlank() && it.hostId == currentUserId)) &&
+                                    it.category != "video_stream" && it.roomType != "video" && it.roomType != "video_pk" && !it.isVideoRoom
+                                }
+                                if (existingVoiceRoom != null) {
+                                    activeAudioRoom = existingVoiceRoom.copy(roomType = "audio")
                                 } else {
                                     createRoomInitialCategory = "voice_party"
                                     showCreateRoomDialog = true
@@ -2371,11 +2374,15 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                 currentUser = currentUser,
                 onDismiss = { activeCategoryHub = null },
                 onCreateRoom = {
-                    val existingRoom = roomsList.firstOrNull { (it.hostUid.isNotBlank() && it.hostUid == currentUserId) || (it.hostId.isNotBlank() && it.hostId == currentUserId) }
+                    val isVideoCat = cat.id == "video_stream"
+                    val existingRoom = roomsList.firstOrNull { 
+                        ((it.hostUid.isNotBlank() && it.hostUid == currentUserId) || (it.hostId.isNotBlank() && it.hostId == currentUserId)) &&
+                        (if (isVideoCat) (it.category == "video_stream" || it.roomType == "video" || it.isVideoRoom) 
+                         else (it.category != "video_stream" && it.roomType != "video" && !it.isVideoRoom))
+                    }
                     if (existingRoom != null) {
                         activeCategoryHub = null
-                        val isVideo = existingRoom.category == "video_stream" || existingRoom.roomType == "video" || existingRoom.roomType == "video_pk" || existingRoom.isVideoRoom
-                        activeAudioRoom = if (isVideo) existingRoom.copy(roomType = "video") else existingRoom.copy(roomType = "audio")
+                        activeAudioRoom = if (isVideoCat) existingRoom.copy(roomType = "video") else existingRoom.copy(roomType = "audio")
                     } else {
                         val isVipCat = cat.id == "vip_room"
                         val isUserVip = currentUser.isVipOrPlatinum() || currentUser.getVipLevel() >= 1
@@ -4962,13 +4969,13 @@ fun ProfileScreenContent(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Box(modifier = Modifier.fillMaxWidth().heightIn(min = 320.dp)) {
-                        // Semi-transparent frosted glass sliding card over the fixed palace backdrop
+                        // Glassmorphic semi-transparent frosted glass sliding card over the fixed palace backdrop
                         Box(
                             modifier = Modifier
                                 .matchParentSize()
-                                .clip(RoundedCornerShape(24.dp))
-                                .background(Color.White.copy(alpha = 0.08f))
-                                .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(24.dp))
+                                .clip(RoundedCornerShape(26.dp))
+                                .background(Color.White.copy(alpha = 0.12f))
+                                .border(1.2.dp, Color.White.copy(alpha = 0.28f), RoundedCornerShape(26.dp))
                         )
 
                         // Content inside the card
@@ -5647,12 +5654,12 @@ fun ProfileScreenContent(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    // Wealth Level Card with Real 3D Metallic Badge (Frosted White Transparency Theme)
+                    // Wealth Level Card with Real 3D Metallic Badge (Glassmorphic Frosted Transparency)
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.85f)),
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.2.dp, Brush.horizontalGradient(wealthTier.gradientColors)),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.12f)),
+                        shape = RoundedCornerShape(18.dp),
+                        border = BorderStroke(1.2.dp, Color.White.copy(alpha = 0.25f)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(14.dp)) {
@@ -5671,13 +5678,13 @@ fun ProfileScreenContent(
                                     Column {
                                         Text(
                                             text = "Wealth Level • Lv.$effWealthLvlVal",
-                                            color = Color(0xFF0F172A),
+                                            color = Color.White,
                                             fontWeight = FontWeight.Black,
                                             fontSize = 13.sp
                                         )
                                         Text(
                                             text = "${wealthTier.crownEmoji} ${wealthTier.tierName}",
-                                            color = Color(0xFFB45309),
+                                            color = Color(0xFFFFD700),
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold
                                         )
@@ -5685,7 +5692,7 @@ fun ProfileScreenContent(
                                 }
                                 Text(
                                     text = "%,d / %,d XP".format(effWealthXp, maxWealthXp),
-                                    color = Color(0xFF475569),
+                                    color = Color.LightGray,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.SemiBold
                                 )
@@ -5698,17 +5705,17 @@ fun ProfileScreenContent(
                                     .height(6.dp)
                                     .clip(RoundedCornerShape(3.dp)),
                                 color = wealthTier.gradientColors.first(),
-                                trackColor = Color(0xFFE2E8F0)
+                                trackColor = Color.White.copy(alpha = 0.2f)
                             )
                         }
                     }
 
-                    // Charm Level Card (Frosted White Transparency Theme)
+                    // Charm Level Card (Glassmorphic Frosted Transparency)
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.85f)),
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.2.dp, Brush.horizontalGradient(charmTier.gradientColors)),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.12f)),
+                        shape = RoundedCornerShape(18.dp),
+                        border = BorderStroke(1.2.dp, Color.White.copy(alpha = 0.25f)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(14.dp)) {
@@ -5727,13 +5734,13 @@ fun ProfileScreenContent(
                                     Column {
                                         Text(
                                             text = "Charm Level • Lv.$effCharmLvl",
-                                            color = Color(0xFF0F172A),
+                                            color = Color.White,
                                             fontWeight = FontWeight.Black,
                                             fontSize = 13.sp
                                         )
                                         Text(
                                             text = "${charmTier.crownEmoji} ${charmTier.tierName}",
-                                            color = Color(0xFFBE185D),
+                                            color = Color(0xFFF472B6),
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold
                                         )
@@ -5741,7 +5748,7 @@ fun ProfileScreenContent(
                                 }
                                 Text(
                                     text = "%,d / %,d XP".format(effCharmXp, maxCharmXp),
-                                    color = Color(0xFF475569),
+                                    color = Color.LightGray,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.SemiBold
                                 )
@@ -5754,7 +5761,7 @@ fun ProfileScreenContent(
                                     .height(6.dp)
                                     .clip(RoundedCornerShape(3.dp)),
                                 color = charmTier.gradientColors.first(),
-                                trackColor = Color(0xFFE2E8F0)
+                                trackColor = Color.White.copy(alpha = 0.2f)
                             )
                         }
                     }
@@ -6605,39 +6612,41 @@ fun ProfileScreenContent(
             }
         }
 
-        // Safety & Account (Frosted White Transparency)
+        // Safety & Account (Glassmorphic Frosted Transparency)
         item {
             Card(
-                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.85f)),
-                shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.6f)),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.12f)),
+                shape = RoundedCornerShape(18.dp),
+                border = BorderStroke(1.2.dp, Color.White.copy(alpha = 0.28f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
             ) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Safety & Account", color = Color(0xFF475569), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Safety & Account", color = Color.White.copy(alpha = 0.85f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
 
                     // Logout Button
                     Button(
                         onClick = onLogout,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF1F5F9)),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth()
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.15f)),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().height(46.dp)
                     ) {
-                        Icon(Icons.Default.ExitToApp, contentDescription = null, tint = Color(0xFF0F172A), modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.ExitToApp, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Log Out", color = Color(0xFF0F172A), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Log Out", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     }
 
                     // Delete Account Button
                     Button(
                         onClick = { showDeleteConfirmDialog = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFEE2E2)),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth()
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444).copy(alpha = 0.22f)),
+                        border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.5f)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().height(46.dp)
                     ) {
-                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color.Red, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFFF6B6B), modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Delete Account", color = Color.Red, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Text("Delete Account", color = Color(0xFFFF6B6B), fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -6645,7 +6654,7 @@ fun ProfileScreenContent(
 
         // Safe bottom padding so Logout & Delete Account buttons are 100% visible above navigation bars
         item {
-            Spacer(modifier = Modifier.navigationBarsPadding().height(120.dp))
+            Spacer(modifier = Modifier.navigationBarsPadding().height(140.dp))
         }
     }
 
