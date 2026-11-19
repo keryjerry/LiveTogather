@@ -1,6 +1,8 @@
 package com.devil.livetogather
 
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.style.TextOverflow
 
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -77,13 +79,74 @@ fun Advanced1v1ChatScreen(
     partner: UserProfile,
     db: FirebaseFirestore,
     onDismiss: () -> Unit,
-    onUpdateCurrentUser: (UserProfile) -> Unit
+    onUpdateCurrentUser: (UserProfile) -> Unit,
+    onJumpToRoom: (RoomItem) -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val matchId = remember(currentUserId, partner.uid) {
         listOf(currentUserId, partner.uid).sorted().joinToString("_")
     }
+
+    // Real-Time Live Partner State & Room Presence Tracker
+    var livePartner by remember(partner.uid) { mutableStateOf(partner) }
+    DisposableEffect(partner.uid) {
+        if (partner.uid.isBlank()) return@DisposableEffect onDispose {}
+        val listener = db.collection("users").document(partner.uid).addSnapshotListener { snap, _ ->
+            if (snap != null && snap.exists()) {
+                val u = parseUserProfileFromDoc(snap)
+                if (u != null) {
+                    livePartner = u
+                }
+            }
+        }
+        onDispose { listener.remove() }
+    }
+
+    var partnerActiveRoom by remember { mutableStateOf<RoomItem?>(null) }
+    DisposableEffect(livePartner.current_room) {
+        val targetRoomId = livePartner.current_room.trim()
+        if (targetRoomId.isNotBlank()) {
+            val listener = db.collection("rooms").document(targetRoomId).addSnapshotListener { snap, _ ->
+                if (snap != null && snap.exists()) {
+                    val r = parseRoomFromDoc(snap)
+                    if (r != null && !r.isEnded && (r.isLive || r.isHostLive)) {
+                        partnerActiveRoom = r
+                    } else {
+                        partnerActiveRoom = null
+                    }
+                } else {
+                    partnerActiveRoom = null
+                }
+            }
+            onDispose { listener.remove() }
+        } else {
+            partnerActiveRoom = null
+            onDispose {}
+        }
+    }
+
+    // Real-Time Blinking Online Indicator Animation
+    val isPartnerOnline = livePartner.isUserOnline()
+    val blinkAnim = rememberInfiniteTransition(label = "onlineBlink")
+    val blinkAlpha by blinkAnim.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(700, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "blinkAlpha"
+    )
+    val blinkScale by blinkAnim.animateFloat(
+        initialValue = 0.85f,
+        targetValue = 1.15f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(700, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "blinkScale"
+    )
 
     // Guarantee that matches collection document exists with users array so it shows in inbox for both users
     LaunchedEffect(matchId) {
@@ -365,8 +428,8 @@ fun Advanced1v1ChatScreen(
                     contentAlignment = Alignment.BottomEnd
                 ) {
                     AsyncImage(
-                        model = partner.photo.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
-                        contentDescription = partner.name,
+                        model = livePartner.photo.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                        contentDescription = livePartner.name,
                         modifier = Modifier
                             .size(42.dp)
                             .clip(CircleShape)
@@ -374,10 +437,12 @@ fun Advanced1v1ChatScreen(
                         contentScale = ContentScale.Crop
                     )
                     Surface(
-                        color = Color(0xFF00E676),
+                        color = if (isPartnerOnline) Color(0xFF00E676).copy(alpha = blinkAlpha) else Color(0xFF64748B),
                         shape = CircleShape,
                         border = BorderStroke(1.dp, Color.Black),
-                        modifier = Modifier.size(10.dp)
+                        modifier = Modifier
+                            .size(11.dp)
+                            .graphicsLayer(scaleX = if (isPartnerOnline) blinkScale else 1f, scaleY = if (isPartnerOnline) blinkScale else 1f)
                     ) {}
                 }
 
@@ -390,7 +455,7 @@ fun Advanced1v1ChatScreen(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = partner.name,
+                            text = livePartner.name,
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
@@ -409,6 +474,16 @@ fun Advanced1v1ChatScreen(
                             )
                         }
                     }
+
+                    // Online Presence & Active Room Indicator
+                    Text(
+                        text = if (partnerActiveRoom != null) "🎙️ In Room: ${partnerActiveRoom!!.title.take(14)}" else if (isPartnerOnline) "🟢 Online" else "⚪ Offline",
+                        color = if (partnerActiveRoom != null) Color(0xFFF472B6) else if (isPartnerOnline) Color(0xFF34D399) else Color(0xFF94A3B8),
+                        fontSize = 9.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
 
                     // Intimacy Streak & Level Badge
                     Row(
@@ -557,6 +632,105 @@ fun Advanced1v1ChatScreen(
                                 Toast.makeText(context, if (isBlocked) "${partner.name} unblocked" else "${partner.name} blocked", Toast.LENGTH_SHORT).show()
                             }
                         )
+                    }
+                }
+            }
+
+            // -------------------------------------------------------------
+            // 1.5 INBOX REAL-TIME ROOM JUMP EQUALIZER BANNER
+            // -------------------------------------------------------------
+            if (partnerActiveRoom != null) {
+                val currentTargetRoom = partnerActiveRoom!!
+                val isHost = currentTargetRoom.hostUid == livePartner.uid || currentTargetRoom.hostId == livePartner.uid
+                Surface(
+                    color = Color(0xFF1E1338),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(Color(0xFFFF2E93), Color(0xFF8B5CF6), Color(0xFF3B82F6)))),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                        .clickable {
+                            onDismiss()
+                            onJumpToRoom(currentTargetRoom)
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            // Animated Neon Equalizer Bars
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(Color(0xFFEC4899).copy(alpha = 0.2f))
+                                    .padding(4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CategoryEqualizerThemeVisualizer(
+                                    modifier = Modifier.fillMaxSize(),
+                                    isLive = true,
+                                    isPlaying = true
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Surface(
+                                        color = Color(0xFFFF1744),
+                                        shape = RoundedCornerShape(4.dp)
+                                    ) {
+                                        Text(
+                                            text = if (isHost) "🔴 HOSTING" else "🎙️ IN ROOM",
+                                            color = Color.White,
+                                            fontSize = 8.5.sp,
+                                            fontWeight = FontWeight.Black,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = currentTargetRoom.title.ifBlank { currentTargetRoom.roomName },
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                Text(
+                                    text = "Host: ${currentTargetRoom.hostName.ifBlank { "Host" }} • ${maxOf(1, currentTargetRoom.activeUserCount)} in room",
+                                    color = Color(0xFFFBCFE8),
+                                    fontSize = 10.sp,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        // Jump Action Pill
+                        Button(
+                            onClick = {
+                                onDismiss()
+                                onJumpToRoom(currentTargetRoom)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEC4899)),
+                            shape = RoundedCornerShape(50),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+                            modifier = Modifier.height(30.dp)
+                        ) {
+                            Text(
+                                text = "Jump 🚀",
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                        }
                     }
                 }
             }

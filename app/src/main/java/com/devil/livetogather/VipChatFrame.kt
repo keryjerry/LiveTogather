@@ -1432,9 +1432,31 @@ fun VipCenterDialog(
                 },
                 onSuccess = {
                     showPaymentModal = false
-                    pendingVipLevels = pendingVipLevels + currentTier.level
+                    val vipLvl = currentTier.level
+                    val now = System.currentTimeMillis()
+                    val thirtyDaysMs = 30L * 24 * 60 * 60 * 1000
+                    val expiry = now + thirtyDaysMs
+                    val updates = getVipSuiteUpdates(vipLvl, equip = true).toMutableMap()
+                    updates["vip_level"] = vipLvl
+                    updates["profile_vip_level"] = vipLvl
+                    updates["profile_plan"] = "VIP $vipLvl"
+                    updates["vip_expires_at"] = expiry
+                    updates["hasRecharged"] = true
+                    updates["vipExpiries.vip_$vipLvl"] = expiry
+                    db.collection("users").document(vipUser.uid).update(updates)
+                    val prefs = context.getSharedPreferences("livetogather_user_prefs", android.content.Context.MODE_PRIVATE)
+                    prefs.edit()
+                        .putString("profile_active_frame", "vip_suite_frame_$vipLvl")
+                        .putString("profile_active_border_frame", "vip_border_$vipLvl")
+                        .putString("profile_active_chat_frame", getVipChatFrameForLevel(vipLvl))
+                        .putInt("profile_vip_level", vipLvl)
+                        .putString("profile_plan", "VIP $vipLvl")
+                        .apply()
+                    val updatedUser = vipUser.applyVipSuite(vipLvl, equip = true)
+                    liveUser = updatedUser
+                    onProfileUpdated(updatedUser)
                     checkoutPackage = null
-                    Toast.makeText(context, "VIP purchase submitted and pending admin approval.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "👑 Google Play Payment Successful! VIP ${currentTier.name} 30-Day Suite Activated!", Toast.LENGTH_LONG).show()
                 }
             )
         }
@@ -1571,7 +1593,9 @@ fun VipCenterDialog(
                                             text = "Price: ${currentTier.formattedPrice} / 30 Days",
                                             color = Color(0xFFFFD700),
                                             fontWeight = FontWeight.ExtraBold,
-                                            fontSize = 13.5.sp
+                                            fontSize = 13.sp,
+                                            maxLines = 1,
+                                            softWrap = false
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Surface(
@@ -1990,9 +2014,10 @@ fun VipCenterDialog(
                 val hasPurchasedTier = vipUser.hasActiveVipTier(currentTier.level)
                 val remainingDays = vipUser.getVipTierRemainingDays(currentTier.level)
 
-                val isWorn = (vipUser.activeFrame == currentTier.frameId &&
-                    vipUser.activeChatFrame == currentTier.chatFrameId) ||
-                    (vipUser.activeFrame == currentTier.frameId)
+                val isWorn = vipUser.getVipLevel() == currentTier.level &&
+                    (vipUser.activeFrame.contains("vip${currentTier.level}", ignoreCase = true) ||
+                     vipUser.activeFrame.contains("vip_suite_frame_${currentTier.level}", ignoreCase = true) ||
+                     vipUser.activeProfileBorderFrame == "vip_border_${currentTier.level}")
 
                 Surface(
                     color = Color(0xFF08060D),
@@ -2091,50 +2116,33 @@ fun VipCenterDialog(
                             }
                             Button(
                                 onClick = {
+                                    val prefs = context.getSharedPreferences("livetogather_user_prefs", android.content.Context.MODE_PRIVATE)
                                     if (isWorn) {
                                         // Unwear: Remove VIP dressing up suite
-                                        val updates = mapOf(
-                                            "activeFrame" to "",
-                                            "activeChatFrame" to "",
-                                            "activeChatBar" to "",
-                                            "activeProfileArch" to "",
-                                            "activeProfileCover" to "",
-                                            "activeEntranceEffect" to "",
-                                            "activeProfileBorderFrame" to ""
-                                        )
+                                        val updates = getVipSuiteUpdates(currentTier.level, equip = false)
                                         db.collection("users").document(vipUser.uid).update(updates)
-                                        val updatedUser = vipUser.copy(
-                                            activeFrame = "",
-                                            activeChatFrame = "",
-                                            activeProfileBorderFrame = ""
-                                        )
+                                        prefs.edit()
+                                            .putString("profile_active_frame", "")
+                                            .putString("profile_active_border_frame", "")
+                                            .putString("profile_active_chat_frame", "")
+                                            .apply()
+                                        val updatedUser = vipUser.applyVipSuite(currentTier.level, equip = false)
+                                        liveUser = updatedUser
                                         onProfileUpdated(updatedUser)
                                         Toast.makeText(context, "VIP Suite Unworn (हटा दिया गया)", Toast.LENGTH_SHORT).show()
                                     } else {
-                                        // Wear: Equip entire VIP suite
-                                        val newFrame = currentTier.frameId
-                                        val newChatFrame = currentTier.chatFrameId
-                                        val newChatBar = "chat_sword_vip_${currentTier.level}"
-                                        val newArch = "arch_vip_${currentTier.level}"
-                                        val newCover = "cover_vip_${currentTier.level}"
-                                        val newEntrance = "entrance_vip_${currentTier.level}"
-                                        val newBorder = "vip_border_${currentTier.level}"
-
-                                        val updates = mapOf(
-                                            "activeFrame" to newFrame,
-                                            "activeChatFrame" to newChatFrame,
-                                            "activeChatBar" to newChatBar,
-                                            "activeProfileArch" to newArch,
-                                            "activeProfileCover" to newCover,
-                                            "activeEntranceEffect" to newEntrance,
-                                            "activeProfileBorderFrame" to newBorder
-                                        )
+                                        // Wear: Equip entire VIP suite (Frame, Border, Chat Frame, Arch, Cover, Entrance, Level)
+                                        val updates = getVipSuiteUpdates(currentTier.level, equip = true)
                                         db.collection("users").document(vipUser.uid).update(updates)
-                                        val updatedUser = vipUser.copy(
-                                            activeFrame = newFrame,
-                                            activeChatFrame = newChatFrame,
-                                            activeProfileBorderFrame = newBorder
-                                        )
+                                        prefs.edit()
+                                            .putString("profile_active_frame", "vip_suite_frame_${currentTier.level}")
+                                            .putString("profile_active_border_frame", "vip_border_${currentTier.level}")
+                                            .putString("profile_active_chat_frame", getVipChatFrameForLevel(currentTier.level))
+                                            .putInt("profile_vip_level", currentTier.level)
+                                            .putString("profile_plan", "VIP ${currentTier.level}")
+                                            .apply()
+                                        val updatedUser = vipUser.applyVipSuite(currentTier.level, equip = true)
+                                        liveUser = updatedUser
                                         onProfileUpdated(updatedUser)
                                         Toast.makeText(context, "👑 ${currentTier.name} Suite Worn (वियर हो गया)!", Toast.LENGTH_SHORT).show()
                                     }
@@ -2178,7 +2186,9 @@ fun VipCenterDialog(
                                 Text(
                                     text = "Renew Subscription • ${currentTier.formattedPrice}",
                                     fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    softWrap = false
                                 )
                             }
                         }

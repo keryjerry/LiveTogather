@@ -27,8 +27,7 @@ fun isUserWhitelistedAdmin(email: String?, uid: String? = null): Boolean {
 
 val CATEGORY_LIST = listOf(
     IntentCategory("all", "🔥 All Profiles"),
-    IntentCategory("video_stream", "📹 Video Stream"),
-    IntentCategory("vip_room", "👑 VIP Room"),
+    IntentCategory("video_stream", "📹 Video Streaming"),
     IntentCategory("free_tonight", "🍷 Free Tonight"),
     IntentCategory("free_tomorrow", "🌙 Free Tomorrow"),
     IntentCategory("free_weekend", "🎉 Free in Weekend"),
@@ -41,7 +40,8 @@ val CATEGORY_LIST = listOf(
     IntentCategory("plan_trip", "🗺️ Lets Plan Holiday Trip"),
     IntentCategory("lets_movie", "🍿 Lets Go For Movie"),
     IntentCategory("lets_cafe", "☕ Lets Go Cafe"),
-    IntentCategory("lets_dinner", "🍽️ Lets Go For Dinner/Lunch")
+    IntentCategory("lets_dinner", "🍽️ Lets Go For Dinner/Lunch"),
+    IntentCategory("official_event", "🏆 Official Event Hub")
 )
 
 data class RoomItem(
@@ -73,7 +73,7 @@ data class RoomItem(
     @get:PropertyName("roomId") @set:PropertyName("roomId") var roomId: String = "",
     @get:PropertyName("roomName") @set:PropertyName("roomName") var roomName: String = "",
     @get:PropertyName("hostUid") @set:PropertyName("hostUid") var hostUid: String = "",
-    @get:PropertyName("isLive") @set:PropertyName("isLive") var isLive: Boolean = true,
+    @get:PropertyName("isLive") @set:PropertyName("isLive") var isLive: Boolean = false,
     @get:PropertyName("isEnded") @set:PropertyName("isEnded") var isEnded: Boolean = false,
     @get:PropertyName("announcement") @set:PropertyName("announcement") var announcement: String = "",
     @get:PropertyName("isLocked") @set:PropertyName("isLocked") var isLocked: Boolean = false,
@@ -94,10 +94,16 @@ data class RoomItem(
     @get:PropertyName("pkWinnerUid") @set:PropertyName("pkWinnerUid") var pkWinnerUid: String = "",
     // Room Mode: "audio" (10-mic stage), "video" (1-4 people video streaming), "video_pk" (1v1 split video battle)
     @get:PropertyName("roomType") @set:PropertyName("roomType") var roomType: String = "audio",
-    @get:PropertyName("videoLayout") @set:PropertyName("videoLayout") var videoLayout: String = "1p"
+    @get:PropertyName("videoLayout") @set:PropertyName("videoLayout") var videoLayout: String = "1p",
+    @get:PropertyName("lastHostHeartbeat") @set:PropertyName("lastHostHeartbeat") var lastHostHeartbeat: Long = 0L,
+    @get:PropertyName("isOfficialEvent") @set:PropertyName("isOfficialEvent") var isOfficialEvent: Boolean = false,
+    @get:PropertyName("eventThemeStyle") @set:PropertyName("eventThemeStyle") var eventThemeStyle: String = "",
+    @get:PropertyName("suspendedUntil") @set:PropertyName("suspendedUntil") var suspendedUntil: Long = 0L,
+    @get:PropertyName("suspensionReason") @set:PropertyName("suspensionReason") var suspensionReason: String = ""
 ) {
     val isVipRoom: Boolean get() = privacy.equals("vip_only", ignoreCase = true)
     val isVideoRoom: Boolean get() = roomType == "video" || roomType == "video_pk"
+    val isSuspended: Boolean get() = statusMessage.equals("SUSPENDED", ignoreCase = true) && (suspendedUntil == 0L || suspendedUntil > System.currentTimeMillis())
 }
 
 data class LiveEmojiReaction(
@@ -141,7 +147,7 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
     val playbackPosition = doc.getLong("playbackPosition") ?: 0L
     val isPlaying = doc.getBoolean("isPlaying") ?: doc.getBoolean("playing") ?: false
     val isCustom = doc.getBoolean("isCustom") ?: doc.getBoolean("custom") ?: true
-    val isHostLive = doc.getBoolean("isHostLive") ?: doc.getBoolean("hostLive") ?: doc.getBoolean("isLive") ?: true
+    val isHostLive = doc.getBoolean("isHostLive") ?: doc.getBoolean("hostLive") ?: doc.getBoolean("isLive") ?: false
     val scheduledTime = doc.getString("scheduledTime") ?: ""
     val statusMessage = doc.getString("statusMessage") ?: ""
     val privacy = doc.getString("privacy") ?: "public"
@@ -162,7 +168,8 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
     }
     val roomName = doc.getString("roomName") ?: title
     val hostUid = doc.getString("hostUid") ?: hostId
-    val isLive = doc.getBoolean("isLive") ?: true
+    val isLive = doc.getBoolean("isLive") ?: (doc.getBoolean("isHostLive") ?: false)
+    val isEnded = doc.getBoolean("isEnded") ?: false
 
     val announcement = doc.getString("announcement") ?: ""
     val isLocked = doc.getBoolean("isLocked") ?: doc.getBoolean("locked") ?: false
@@ -183,6 +190,11 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
     val pkWinnerUid = doc.getString("pkWinnerUid") ?: ""
     val roomType = doc.getString("roomType") ?: "audio"
     val videoLayout = doc.getString("videoLayout") ?: "1p"
+    val lastHostHeartbeat = doc.getLong("lastHostHeartbeat") ?: doc.getLong("lastHeartbeat") ?: 0L
+    val isOfficialEvent = doc.getBoolean("isOfficialEvent") ?: (category == "official_event" || category == "event_hub")
+    val eventThemeStyle = doc.getString("eventThemeStyle") ?: ""
+    val suspendedUntil = doc.getLong("suspendedUntil") ?: 0L
+    val suspensionReason = doc.getString("suspensionReason") ?: ""
 
     return RoomItem(
         id = id,
@@ -214,6 +226,7 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
         roomName = roomName,
         hostUid = hostUid,
         isLive = isLive,
+        isEnded = isEnded,
         announcement = announcement,
         isLocked = isLocked,
         trackStartedAt = trackStartedAt,
@@ -231,11 +244,20 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
         pkStatus = pkStatus,
         pkWinnerUid = pkWinnerUid,
         roomType = roomType,
-        videoLayout = videoLayout
+        videoLayout = videoLayout,
+        lastHostHeartbeat = lastHostHeartbeat,
+        isOfficialEvent = isOfficialEvent,
+        eventThemeStyle = eventThemeStyle,
+        suspendedUntil = suspendedUntil,
+        suspensionReason = suspensionReason
     )
 }
 
 val CATEGORY_BANNERS = mapOf(
+    "official_event" to "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1200&q=80",
+    "event_hub" to "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1200&q=80",
+    "party_rooms" to "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1200&q=80",
+    "all_voice_rooms" to "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1200&q=80",
     "video_stream" to "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1200&q=80",
     "vip_room" to "https://images.unsplash.com/photo-1578683010236-d716f9a3f461?auto=format&fit=crop&w=1200&q=80",
     "free_tonight" to "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?auto=format&fit=crop&w=800&q=80",
@@ -252,6 +274,23 @@ val CATEGORY_BANNERS = mapOf(
     "lets_cafe" to "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=800&q=80",
     "lets_dinner" to "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80"
 )
+
+fun getRoomThemeStyle(room: RoomItem): String {
+    if (room.eventThemeStyle.isNotBlank()) return room.eventThemeStyle
+    val hash = kotlin.math.abs((room.id.ifBlank { room.title }).hashCode())
+    val styles = listOf("gold", "cyan", "emerald", "fire", "cosmic")
+    return styles[hash % styles.size]
+}
+
+fun isEventHubVisibleNow(): Boolean {
+    val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+    return hour in 12..23 || hour in 0..5
+}
+
+fun isEventHubLiveBroadcastNow(): Boolean {
+    val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+    return hour in 17..23 || hour in 0..5
+}
 
 fun getCategoryBanner(categoryId: String): String {
     return CATEGORY_BANNERS[categoryId] ?: "https://images.unsplash.com/photo-1545128485-c400e7702796?auto=format&fit=crop&w=800&q=80"
@@ -890,7 +929,11 @@ data class UserProfile(
     }
 
     fun getEffectiveProfileBorderFrame(): String {
-        if (activeProfileBorderFrame == "none" || activeProfileBorderFrame.isBlank()) return ""
+        if (activeProfileBorderFrame == "none") return ""
+        val vipLvl = getVipLevel()
+        if (vipLvl in 1..5) {
+            return "vip_border_$vipLvl"
+        }
         if (activeProfileBorderFrame.startsWith("vip_border_")) return activeProfileBorderFrame
         if (ownsProfileFrame(activeProfileBorderFrame)) return activeProfileBorderFrame
         return ""
@@ -945,6 +988,16 @@ data class UserProfile(
     fun isOfficialAnalyzer(): Boolean = officialRole.equals("analyzer", ignoreCase = true)
     fun isCommunityVolunteer(): Boolean = officialRole.equals("volunteer", ignoreCase = true)
     fun isSafetyPatrol(): Boolean = officialRole.equals("safety_patrol", ignoreCase = true)
+
+    fun hasSovereignImmunity(): Boolean {
+        val isWhitelisted = isFounder() || isCeo() || isStaffMember() || isCommunityVolunteer() || isSafetyPatrol() || isOfficialAnalyzer() || isAdmin || isOfficialAdmin(email)
+        val isVipImmune = getVipLevel() >= 4 || isVipOrPlatinum()
+        return isWhitelisted || isVipImmune
+    }
+
+    fun hasRoomModerationAuthority(): Boolean {
+        return isFounder() || isCeo() || isStaffMember() || isCommunityVolunteer() || isSafetyPatrol() || isAdmin || isOfficialAdmin(email)
+    }
 
     fun getOfficialRoleBadgeRes(): Int? = when (officialRole.lowercase()) {
         "founder" -> R.drawable.badge_livetogather_founder
@@ -1070,15 +1123,33 @@ data class UserProfile(
     }
 
     fun getVipLevel(): Int {
+        // Priority 1: Check active VIP frame equipped (e.g. VIP 3 suite frame)
+        val vipFromFrame = when {
+            activeFrame.contains("vip_suite_frame_5", true) || activeFrame.contains("vip5", true) -> 5
+            activeFrame.contains("vip_suite_frame_4", true) || activeFrame.contains("vip4", true) -> 4
+            activeFrame.contains("vip_suite_frame_3", true) || activeFrame.contains("vip3", true) -> 3
+            activeFrame.contains("vip_suite_frame_2", true) || activeFrame.contains("vip2", true) -> 2
+            activeFrame.contains("vip_suite_frame_1", true) || activeFrame.contains("vip1", true) -> 1
+            else -> 0
+        }
+        if (vipFromFrame > 0) return vipFromFrame
+
+        // Priority 2: Check active VIP border frame
+        val vipFromBorder = when {
+            activeProfileBorderFrame.contains("vip_border_5", true) -> 5
+            activeProfileBorderFrame.contains("vip_border_4", true) -> 4
+            activeProfileBorderFrame.contains("vip_border_3", true) -> 3
+            activeProfileBorderFrame.contains("vip_border_2", true) -> 2
+            activeProfileBorderFrame.contains("vip_border_1", true) -> 1
+            else -> 0
+        }
+        if (vipFromBorder > 0) return vipFromBorder
+
         if (vipLevel > 0) return vipLevel
         val isTrialActive = isVipTrialActive()
         val frame = AVATAR_FRAMES_CATALOG.find { it.id == activeFrame }
         if (frame != null && frame.vipLevel > 0) {
-            if (frame.vipLevel == 1 && vipTrialExpiryDate > 0L && !isTrialActive && !isPaidSubscriber()) {
-                // Trial expired and user did not buy a permanent subscription
-            } else {
-                return frame.vipLevel
-            }
+            return frame.vipLevel
         }
 
         // Check owned active vip tiers
@@ -1103,6 +1174,70 @@ data class UserProfile(
         if (isTrialActive) return 1
         return 0
     }
+}
+
+fun extractVipLevelFromId(id: String): Int {
+    return when {
+        id.contains("vip_suite_frame_5", true) || id.contains("vip_border_5", true) || id.contains("vip5", true) -> 5
+        id.contains("vip_suite_frame_4", true) || id.contains("vip_border_4", true) || id.contains("vip4", true) -> 4
+        id.contains("vip_suite_frame_3", true) || id.contains("vip_border_3", true) || id.contains("vip3", true) -> 3
+        id.contains("vip_suite_frame_2", true) || id.contains("vip_border_2", true) || id.contains("vip2", true) -> 2
+        id.contains("vip_suite_frame_1", true) || id.contains("vip_border_1", true) || id.contains("vip1", true) -> 1
+        else -> 0
+    }
+}
+
+fun getVipChatFrameForLevel(vipLevel: Int): String = when (vipLevel) {
+    1 -> "chat_frame_silver_knight"
+    2 -> "chat_frame_golden_paladin"
+    3 -> "chat_frame_imperial_obsidian"
+    4 -> "chat_frame_warrior_crimson"
+    5 -> "chat_frame_celestial_sapphire"
+    else -> "chat_frame_silver_knight"
+}
+
+fun getVipSuiteUpdates(vipLevel: Int, equip: Boolean): Map<String, Any> {
+    if (!equip) {
+        return mapOf(
+            "activeFrame" to "",
+            "activeProfileBorderFrame" to "",
+            "activeChatFrame" to "",
+            "activeChatBar" to "",
+            "activeProfileArch" to "",
+            "activeProfileCover" to "",
+            "activeEntranceEffect" to ""
+        )
+    }
+    val chatFrameId = getVipChatFrameForLevel(vipLevel)
+    return mapOf(
+        "activeFrame" to "vip_suite_frame_$vipLevel",
+        "activeProfileBorderFrame" to "vip_border_$vipLevel",
+        "activeChatFrame" to chatFrameId,
+        "activeChatBar" to "chat_sword_vip_$vipLevel",
+        "activeProfileArch" to "arch_vip_$vipLevel",
+        "activeProfileCover" to "cover_vip_$vipLevel",
+        "activeEntranceEffect" to "entrance_vip_$vipLevel",
+        "vipLevel" to vipLevel,
+        "plan" to "VIP $vipLevel"
+    )
+}
+
+fun UserProfile.applyVipSuite(vipLevel: Int, equip: Boolean): UserProfile {
+    if (!equip) {
+        return copy(
+            activeFrame = "",
+            activeProfileBorderFrame = "",
+            activeChatFrame = ""
+        )
+    }
+    val chatFrameId = getVipChatFrameForLevel(vipLevel)
+    return copy(
+        activeFrame = "vip_suite_frame_$vipLevel",
+        activeProfileBorderFrame = "vip_border_$vipLevel",
+        activeChatFrame = chatFrameId,
+        vipLevel = vipLevel,
+        plan = "VIP $vipLevel"
+    )
 }
 
 fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
@@ -1815,7 +1950,9 @@ data class NotificationItem(
     val giftId: String = "",
     val giftName: String = "",
     val diamondsReceived: Long = 0L,
-    val earningsInr: Double = 0.0
+    val earningsInr: Double = 0.0,
+    val giftEmoji: String = "",
+    val quantity: Int = 1
 )
 
 data class RoomMember(
@@ -1875,7 +2012,15 @@ data class LiveRoomComment(
     val isFounder: Boolean = false,
     val level: Int = 1,
     val equippedBadges: List<String> = emptyList(),
-    val activeCrown: String = ""
+    val activeCrown: String = "",
+    val isGiftComment: Boolean = false,
+    val giftId: String = "",
+    val giftName: String = "",
+    val giftEmoji: String = "",
+    val giftCost: Long = 0L,
+    val giftQuantity: Int = 1,
+    val recipientName: String = "",
+    val recipientUid: String = ""
 )
 
 data class HangoutTrack(
@@ -3387,3 +3532,26 @@ object LuxuryAvatarCatalog {
         return userLevel >= 2 || isVip
     }
 }
+
+
+data class InRoomGameState(
+    @get:PropertyName("gameType") @set:PropertyName("gameType") var gameType: String = "",
+    @get:PropertyName("title") @set:PropertyName("title") var title: String = "",
+    @get:PropertyName("status") @set:PropertyName("status") var status: String = "ACTIVE",
+    @get:PropertyName("startedBy") @set:PropertyName("startedBy") var startedBy: String = "",
+    @get:PropertyName("startedByName") @set:PropertyName("startedByName") var startedByName: String = "",
+    @get:PropertyName("startedAt") @set:PropertyName("startedAt") var startedAt: Long = 0L,
+    @get:PropertyName("currentTurnIndex") @set:PropertyName("currentTurnIndex") var currentTurnIndex: Int = 0,
+    @get:PropertyName("currentTurnUserId") @set:PropertyName("currentTurnUserId") var currentTurnUserId: String = "",
+    @get:PropertyName("timerRemaining") @set:PropertyName("timerRemaining") var timerRemaining: Int = 30,
+    @get:PropertyName("diceValue") @set:PropertyName("diceValue") var diceValue: Int = 1,
+    @get:PropertyName("bottleAngle") @set:PropertyName("bottleAngle") var bottleAngle: Float = 0f,
+    @get:PropertyName("selectedPlayerId") @set:PropertyName("selectedPlayerId") var selectedPlayerId: String = "",
+    @get:PropertyName("playerScores") @set:PropertyName("playerScores") var playerScores: Map<String, Int> = emptyMap(),
+    @get:PropertyName("participants") @set:PropertyName("participants") var participants: List<String> = emptyList(),
+    @get:PropertyName("maxPlayers") @set:PropertyName("maxPlayers") var maxPlayers: Int = 2,
+    @get:PropertyName("gameStage") @set:PropertyName("gameStage") var gameStage: String = "WAITING",
+    @get:PropertyName("lastShotJson") @set:PropertyName("lastShotJson") var lastShotJson: String = "",
+    @get:PropertyName("lastShotTimestamp") @set:PropertyName("lastShotTimestamp") var lastShotTimestamp: Long = 0L,
+    @get:PropertyName("coinsStateJson") @set:PropertyName("coinsStateJson") var coinsStateJson: String = ""
+)

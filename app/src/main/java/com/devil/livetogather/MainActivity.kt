@@ -280,6 +280,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        GooglePlayBillingManager.initialize(applicationContext)
         initialDeepLinkRoomId = extractRoomId(intent)
         initialDeepLinkChatUserId = extractChatUserId(intent)
         val imageLoader = ImageLoader.Builder(this)
@@ -324,6 +325,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        currentActivity = this
         val uid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
         if (!uid.isNullOrBlank()) {
             com.google.firebase.firestore.FirebaseFirestore.getInstance().collection("users").document(uid).update(
@@ -348,6 +350,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        if (currentActivity == this) {
+            currentActivity = null
+        }
+    }
+
     private fun extractRoomId(intent: Intent?): String? {
         if (intent == null) return null
         return intent.getStringExtra("ROOM_ID")
@@ -366,6 +375,7 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        var currentActivity: Activity? = null
         val pendingDeepLinkRoomId = mutableStateOf<String?>(null)
         val pendingDeepLinkChatUserId = mutableStateOf<String?>(null)
     }
@@ -551,6 +561,7 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                             )
                             db.collection("users").document(currentUserId)
                                 .collection("notifications").document(greetingNotif.id).set(greetingNotif)
+                            db.collection("notifications").document(greetingNotif.id).set(greetingNotif)
 
                             AppNotificationHelper.showSystemNotification(
                                 context = context,
@@ -673,126 +684,6 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
     var helpDeskPackageForStore by remember { mutableStateOf<CoinPackageItem?>(null) }
     var showAppHelpDeskModal by remember { mutableStateOf(false) }
 
-    // Top Search Bar State (Dual-Mode: Room vs User)
-    var isSearchExpanded by remember { mutableStateOf(false) }
-    var searchQuery by remember { mutableStateOf("") }
-    var searchMode by remember { mutableStateOf("room") } // "room" or "user"
-    val searchRoomResults = remember { mutableStateListOf<RoomItem>() }
-    val searchUserResults = remember { mutableStateListOf<UserProfile>() }
-    var isSearching by remember { mutableStateOf(false) }
-
-    LaunchedEffect(searchQuery, searchMode) {
-        val q = searchQuery.trim()
-        if (q.isBlank()) {
-            searchRoomResults.clear()
-            searchUserResults.clear()
-            isSearching = false
-            return@LaunchedEffect
-        }
-        isSearching = true
-        if (searchMode == "room") {
-            db.collection("rooms").whereEqualTo("roomId", q).get()
-                .addOnSuccessListener { exactDocs ->
-                    if (exactDocs != null && !exactDocs.isEmpty) {
-                        val list = exactDocs.documents.mapNotNull { parseRoomFromDoc(it) }
-                        searchRoomResults.clear()
-                        searchRoomResults.addAll(list)
-                        isSearching = false
-                    } else {
-                        db.collection("rooms").limit(60).get()
-                            .addOnSuccessListener { snapshot ->
-                                val list = mutableListOf<RoomItem>()
-                                for (doc in snapshot.documents) {
-                                    val r = parseRoomFromDoc(doc)
-                                    if (r.id.contains(q, ignoreCase = true) ||
-                                        r.roomId.contains(q, ignoreCase = true) ||
-                                        r.title.contains(q, ignoreCase = true) ||
-                                        r.roomName.contains(q, ignoreCase = true) ||
-                                        r.hostName.contains(q, ignoreCase = true)
-                                    ) {
-                                        list.add(r)
-                                    }
-                                }
-                                searchRoomResults.clear()
-                                searchRoomResults.addAll(list)
-                                isSearching = false
-                            }
-                            .addOnFailureListener { isSearching = false }
-                    }
-                }
-                .addOnFailureListener {
-                    db.collection("rooms").limit(60).get()
-                        .addOnSuccessListener { snapshot ->
-                            val list = mutableListOf<RoomItem>()
-                            for (doc in snapshot.documents) {
-                                val r = parseRoomFromDoc(doc)
-                                if (r.id.contains(q, ignoreCase = true) ||
-                                    r.roomId.contains(q, ignoreCase = true) ||
-                                    r.title.contains(q, ignoreCase = true) ||
-                                    r.roomName.contains(q, ignoreCase = true) ||
-                                    r.hostName.contains(q, ignoreCase = true)
-                                ) {
-                                    list.add(r)
-                                }
-                            }
-                            searchRoomResults.clear()
-                            searchRoomResults.addAll(list)
-                            isSearching = false
-                        }
-                        .addOnFailureListener { isSearching = false }
-                }
-        } else {
-            db.collection("users").whereEqualTo("userId", q).get()
-                .addOnSuccessListener { exactDocs ->
-                    if (exactDocs != null && !exactDocs.isEmpty) {
-                        val list = exactDocs.documents.mapNotNull { parseUserProfileFromDoc(it) }
-                        searchUserResults.clear()
-                        searchUserResults.addAll(list)
-                        isSearching = false
-                    } else {
-                        db.collection("users").limit(60).get()
-                            .addOnSuccessListener { snapshot ->
-                                val list = mutableListOf<UserProfile>()
-                                for (doc in snapshot.documents) {
-                                    val u = parseUserProfileFromDoc(doc)
-                                    if (u.uid.contains(q, ignoreCase = true) ||
-                                        u.userId.contains(q, ignoreCase = true) ||
-                                        u.name.contains(q, ignoreCase = true) ||
-                                        u.city.contains(q, ignoreCase = true)
-                                    ) {
-                                        list.add(u)
-                                    }
-                                }
-                                searchUserResults.clear()
-                                searchUserResults.addAll(list)
-                                isSearching = false
-                            }
-                            .addOnFailureListener { isSearching = false }
-                    }
-                }
-                .addOnFailureListener {
-                    db.collection("users").limit(60).get()
-                        .addOnSuccessListener { snapshot ->
-                            val list = mutableListOf<UserProfile>()
-                            for (doc in snapshot.documents) {
-                                val u = parseUserProfileFromDoc(doc)
-                                if (u.uid.contains(q, ignoreCase = true) ||
-                                    u.userId.contains(q, ignoreCase = true) ||
-                                    u.name.contains(q, ignoreCase = true) ||
-                                    u.city.contains(q, ignoreCase = true)
-                                ) {
-                                    list.add(u)
-                                }
-                            }
-                            searchUserResults.clear()
-                            searchUserResults.addAll(list)
-                            isSearching = false
-                        }
-                        .addOnFailureListener { isSearching = false }
-                }
-        }
-    }
-
     var currentScreen by remember { mutableStateOf("discover") }
     var discoverTab by remember { mutableStateOf("cards") } // "cards" or "rooms"
     var selectedCategory by remember { mutableStateOf("all") }
@@ -849,6 +740,22 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
             }
         }
     }
+
+    // Active App Presence Heartbeat Engine (Keeps User Online in Real-Time)
+    LaunchedEffect(currentUserId) {
+        if (currentUserId.isNotBlank()) {
+            while (true) {
+                db.collection("users").document(currentUserId).update(
+                    mapOf(
+                        "isOnline" to true,
+                        "lastActive" to System.currentTimeMillis()
+                    )
+                )
+                kotlinx.coroutines.delay(45_000L)
+            }
+        }
+    }
+
     var showNotificationsDialog by remember { mutableStateOf(false) }
     var showAdminDashboardModal by remember { mutableStateOf(false) }
 
@@ -905,6 +812,7 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
     var activeCategoryHub by remember { mutableStateOf<IntentCategory?>(null) }
     var matchedPartner by remember { mutableStateOf<UserProfile?>(null) }
     var activeChatPartner by remember { mutableStateOf<UserProfile?>(null) }
+    var isGlobalCapsuleExpanded by remember { mutableStateOf(true) }
 
 // Automatic 1-on-1 Chat Deep-Linking from FCM Notification / Internal Intent
     val pendingChatLink = MainActivity.pendingDeepLinkChatUserId.value ?: initialChatUserId
@@ -936,6 +844,93 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
     val notifications = remember { mutableStateListOf<NotificationItem>() }
     val chatMessages = remember { mutableStateListOf<ChatMessage>() }
     val roomsList = remember { mutableStateListOf<RoomItem>() }
+
+    // Top Search Bar State (Dual-Mode: Room vs User)
+    var isSearchExpanded by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var searchMode by remember { mutableStateOf("room") } // "room" or "user"
+    val searchRoomResults = remember { mutableStateListOf<RoomItem>() }
+    val searchUserResults = remember { mutableStateListOf<UserProfile>() }
+    var isSearching by remember { mutableStateOf(false) }
+
+    LaunchedEffect(searchQuery, searchMode) {
+        val q = searchQuery.trim()
+        if (q.isBlank()) {
+            searchRoomResults.clear()
+            searchUserResults.clear()
+            isSearching = false
+            return@LaunchedEffect
+        }
+        if (searchMode == "room") {
+            // 1. Instant local search from active roomsList
+            val local = roomsList.filter { r ->
+                r.id.contains(q, ignoreCase = true) ||
+                r.roomId.contains(q, ignoreCase = true) ||
+                r.title.contains(q, ignoreCase = true) ||
+                r.roomName.contains(q, ignoreCase = true) ||
+                r.hostName.contains(q, ignoreCase = true)
+            }
+            searchRoomResults.clear()
+            searchRoomResults.addAll(local)
+
+            // 2. Exact match lookup from Firestore if room is not cached locally
+            isSearching = local.isEmpty()
+            db.collection("rooms").whereEqualTo("roomId", q).limit(10).get()
+                .addOnSuccessListener { exactDocs ->
+                    isSearching = false
+                    if (exactDocs != null && !exactDocs.isEmpty) {
+                        val list = exactDocs.documents.mapNotNull { parseRoomFromDoc(it) }
+                        for (item in list) {
+                            if (searchRoomResults.none { it.id == item.id }) {
+                                searchRoomResults.add(item)
+                            }
+                        }
+                    }
+                }
+                .addOnFailureListener { isSearching = false }
+        } else {
+            // 1. Instant local search from discoverProfiles + currentUser
+            val allUsersList = (discoverProfiles + currentUser).distinctBy { it.uid }
+            val local = allUsersList.filter { u ->
+                u.uid.contains(q, ignoreCase = true) ||
+                u.userId.contains(q, ignoreCase = true) ||
+                u.name.contains(q, ignoreCase = true) ||
+                u.city.contains(q, ignoreCase = true)
+            }
+            searchUserResults.clear()
+            searchUserResults.addAll(local)
+
+            // 2. Query Firestore by 8-digit userId or uid
+            isSearching = local.isEmpty()
+            if (q.all { it.isDigit() } && q.length >= 3) {
+                db.collection("users").whereEqualTo("userId", q).limit(10).get()
+                    .addOnSuccessListener { exactDocs ->
+                        isSearching = false
+                        if (exactDocs != null && !exactDocs.isEmpty) {
+                            val list = exactDocs.documents.mapNotNull { parseUserProfileFromDoc(it) }
+                            for (item in list) {
+                                if (searchUserResults.none { it.uid == item.uid }) {
+                                    searchUserResults.add(item)
+                                }
+                            }
+                        }
+                    }
+                    .addOnFailureListener { isSearching = false }
+            } else {
+                db.collection("users").document(q).get()
+                    .addOnSuccessListener { doc ->
+                        isSearching = false
+                        if (doc != null && doc.exists()) {
+                            val u = parseUserProfileFromDoc(doc)
+                            if (u != null && searchUserResults.none { it.uid == u.uid }) {
+                                searchUserResults.add(u)
+                            }
+                        }
+                    }
+                    .addOnFailureListener { isSearching = false }
+            }
+        }
+    }
 
     // Real-Time Cloud Firestore Refresh Engine (Zero Dummy Data, Direct Source.SERVER)
     val refreshEngine = remember { FirestoreRefreshEngine(context, db, prefs) }
@@ -1004,12 +999,15 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
             }
             if (snapshot != null) {
                 val fetchedRooms = snapshot.documents.mapNotNull { doc ->
-                    val r = parseRoomFromDoc(doc)
-                    if (r != null) {
-                        val docRoomId = doc.getString("roomId") ?: ""
-                        if (docRoomId.isBlank() || docRoomId.length != 8 || !docRoomId.all { it.isDigit() }) {
-                            doc.reference.update("roomId", r.roomId)
-                        }
+                    val r = parseRoomFromDoc(doc) ?: return@mapNotNull null
+                    val isDummy = r.hostUid.startsWith("dummy") || r.hostUid.isBlank() || doc.id.startsWith("dummy") || r.title.contains("dummy", ignoreCase = true)
+                    if (isDummy) {
+                        doc.reference.delete()
+                        return@mapNotNull null
+                    }
+                    val docRoomId = doc.getString("roomId") ?: ""
+                    if (docRoomId.isBlank() || docRoomId.length != 8 || !docRoomId.all { it.isDigit() }) {
+                        doc.reference.update("roomId", r.roomId)
                     }
                     r
                 }
@@ -1019,23 +1017,29 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
             }
         }
 
-        // Initial scrub of stale room comments across Firestore for offline/ended rooms
+        // Deep scrub of dummy rooms and dummy profiles across Firestore
         db.collection("rooms").get().addOnSuccessListener { rSnaps ->
             if (rSnaps != null) {
                 for (rDoc in rSnaps.documents) {
-                    val isHostLive = rDoc.getBoolean("isHostLive") ?: false
-                    val isLive = rDoc.getBoolean("isLive") ?: false
-                    val isEnded = rDoc.getBoolean("isEnded") ?: false
-                    if (isEnded || !isHostLive || !isLive) {
-                        rDoc.reference.collection("live_comments").limit(100).get().addOnSuccessListener { cSnaps ->
-                            if (cSnaps != null && !cSnaps.isEmpty) {
-                                val batch = db.batch()
-                                for (cDoc in cSnaps.documents) {
-                                    batch.delete(cDoc.reference)
-                                }
-                                batch.commit()
-                            }
-                        }
+                    val rId = rDoc.id
+                    val hostUid = rDoc.getString("hostUid") ?: rDoc.getString("hostId") ?: ""
+                    val title = rDoc.getString("title") ?: ""
+                    val isDummy = rId.startsWith("dummy") || hostUid.startsWith("dummy") || hostUid.isBlank() || title.contains("dummy", ignoreCase = true)
+                    if (isDummy) {
+                        rDoc.reference.delete()
+                    }
+                }
+            }
+        }
+        db.collection("users").get().addOnSuccessListener { uSnaps ->
+            if (uSnaps != null) {
+                for (uDoc in uSnaps.documents) {
+                    val uid = uDoc.id
+                    val docUid = uDoc.getString("uid") ?: ""
+                    val name = uDoc.getString("name") ?: ""
+                    val isDummy = uid.startsWith("dummy") || docUid.startsWith("dummy") || uid.startsWith("seed_") || docUid.startsWith("seed_") || name.contains("dummy", ignoreCase = true)
+                    if (isDummy && uid != currentUserId && docUid != currentUserId) {
+                        uDoc.reference.delete()
                     }
                 }
             }
@@ -1117,8 +1121,21 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                 return@addSnapshotListener
             }
             if (snapshot != null) {
-                val list = snapshot.documents.mapNotNull { parseUserProfileFromDoc(it) }
-                    .filter { it.uid.isNotBlank() && it.uid != currentUserId && !currentUser.blockedUserIds.contains(it.uid) }
+                val list = snapshot.documents.mapNotNull { doc ->
+                    val uid = doc.id
+                    val docUid = doc.getString("uid") ?: ""
+                    val name = doc.getString("name") ?: ""
+                    val isDummy = uid.startsWith("dummy") || docUid.startsWith("dummy") ||
+                            uid.startsWith("seed_") || docUid.startsWith("seed_") ||
+                            name.contains("dummy", ignoreCase = true)
+                    if (isDummy && uid != currentUserId && docUid != currentUserId) {
+                        doc.reference.delete()
+                        null
+                    } else {
+                        val u = parseUserProfileFromDoc(doc)
+                        if (u != null && u.uid.isNotBlank() && u.uid != currentUserId && !currentUser.blockedUserIds.contains(u.uid)) u else null
+                    }
+                }
                 discoverProfiles.clear()
                 discoverProfiles.addAll(list)
             }
@@ -1190,6 +1207,24 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
 
                     notifications.clear()
                     notifications.addAll(items)
+                }
+            }
+
+        // 3B. User Personal Notifications Listener (users/{currentUserId}/notifications)
+        db.collection("users").document(currentUserId)
+            .collection("notifications")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null || snapshot == null) return@addSnapshotListener
+                val userNotifs = snapshot.documents.mapNotNull { it.toObject(NotificationItem::class.java) }
+                userNotifs.forEach { uNotif ->
+                    val existingIdx = notifications.indexOfFirst { it.id == uNotif.id }
+                    if (existingIdx >= 0) {
+                        if (notifications[existingIdx].isRead != uNotif.isRead) {
+                            notifications[existingIdx] = uNotif
+                        }
+                    } else {
+                        notifications.add(0, uNotif)
+                    }
                 }
             }
 
@@ -1290,8 +1325,10 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
         }
     }
 
-    val unreadNotificationsCount = remember(notifications, pendingIntimacyRequestsCount) {
-        notifications.count { !it.isRead } + pendingIntimacyRequestsCount
+    val unreadNotificationsCount by remember(pendingIntimacyRequestsCount) {
+        derivedStateOf {
+            notifications.count { !it.isRead } + pendingIntimacyRequestsCount
+        }
     }
 
     val isKeyboardOpen = WindowInsets.isImeVisible
@@ -1403,7 +1440,7 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
         Scaffold(
             containerColor = BrandDark,
             topBar = {
-                if (!isProfileScreen && (activeAudioRoom == null || isAudioRoomMinimized)) {
+                if (currentScreen != "discover" && !isProfileScreen && (activeAudioRoom == null || isAudioRoomMinimized)) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1457,7 +1494,56 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                                 )
                             }
 
-                            // Sleek Dual-Mode Search Button
+                            // Google-Style Search Animation & Bell Ringing Animation
+                            val googleSearchAnimTop = rememberInfiniteTransition(label = "googleSearchBlinkTop")
+                            val searchPulseScaleTop by googleSearchAnimTop.animateFloat(
+                                initialValue = 0.96f,
+                                targetValue = 1.12f,
+                                animationSpec = infiniteRepeatable(
+                                    animation = tween(1000, easing = FastOutSlowInEasing),
+                                    repeatMode = RepeatMode.Reverse
+                                ),
+                                label = "searchPulseTop"
+                            )
+                            val searchBlinkColorTop by googleSearchAnimTop.animateColor(
+                                initialValue = Color(0xFF4285F4),
+                                targetValue = Color(0xFF34A853),
+                                animationSpec = infiniteRepeatable(
+                                    animation = tween(1800, easing = LinearEasing),
+                                    repeatMode = RepeatMode.Reverse
+                                ),
+                                label = "searchColorTop"
+                            )
+                            val bellAnimTop = rememberInfiniteTransition(label = "bellNotificationAnimTop")
+                            val bellRotationTop by bellAnimTop.animateFloat(
+                                initialValue = if (unreadNotificationsCount > 0) -15f else 0f,
+                                targetValue = if (unreadNotificationsCount > 0) 15f else 0f,
+                                animationSpec = infiniteRepeatable(
+                                    animation = tween(150, easing = LinearEasing),
+                                    repeatMode = RepeatMode.Reverse
+                                ),
+                                label = "bellRotationTop"
+                            )
+                            val badgePulseScaleTop by bellAnimTop.animateFloat(
+                                initialValue = 0.88f,
+                                targetValue = 1.18f,
+                                animationSpec = infiniteRepeatable(
+                                    animation = tween(550, easing = FastOutSlowInEasing),
+                                    repeatMode = RepeatMode.Reverse
+                                ),
+                                label = "badgePulseTop"
+                            )
+                            val badgeAlphaTop by bellAnimTop.animateFloat(
+                                initialValue = 0.65f,
+                                targetValue = 1.0f,
+                                animationSpec = infiniteRepeatable(
+                                    animation = tween(550, easing = FastOutSlowInEasing),
+                                    repeatMode = RepeatMode.Reverse
+                                ),
+                                label = "badgeAlphaTop"
+                            )
+
+                            // Sleek Dual-Mode Search Button (Google Style, No Borders)
                             IconButton(onClick = {
                                 isSearchExpanded = !isSearchExpanded
                                 if (!isSearchExpanded) {
@@ -1469,20 +1555,37 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                                 Icon(
                                     imageVector = if (isSearchExpanded) Icons.Default.Close else Icons.Default.Search,
                                     contentDescription = "Search",
-                                    tint = if (isSearchExpanded) BrandCoral else topBarIconTint
+                                    tint = if (isSearchExpanded) Color(0xFFEA4335) else searchBlinkColorTop,
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .graphicsLayer {
+                                            if (!isSearchExpanded) {
+                                                scaleX = searchPulseScaleTop
+                                                scaleY = searchPulseScaleTop
+                                            }
+                                        }
                                 )
                             }
 
-                            // Real-time Notification Bell with Badge
+                            // Real-time Notification Bell with Blinking Number Badge
                             IconButton(onClick = { showNotificationsDialog = true }) {
                                 BadgedBox(
                                     badge = {
                                         if (unreadNotificationsCount > 0) {
                                             Badge(
-                                                containerColor = BrandCoral,
-                                                contentColor = Color.White
+                                                containerColor = Color(0xFFFF2A55),
+                                                contentColor = Color.White,
+                                                modifier = Modifier.graphicsLayer {
+                                                    scaleX = badgePulseScaleTop
+                                                    scaleY = badgePulseScaleTop
+                                                    alpha = badgeAlphaTop
+                                                }
                                             ) {
-                                                Text("$unreadNotificationsCount", fontSize = 10.sp)
+                                                Text(
+                                                    text = if (unreadNotificationsCount > 99) "99+" else "$unreadNotificationsCount",
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
                                             }
                                         }
                                     }
@@ -1490,7 +1593,14 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                                     Icon(
                                         imageVector = Icons.Default.Notifications,
                                         contentDescription = "Notifications",
-                                        tint = if (unreadNotificationsCount > 0) BrandOrange else topBarIconTint
+                                        tint = if (unreadNotificationsCount > 0) Color(0xFFFFB800) else topBarIconTint,
+                                        modifier = Modifier
+                                            .size(24.dp)
+                                            .graphicsLayer {
+                                                if (unreadNotificationsCount > 0) {
+                                                    rotationZ = bellRotationTop
+                                                }
+                                            }
                                     )
                                 }
                             }
@@ -1792,10 +1902,23 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
         },
         bottomBar = {
             if (activeAudioRoom == null || isAudioRoomMinimized) {
-                GalaxyGlossyBottomNavigationBar(
-                    currentScreen = currentScreen,
-                    onNavigate = { route -> currentScreen = route }
-                )
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    AnimatedExpandableNeonCapsule(
+                        currentScreen = currentScreen,
+                        currentUser = currentUser,
+                        isExpanded = isGlobalCapsuleExpanded,
+                        onToggleExpand = { isGlobalCapsuleExpanded = !isGlobalCapsuleExpanded },
+                        onNavigate = { route -> currentScreen = route },
+                        onCreateRoom = {
+                            createRoomInitialCategory = "voice_party"
+                            showCreateRoomDialog = true
+                        },
+                        onOpenMoments = { currentScreen = "moments" }
+                    )
+                }
             }
         }
         ) { paddingValues ->
@@ -1804,254 +1927,126 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                 onRefresh = triggerRefresh,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(paddingValues)
+                    .padding(
+                        if (currentScreen == "discover" || currentScreen == "profile")
+                            PaddingValues(0.dp)
+                        else
+                            PaddingValues(top = paddingValues.calculateTopPadding(), bottom = 0.dp)
+                    )
             ) {
                 when (currentScreen) {
                     "discover" -> {
-                        Column(modifier = Modifier.fillMaxSize()) {
-                            // Discover View Toggle: Swipe Cards vs Intent Rooms Grid
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(BrandCard)
-                                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(50))
-                                        .background(BrandDark)
-                                        .padding(4.dp)
-                                ) {
-                                    Row {
-                                        Box(
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(50))
-                                                .background(if (discoverTab == "cards") BrandCoral else Color.Transparent)
-                                                .clickable { discoverTab = "cards" }
-                                                .padding(horizontal = 16.dp, vertical = 6.dp)
-                                        ) {
-                                            Text(
-                                                "🔥 Swipe Cards",
-                                                color = Color.White,
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
-
-                                        Box(
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(50))
-                                                .background(if (discoverTab == "rooms") BrandCoral else Color.Transparent)
-                                                .clickable { discoverTab = "rooms" }
-                                                .padding(horizontal = 16.dp, vertical = 6.dp)
-                                        ) {
-                                            val intentCategoriesCount = remember { CATEGORY_LIST.filter { it.id != "all" }.size }
-                                            Text(
-                                                "🏛️ Intent Rooms ($intentCategoriesCount)",
-                                                color = Color.White,
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
-                                    }
+                        LiveTogetherHomeScreen(
+                            allUsers = (discoverProfiles + currentUser).distinctBy { it.uid },
+                            rooms = roomsList,
+                            currentUser = currentUser,
+                            moments = moments,
+                            unreadNotificationsCount = unreadNotificationsCount,
+                            onCapsuleExpandChange = { isGlobalCapsuleExpanded = it },
+                            onJoinRoom = { room ->
+                                val targetHost = room.hostUid.ifBlank { room.hostId }
+                                val isHostCandidate = currentUserId.isNotBlank() && currentUserId == targetHost
+                                if (!isHostCandidate && (room.category == "vip_room" || room.isVipRoom) && (!currentUser.isVipOrPlatinum() && currentUser.getVipLevel() < 1)) {
+                                    Toast.makeText(context, "👑 VIP Access Only: This room is reserved for VIP Level 1+ members!", Toast.LENGTH_LONG).show()
+                                    return@LiveTogetherHomeScreen
                                 }
-                            }
+                                val canActuallyHost = !isHostCandidate || currentUser.canHostRoom()
 
-                            if (discoverTab == "cards") {
-                                val todayDateStr = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()) }
+                                if (!isHostCandidate && (!room.isHostLive || room.statusMessage.equals("OFFLINE", ignoreCase = true) || room.statusMessage.equals("CLOSED", ignoreCase = true))) {
+                                    Toast.makeText(context, "⏳ The host (${room.hostName.ifBlank { "Host" }}) is currently offline. They will be live soon!", Toast.LENGTH_SHORT).show()
+                                    return@LiveTogetherHomeScreen
+                                }
 
-                                DiscoverScreenContent(
-                                    profiles = filteredProfiles,
-                                    selectedCategory = selectedCategory,
-                                    currentUser = currentUser,
-                                    onSelectCategory = { selectedCategory = it },
-                                    onPass = { profile ->
-                                        val isToday = currentUser.lastSwipeDate == todayDateStr
-                                        val currentDailyCount = if (isToday) currentUser.dailySwipeCount else 0
+                                if (isHostCandidate && !canActuallyHost) {
+                                    subscriptionPaywallNotice = "👑 Host Access Criteria: Minimum Platinum Membership Required!\nYour 7-day launch trial has ended. Upgrade to Platinum (₹249/mo) or VIP to host."
+                                    showMainSubscriptionModal = true
+                                }
 
-                                        if (!currentUser.isPaidSubscriber() && currentDailyCount >= 15) {
-                                            subscriptionPaywallNotice = "Daily Free Limit Reached (15/15 Swipes) 🔒\nUpgrade your membership for unlimited swipes & instant matching!"
-                                            showMainSubscriptionModal = true
-                                        } else {
-                                            val newCount = currentDailyCount + 1
-                                            currentUser = currentUser.copy(
-                                                dailySwipeCount = newCount,
-                                                lastSwipeDate = todayDateStr
-                                            )
-                                            saveProfileToPrefs(prefs, currentUser)
-                                            db.collection("users").document(currentUserId).update(
-                                                mapOf(
-                                                    "dailySwipeCount" to newCount,
-                                                    "lastSwipeDate" to todayDateStr
-                                                )
-                                            )
-                                            recordSwipe(db, currentUserId, profile.uid, "pass")
-                                            val remaining = maxOf(0, 15 - newCount)
-                                            if (!currentUser.isPaidSubscriber()) {
-                                                Toast.makeText(context, "Passed ${profile.name} ($remaining free swipes left today)", Toast.LENGTH_SHORT).show()
-                                            } else {
-                                                Toast.makeText(context, "Passed ${profile.name}", Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    },
-                                    onSuperStar = { profile ->
-                                        if (!currentUser.isPaidSubscriber()) {
-                                            subscriptionPaywallNotice = "⭐ SuperStar is a Premium Feature!\nUpgrade your membership to send SuperStars, stand out, and get noticed instantly."
-                                            showMainSubscriptionModal = true
-                                        } else {
-                                            recordSwipe(db, currentUserId, profile.uid, "superstar")
-                                            sendNotification(
-                                                db = db,
-                                                targetUserId = profile.uid,
-                                                sender = currentUser,
-                                                type = "superstar",
-                                                title = "⭐ SuperStar Received!",
-                                                message = "${currentUser.name} gave you a SuperStar!"
-                                            )
-                                            Toast.makeText(context, "SuperStar sent to ${profile.name}!", Toast.LENGTH_SHORT).show()
-                                        }
-                                    },
-                                    onDirectMessage = { profile ->
-                                        // Tier Rule Check: VIP / Platinum only
-                                        if (currentUser.isVipOrPlatinum()) {
-                                            showDirectMessageDialog = profile
-                                        } else {
-                                            Toast.makeText(
-                                                context,
-                                                "Direct messaging is exclusive to VIP or Platinum members. Like back to chat for free!",
-                                                Toast.LENGTH_LONG
-                                            ).show()
-                                        }
-                                    },
-                                    onLike = { profile ->
-                                        val isToday = currentUser.lastSwipeDate == todayDateStr
-                                        val currentDailyCount = if (isToday) currentUser.dailySwipeCount else 0
-
-                                        if (!currentUser.isPaidSubscriber() && currentDailyCount >= 15) {
-                                            subscriptionPaywallNotice = "Daily Free Limit Reached (15/15 Swipes) 🔒\nUpgrade your membership for unlimited swipes & instant matching!"
-                                            showMainSubscriptionModal = true
-                                        } else {
-                                            val newCount = currentDailyCount + 1
-                                            currentUser = currentUser.copy(
-                                                dailySwipeCount = newCount,
-                                                lastSwipeDate = todayDateStr
-                                            )
-                                            saveProfileToPrefs(prefs, currentUser)
-                                            db.collection("users").document(currentUserId).update(
-                                                mapOf(
-                                                    "dailySwipeCount" to newCount,
-                                                    "lastSwipeDate" to todayDateStr
-                                                )
-                                            )
-                                            recordSwipe(db, currentUserId, profile.uid, "like")
-                                            checkAndHandleMutualMatch(
-                                                db = db,
-                                                currentUser = currentUser,
-                                                partner = profile,
-                                                onMatch = { matchedPartner = profile }
-                                            )
-                                            val remaining = maxOf(0, 15 - newCount)
-                                            if (!currentUser.isPaidSubscriber()) {
-                                                Toast.makeText(context, "Liked ${profile.name}! ($remaining free swipes left today)", Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    }
+                                val isHost = isHostCandidate && canActuallyHost
+                                val member = RoomMember(
+                                    uid = currentUserId,
+                                    name = currentUser.name,
+                                    photoUrl = currentUser.photo,
+                                    joinedAt = System.currentTimeMillis(),
+                                    role = if (isHost) "host" else "listener",
+                                    tier = if (currentUser.getVipLevel() > 0) "VIP" else if (currentUser.isVipOrPlatinum()) "Platinum" else "Standard"
                                 )
-                            } else {
-                                // 2-Column Clean Intent Category Hubs Grid Layout
-                                IntentRoomsGrid(
-                                    categories = CATEGORY_LIST.filter { it.id != "all" },
-                                    catalogRooms = emptyList(),
-                                    rooms = roomsList,
-                                    allUsers = discoverProfiles + currentUser,
-                                    onCreateRoom = {
-                                        createRoomInitialCategory = "free_tonight"
-                                        showCreateRoomDialog = true
-                                    },
-                                    onOpenCategoryHub = { category ->
-                                        if (category.id == "vip_room" && (!currentUser.isVipOrPlatinum() && currentUser.getVipLevel() < 1)) {
-                                            Toast.makeText(context, "👑 VIP Access Only: VIP Room is reserved for VIP Level 1+ members!", Toast.LENGTH_LONG).show()
-                                        } else {
-                                            activeCategoryHub = category
-                                        }
-                                    },
-                                    onJoinRoom = { room ->
-                                        if ((room.category == "vip_room" || room.isVipRoom) && (!currentUser.isVipOrPlatinum() && currentUser.getVipLevel() < 1)) {
-                                            Toast.makeText(context, "👑 VIP Access Only: This room is reserved for VIP Level 1+ members!", Toast.LENGTH_LONG).show()
-                                            return@IntentRoomsGrid
-                                        }
-                                        val targetHost = room.hostUid.ifBlank { room.hostId }
-                                        val isHostCandidate = currentUserId.isNotBlank() && currentUserId == targetHost
-                                        val canActuallyHost = !isHostCandidate || currentUser.canHostRoom()
+                                db.collection("rooms").document(room.id)
+                                    .collection("members").document(currentUserId)
+                                    .set(member)
 
-                                        if (!isHostCandidate && (!room.isHostLive || room.statusMessage.equals("OFFLINE", ignoreCase = true) || room.statusMessage.equals("CLOSED", ignoreCase = true))) {
-                                            Toast.makeText(context, "⏳ The host (${room.hostName.ifBlank { "Host" }}) is currently offline. They will be live soon!", Toast.LENGTH_SHORT).show()
-                                            return@IntentRoomsGrid
-                                        }
-                                        // 1. Register presence in rooms/{roomId}/members/{userId}
-
-                                        if (isHostCandidate && !canActuallyHost) {
-                                            subscriptionPaywallNotice = "👑 Host Access Criteria: Minimum Platinum Membership Required!\nYour 7-day launch trial has ended. Upgrade to Platinum (₹249/mo) or VIP to host."
-                                            showMainSubscriptionModal = true
-                                        }
-
-                                        val isHost = isHostCandidate && canActuallyHost
-                                        val member = RoomMember(
-                                            uid = currentUserId,
-                                            name = currentUser.name,
-                                            photoUrl = currentUser.photo,
-                                            joinedAt = System.currentTimeMillis(),
-                                            role = if (isHost) "host" else "listener",
-                                            tier = if (currentUser.getVipLevel() > 0) "VIP" else if (currentUser.isVipOrPlatinum()) "Platinum" else "Standard"
-                                        )
-                                        db.collection("rooms").document(room.id)
-                                            .collection("members").document(currentUserId)
-                                            .set(member)
-
-                                        if (isHost) {
-                                            val hostUpdates = mutableMapOf<String, Any>(
-                                                "isLive" to true,
-                                                "isHostLive" to true,
-                                                "isEnded" to false,
-                                                "endedAt" to 0L,
-                                                "statusMessage" to "LIVE NOW"
-                                            )
-                                            if (room.hostId.isBlank()) {
-                                                hostUpdates["hostId"] = currentUserId
-                                                hostUpdates["hostUid"] = currentUserId
-                                                hostUpdates["hostName"] = currentUser.name
-                                                hostUpdates["hostPhotoUrl"] = currentUser.photo
-                                            }
-                                            db.collection("rooms").document(room.id).update(hostUpdates)
-                                            if (room.category.isNotBlank()) {
-                                                db.collection("intent_categories").document(room.category)
-                                                    .collection("rooms").document(room.id).update(hostUpdates)
-                                            }
-                                            broadcastLiveNotificationToFollowers(
-                                                db = db,
-                                                hostId = currentUserId,
-                                                hostName = currentUser.name,
-                                                hostPhoto = currentUser.photo,
-                                                room = room
-                                            )
-                                        }
-
-                                        // 2. Update current_room in Firestore user doc
-                                        currentUser = currentUser.copy(current_room = room.id)
-                                        saveProfileToPrefs(prefs, currentUser)
-                                        db.collection("users").document(currentUserId)
-                                            .update("current_room", room.id)
-                                            .addOnSuccessListener {
-                                                Log.d("Rooms", "Joined room ${room.id} as ${member.role}")
-                                            }
-
-                                        // 3. Open Audio Hangout Room Dialog
-                                        activeAudioRoom = room
+                                if (isHost) {
+                                    val hostUpdates = mutableMapOf<String, Any>(
+                                        "isLive" to true,
+                                        "isHostLive" to true,
+                                        "isEnded" to false,
+                                        "endedAt" to 0L,
+                                        "statusMessage" to "LIVE NOW"
+                                    )
+                                    if (room.hostId.isBlank()) {
+                                        hostUpdates["hostId"] = currentUserId
+                                        hostUpdates["hostUid"] = currentUserId
+                                        hostUpdates["hostName"] = currentUser.name
+                                        hostUpdates["hostPhotoUrl"] = currentUser.photo
                                     }
-                                )
+                                    db.collection("rooms").document(room.id).update(hostUpdates)
+                                    if (room.category.isNotBlank()) {
+                                        db.collection("intent_categories").document(room.category)
+                                            .collection("rooms").document(room.id).update(hostUpdates)
+                                    }
+                                    broadcastLiveNotificationToFollowers(
+                                        db = db,
+                                        hostId = currentUserId,
+                                        hostName = currentUser.name,
+                                        hostPhoto = currentUser.photo,
+                                        room = room
+                                    )
+                                }
+
+                                db.collection("users").document(currentUserId)
+                                    .update("current_room", room.id)
+
+                                val isVideo = room.category == "video_stream" || room.roomType == "video" || room.roomType == "video_pk" || room.isVideoRoom
+                                activeAudioRoom = if (isVideo) room.copy(roomType = "video") else room.copy(roomType = "audio")
+                            },
+                            onCreateRoom = {
+                                createRoomInitialCategory = "voice_party"
+                                showCreateRoomDialog = true
+                            },
+                            onOpenCategoryHub = { category ->
+                                activeCategoryHub = category
+                            },
+                            onSelectUserProfile = { profile ->
+                                selectedUserProfile = profile
+                            },
+                            onOpenSearch = {
+                                isSearchExpanded = true
+                            },
+                            onOpenNotifications = {
+                                showNotificationsDialog = true
+                            },
+                            onPostMoment = {
+                                showPostMomentDialog = true
+                            },
+                            onLikeMoment = { moment ->
+                                val idx = moments.indexOfFirst { it.id == moment.id }
+                                if (idx != -1) {
+                                    val isLiked = moment.likedByUsers.contains(currentUserId)
+                                    val updatedList = if (isLiked) moment.likedByUsers - currentUserId else moment.likedByUsers + currentUserId
+                                    moments[idx] = moment.copy(
+                                        likes = if (isLiked) maxOf(0, moment.likes - 1) else moment.likes + 1,
+                                        likedByUsers = updatedList
+                                    )
+                                    db.collection("moments").document(moment.id).update(
+                                        "likes", moments[idx].likes,
+                                        "likedByUsers", updatedList
+                                    )
+                                }
+                            },
+                            onNavigate = { route ->
+                                currentScreen = route
                             }
-                        }
+                        )
                     }
 
                     "likes" -> {
@@ -2757,7 +2752,14 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
         if (showNotificationsDialog) {
             NotificationsDialog(
                 notifications = notifications,
+                currentUserId = currentUser.uid,
                 onDismiss = { showNotificationsDialog = false },
+                onNotificationRead = { notifId ->
+                    val idx = notifications.indexOfFirst { it.id == notifId }
+                    if (idx != -1) {
+                        notifications[idx] = notifications[idx].copy(isRead = true)
+                    }
+                },
                 onOpenRoom = { rId ->
                     db.collection("rooms").document(rId).get()
                         .addOnSuccessListener { doc ->
@@ -3007,6 +3009,11 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                 onUpdateCurrentUser = { updated ->
                     currentUser = updated
                     saveProfileToPrefs(prefs, updated)
+                },
+                onJumpToRoom = { targetRoom ->
+                    activeChatPartner = null
+                    val isVideo = targetRoom.category == "video_stream" || targetRoom.roomType == "video" || targetRoom.roomType == "video_pk" || targetRoom.isVideoRoom
+                    activeAudioRoom = if (isVideo) targetRoom.copy(roomType = "video") else targetRoom.copy(roomType = "audio")
                 }
             )
         }
@@ -3205,7 +3212,7 @@ fun IntentRoomsGrid(
                 val subRoomsCount = categoryRooms.size
                 val activeRoomsCount = categoryRooms.count { it.isHostLive }
                 val isAnyRoomLive = activeRoomsCount > 0
-                val totalRoomViewers = categoryRooms.filter { it.isHostLive }.sumOf { maxOf(1, it.activeUserCount) }
+                val totalRoomViewers = categoryRooms.filter { it.isHostLive }.sumOf { it.activeUserCount }
                 val totalOnlineUsers = maxOf(activeCount, totalRoomViewers)
                 val isAnyAudioPlaying = categoryRooms.any { it.isHostLive && it.isPlaying }
 
@@ -5622,9 +5629,9 @@ fun ProfileScreenContent(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    // Wealth Level Card with Real 3D Metallic Badge (Sleek Dark Theme)
+                    // Wealth Level Card with Real 3D Metallic Badge (Frosted White Transparency Theme)
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF181024)),
+                        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.85f)),
                         shape = RoundedCornerShape(16.dp),
                         border = BorderStroke(1.2.dp, Brush.horizontalGradient(wealthTier.gradientColors)),
                         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -5646,13 +5653,13 @@ fun ProfileScreenContent(
                                     Column {
                                         Text(
                                             text = "Wealth Level • Lv.$effWealthLvlVal",
-                                            color = Color.White,
+                                            color = Color(0xFF0F172A),
                                             fontWeight = FontWeight.Black,
                                             fontSize = 13.sp
                                         )
                                         Text(
                                             text = "${wealthTier.crownEmoji} ${wealthTier.tierName}",
-                                            color = Color(0xFFFFD700),
+                                            color = Color(0xFFB45309),
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold
                                         )
@@ -5660,7 +5667,7 @@ fun ProfileScreenContent(
                                 }
                                 Text(
                                     text = "%,d / %,d XP".format(effWealthXp, maxWealthXp),
-                                    color = Color(0xFFD8B4FE),
+                                    color = Color(0xFF475569),
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.SemiBold
                                 )
@@ -5673,14 +5680,14 @@ fun ProfileScreenContent(
                                     .height(6.dp)
                                     .clip(RoundedCornerShape(3.dp)),
                                 color = wealthTier.gradientColors.first(),
-                                trackColor = Color(0xFF2C193C)
+                                trackColor = Color(0xFFE2E8F0)
                             )
                         }
                     }
 
-                    // Charm Level Card (Sleek Dark Theme)
+                    // Charm Level Card (Frosted White Transparency Theme)
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF181024)),
+                        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.85f)),
                         shape = RoundedCornerShape(16.dp),
                         border = BorderStroke(1.2.dp, Brush.horizontalGradient(charmTier.gradientColors)),
                         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -5702,13 +5709,13 @@ fun ProfileScreenContent(
                                     Column {
                                         Text(
                                             text = "Charm Level • Lv.$effCharmLvl",
-                                            color = Color.White,
+                                            color = Color(0xFF0F172A),
                                             fontWeight = FontWeight.Black,
                                             fontSize = 13.sp
                                         )
                                         Text(
                                             text = "${charmTier.crownEmoji} ${charmTier.tierName}",
-                                            color = Color(0xFFFF4081),
+                                            color = Color(0xFFBE185D),
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold
                                         )
@@ -5716,7 +5723,7 @@ fun ProfileScreenContent(
                                 }
                                 Text(
                                     text = "%,d / %,d XP".format(effCharmXp, maxCharmXp),
-                                    color = Color(0xFFFBCFE8),
+                                    color = Color(0xFF475569),
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.SemiBold
                                 )
@@ -5729,19 +5736,20 @@ fun ProfileScreenContent(
                                     .height(6.dp)
                                     .clip(RoundedCornerShape(3.dp)),
                                 color = charmTier.gradientColors.first(),
-                                trackColor = Color(0xFF3B1E4A)
+                                trackColor = Color(0xFFE2E8F0)
                             )
                         }
                     }
                 }
             }
 
-            // 4. INTIMACY BONDS SECTION (1/7 Active Grid)
+            // 4. INTIMACY BONDS SECTION (1/7 Active Grid - Frosted White Transparency)
             item {
                 Surface(
-                    color = Color.White.copy(alpha = 0.07f),
+                    color = Color.White.copy(alpha = 0.85f),
                     shape = RoundedCornerShape(20.dp),
-                    shadowElevation = 0.dp,
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.6f)),
+                    shadowElevation = 2.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
@@ -5754,13 +5762,13 @@ fun ProfileScreenContent(
                                 text = "💍 Intimacy Bonds (${activeIntimacyBonds.size}/7 Active)",
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Black,
-                                color = Color.White
+                                color = Color(0xFF0F172A)
                             )
                             Text(
                                 text = "View All ❯",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFFFFD700)
+                                color = Color(0xFF7C3AED)
                             )
                         }
 
@@ -5784,8 +5792,9 @@ fun ProfileScreenContent(
                                     val bondBorderColor = if (isCoupleBond) Color(0xFFFFD700) else Color(0xFF2DD4BF)
 
                                     Surface(
-                                        color = Color.White.copy(alpha = 0.08f),
+                                        color = Color.White.copy(alpha = 0.92f),
                                         shape = RoundedCornerShape(16.dp),
+                                        border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
                                         modifier = Modifier
                                             .width(112.dp)
                                             .clickable {
@@ -5811,9 +5820,9 @@ fun ProfileScreenContent(
                                                 )
                                             }
                                             Spacer(modifier = Modifier.height(6.dp))
-                                            Text(pName, fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1)
+                                            Text(pName, fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A), maxLines = 1)
                                             val partnerDisplayId = Math.abs(pUid.hashCode() % 90000000 + 10000000).toString()
-                                            Text("ID: $partnerDisplayId", fontSize = 8.5.sp, color = Color(0xFFFFD700), fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                            Text("ID: $partnerDisplayId", fontSize = 8.5.sp, color = Color(0xFFD97706), fontWeight = FontWeight.SemiBold, maxLines = 1)
                                             Surface(
                                                 color = bondBadgeColor.copy(alpha = 0.85f),
                                                 shape = RoundedCornerShape(4.dp),
@@ -5825,8 +5834,9 @@ fun ProfileScreenContent(
                                     }
                                 } else {
                                     Surface(
-                                        color = Color.White.copy(alpha = 0.04f),
+                                        color = Color(0xFFF1F5F9).copy(alpha = 0.85f),
                                         shape = RoundedCornerShape(16.dp),
+                                        border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
                                         modifier = Modifier
                                             .width(112.dp)
                                             .clickable {
@@ -5841,13 +5851,13 @@ fun ProfileScreenContent(
                                                 modifier = Modifier
                                                     .size(42.dp)
                                                     .clip(CircleShape)
-                                                    .background(Color.White.copy(alpha = 0.08f)),
+                                                    .background(Color.White.copy(alpha = 0.80f)),
                                                 contentAlignment = Alignment.Center
                                             ) {
-                                                Text("+", fontSize = 20.sp, color = Color(0xFFFFD700), fontWeight = FontWeight.Bold)
+                                                Text("+", fontSize = 20.sp, color = Color(0xFF64748B), fontWeight = FontWeight.Bold)
                                             }
                                             Spacer(modifier = Modifier.height(6.dp))
-                                            Text("Empty Slot", fontSize = 9.5.sp, color = Color.LightGray.copy(alpha = 0.7f))
+                                            Text("Empty Slot", fontSize = 9.5.sp, color = Color(0xFF64748B))
                                         }
                                     }
                                 }
@@ -5857,12 +5867,13 @@ fun ProfileScreenContent(
                 }
             }
 
-            // 5. MENU & SERVICES GRID (FEATURING THE DEDICATED STORE!)
+            // 5. MENU & SERVICES GRID (FEATURING THE DEDICATED STORE - Frosted White Transparency)
             item {
                 Surface(
-                    color = Color.White.copy(alpha = 0.07f),
+                    color = Color.White.copy(alpha = 0.85f),
                     shape = RoundedCornerShape(20.dp),
-                    shadowElevation = 0.dp,
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.6f)),
+                    shadowElevation = 2.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
@@ -5870,7 +5881,7 @@ fun ProfileScreenContent(
                             text = "⚡ Menu & Services",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Black,
-                            color = Color.White
+                            color = Color(0xFF0F172A)
                         )
                         Spacer(modifier = Modifier.height(10.dp))
 
@@ -6044,16 +6055,16 @@ fun ProfileScreenContent(
             }
         }
 
-        // 6. Professional & Lifestyle Attributes
+        // 6. Professional & Lifestyle Attributes (Frosted White Transparency)
         item {
             Card(
-                colors = CardDefaults.cardColors(containerColor = BrandCard),
+                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.85f)),
                 shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.dp, BrandBorder),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.6f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("👑 ABOUT & LIFESTYLE", color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
+                    Text("👑 ABOUT & LIFESTYLE", color = Color(0xFF7C3AED), fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
 
                     val locPrivacyLabel = when (currentUser.locationPrivacy) {
                         "only_me" -> "🔒 Only Me"
@@ -6356,19 +6367,9 @@ fun ProfileScreenContent(
                     }
 
                     // 3. Admin Approval Dashboard (Always accessible & visible in Profile)
-                    var pendingPayments by remember { mutableIntStateOf(0) }
                     var pendingReports by remember { mutableIntStateOf(0) }
 
                     LaunchedEffect(Unit) {
-                        db.collection("payment_requests")
-                            .addSnapshotListener { snapshot, _ ->
-                                if (snapshot != null) {
-                                    pendingPayments = snapshot.documents.count { doc ->
-                                        val s = doc.getString("status") ?: "PENDING"
-                                        s.equals("PENDING", ignoreCase = true)
-                                    }
-                                }
-                            }
                         db.collection("reports")
                             .addSnapshotListener { snapshot, _ ->
                                 if (snapshot != null) {
@@ -6382,12 +6383,13 @@ fun ProfileScreenContent(
 
                     val isOwnerAdmin = currentUser.isAdmin || currentUser.isFounder() || currentUser.isOfficialAdmin(com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.email)
                     if (isOwnerAdmin) {
-                        val totalPending = pendingPayments + pendingReports
+                        val totalPending = pendingReports
 
                         Surface(
-                            color = Color(0xFF1E172F),
+                            color = Color.White.copy(alpha = 0.85f),
                             shape = RoundedCornerShape(14.dp),
-                            border = BorderStroke(1.dp, Color(0xFF3B2F50)),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.6f)),
+                            shadowElevation = 2.dp,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
@@ -6417,7 +6419,7 @@ fun ProfileScreenContent(
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
                                             text = "Admin Approvals Dashboard",
-                                            color = Color.White,
+                                            color = Color(0xFF0F172A),
                                             fontSize = 14.sp,
                                             fontWeight = FontWeight.Bold
                                         )
@@ -6440,11 +6442,11 @@ fun ProfileScreenContent(
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
                                         text = if (totalPending > 0) {
-                                            "🚨 $pendingPayments payments & $pendingReports reports pending"
+                                            "🚨 $pendingReports reports pending"
                                         } else {
                                             "Founder & Staff Hub • User Management"
                                         },
-                                        color = if (totalPending > 0) BrandCoral else Color(0xFFA78BFA),
+                                        color = if (totalPending > 0) BrandCoral else Color(0xFF6D28D9),
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Normal
                                     )
@@ -6453,113 +6455,9 @@ fun ProfileScreenContent(
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
                                     contentDescription = null,
-                                    tint = Color(0xFFA78BFA),
+                                    tint = Color(0xFF6D28D9),
                                     modifier = Modifier.size(14.dp)
                                 )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // MEMBERSHIP SUBSCRIPTION PLAN - SINGLE CONSOLIDATED VIP CARD BOX
-        item {
-            Column {
-                Text(
-                    "MEMBERSHIP & VIP CLUB",
-                    color = BrandGold,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(18.dp))
-                        .clickable { showVipStatusDialog = true },
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = BrandCard),
-                    border = BorderStroke(1.5.dp, Brush.horizontalGradient(listOf(BrandGold, BrandCoral)))
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(
-                                Brush.linearGradient(
-                                    listOf(
-                                        BrandGold.copy(alpha = 0.15f),
-                                        BrandDark.copy(alpha = 0.90f),
-                                        BrandCoral.copy(alpha = 0.15f)
-                                    )
-                                )
-                            )
-                            .padding(16.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(52.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        Brush.radialGradient(
-                                            listOf(BrandGold.copy(alpha = 0.35f), BrandGold.copy(alpha = 0.1f))
-                                        )
-                                    )
-                                    .border(1.5.dp, Color(0xFF8B5CF6), CircleShape),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text("👑", fontSize = 24.sp)
-                            }
-
-                            Spacer(modifier = Modifier.width(14.dp))
-
-                            Column(modifier = Modifier.weight(1f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        if (currentUser.isVipTrialActive()) "VIP 1 Trial Active ⏳" else "VIP Membership Center",
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 15.sp
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Surface(
-                                        color = BrandGold.copy(alpha = 0.2f),
-                                        shape = RoundedCornerShape(4.dp),
-                                        border = BorderStroke(1.dp, Color(0xFF8B5CF6).copy(alpha = 0.6f))
-                                    ) {
-                                        Text(
-                                            if (currentUser.isVipTrialActive()) "TRIAL (${currentUser.getVipTrialDaysLeft()}D LEFT)" else currentUser.plan.uppercase(),
-                                            color = BrandGold,
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Black,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                        )
-                                    }
-                                }
-                                Spacer(modifier = Modifier.height(3.dp))
-                                Text(
-                                    if (currentUser.isVipTrialActive()) "Tap to see real-time countdown timer. 50,000 Diamonds never expire!" else "Tap to view subscription tiers, purchase passes & unlock privileges",
-                                    color = Color.LightGray,
-                                    fontSize = 11.sp,
-                                    lineHeight = 15.sp
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        if (currentUser.isVipTrialActive()) "Manage VIP & View Countdown ➔" else "Explore Subscription Tiers",
-                                        color = BrandGold,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("›", color = BrandGold, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                                }
                             }
                         }
                     }
@@ -6689,31 +6587,33 @@ fun ProfileScreenContent(
             }
         }
 
-        // Safety & Account
+        // Safety & Account (Frosted White Transparency)
         item {
             Card(
-                colors = CardDefaults.cardColors(containerColor = BrandCard),
-                shape = RoundedCornerShape(16.dp)
+                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.85f)),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.6f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Safety & Account", color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("Safety & Account", color = Color(0xFF475569), fontSize = 12.sp, fontWeight = FontWeight.Bold)
 
                     // Logout Button
                     Button(
                         onClick = onLogout,
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandCardSubtle),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF1F5F9)),
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Icon(Icons.Default.ExitToApp, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.ExitToApp, contentDescription = null, tint = Color(0xFF0F172A), modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Log Out", color = Color.White, fontSize = 13.sp)
+                        Text("Log Out", color = Color(0xFF0F172A), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     }
 
                     // Delete Account Button
                     Button(
                         onClick = { showDeleteConfirmDialog = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.15f)),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFEE2E2)),
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -6727,6 +6627,8 @@ fun ProfileScreenContent(
     }
 
 }
+
+
 
     if (showDeleteConfirmDialog) {
         AlertDialog(
@@ -9452,7 +9354,9 @@ fun SettingsTopicSelectionDialog(
 @Composable
 fun NotificationsDialog(
     notifications: List<NotificationItem>,
+    currentUserId: String = "",
     onDismiss: () -> Unit,
+    onNotificationRead: ((String) -> Unit)? = null,
     onOpenRoom: ((String) -> Unit)? = null,
     onOpenChat: ((String) -> Unit)? = null,
     onOpenAdmin: ((Int) -> Unit)? = null,
@@ -9498,9 +9402,15 @@ fun NotificationsDialog(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        // Real-time unread decrement
+                                        // Real-time unread decrement across Firestore & local state
                                         if (!notif.isRead && notif.id.isNotBlank()) {
-                                            FirebaseFirestore.getInstance().collection("notifications").document(notif.id).update("isRead", true)
+                                            val db = FirebaseFirestore.getInstance()
+                                            db.collection("notifications").document(notif.id).update("isRead", true)
+                                            if (currentUserId.isNotBlank()) {
+                                                db.collection("users").document(currentUserId)
+                                                    .collection("notifications").document(notif.id).update("isRead", true)
+                                            }
+                                            onNotificationRead?.invoke(notif.id)
                                         }
                                         if (notif.type.contains("report")) {
                                             onOpenAdmin?.invoke(1)
@@ -9525,6 +9435,15 @@ fun NotificationsDialog(
                                     modifier = Modifier.padding(10.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
+                                    if (!notif.isRead) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(0xFFFF2A55))
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                    }
                                     val giftThumbnailResId = if (notif.type.equals("GIFT_RECEIVED", ignoreCase = true)) {
                                         giftThumbnailResourceId(notif.giftId)
                                     } else {

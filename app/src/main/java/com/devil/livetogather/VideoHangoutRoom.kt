@@ -329,8 +329,9 @@ fun VideoHangoutRoomDialog(
                 return@addSnapshotListener
             }
             // Real-Time Room Close Check: When host goes OFFLINE or exits, dismiss viewers from the live stage
-            if (!updated.isLive || updated.statusMessage.equals("CLOSED", ignoreCase = true) || updated.statusMessage.equals("ENDED", ignoreCase = true) || (!updated.isHostLive && !isUserHost)) {
+            if (!updated.isLive || updated.isEnded || updated.statusMessage.equals("OFFLINE", ignoreCase = true) || updated.statusMessage.equals("CLOSED", ignoreCase = true) || updated.statusMessage.equals("ENDED", ignoreCase = true) || (!updated.isHostLive && !isUserHost)) {
                 if (!isUserHost) {
+                    db.collection("users").document(currentUser.uid).update("current_room", "")
                     Toast.makeText(context, "🔴 The host has ended this live broadcast.", Toast.LENGTH_LONG).show()
                     AgoraVideoManager.leaveRoom()
                     onDismiss()
@@ -753,6 +754,7 @@ fun VideoHangoutRoomDialog(
                 .collection("members").document(currentUser.uid).update("role", "viewer")
         }
         db.collection("rooms").document(room.id).collection("members").document(currentUser.uid).delete()
+        db.collection("users").document(currentUser.uid).update("current_room", "")
         AgoraVideoManager.leaveRoom()
         onDismiss()
     }

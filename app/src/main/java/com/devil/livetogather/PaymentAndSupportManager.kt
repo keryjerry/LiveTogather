@@ -4,6 +4,7 @@ package com.devil.livetogather
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.ContextWrapper
 import android.app.Activity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -75,12 +76,13 @@ data class CoinPackageItem(
 )
 
 val APP_COIN_PACKAGES = listOf(
-    CoinPackageItem("pack_59", 20000L, "₹59", "59", "Minimum Room Unlock Pack 💎", "MINIMUM RECHARGE"),
-    CoinPackageItem("pack_49", 15000L, "₹45", "45", "Starter Pack 💎", "POPULAR"),
-    CoinPackageItem("pack_149", 50000L, "₹115", "115", "Special Launch Pack 💎", "BEST VALUE"),
-    CoinPackageItem("pack_299", 120000L, "₹229", "229", "Super Value Pack 💎"),
-    CoinPackageItem("pack_599", 300000L, "₹450", "450", "Royal VIP Pack 💎"),
-    CoinPackageItem("pack_999", 600000L, "₹899", "899", "Imperial Diamond Vault 💎", "SOVEREIGN")
+    CoinPackageItem("pack_49", 15000L, "₹49", "49", "Starter Pack 💎", "STARTER"),
+    CoinPackageItem("pack_59", 20000L, "₹59", "59", "Minimum Room Unlock 💎", "MINIMUM"),
+    CoinPackageItem("pack_149", 60000L, "₹149", "149", "Special Launch Pack 💎", "BEST VALUE (+20%)"),
+    CoinPackageItem("pack_299", 135000L, "₹299", "299", "Super Value Pack 💎", "+30% BONUS"),
+    CoinPackageItem("pack_599", 310000L, "₹599", "599", "Royal VIP Pack 💎", "+50% BONUS"),
+    CoinPackageItem("pack_999", 600000L, "₹999", "999", "Imperial Vault 💎", "+75% BONUS"),
+    CoinPackageItem("pack_1999", 1500000L, "₹1,999", "1999", "Supreme Emperor Vault 💎", "MEGA VALUE (+120%)")
 )
 
 val SUPPORT_CATEGORIES = listOf(
@@ -180,7 +182,7 @@ object PaymentAndSupportManager {
 
     /**
      * Triggers the native Android UPI Intent Chooser with deep-link:
-     * pa: "warsi.1@ptaxis"
+     * pa: "google_play_billing"
      * pn: "LiveTogether"
      * mc: "5411"
      * tr: unique transaction reference
@@ -192,56 +194,8 @@ object PaymentAndSupportManager {
         amount: String,
         packageName: String? = null
     ): Intent {
-        val cleanAmount = amount.replace("₹", "").trim()
-        val txnRef = "LT" + System.currentTimeMillis()
-        val uri = when (packageName) {
-            "com.phonepe.app" -> {
-                Uri.parse("phonepe://pay").buildUpon()
-                    .appendQueryParameter("pa", "warsi.1@ptaxis")
-                    .appendQueryParameter("pn", "LiveTogether")
-                    .appendQueryParameter("tn", "LiveTogether")
-                    .appendQueryParameter("am", cleanAmount)
-                    .appendQueryParameter("cu", "INR")
-                    .appendQueryParameter("tr", txnRef)
-                    .build()
-            }
-            "com.google.android.apps.nbu.paisa.user" -> {
-                Uri.parse("tez://upi/pay").buildUpon()
-                    .appendQueryParameter("pa", "warsi.1@ptaxis")
-                    .appendQueryParameter("pn", "LiveTogether")
-                    .appendQueryParameter("tn", "LiveTogether")
-                    .appendQueryParameter("am", cleanAmount)
-                    .appendQueryParameter("cu", "INR")
-                    .appendQueryParameter("tr", txnRef)
-                    .build()
-            }
-            "net.one97.paytm" -> {
-                Uri.parse("paytmmp://pay").buildUpon()
-                    .appendQueryParameter("pa", "warsi.1@ptaxis")
-                    .appendQueryParameter("pn", "LiveTogether")
-                    .appendQueryParameter("tn", "LiveTogether")
-                    .appendQueryParameter("am", cleanAmount)
-                    .appendQueryParameter("cu", "INR")
-                    .appendQueryParameter("tr", txnRef)
-                    .build()
-            }
-            else -> {
-                Uri.parse("upi://pay").buildUpon()
-                    .appendQueryParameter("pa", "warsi.1@ptaxis")
-                    .appendQueryParameter("pn", "LiveTogether")
-                    .appendQueryParameter("tn", "LiveTogether")
-                    .appendQueryParameter("am", cleanAmount)
-                    .appendQueryParameter("cu", "INR")
-                    .appendQueryParameter("tr", txnRef)
-                    .build()
-            }
-        }
-
-        val intent = Intent(Intent.ACTION_VIEW, uri)
-        if (!packageName.isNullOrBlank() && packageName != "com.phonepe.app" && packageName != "net.one97.paytm" && packageName != "com.google.android.apps.nbu.paisa.user") {
-            intent.setPackage(packageName)
-        }
-        return intent
+        // Obsolete legacy method stubbed for safety
+        return Intent(Intent.ACTION_VIEW)
     }
 
     fun launchUpiPayment(
@@ -251,42 +205,8 @@ object PaymentAndSupportManager {
         onOpened: () -> Unit = {},
         onError: (String) -> Unit = {}
     ): Boolean {
-        try {
-            val intent = createUpiIntent(amount, packageName).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            try {
-                context.startActivity(intent)
-                onOpened()
-                return true
-            } catch (e: android.content.ActivityNotFoundException) {
-                val cleanAmount = amount.replace("₹", "").trim()
-                val fallbackUri = Uri.parse("upi://pay").buildUpon()
-                    .appendQueryParameter("pa", "warsi.1@ptaxis")
-                    .appendQueryParameter("pn", "LiveTogether")
-                    .appendQueryParameter("tn", "LiveTogether")
-                    .appendQueryParameter("am", cleanAmount)
-                    .appendQueryParameter("cu", "INR")
-                    .appendQueryParameter("tr", "LT" + System.currentTimeMillis())
-                    .build()
-                val fallbackIntent = Intent(Intent.ACTION_VIEW, fallbackUri).apply {
-                    if (!packageName.isNullOrBlank()) setPackage(packageName)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                try {
-                    context.startActivity(fallbackIntent)
-                    onOpened()
-                    return true
-                } catch (e2: Exception) {
-                    android.util.Log.w("UPI", "UPI fallback failed for $packageName: ${e2.message}")
-                    onError("NO_UPI_APP")
-                    return false
-                }
-            }
-        } catch (e: Exception) {
-            android.util.Log.e("UPI", "Launch error: ${e.message}", e)
-            onError(e.localizedMessage ?: "NO_UPI_APP")
-        }
+        // Replaced by Google Play In-App Billing
+        onError("Please use Google Play Store for secure purchases.")
         return false
     }
 
@@ -707,35 +627,26 @@ fun PostPaymentVerificationDialog(
                     }
                 }
 
-                // Official UPI ID Copy Strip
                 Surface(
                     color = BrandDark,
                     shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.5f)),
+                    border = BorderStroke(1.dp, Color(0xFF3B82F6).copy(alpha = 0.5f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 12.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
-                            Text("Official UPI ID", color = Color.Gray, fontSize = 9.sp)
-                            Text("warsi.1@ptaxis", color = BrandGold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
-                        IconButton(
-                            onClick = {
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                val clip = ClipData.newPlainText("UPI ID", "warsi.1@ptaxis")
-                                clipboard.setPrimaryClip(clip)
-                                Toast.makeText(context, "UPI ID copied: warsi.1@ptaxis 📋", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.size(28.dp)
-                        ) {
-                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy UPI ID", tint = BrandGold, modifier = Modifier.size(15.dp))
-                        }
+                        Text("🔒", fontSize = 16.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Purchases are securely verified via Google Play Store",
+                            color = Color(0xFF93C5FD),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
 
@@ -771,10 +682,22 @@ fun PostPaymentVerificationDialog(
 }
 
 /**
- * Complete, self-contained UPI Payment Checkout Modal.
- * Provides One-Tap UPI App triggers (PhonePe, GPay, Paytm, Any UPI),
- * Copyable official UPI ID (warsi.1@ptaxis), dynamic QR code, and
- * direct 12-digit UTR submission into Firestore 'payment_requests'.
+ * Safely traverses ContextWrappers to locate the underlying Activity or fallback to MainActivity.currentActivity.
+ */
+fun Context.findActivity(): Activity? {
+    var currentContext = this
+    while (currentContext is ContextWrapper) {
+        if (currentContext is Activity) {
+            return currentContext
+        }
+        currentContext = currentContext.baseContext
+    }
+    return MainActivity.currentActivity
+}
+
+/**
+ * Official Google Play In-App Purchase Checkout Dialog.
+ * Completely replaces all previous direct UPI/QR code payment flows with official Google Play Billing.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -785,570 +708,204 @@ fun UpiPaymentCheckoutModal(
     onSuccess: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    var utrInput by remember { mutableStateOf("") }
-    var isSubmitting by remember { mutableStateOf(false) }
-    var showPaymentFailedDialog by remember { mutableStateOf(false) }
-    var paymentFailureTitle by remember { mutableStateOf("Payment Failed / Incomplete") }
-    var paymentFailureMessage by remember { mutableStateOf("") }
-    val cleanAmount = selectedPackage.numericPrice.ifBlank { selectedPackage.priceInr.replace("₹", "").trim() }
+    val activity = context.findActivity() ?: (context as? Activity) ?: MainActivity.currentActivity
+    var isPurchasing by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    val upiLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        val data = result.data
-        val response = data?.getStringExtra("response") ?: data?.dataString ?: ""
-        android.util.Log.d("UPI_CALLBACK", "UPI result code: ${result.resultCode}, response: $response")
-
-        val isSuccess = response.contains("Status=SUCCESS", ignoreCase = true) ||
-                        response.contains("Status=Success", ignoreCase = true) ||
-                        response.contains("responseCode=00", ignoreCase = true) ||
-                        response.contains("Status=COMPLETED", ignoreCase = true) ||
-                        (result.resultCode == Activity.RESULT_OK && !response.contains("FAIL", ignoreCase = true) && !response.contains("CANCEL", ignoreCase = true))
-
-        if (isSuccess) {
-            val txnId = "(?i)(?:txnId|ApprovalRefNo)=([^&]+)".toRegex().find(response)?.groupValues?.getOrNull(1)?.trim()
-                ?: "UPI_${System.currentTimeMillis()}"
-            isSubmitting = true
-            PaymentAndSupportManager.autoApproveUpiPayment(
-                currentUser = currentUser,
-                selectedPackage = selectedPackage,
-                txnId = txnId,
-                onSuccess = {
-                    isSubmitting = false
-                    Toast.makeText(context, "🎉 Payment Successful! Added instantly to your account.", Toast.LENGTH_LONG).show()
-                    onSuccess()
-                    onDismiss()
-                },
-                onFailure = { err ->
-                    isSubmitting = false
-                    Toast.makeText(context, "Payment verified! Please submit UTR if balance does not update.", Toast.LENGTH_LONG).show()
-                }
-            )
-        } else {
-            val isCancelled = response.contains("CANCEL", ignoreCase = true) ||
-                    response.contains("User cancelled", ignoreCase = true) ||
-                    (result.resultCode == Activity.RESULT_CANCELED && response.isBlank())
-            val status = if (isCancelled) "CANCELLED" else "FAILED"
-            val cleanReason = if (isCancelled) "Payment cancelled by user" else if (response.isNotBlank()) "UPI: $response" else "Payment was not completed"
-
-            PaymentAndSupportManager.recordFailedOrCancelledPayment(
-                currentUser = currentUser,
-                selectedPackage = selectedPackage,
-                status = status,
-                reason = cleanReason
-            )
-
-            paymentFailureTitle = if (isCancelled) "Payment Cancelled" else "Payment Failed / Incomplete"
-            paymentFailureMessage = if (isCancelled) {
-                "The UPI transaction was cancelled. If money was not deducted, you can try again."
-            } else {
-                "Your payment could not be completed or was rejected by your UPI app. If money was deducted, enter your 12-digit UTR below for instant auto-approval."
-            }
-            showPaymentFailedDialog = true
-        }
+    LaunchedEffect(Unit) {
+        GooglePlayBillingManager.initialize(context)
     }
-
-    val launchWithUpiLauncher: (String?, String) -> Unit = { pkg, appName ->
-        try {
-            val intent = PaymentAndSupportManager.createUpiIntent(cleanAmount, pkg)
-            upiLauncher.launch(intent)
-            Toast.makeText(context, "Opening $appName... Complete payment to auto-verify.", Toast.LENGTH_SHORT).show()
-        } catch (e: Exception) {
-            PaymentAndSupportManager.launchUpiPayment(
-                context = context,
-                amount = cleanAmount,
-                packageName = pkg,
-                onOpened = { Toast.makeText(context, "Opening $appName...", Toast.LENGTH_SHORT).show() },
-                onError = { Toast.makeText(context, "$appName is not available. Please scan QR or try another app.", Toast.LENGTH_SHORT).show() }
-            )
-        }
-    }
-    val qrData = "upi://pay?pa=warsi.1@ptaxis&pn=LiveTogether&am=$cleanAmount&cu=INR&tn=LiveTogether"
-    val qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" + Uri.encode(qrData)
-
-    val isKeyboardOpen = WindowInsets.isImeVisible
-    val keyboardController = LocalSoftwareKeyboardController.current
-    val focusManager = LocalFocusManager.current
 
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!isPurchasing) onDismiss() },
         properties = DialogProperties(
-            dismissOnBackPress = true,
-            dismissOnClickOutside = true,
+            dismissOnBackPress = !isPurchasing,
+            dismissOnClickOutside = !isPurchasing,
             usePlatformDefaultWidth = false
         )
     ) {
-        val view = LocalView.current
-        SideEffect {
-            var parent = view.parent
-            while (parent != null && parent !is android.app.Dialog && parent !is DialogWindowProvider) {
-                parent = parent.parent
-            }
-            (parent as? DialogWindowProvider)?.window?.setSoftInputMode(
-                WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
-            )
-        }
-
         Surface(
             modifier = Modifier
-                .fillMaxWidth(0.96f)
-                .fillMaxHeight(0.95f),
-            shape = RoundedCornerShape(22.dp),
-            color = BrandDark,
-            border = BorderStroke(1.5.dp, BrandGold)
+                .fillMaxWidth(0.92f)
+                .wrapContentHeight(),
+            shape = RoundedCornerShape(24.dp),
+            color = Color(0xFF13101C),
+            border = BorderStroke(1.5.dp, Brush.horizontalGradient(listOf(Color(0xFFFFD700), Color(0xFFA78BFA))))
         ) {
             Column(
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(22.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // PINNED TOP BAR (Always visible, cannot be scrolled away, Back & Close always ready)
-                val isMonetizationPkg = selectedPackage.id == "pkg_host_monetization_599" || selectedPackage.title.contains("Monetization", ignoreCase = true)
+                // Header Row
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFF1E172E))
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable { onDismiss() }
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(34.dp)
-                                .clip(CircleShape)
-                                .background(BrandCard),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ArrowBack,
-                                contentDescription = "Back",
-                                tint = BrandGold,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column {
-                            Text(
-                                text = if (isMonetizationPkg) "🚀 Host Monetization" else "💎 Diamond Recharge",
-                                color = Color.White,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            val displayUserId = if (currentUser.userId.isNotBlank()) currentUser.userId else (10000000 + kotlin.math.abs(currentUser.uid.hashCode()) % 90000000).toString()
-                            Text(
-                                text = "User ID: #$displayUserId • Tap ← to return",
-                                color = BrandGold,
-                                fontSize = 10.5.sp
-                            )
-                        }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("🛍️", fontSize = 22.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Google Play Checkout",
+                            color = Color.White,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
-
                     IconButton(
                         onClick = onDismiss,
-                        modifier = Modifier
-                            .size(34.dp)
-                            .background(BrandCard, CircleShape)
+                        enabled = !isPurchasing,
+                        modifier = Modifier.size(30.dp)
                     ) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.LightGray)
                     }
                 }
 
-                HorizontalDivider(color = BrandBorder.copy(alpha = 0.5f), thickness = 1.dp)
+                HorizontalDivider(color = Color.White.copy(alpha = 0.12f), thickness = 0.8.dp)
 
-                // FULLY SCROLLABLE BODY (Smooth scrolling, generous bottom padding so Submit is easily reachable)
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(11.dp)
-                ) {
-
-                // Selected Package Card
+                // Package Card
                 Surface(
-                    color = BrandCard,
-                    shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.5f)),
+                    color = Color(0xFF1F1A2E),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, Color(0xFFFFD700).copy(alpha = 0.5f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                            .padding(16.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val isMonetizationPkg = selectedPackage.id == "pkg_host_monetization_599" || selectedPackage.title.contains("Monetization", ignoreCase = true)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(if (isMonetizationPkg) "🚀" else "💎", fontSize = 24.sp)
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Column {
-                                Text(
-                                    text = if (isMonetizationPkg) "Host Monetization Lifetime Access" else "%,d Diamonds".format(selectedPackage.coins),
-                                    color = Color.White,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = selectedPackage.title,
-                                    color = Color.Gray,
-                                    fontSize = 11.sp
-                                )
-                            }
+                        val isMon = selectedPackage.id == "pkg_host_monetization_599" || selectedPackage.title.contains("Monetization", ignoreCase = true)
+                        val isVip = selectedPackage.id.startsWith("vip_package") || selectedPackage.coins == 0L
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 12.dp)
+                        ) {
+                            Text(
+                                text = if (isMon) "Host Monetization 🚀" else if (isVip) (selectedPackage.badge.ifBlank { "VIP Dressing Suite" } + " 👑") else "%,d Diamonds 💎".format(selectedPackage.coins),
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Text(
+                                text = selectedPackage.title,
+                                color = Color.Gray,
+                                fontSize = 11.5.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
 
                         Text(
                             text = selectedPackage.priceInr,
                             color = BrandGold,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.ExtraBold
+                            fontSize = 19.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                 }
 
-                // 1. Scanner QR Code (Center & Prominent)
+                // Official Google Play Security Guarantee
                 Surface(
-                    color = Color.White,
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.padding(top = 2.dp)
-                ) {
-                    AsyncImage(
-                        model = qrUrl,
-                        contentDescription = "Scan to Pay ₹$cleanAmount",
-                        modifier = Modifier
-                            .size(175.dp)
-                            .padding(8.dp)
-                    )
-                }
-
-                Text(
-                    text = "Scan QR code with PhonePe, Google Pay, Paytm or any UPI App to Pay ₹$cleanAmount",
-                    color = Color.LightGray,
-                    fontSize = 11.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(0.92f)
-                )
-
-                // 2. Official UPI ID Strip
-                Surface(
-                    color = BrandCard,
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, BrandBorder),
+                    color = Color(0xFF1A2333),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, Color(0xFF3B82F6).copy(alpha = 0.4f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Text("🔒", fontSize = 20.sp)
+                        Spacer(modifier = Modifier.width(10.dp))
                         Column {
-                            Text("Official UPI ID", color = Color.Gray, fontSize = 9.5.sp)
-                            Text("warsi.1@ptaxis", color = BrandGold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                        }
-
-                        Button(
-                            onClick = {
-                                val cb = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                cb.setPrimaryClip(ClipData.newPlainText("UPI ID", "warsi.1@ptaxis"))
-                                Toast.makeText(context, "UPI ID copied: warsi.1@ptaxis", Toast.LENGTH_SHORT).show()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                            modifier = Modifier.height(30.dp)
-                        ) {
-                            Text("📋 Copy UPI", color = BrandDark, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = "Official Google Play Billing",
+                                color = Color(0xFF93C5FD),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Protected by Google Play refund policy, biometric auth, and encrypted tokens.",
+                                color = Color.LightGray,
+                                fontSize = 10.sp,
+                                lineHeight = 14.sp
+                            )
                         }
                     }
                 }
 
-                // 3. 1-Tap Direct UPI App Triggers
-                Text("Select UPI App to Pay ₹$cleanAmount:", color = Color.LightGray, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    // PhonePe Button
-                    Button(
-                        onClick = {
-                            launchWithUpiLauncher("com.phonepe.app", "PhonePe")
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5F259F)),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
-                        modifier = Modifier.weight(1f).height(38.dp)
-                    ) {
-                        Text("PhonePe", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
-
-                    // Google Pay Button
-                    Button(
-                        onClick = {
-                            launchWithUpiLauncher("com.google.android.apps.nbu.paisa.user", "Google Pay")
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A73E8)),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
-                        modifier = Modifier.weight(1f).height(38.dp)
-                    ) {
-                        Text("GPay", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
-
-                    // Paytm Button
-                    Button(
-                        onClick = {
-                            launchWithUpiLauncher("net.one97.paytm", "Paytm")
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00B9F5)),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
-                        modifier = Modifier.weight(1f).height(38.dp)
-                    ) {
-                        Text("Paytm", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
-
-                    // Other UPI Apps Button
-                    Button(
-                        onClick = {
-                            launchWithUpiLauncher(null, "UPI App")
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF231B28)),
-                        border = BorderStroke(1.dp, BrandGold),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
-                        modifier = Modifier.weight(1f).height(38.dp)
-                    ) {
-                        Text("Other UPI", color = BrandGold, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                Divider(color = BrandBorder.copy(alpha = 0.4f), thickness = 0.8.dp)
-
-                // 4. Enter 12-Digit UTR
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Enter 12-Digit UTR after payment:",
-                            color = Color.LightGray,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        if (isKeyboardOpen) {
-                            TextButton(
-                                onClick = {
-                                    keyboardController?.hide()
-                                    focusManager.clearFocus()
-                                },
-                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
-                            ) {
-                                Text("Hide Keyboard ⬇️", color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-
-                    OutlinedTextField(
-                        value = utrInput,
-                        onValueChange = { input ->
-                            val digits = input.filter { c -> c.isDigit() }.take(12)
-                            utrInput = digits
-                            if (digits.length == 12) {
-                                keyboardController?.hide()
-                                focusManager.clearFocus()
-                            }
-                        },
-                        label = { Text("12-Digit UTR / UPI Ref (from receipt)", fontSize = 11.sp) },
-                        placeholder = { Text("e.g. 4238xxxxxxxx", fontSize = 11.sp) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = {
-                            keyboardController?.hide()
-                            focusManager.clearFocus()
-                        }),
-                        trailingIcon = {
-                            if (utrInput.isNotEmpty() || isKeyboardOpen) {
-                                IconButton(onClick = {
-                                    keyboardController?.hide()
-                                    focusManager.clearFocus()
-                                }) {
-                                    Icon(
-                                        imageVector = Icons.Default.KeyboardArrowDown,
-                                        contentDescription = "Hide Keyboard",
-                                        tint = BrandGold
-                                    )
-                                }
-                            }
-                        },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = BrandGold,
-                            unfocusedBorderColor = BrandBorder,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        ),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage ?: "",
+                        color = Color(0xFFEF4444),
+                        fontSize = 11.5.sp,
+                        textAlign = TextAlign.Center
                     )
+                }
 
-                    Button(
-                        onClick = {
-                            keyboardController?.hide()
-                            focusManager.clearFocus()
-                            val trimmed = utrInput.trim()
-                            if (trimmed.length < 10) {
-                                Toast.makeText(context, "Please enter a valid 12-digit UTR number from your payment receipt!", Toast.LENGTH_SHORT).show()
-                                return@Button
-                            }
-                            isSubmitting = true
-                            val isMonetizationPkg = selectedPackage.id == "pkg_host_monetization_599" || selectedPackage.title.contains("Monetization", ignoreCase = true)
-                            val vipLevel = selectedPackage.id
-                                .removePrefix("vip_package_")
-                                .toIntOrNull()
-                                ?.takeIf { it in 1..4 } ?: 0
-                            val purchaseType = when {
-                                isMonetizationPkg -> "host_monetization"
-                                vipLevel > 0 -> "vip"
-                                else -> "coins"
-                            }
-                            val finalNumericId = if (currentUser.userId.isNotBlank()) currentUser.userId else (10000000 + kotlin.math.abs(currentUser.uid.hashCode()) % 90000000).toString()
-                            PaymentAndSupportManager.submitPaymentVerificationRequest(
-                                userId = currentUser.uid,
-                                userNumericId = finalNumericId,
-                                userName = currentUser.name,
-                                utrNumber = trimmed,
-                                packCoins = selectedPackage.coins,
-                                packAmount = selectedPackage.priceInr,
-                                category = when {
-                                    isMonetizationPkg -> "Host Monetization Activation"
-                                    vipLevel > 0 -> "VIP $vipLevel Suite Purchase"
-                                    else -> "Payment Verification (Submit UTR for Coins)"
-                                },
-                                message = when {
-                                    isMonetizationPkg -> "Host Monetization ₹599 paid"
-                                    vipLevel > 0 -> "VIP $vipLevel suite purchase"
-                                    else -> ""
-                                },
-                                purchaseType = purchaseType,
-                                vipLevel = vipLevel,
+                // Pay Button triggering launchBillingFlow
+                Button(
+                    onClick = {
+                        val targetActivity = activity ?: context.findActivity() ?: MainActivity.currentActivity
+                        if (targetActivity != null && !targetActivity.isFinishing && !targetActivity.isDestroyed) {
+                            isPurchasing = true
+                            errorMessage = null
+                            GooglePlayBillingManager.launchPurchaseFlow(
+                                activity = targetActivity,
+                                currentUser = currentUser,
+                                packageItem = selectedPackage,
                                 onSuccess = {
-                                    isSubmitting = false
-                                    if (isMonetizationPkg) {
-                                        Toast.makeText(context, "✅ UTR #$trimmed submitted. Host Monetization is pending admin approval.", Toast.LENGTH_LONG).show()
-                                    } else if (vipLevel > 0) {
-                                        Toast.makeText(context, "✅ UTR #$trimmed submitted. VIP $vipLevel is pending admin approval.", Toast.LENGTH_LONG).show()
-                                    } else {
-                                        Toast.makeText(context, "✅ UTR #$trimmed submitted. Diamonds are pending admin approval.", Toast.LENGTH_LONG).show()
-                                    }
+                                    isPurchasing = false
+                                    Toast.makeText(context, "🎉 Purchase Successful! Diamonds added to your account.", Toast.LENGTH_LONG).show()
                                     onSuccess()
                                     onDismiss()
                                 },
-                                onFailure = { err ->
-                                    isSubmitting = false
-                                    Toast.makeText(context, "Submission error: $err", Toast.LENGTH_LONG).show()
+                                onError = { err ->
+                                    isPurchasing = false
+                                    errorMessage = err
+                                    Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
                                 }
                             )
-                        },
-                        enabled = !isSubmitting,
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(44.dp)
-                    ) {
-                        if (isSubmitting) {
-                            CircularProgressIndicator(color = BrandDark, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                         } else {
-                            val isMonetizationPkg = selectedPackage.id == "pkg_host_monetization_599" || selectedPackage.title.contains("Monetization", ignoreCase = true)
-                            Text(
-                                text = if (isMonetizationPkg) "Verify & Activate Host Monetization (₹599) 🚀" else "Verify & Credit %,d Diamonds 💎".format(selectedPackage.coins),
-                                color = BrandDark,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 13.sp
-                            )
+                            Toast.makeText(context, "Error: Activity context not available", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    enabled = !isPurchasing,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                ) {
+                    if (isPurchasing) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    } else {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Google Play Pay • ${selectedPackage.priceInr}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                         }
                     }
                 }
 
                 Text(
-                    text = "🔒 100% Secure • Official Account: warsi.1@ptaxis • Live Firestore Sync",
+                    text = "Instant digital credit via Google Play Store • Account #" + (if (currentUser.userId.isNotBlank()) currentUser.userId else (10000000 + kotlin.math.abs(currentUser.uid.hashCode()) % 90000000).toString()),
                     color = Color.Gray,
-                    fontSize = 9.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
+                    fontSize = 9.5.sp,
+                    textAlign = TextAlign.Center
                 )
-
-                // Generous bottom spacer so UTR and Submit can be scrolled way up above keyboard
-                Spacer(modifier = Modifier.height(350.dp))
             }
         }
-    }
-    }
-
-    if (showPaymentFailedDialog) {
-        AlertDialog(
-            onDismissRequest = { showPaymentFailedDialog = false },
-            containerColor = Color(0xFF1E1628),
-            shape = RoundedCornerShape(20.dp),
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = if (paymentFailureTitle.contains("Cancelled")) "⚠️" else "❌",
-                        fontSize = 22.sp
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = paymentFailureTitle,
-                        color = Color.White,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = paymentFailureMessage,
-                        color = Color.White.copy(alpha = 0.85f),
-                        fontSize = 13.sp,
-                        lineHeight = 18.sp
-                    )
-                    Text(
-                        text = "Package: ${selectedPackage.title} • ₹$cleanAmount",
-                        color = BrandGold,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = { showPaymentFailedDialog = false },
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Text("Retry Payment", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { showPaymentFailedDialog = false }
-                ) {
-                    Text("Enter UTR Below", color = BrandGold, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                }
-            }
-        )
     }
 }
 
@@ -1586,88 +1143,22 @@ fun HelpDeskModal(
                                 }
                             }
 
-                            // Official UPI ID Copyable Card
                             Surface(
-                                color = BrandCard,
+                                color = Color(0xFF1E1A2E),
                                 shape = RoundedCornerShape(12.dp),
-                                border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.6f)),
+                                border = BorderStroke(1.dp, Color(0xFF3B82F6).copy(alpha = 0.5f)),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.padding(12.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
+                                    Text("🛍️", fontSize = 20.sp)
+                                    Spacer(modifier = Modifier.width(10.dp))
                                     Column {
-                                        Text("Official UPI ID", color = Color.Gray, fontSize = 10.sp)
-                                        Text("warsi.1@ptaxis", color = BrandGold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                        Text("Google Play In-App Purchase Support", color = Color(0xFF93C5FD), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Text("If your Google Play order was completed but coins were not credited, enter your Google Play Order ID (e.g. GPA.xxxx-xxxx) below for instant verification.", color = Color.LightGray, fontSize = 10.sp, lineHeight = 14.sp)
                                     }
-                                    Button(
-                                        onClick = {
-                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                            val clip = ClipData.newPlainText("UPI ID", "warsi.1@ptaxis")
-                                            clipboard.setPrimaryClip(clip)
-                                            Toast.makeText(context, "UPI ID copied: warsi.1@ptaxis 📋", Toast.LENGTH_SHORT).show()
-                                        },
-                                        colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
-                                        shape = RoundedCornerShape(8.dp),
-                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                        modifier = Modifier.height(30.dp)
-                                    ) {
-                                        Text("Copy UPI", color = BrandDark, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                }
-                            }
-
-                            var showQrCodeInHelpDesk by remember { mutableStateOf(false) }
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = if (showQrCodeInHelpDesk) "📷 Scan to Pay via GPay / PhonePe / Paytm" else "💡 Scan QR with any phone to pay",
-                                    color = Color.LightGray,
-                                    fontSize = 11.sp
-                                )
-                                TextButton(
-                                    onClick = { showQrCodeInHelpDesk = !showQrCodeInHelpDesk },
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                ) {
-                                    Text(
-                                        text = if (showQrCodeInHelpDesk) "Hide QR" else "Show QR Code 📲",
-                                        color = BrandGold,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-
-                            if (showQrCodeInHelpDesk) {
-                                val cleanPrice = selectedPackage.numericPrice.ifBlank { selectedPackage.priceInr.replace("₹", "").trim() }
-                                val qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=" +
-                                    Uri.encode("upi://pay?pa=warsi.1@ptaxis&pn=LiveTogether&am=$cleanPrice&cu=INR&tn=LiveTogether")
-                                Column(
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    AsyncImage(
-                                        model = qrUrl,
-                                        contentDescription = "Scan to Pay ${selectedPackage.priceInr}",
-                                        modifier = Modifier
-                                            .size(140.dp)
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(Color.White)
-                                            .padding(6.dp)
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = "Scan with Google Pay, PhonePe, Paytm or BHIM on any phone",
-                                        color = Color.LightGray,
-                                        fontSize = 10.sp,
-                                        textAlign = TextAlign.Center
-                                    )
                                 }
                             }
 
@@ -1679,8 +1170,8 @@ fun HelpDeskModal(
                                     val digitsOnly = input.filter { it.isDigit() }.take(12)
                                     utrInput = digitsOnly
                                 },
-                                label = { Text("12-Digit UPI UTR / Ref Number *") },
-                                placeholder = { Text("e.g. 429182749102") },
+                                label = { Text("Google Play Order ID / Reference Number *") },
+                                placeholder = { Text("e.g. GPA.3341-xxxx-xxxx or Ref ID") },
                                 supportingText = {
                                     Text(
                                         text = "${utrInput.length}/12 Digits ${if (utrInput.length == 12) "✅ Valid UTR" else "(Must be 12 digits)"}",
@@ -1959,32 +1450,13 @@ fun AdminApprovalDashboardModal(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    val pendingRequests = remember { mutableStateListOf<PaymentRequestTicket>() }
     val pendingReports = remember { mutableStateListOf<ReportTicket>() }
-    var selectedAdminTab by remember(initialTab) { mutableIntStateOf(initialTab) } // 0: Payments, 1: User Reports
+    var selectedAdminTab by remember(initialTab) { mutableIntStateOf(if (initialTab >= 1) 1 else 0) } // 0: User Reports, 1: Founder & Staff Hub
     var processingReqId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         val db = FirebaseFirestore.getInstance()
-        // 1. Pending Payments Listener
-        db.collection("payment_requests")
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    android.util.Log.e("AdminApproval", "Payment requests error: ${error.message}", error)
-                    return@addSnapshotListener
-                }
-                if (snapshot != null) {
-                    val list = snapshot.documents.mapNotNull { doc ->
-                        parsePaymentRequestTicket(doc)
-                    }.filter { it.status.equals("PENDING", ignoreCase = true) }
-                     .sortedByDescending { it.timestamp }
-                    pendingRequests.clear()
-                    pendingRequests.addAll(list)
-                    android.util.Log.d("AdminApproval", "Loaded ${pendingRequests.size} pending payments")
-                }
-            }
-
-        // 2. Pending User Reports Listener
+        // Pending User Reports Listener
         db.collection("reports")
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
@@ -2046,8 +1518,7 @@ fun AdminApprovalDashboardModal(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = if (selectedAdminTab == 0) "${pendingRequests.size} Pending Payment Approvals"
-                                       else if (selectedAdminTab == 1) "${pendingReports.size} Pending User Reports"
+                                text = if (selectedAdminTab == 0) "${pendingReports.size} Pending User Reports"
                                        else "Founder, CEO & Staff Power Hub",
                                 color = Color(0xFFA78BFA),
                                 fontSize = 11.sp,
@@ -2077,9 +1548,9 @@ fun AdminApprovalDashboardModal(
                         onClick = { selectedAdminTab = 0 },
                         text = {
                             Text(
-                                text = "Payments (${pendingRequests.size})",
+                                text = "Reports (${pendingReports.size})",
                                 fontWeight = if (selectedAdminTab == 0) FontWeight.Bold else FontWeight.Normal,
-                                color = if (selectedAdminTab == 0) BrandGold else Color.Gray,
+                                color = if (selectedAdminTab == 0) Color.Red else Color.Gray,
                                 fontSize = 13.sp
                             )
                         }
@@ -2089,21 +1560,9 @@ fun AdminApprovalDashboardModal(
                         onClick = { selectedAdminTab = 1 },
                         text = {
                             Text(
-                                text = "Reports (${pendingReports.size})",
-                                fontWeight = if (selectedAdminTab == 1) FontWeight.Bold else FontWeight.Normal,
-                                color = if (selectedAdminTab == 1) Color.Red else Color.Gray,
-                                fontSize = 12.sp
-                            )
-                        }
-                    )
-                    Tab(
-                        selected = selectedAdminTab == 2,
-                        onClick = { selectedAdminTab = 2 },
-                        text = {
-                            Text(
                                 text = "⚡ Founder & Staff",
-                                fontWeight = if (selectedAdminTab == 2) FontWeight.Bold else FontWeight.Normal,
-                                color = if (selectedAdminTab == 2) Color(0xFFFFD700) else Color.Gray,
+                                fontWeight = if (selectedAdminTab == 1) FontWeight.Bold else FontWeight.Normal,
+                                color = if (selectedAdminTab == 1) Color(0xFFFFD700) else Color.Gray,
                                 fontSize = 12.sp
                             )
                         }
@@ -2111,68 +1570,7 @@ fun AdminApprovalDashboardModal(
                 }
 
                 if (selectedAdminTab == 0) {
-                    // TAB 0: PAYMENTS (UNTOUCHED LOGIC)
-                    if (pendingRequests.isEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(24.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("✨", fontSize = 42.sp)
-                                Spacer(modifier = Modifier.height(10.dp))
-                                Text("All Caught Up!", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                                Text("No pending UPI payment requests at this moment.", color = Color.Gray, fontSize = 12.sp)
-                            }
-                        }
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(14.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            items(pendingRequests, key = { it.requestId }) { req ->
-                                AdminApprovalCard(
-                                    req = req,
-                                    isProcessing = processingReqId == req.requestId,
-                                    onApprove = {
-                                        processingReqId = req.requestId
-                                        PaymentAndSupportManager.approvePaymentRequest(
-                                            request = req,
-                                            adminUid = adminUser.uid,
-                                            onSuccess = {
-                                                processingReqId = null
-                                                Toast.makeText(context, "✅ Approved! %,d Coins credited to User #${req.userNumericId}".format(req.coinsRequested), Toast.LENGTH_SHORT).show()
-                                            },
-                                            onFailure = { err ->
-                                                processingReqId = null
-                                                Toast.makeText(context, "Approval error: $err", Toast.LENGTH_LONG).show()
-                                            }
-                                        )
-                                    },
-                                    onReject = {
-                                        processingReqId = req.requestId
-                                        PaymentAndSupportManager.rejectPaymentRequest(
-                                            requestId = req.requestId,
-                                            adminUid = adminUser.uid,
-                                            onSuccess = {
-                                                processingReqId = null
-                                                Toast.makeText(context, "❌ Request #${req.requestId.take(6)} Rejected", Toast.LENGTH_SHORT).show()
-                                            },
-                                            onFailure = { err ->
-                                                processingReqId = null
-                                                Toast.makeText(context, "Rejection error: $err", Toast.LENGTH_LONG).show()
-                                            }
-                                        )
-                                    }
-                                )
-                            }
-                        }
-                    }
-                } else if (selectedAdminTab == 1) {
-                    // TAB 1: USER REPORTS & SUSPENSION
+                    // TAB 0: USER REPORTS & SUSPENSION
                     if (pendingReports.isEmpty()) {
                         Box(
                             modifier = Modifier
@@ -2224,8 +1622,8 @@ fun AdminApprovalDashboardModal(
                             }
                         }
                     }
-                } else if (selectedAdminTab == 2) {
-                    // TAB 2: FOUNDER, CEO & OFFICIAL STAFF POWER HUB
+                } else {
+                    // TAB 1: FOUNDER, CEO & OFFICIAL STAFF POWER HUB
                     AdminStaffAndPowerHubSection(adminUser = adminUser, onUpdateCurrentUser = onUpdateCurrentUser)
                 }
             }
@@ -2636,8 +2034,8 @@ fun CoinStoreTopUpDialog(
                     .fillMaxWidth(0.96f)
                     .fillMaxHeight(0.95f),
                 shape = RoundedCornerShape(24.dp),
-                color = BrandDark,
-                border = BorderStroke(1.5.dp, BrandGold)
+                color = Color(0xFF0F0B18),
+                border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(Color(0xFF8B5CF6), Color(0xFFEC4899), Color(0xFF6366F1))))
             ) {
                 Column(
                     modifier = Modifier.fillMaxSize()
@@ -2646,7 +2044,7 @@ fun CoinStoreTopUpDialog(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Color(0xFF1E172E))
+                            .background(Color(0xFF161026))
                             .padding(horizontal = 14.dp, vertical = 12.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
@@ -2659,13 +2057,13 @@ fun CoinStoreTopUpDialog(
                                 modifier = Modifier
                                     .size(34.dp)
                                     .clip(CircleShape)
-                                    .background(BrandCard),
+                                    .background(Color(0xFF241A3A)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.ArrowBack,
                                     contentDescription = "Back",
-                                    tint = BrandGold,
+                                    tint = Color.White,
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
@@ -2679,7 +2077,7 @@ fun CoinStoreTopUpDialog(
                                 )
                                 Text(
                                     text = if (selectedTab == 0) "Recharge diamonds • Instant UTR credit" else "Real cash host earnings & UPI withdrawal",
-                                    color = BrandGold,
+                                    color = Color(0xFFA78BFA),
                                     fontSize = 10.5.sp
                                 )
                             }
@@ -2689,13 +2087,13 @@ fun CoinStoreTopUpDialog(
                             onClick = onDismiss,
                             modifier = Modifier
                                 .size(34.dp)
-                                .background(BrandCard, CircleShape)
+                                .background(Color(0xFF241A3A), CircleShape)
                         ) {
                             Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(18.dp))
                         }
                     }
 
-                    HorizontalDivider(color = BrandBorder.copy(alpha = 0.5f), thickness = 1.dp)
+                    HorizontalDivider(color = Color(0xFF2E244D), thickness = 1.dp)
 
                     Column(
                         modifier = Modifier
@@ -2710,14 +2108,17 @@ fun CoinStoreTopUpDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFF1E172E))
+                        .background(Color(0xFF171126))
                         .padding(4.dp)
                 ) {
                     Box(
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(10.dp))
-                            .background(if (selectedTab == 0) BrandGold else Color.Transparent)
+                            .background(
+                                if (selectedTab == 0) Brush.horizontalGradient(listOf(Color(0xFF8B5CF6), Color(0xFFEC4899)))
+                                else Brush.horizontalGradient(listOf(Color.Transparent, Color.Transparent))
+                            )
                             .clickable { selectedTab = 0 }
                             .padding(vertical = 8.dp),
                         contentAlignment = Alignment.Center
@@ -2727,7 +2128,7 @@ fun CoinStoreTopUpDialog(
                             Spacer(modifier = Modifier.width(5.dp))
                             Text(
                                 text = "Diamond Wallet",
-                                color = if (selectedTab == 0) BrandDark else Color.LightGray,
+                                color = if (selectedTab == 0) Color.White else Color(0xFF94A3B8),
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.ExtraBold
                             )
@@ -2738,7 +2139,10 @@ fun CoinStoreTopUpDialog(
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(10.dp))
-                            .background(if (selectedTab == 1) BrandGold else Color.Transparent)
+                            .background(
+                                if (selectedTab == 1) Brush.horizontalGradient(listOf(Color(0xFF8B5CF6), Color(0xFFEC4899)))
+                                else Brush.horizontalGradient(listOf(Color.Transparent, Color.Transparent))
+                            )
                             .clickable { selectedTab = 1 }
                             .padding(vertical = 8.dp),
                         contentAlignment = Alignment.Center
@@ -2748,7 +2152,7 @@ fun CoinStoreTopUpDialog(
                             Spacer(modifier = Modifier.width(5.dp))
                             Text(
                                 text = "Earning Wallet",
-                                color = if (selectedTab == 1) BrandDark else Color.LightGray,
+                                color = if (selectedTab == 1) Color.White else Color(0xFF94A3B8),
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.ExtraBold
                             )
@@ -2764,9 +2168,9 @@ fun CoinStoreTopUpDialog(
 
                     // Balance Strip
                     Surface(
-                        color = BrandCard,
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, BrandBorder),
+                        color = Color(0xFF1A132E),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, Color(0xFF8B5CF6).copy(alpha = 0.35f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -2777,7 +2181,7 @@ fun CoinStoreTopUpDialog(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column {
-                                Text("Current Diamond Balance", color = Color.Gray, fontSize = 10.sp)
+                                Text("Current Diamond Balance", color = Color(0xFFA78BFA), fontSize = 10.sp)
                                 Text(
                                     text = "%,d Diamonds".format(liveDiamonds),
                                     color = BrandCyan,
@@ -2791,32 +2195,32 @@ fun CoinStoreTopUpDialog(
                                     onDismiss()
                                     onOpenHelpDeskWithPackage(APP_COIN_PACKAGES[0])
                                 },
-                                colors = ButtonDefaults.buttonColors(containerColor = BrandCardSubtle),
-                                border = BorderStroke(1.dp, BrandGold),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF281C45)),
+                                border = BorderStroke(1.dp, Color(0xFFA855F7)),
                                 shape = RoundedCornerShape(8.dp),
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                                 modifier = Modifier.height(32.dp)
                             ) {
-                                Text("Submit UTR", color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text("Submit UTR", color = Color(0xFFD8B4FE), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
 
                     Text("Select Recharge Package to Pay with UPI", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
 
-                    // Package List
+                    // Symmetrical 2-Column Grid of Diamond Packages (ZERO Broken Words, Symmetrical Layout)
                     LazyColumn(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         if (!liveIsHostMonetized) {
                             item {
                                 Surface(
-                                    color = Color(0xFF22162B),
+                                    color = Color(0xFF1F122B),
                                     shape = RoundedCornerShape(14.dp),
-                                    border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(BrandGold, Color(0xFFFF5E62)))),
+                                    border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(Color(0xFF8B5CF6), Color(0xFFEC4899)))),
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clickable { selectedTab = 1 }
@@ -2831,96 +2235,114 @@ fun CoinStoreTopUpDialog(
                                             Spacer(modifier = Modifier.width(10.dp))
                                             Column {
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    Text("Activate Host Monetization • ₹599", color = BrandGold, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+                                                    Text("Host Monetization • ₹599", color = Color(0xFFF472B6), fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
                                                     Spacer(modifier = Modifier.width(6.dp))
                                                     Text("₹1,499", color = Color.Gray, fontSize = 10.sp, textDecoration = TextDecoration.LineThrough)
                                                     Spacer(modifier = Modifier.width(4.dp))
                                                     Text("60% OFF", color = Color(0xFFFF5252), fontSize = 9.sp, fontWeight = FontWeight.Bold)
                                                 }
-                                                Text("Convert room gifts into direct cash income (INR)", color = Color.LightGray, fontSize = 10.sp)
+                                                Text("Earn real cash INR on gifts received in your rooms", color = Color.LightGray, fontSize = 10.sp)
                                             }
                                         }
                                         Surface(
-                                            color = BrandGold,
+                                            color = Color(0xFF7C3AED),
                                             shape = RoundedCornerShape(8.dp)
                                         ) {
-                                            Text("Activate ➔", color = BrandDark, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp))
+                                            Text("Activate ➔", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp))
                                         }
                                     }
                                 }
                             }
                         }
 
-                        items(APP_COIN_PACKAGES) { pack ->
-                            Surface(
-                                color = BrandCard,
-                                shape = RoundedCornerShape(14.dp),
-                                border = BorderStroke(
-                                    1.dp,
-                                    if (pack.badge.isNotBlank()) BrandGold else BrandBorder
-                                ),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        checkoutPackage = pack
-                                    }
+                        // Chunk packages into pairs for a clean 2-column grid
+                        items(APP_COIN_PACKAGES.chunked(2)) { pair ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text("💎", fontSize = 22.sp)
-                                        Spacer(modifier = Modifier.width(10.dp))
-                                        Column {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(
-                                                    text = "%,d Diamonds".format(pack.coins),
-                                                    color = Color.White,
-                                                    fontSize = 14.sp,
-                                                    fontWeight = FontWeight.Bold
-                                                )
+                                pair.forEach { pack ->
+                                    Surface(
+                                        color = Color(0xFF18122B),
+                                        shape = RoundedCornerShape(16.dp),
+                                        border = BorderStroke(
+                                            1.dp,
+                                            if (pack.badge.isNotBlank()) Color(0xFF8B5CF6).copy(alpha = 0.8f) else Color(0xFF2D234A)
+                                        ),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable { checkoutPackage = pack }
+                                    ) {
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(12.dp),
+                                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text("💎", fontSize = 20.sp)
                                                 if (pack.badge.isNotBlank()) {
-                                                    Spacer(modifier = Modifier.width(6.dp))
                                                     Surface(
-                                                        color = BrandGold,
-                                                        shape = RoundedCornerShape(4.dp)
+                                                        color = Color(0xFFEC4899),
+                                                        shape = RoundedCornerShape(6.dp)
                                                     ) {
                                                         Text(
-                                                            pack.badge,
-                                                            color = BrandDark,
-                                                            fontSize = 9.sp,
+                                                            text = pack.badge,
+                                                            color = Color.White,
+                                                            fontSize = 8.5.sp,
                                                             fontWeight = FontWeight.Black,
-                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                                                         )
                                                     }
                                                 }
                                             }
-                                            Text(pack.title, color = Color.Gray, fontSize = 11.sp)
+
+                                            Column {
+                                                Text(
+                                                    text = "%,d".format(pack.coins),
+                                                    color = Color.White,
+                                                    fontSize = 15.sp,
+                                                    fontWeight = FontWeight.Black
+                                                )
+                                                Text(
+                                                    text = "Diamonds",
+                                                    color = Color(0xFFA78BFA),
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                            }
+
+                                            Button(
+                                                onClick = { checkoutPackage = pack },
+                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED)),
+                                                shape = RoundedCornerShape(10.dp),
+                                                contentPadding = PaddingValues(vertical = 6.dp),
+                                                modifier = Modifier.fillMaxWidth().height(32.dp)
+                                            ) {
+                                                Text(
+                                                    text = pack.priceInr,
+                                                    color = Color.White,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.ExtraBold
+                                                )
+                                            }
                                         }
                                     }
-
-                                    Button(
-                                        onClick = {
-                                            checkoutPackage = pack
-                                        },
-                                        colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
-                                        shape = RoundedCornerShape(10.dp),
-                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-                                    ) {
-                                        Text(pack.priceInr, color = BrandDark, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                    }
+                                }
+                                if (pair.size == 1) {
+                                    Spacer(modifier = Modifier.weight(1f))
                                 }
                             }
                         }
                     }
 
                     Text(
-                        text = "🔒 Supported UPI Apps: Google Pay, PhonePe, Paytm, BHIM, etc.",
-                        color = Color.Gray,
+                        text = "🔒 Official Google Play In-App Billing • Safe, Encrypted & Instant",
+                        color = Color(0xFF93C5FD),
                         fontSize = 10.sp,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth()
@@ -3066,9 +2488,9 @@ fun CoinStoreTopUpDialog(
                                                 Text("5% - 8% Host Commission on all room gifts", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                                             }
                                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text("⚡", fontSize = 13.sp)
+                                                Text("🗓️", fontSize = 13.sp)
                                                 Spacer(modifier = Modifier.width(6.dp))
-                                                Text("Instant UPI Withdrawals to PhonePe, Google Pay, Paytm", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                                Text("Monthly Payouts (7th-10th) to UPI & Bank", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                                             }
                                         }
 
@@ -3150,12 +2572,12 @@ fun CoinStoreTopUpDialog(
                                 }
                             }
                         } else {
-                            // 1. Available Earnings Balance Card
+                            // 1. Available Earnings Balance Card (Bright Emerald & Cyan Neon Glow)
                             item {
                                 Surface(
-                                    color = Color(0xFF1B142B),
+                                    color = Color(0xFF0D1B1E),
                                     shape = RoundedCornerShape(16.dp),
-                                    border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(BrandGold, Color(0xFFFFB74D)))),
+                                    border = BorderStroke(1.5.dp, Brush.horizontalGradient(listOf(Color(0xFF10B981), Color(0xFF06B6D4)))),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                 Column(modifier = Modifier.padding(14.dp)) {
@@ -3165,7 +2587,7 @@ fun CoinStoreTopUpDialog(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Column {
-                                            Text("Available Cash Balance", color = Color.LightGray, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                                            Text("Available Cash Balance", color = Color(0xFF6EE7B7), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                                             Text(
                                                 text = "₹ ${"%.2f".format(liveEarningsInr)}",
                                                 color = Color(0xFF00E676),
@@ -3175,9 +2597,9 @@ fun CoinStoreTopUpDialog(
                                         }
 
                                         Surface(
-                                            color = BrandGold.copy(alpha = 0.15f),
+                                            color = Color(0xFF10B981).copy(alpha = 0.2f),
                                             shape = RoundedCornerShape(20.dp),
-                                            border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.6f))
+                                            border = BorderStroke(1.dp, Color(0xFF34D399))
                                         ) {
                                             Row(
                                                 modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
@@ -3187,7 +2609,7 @@ fun CoinStoreTopUpDialog(
                                                 Spacer(modifier = Modifier.width(4.dp))
                                                 Text(
                                                     text = "Commission: ${commissionPercent.toInt()}%",
-                                                    color = BrandGold,
+                                                    color = Color(0xFF6EE7B7),
                                                     fontSize = 11.sp,
                                                     fontWeight = FontWeight.Bold
                                                 )
@@ -3196,7 +2618,7 @@ fun CoinStoreTopUpDialog(
                                     }
 
                                     Spacer(modifier = Modifier.height(10.dp))
-                                    HorizontalDivider(color = Color.White.copy(alpha = 0.08f), thickness = 1.dp)
+                                    HorizontalDivider(color = Color.White.copy(alpha = 0.12f), thickness = 1.dp)
                                     Spacer(modifier = Modifier.height(8.dp))
 
                                     Row(
@@ -3204,54 +2626,75 @@ fun CoinStoreTopUpDialog(
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         Column {
-                                            Text("Total Lifetime Earned", color = Color.Gray, fontSize = 10.sp)
+                                            Text("Total Lifetime Earned", color = Color(0xFF94A3B8), fontSize = 10.sp)
                                             Text("₹ ${"%.2f".format(liveTotalEarningsInr)}", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                                         }
                                         Column(horizontalAlignment = Alignment.End) {
-                                            Text("Total Withdrawn", color = Color.Gray, fontSize = 10.sp)
-                                            Text("₹ ${"%.2f".format(liveWithdrawnInr)}", color = Color(0xFFFF9100), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                            Text("Total Withdrawn", color = Color(0xFF94A3B8), fontSize = 10.sp)
+                                            Text("₹ ${"%.2f".format(liveWithdrawnInr)}", color = Color(0xFF38BDF8), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                                         }
                                     }
                                 }
                             }
                         }
 
-                        // 2. Commission Rate Tier Information
+                        // 2. Bright Commission Rate Tier Grids (3-Column Layout)
                         item {
-                            Surface(
-                                color = Color(0xFF141221),
-                                shape = RoundedCornerShape(10.dp),
-                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
-                                modifier = Modifier.fillMaxWidth()
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Row(
-                                    modifier = Modifier.padding(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                Surface(
+                                    color = Color(0xFF0F2324),
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.6f)),
+                                    modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("💡", fontSize = 14.sp)
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = if (hostWealthLvl >= 70) {
-                                            "Imperial Host (Lv.$hostWealthLvl): Highest 8% commission active on every gift sent in your room!"
-                                        } else if (hostWealthLvl >= 50) {
-                                            "Super Host (Lv.$hostWealthLvl): 7% commission active! Reach Level 70 for 8% commission!"
-                                        } else {
-                                            "Host (Lv.$hostWealthLvl): 5% commission. Reach Level 50 for 7% and Level 70 for 8% commission!"
-                                        },
-                                        color = Color.LightGray,
-                                        fontSize = 10.sp,
-                                        lineHeight = 14.sp
-                                    )
+                                    Column(
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text("8%", color = Color(0xFF34D399), fontSize = 14.sp, fontWeight = FontWeight.Black)
+                                        Text("Audio Room", color = Color(0xFF94A3B8), fontSize = 9.sp)
+                                    }
+                                }
+                                Surface(
+                                    color = Color(0xFF0F202B),
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, Color(0xFF06B6D4).copy(alpha = 0.6f)),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text("10%", color = Color(0xFF38BDF8), fontSize = 14.sp, fontWeight = FontWeight.Black)
+                                        Text("1-on-1 Call", color = Color(0xFF94A3B8), fontSize = 9.sp)
+                                    }
+                                }
+                                Surface(
+                                    color = Color(0xFF281126),
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, Color(0xFFEC4899).copy(alpha = 0.6f)),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text("7%", color = Color(0xFFF472B6), fontSize = 14.sp, fontWeight = FontWeight.Black)
+                                        Text("CP Gifting", color = Color(0xFF94A3B8), fontSize = 9.sp)
+                                    }
                                 }
                             }
                         }
 
-                        // 3. Instant UPI Withdrawal Form
+                        // 3. Instant UPI Withdrawal Form (Emerald / Cyan Modern Theme)
                         item {
                             Surface(
-                                color = BrandCard,
+                                color = Color(0xFF0F1A1E),
                                 shape = RoundedCornerShape(14.dp),
-                                border = BorderStroke(1.dp, BrandBorder),
+                                border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.35f)),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Column(modifier = Modifier.padding(12.dp)) {
@@ -3271,8 +2714,8 @@ fun CoinStoreTopUpDialog(
                                         singleLine = true,
                                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
                                         colors = OutlinedTextFieldDefaults.colors(
-                                            focusedBorderColor = BrandGold,
-                                            unfocusedBorderColor = BrandBorder,
+                                            focusedBorderColor = Color(0xFF10B981),
+                                            unfocusedBorderColor = Color(0xFF1E3A3A),
                                             focusedTextColor = Color.White,
                                             unfocusedTextColor = Color.White
                                         ),
@@ -3329,7 +2772,14 @@ fun CoinStoreTopUpDialog(
                                         modifier = Modifier.fillMaxWidth()
                                     )
 
-                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Text(
+                                        text = "🗓️ Monthly Payouts: Processed between the 7th and 10th of every month to verified UPI/Bank.",
+                                        color = Color(0xFFA78BFA),
+                                        fontSize = 10.sp,
+                                        modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+                                    )
+
+                                    Spacer(modifier = Modifier.height(6.dp))
 
                                     val withdrawAmountVal = withdrawAmountText.toDoubleOrNull() ?: 0.0
                                     val canWithdraw = liveIsHostMonetized &&
@@ -3396,7 +2846,7 @@ fun CoinStoreTopUpDialog(
                                                 .addOnSuccessListener {
                                                     isSubmittingWithdrawal = false
                                                     withdrawAmountText = ""
-                                                    Toast.makeText(context, "✅ Withdrawal request for ₹%.2f submitted! Processing to $cleanUpi".format(withdrawAmountVal), Toast.LENGTH_LONG).show()
+                                                    Toast.makeText(context, "✅ Withdrawal request for ₹%.2f submitted! Scheduled in monthly cycle (7th-10th) to $cleanUpi".format(withdrawAmountVal), Toast.LENGTH_LONG).show()
                                                 }
                                                 .addOnFailureListener { e ->
                                                     isSubmittingWithdrawal = false
@@ -3405,7 +2855,7 @@ fun CoinStoreTopUpDialog(
                                         },
                                         enabled = canWithdraw || !liveIsHostMonetized,
                                         colors = ButtonDefaults.buttonColors(
-                                            containerColor = if (!liveIsHostMonetized) Color(0xFFFF9966) else BrandGold,
+                                            containerColor = if (!liveIsHostMonetized) Color(0xFFEC4899) else Color(0xFF10B981),
                                             disabledContainerColor = Color.Gray.copy(alpha = 0.3f)
                                         ),
                                         shape = RoundedCornerShape(10.dp),

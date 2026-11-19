@@ -85,15 +85,23 @@ class FirestoreRefreshEngine(
                 } catch (_: Exception) {
                     db.collection("users").get().await()
                 }
-                val freshUsers = usersSnap.documents.mapNotNull { parseUserProfileFromDoc(it) }
-                    .filter { it.uid != currentUserId && !it.uid.startsWith("USER_") && !currentUser.blockedUserIds.contains(it.uid) }
+                val freshUsers = usersSnap.documents.mapNotNull { doc ->
+                    val uid = doc.id
+                    val docUid = doc.getString("uid") ?: ""
+                    val isDummy = uid.startsWith("dummy") || docUid.startsWith("dummy") || uid.startsWith("seed_")
+                    if (isDummy) {
+                        doc.reference.delete()
+                        null
+                    } else {
+                        val u = parseUserProfileFromDoc(doc)
+                        if (u != null && u.uid != currentUserId && !u.uid.startsWith("USER_") && !currentUser.blockedUserIds.contains(u.uid)) u else null
+                    }
+                }
                 userCount = freshUsers.size
                 withContext(Dispatchers.Main) {
                     discoverProfiles.clear()
                     if (freshUsers.isNotEmpty()) {
                         discoverProfiles.addAll(freshUsers)
-                    } else {
-                        discoverProfiles.addAll(DEFAULT_DUMMY_PROFILES.filter { it.uid != currentUserId })
                     }
                 }
             } catch (e: Exception) {

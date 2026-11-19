@@ -212,4 +212,49 @@ object AppNotificationHelper {
         val notification = builder.build()
         nm.notify((System.currentTimeMillis() % 100000).toInt(), notification)
     }
+
+    fun showEventHubNotification(
+        context: Context,
+        title: String,
+        message: String,
+        roomId: String? = null
+    ) {
+        ensureChannels(context)
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("OPEN_EVENT_HUB", true)
+            if (!roomId.isNullOrBlank()) {
+                putExtra("ROOM_ID", roomId)
+                putExtra("extra_room_id", roomId)
+            }
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            888001,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val brandedTitle = "🏆 LiveTogather Event Hub • $title"
+        val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+
+        val builder = NotificationCompat.Builder(context, CHANNEL_LIVE)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(brandedTitle)
+            .setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
+            .setSound(soundUri)
+            .setVibrate(longArrayOf(0, 400, 200, 400))
+            .setCategory(NotificationCompat.CATEGORY_EVENT)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setContentIntent(pendingIntent)
+
+        val notification = builder.build()
+        nm.notify(888001, notification)
+    }
 }

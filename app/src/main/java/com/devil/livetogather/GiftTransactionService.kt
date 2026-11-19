@@ -39,6 +39,8 @@ object GiftTransactionService {
 
         val totalCost = if (fromBackpack) 0L else unitCost * quantity * distinctRecipients.size
         val eventId = UUID.randomUUID().toString()
+        val notificationsToDispatch = mutableListOf<NotificationItem>()
+        val creatorHistoryToDispatch = mutableListOf<Map<String, Any>>()
 
         // 2. Execute 100% Client-Side Atomic Firestore Transaction
         // FIRESTORE RULE: ALL READS (transaction.get) MUST BE EXECUTED BEFORE ANY WRITES (update/set)
@@ -99,8 +101,10 @@ object GiftTransactionService {
             val recipientNames = mutableListOf<String>()
             var totalHostCommission = 0.0
             val recipientWriteList = mutableListOf<Pair<com.google.firebase.firestore.DocumentReference, Map<String, Any>>>()
+            notificationsToDispatch.clear()
+            creatorHistoryToDispatch.clear()
 
-            recipientDataList.forEach { (_, recDocRef, recSnap) ->
+            recipientDataList.forEach { (recUid, recDocRef, recSnap) ->
                 val recName = recSnap.getString("name") ?: "Host"
                 recipientNames.add(recName)
 
@@ -114,16 +118,90 @@ object GiftTransactionService {
                     "charmLevel" to newCharmLvl
                 )
 
-                // Host commission if monetized
+                val grossDiamonds = unitCost * quantity
                 val isMonetized = recSnap.getBoolean("isHostMonetized") ?: false
+
                 if (isMonetized && !fromBackpack && unitCost > 0) {
+                    // 1. Monetized Creator: 5% to 8% level-based cut, real INR calculation + diamond credit
                     val recWealthLvl = (recSnap.getLong("wealthLevel") ?: 1L).toInt()
                     val commPercent = LevelBadgeSystem.getHostCommissionPercent(recWealthLvl)
-                    val giftInr = (unitCost * quantity) * 0.01
+                    val creatorDiamonds = (grossDiamonds * (commPercent / 100.0)).toLong()
+                    val giftInr = grossDiamonds * 0.01
                     val earnings = giftInr * (commPercent / 100.0)
                     totalHostCommission += earnings
                     recUpdates["earningsInr"] = FieldValue.increment(earnings)
                     recUpdates["totalEarningsInr"] = FieldValue.increment(earnings)
+                    recUpdates["diamonds"] = FieldValue.increment(creatorDiamonds)
+
+                    val notifId = UUID.randomUUID().toString()
+                    notificationsToDispatch.add(
+                        NotificationItem(
+                            id = notifId,
+                            targetUserId = recUid,
+                            senderId = senderUid,
+                            senderName = senderName,
+                            senderPhoto = senderPhoto,
+                            type = "creator_earning",
+                            title = "💰 Creator Gift Earning!",
+                            message = "$senderName gifted you $quantity x $giftName ($giftEmoji)! You earned ₹${String.format(java.util.Locale.US, "%.2f", earnings)} (${commPercent}% level cut, +$creatorDiamonds 💎).",
+                            timestamp = System.currentTimeMillis(),
+                            isRead = false,
+                            roomId = roomId,
+                            giftId = giftId,
+                            giftName = giftName,
+                            diamondsReceived = creatorDiamonds,
+                            earningsInr = earnings,
+                            giftEmoji = giftEmoji,
+                            quantity = quantity
+                        )
+                    )
+
+                    creatorHistoryToDispatch.add(
+                        mapOf(
+                            "id" to notifId,
+                            "targetUserId" to recUid,
+                            "senderId" to senderUid,
+                            "senderName" to senderName,
+                            "senderPhoto" to senderPhoto,
+                            "giftId" to giftId,
+                            "giftName" to giftName,
+                            "giftEmoji" to giftEmoji,
+                            "quantity" to quantity,
+                            "grossDiamonds" to grossDiamonds,
+                            "creatorDiamonds" to creatorDiamonds,
+                            "commissionPercent" to commPercent,
+                            "earningsInr" to earnings,
+                            "timestamp" to System.currentTimeMillis(),
+                            "roomId" to roomId
+                        )
+                    )
+                } else if (!fromBackpack && unitCost > 0) {
+                    // 2. Normal (non-monetized) user: 30% platform deduction, 70% credited into wallet!
+                    val netDiamonds = (grossDiamonds * 0.70).toLong()
+                    recUpdates["diamonds"] = FieldValue.increment(netDiamonds)
+
+                    val notifId = UUID.randomUUID().toString()
+                    notificationsToDispatch.add(
+                        NotificationItem(
+                            id = notifId,
+                            targetUserId = recUid,
+                            senderId = senderUid,
+                            senderName = senderName,
+                            senderPhoto = senderPhoto,
+                            type = "gift_reward",
+                            title = "🎁 You Have Been Rewarded!",
+                            message = "$senderName sent you $quantity x $giftName ($giftEmoji)! You received $netDiamonds 💎 in your wallet.",
+                            timestamp = System.currentTimeMillis(),
+                            isRead = false,
+                            roomId = roomId,
+                            giftId = giftId,
+                            giftName = giftName,
+                            diamondsReceived = netDiamonds,
+                            earningsInr = 0.0,
+                            giftEmoji = giftEmoji,
+                            quantity = quantity
+                        )
+                    )
                 }
 
                 recipientWriteList.add(recDocRef to recUpdates)
@@ -176,6 +254,51 @@ object GiftTransactionService {
                 senderDiamonds = newSenderDiamonds,
                 duplicate = false
             )
+        }.addOnSuccessListener { result ->
+            val event = result.event
+            // 1. Post to rooms/{roomId}/live_comments so live room chat immediately displays who gifted whom
+            val commentId = UUID.randomUUID().toString()
+            val giftComment = LiveRoomComment(
+                id = commentId,
+                roomId = roomId,
+                userId = event.senderId,
+                userName = event.senderName,
+                userPhoto = event.senderPhoto,
+                tier = "Gift",
+                message = "🎁 ${event.senderName} sent ${quantity}x $giftName to ${event.targetUserName} ($totalCost 💎)",
+                timestamp = System.currentTimeMillis(),
+                vipLevel = 0,
+                isGiftComment = true,
+                giftId = giftId,
+                giftName = giftName,
+                giftEmoji = giftEmoji,
+                giftCost = totalCost,
+                giftQuantity = quantity,
+                recipientName = event.targetUserName,
+                recipientUid = event.targetUserId
+            )
+            db.collection("rooms").document(roomId)
+                .collection("live_comments").document(commentId)
+                .set(giftComment)
+
+            // 2. Real-time inbox notifications to recipients (reward notification with diamond amount & gift icon)
+            notificationsToDispatch.forEach { notif ->
+                db.collection("users").document(notif.targetUserId)
+                    .collection("notifications").document(notif.id)
+                    .set(notif)
+                db.collection("notifications").document(notif.id).set(notif)
+            }
+
+            // 3. Creator earnings history records (real money INR breakdown)
+            creatorHistoryToDispatch.forEach { hist ->
+                val targetUid = hist["targetUserId"] as? String ?: ""
+                val histId = hist["id"] as? String ?: UUID.randomUUID().toString()
+                if (targetUid.isNotBlank()) {
+                    db.collection("users").document(targetUid)
+                        .collection("gift_earnings_history").document(histId)
+                        .set(hist)
+                }
+            }
         }.addOnFailureListener { error ->
             Log.e("GiftTransactionService", "Direct Firestore gift transaction failed", error)
         }

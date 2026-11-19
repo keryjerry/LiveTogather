@@ -6,26 +6,24 @@ plugins {
 
 android {
     namespace = "com.devil.livetogather"
-    compileSdk {
-        version = release(37)
-    }
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.devil.livetogather"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 26
-        versionName = "1.0.25"
+        targetSdk = 36
+        versionCode = 62
+        versionName = "1.0.61"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
         create("release") {
-            storeFile = rootProject.file("app/debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
+            storeFile = file("livetogather-release.jks")
+            storePassword = "Irha@7890"
+            keyAlias = "livetogather-key"
+            keyPassword = "Irha@7890"
             enableV1Signing = true
             enableV2Signing = true
         }
@@ -108,6 +106,9 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     implementation("com.google.android.gms:play-services-auth:21.2.0")
     implementation("com.facebook.android:facebook-login:17.0.2")
+
+    // Google Play Billing Library (Kotlin & Coroutines) - 7.x Standard
+    implementation("com.android.billingclient:billing-ktx:7.1.1")
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

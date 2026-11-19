@@ -1,0 +1,1244 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>HD Carrom</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000000;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    #boardWrapper {
+      width: 100%;
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      padding: 0;
+      margin: 0;
+    }
+    #carromCanvas {
+      width: 100vw;
+      max-width: 100vw;
+      max-height: 100%;
+      aspect-ratio: 1 / 1;
+      display: block;
+      border-radius: 0;
+      box-shadow: none;
+      cursor: pointer;
+      touch-action: none;
+    }
+    #sliderTrack {
+      position: relative;
+      width: 92%;
+      max-width: 360px;
+      height: 24px;
+      border-radius: 12px;
+      background: linear-gradient(180deg, #8c4c23 0%, #562b10 50%, #2f1406 100%);
+      box-shadow: inset 0 2px 4px rgba(0,0,0,0.85), 0 2px 8px rgba(0,0,0,0.7);
+      border: 1.5px solid #58290f;
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+      padding: 0 8px;
+      margin: 4px auto 4px auto;
+      flex-shrink: 0;
+    }
+    #sliderGroove {
+      width: 100%;
+      height: 3px;
+      border-radius: 2px;
+      background: rgba(0,0,0,0.6);
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    #sliderThumb {
+      position: absolute;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: linear-gradient(180deg, #fde047 0%, #f59e0b 50%, #b45309 100%);
+      border: 2px solid #ffffff;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.85);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      left: 50%;
+      cursor: grab;
+    }
+    #sliderThumbInner {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: #b91c1c;
+      border: 1px solid #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 7px;
+      color: white;
+      font-weight: 900;
+    }
+    .toast {
+      position: absolute;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.95);
+      border: 1px solid #f59e0b;
+      color: #fef08a;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 11.5px;
+      font-weight: bold;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.8);
+      z-index: 50;
+      white-space: nowrap;
+    }
+    .opacity-0 { opacity: 0 !important; }
+    .pointer-events-none { pointer-events: none !important; }
+  </style>
+</head>
+<body>
+
+  <div id="boardWrapper">
+    <canvas id="carromCanvas" width="800" height="800"></canvas>
+    <div id="foulToast" class="toast opacity-0">⚠️ Foul! Striker pocketed</div>
+    <div id="overlapToast" class="toast opacity-0">🚫 Invalid placement! Striker overlaps a coin</div>
+  </div>
+
+  <div id="sliderTrack">
+    <div id="sliderGroove"></div>
+    <div id="sliderThumb">
+      <div id="sliderThumbInner">★</div>
+    </div>
+  </div>
+
+  <script>
+    // Authentic Synthesized WebAudio Sounds
+    let canLocalUserControl = true;
+
+    window.setPlayerControl = function(canControl, turnName) {
+      canLocalUserControl = !!canControl;
+      if (turnName && turnName !== currentTurn) {
+        currentTurn = turnName;
+        resetStriker();
+      }
+      const track = document.getElementById('sliderTrack');
+      if (track) {
+        track.style.opacity = canLocalUserControl ? '1' : '0.35';
+        track.style.pointerEvents = canLocalUserControl ? 'auto' : 'none';
+      }
+    };
+
+    window.applyRemoteShot = function(startX, startY, vx, vy, turn) {
+      AudioEngine.init();
+      shotFired = false;
+      wasMoving = false;
+      if (turn) currentTurn = turn;
+      striker.x = Number(startX) || CENTER;
+      striker.y = Number(startY) || getActiveBaselineY();
+      striker.vx = Number(vx) || 0;
+      striker.vy = Number(vy) || 0;
+      shotFired = true;
+      pocketedInCurrentShot = [];
+      const p = Math.hypot(striker.vx, striker.vy);
+      AudioEngine.play('wood_hit', Math.min(p / 10, 1.0));
+    };
+
+    window.syncCoinsState = function(coinsJson) {
+      if (!coinsJson || shotFired) return;
+      try {
+        const data = (typeof coinsJson === 'string') ? JSON.parse(coinsJson) : coinsJson;
+        if (Array.isArray(data) && data.length > 0) {
+          data.forEach((c, idx) => {
+            const p = pieces[idx];
+            if (p && p.type !== 'striker') {
+              p.x = c.x;
+              p.y = c.y;
+              p.vx = 0;
+              p.vy = 0;
+              p.isPocketed = !!c.isPocketed;
+            }
+          });
+        }
+      } catch(e) {}
+    };
+
+    const AudioEngine = {
+      enabled: true,
+      audioCtx: null,
+      init() {
+        if (!this.audioCtx) {
+          try {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            if (AudioContext) this.audioCtx = new AudioContext();
+          } catch(e) {}
+        }
+      },
+      play(type, volume = 0.8) {
+        if (!this.enabled) return;
+        this.init();
+        if (!this.audioCtx) return;
+        try {
+          if (this.audioCtx.state === 'suspended') this.audioCtx.resume();
+          const t = this.audioCtx.currentTime;
+          const osc = this.audioCtx.createOscillator();
+          const gain = this.audioCtx.createGain();
+          osc.connect(gain);
+          gain.connect(this.audioCtx.destination);
+
+          if (type === 'wood_hit') {
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(320, t);
+            osc.frequency.exponentialRampToValueAtTime(70, t + 0.08);
+            gain.gain.setValueAtTime(Math.min(1.0, volume * 0.9), t);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+            osc.start(t);
+            osc.stop(t + 0.08);
+          } else if (type === 'wood_cushion') {
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(180, t);
+            osc.frequency.exponentialRampToValueAtTime(45, t + 0.12);
+            gain.gain.setValueAtTime(Math.min(1.0, volume * 0.8), t);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+            osc.start(t);
+            osc.stop(t + 0.12);
+          } else if (type === 'pocket_drop') {
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(520, t);
+            osc.frequency.exponentialRampToValueAtTime(140, t + 0.22);
+            gain.gain.setValueAtTime(0.7, t);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+            osc.start(t);
+            osc.stop(t + 0.22);
+          } else if (type === 'foul_alert') {
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(220, t);
+            osc.frequency.setValueAtTime(160, t + 0.1);
+            gain.gain.setValueAtTime(0.4, t);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+            osc.start(t);
+            osc.stop(t + 0.25);
+          }
+        } catch(e) {}
+      }
+    };
+
+    window.setCarromSound = function(enabled) {
+      AudioEngine.enabled = !!enabled;
+    };
+
+    const canvas = document.getElementById('carromCanvas');
+    const ctx = canvas.getContext('2d');
+    const foulToast = document.getElementById('foulToast');
+    const overlapToast = document.getElementById('overlapToast');
+    const sliderTrack = document.getElementById('sliderTrack');
+    const sliderThumb = document.getElementById('sliderThumb');
+
+    const BOARD_SIZE = 800;
+    canvas.width = BOARD_SIZE;
+    canvas.height = BOARD_SIZE;
+
+    const BORDER = 55;
+    const PLAY_LEFT = BORDER;
+    const PLAY_RIGHT = BOARD_SIZE - BORDER;
+    const PLAY_TOP = BORDER;
+    const PLAY_BOTTOM = BOARD_SIZE - BORDER;
+    const CENTER = BOARD_SIZE / 2;
+
+    const POCKET_RADIUS = 36;
+    const pockets = [
+      { x: PLAY_LEFT + 16, y: PLAY_TOP + 16 },
+      { x: PLAY_RIGHT - 16, y: PLAY_TOP + 16 },
+      { x: PLAY_LEFT + 16, y: PLAY_BOTTOM - 16 },
+      { x: PLAY_RIGHT - 16, y: PLAY_BOTTOM - 16 }
+    ];
+
+    const COIN_RADIUS = 18;
+    const STRIKER_RADIUS = 26;
+    const BASELINE_Y = PLAY_BOTTOM - 62;
+    const BASELINE_TOP_Y = PLAY_TOP + 62;
+    const BASELINE_MIN_X = PLAY_LEFT + 105;
+    const BASELINE_MAX_X = PLAY_RIGHT - 105;
+
+    function getActiveBaselineY() {
+      return (currentTurn === 'p2') ? BASELINE_TOP_Y : BASELINE_Y;
+    }
+
+    let currentTurn = 'p1'; // 'p1' (White), 'p2' (Black)
+    let p1Score = 0;
+    let p2Score = 0;
+    let p1Due = 0;
+    let p2Due = 0;
+    let queenPocketed = false;
+    let queenAwaitingCoverBy = null;
+
+    let pieces = [];
+    let striker = null;
+
+    let isAimingOnCanvas = false;
+    let isDraggingSlider = false;
+    let aimStartPos = { x: 0, y: 0 };
+    let aimDragPos = { x: 0, y: 0 };
+    let isStrikerOverlapping = false;
+    let shotFired = false;
+    let pocketedInCurrentShot = [];
+    let wasMoving = false;
+
+    class Piece {
+      constructor(x, y, radius, type) {
+        this.x = x;
+        this.y = y;
+        this.radius = radius;
+        this.type = type; // 'white', 'black', 'queen', 'striker'
+        this.vx = 0;
+        this.vy = 0;
+        this.mass = type === 'striker' ? 3.0 : 1.0;
+        this.friction = 0.965;
+        this.isPocketed = false;
+      }
+
+      update() {
+        if (this.isPocketed) return;
+
+        this.x += this.vx;
+        this.y += this.vy;
+
+        this.vx *= this.friction;
+        this.vy *= this.friction;
+
+        if (Math.abs(this.vx) < 0.20) this.vx = 0;
+        if (Math.abs(this.vy) < 0.20) this.vy = 0;
+
+        const minX = PLAY_LEFT + this.radius;
+        const maxX = PLAY_RIGHT - this.radius;
+        const minY = PLAY_TOP + this.radius;
+        const maxY = PLAY_BOTTOM - this.radius;
+
+        let hitWall = false;
+        if (this.x < minX) {
+          this.x = minX;
+          this.vx = -this.vx * 0.85;
+          hitWall = true;
+        } else if (this.x > maxX) {
+          this.x = maxX;
+          this.vx = -this.vx * 0.85;
+          hitWall = true;
+        }
+
+        if (this.y < minY) {
+          this.y = minY;
+          this.vy = -this.vy * 0.85;
+          hitWall = true;
+        } else if (this.y > maxY) {
+          this.y = maxY;
+          this.vy = -this.vy * 0.85;
+          hitWall = true;
+        }
+
+        if (hitWall) {
+          const speed = Math.hypot(this.vx, this.vy);
+          if (speed > 1.0) AudioEngine.play('wood_cushion', Math.min(speed / 15, 1.0));
+        }
+
+        for (const p of pockets) {
+          const dist = Math.hypot(this.x - p.x, this.y - p.y);
+          if (dist < POCKET_RADIUS + 4) {
+            this.vx += (p.x - this.x) * 0.18;
+            this.vy += (p.y - this.y) * 0.18;
+            this.vx *= 0.88;
+            this.vy *= 0.88;
+
+            if (dist < POCKET_RADIUS - 8) {
+              this.isPocketed = true;
+              this.vx = 0;
+              this.vy = 0;
+              AudioEngine.play('pocket_drop');
+              pocketedInCurrentShot.push(this);
+              break;
+            }
+          }
+        }
+      }
+
+      draw(ctx) {
+        if (this.isPocketed) return;
+
+        ctx.save();
+        ctx.translate(this.x, this.y);
+
+        // Shadow
+        ctx.beginPath();
+        ctx.arc(3.5, 4.5, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+        ctx.fill();
+
+        if (this.type === 'striker') {
+          if (isStrikerOverlapping && !shotFired) {
+            ctx.beginPath();
+            ctx.arc(0, 0, this.radius + 6, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(239, 68, 68, 0.4)';
+            ctx.fill();
+
+            const redGrad = ctx.createRadialGradient(-6, -6, 3, 0, 0, this.radius);
+            redGrad.addColorStop(0, '#fca5a5');
+            redGrad.addColorStop(0.3, '#ef4444');
+            redGrad.addColorStop(1, '#7f1d1d');
+            ctx.beginPath();
+            ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+            ctx.fillStyle = redGrad;
+            ctx.fill();
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = '#fee2e2';
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(-10, -10); ctx.lineTo(10, 10);
+            ctx.moveTo(10, -10); ctx.lineTo(-10, 10);
+            ctx.lineWidth = 3.5;
+            ctx.strokeStyle = '#ffffff';
+            ctx.stroke();
+          } else {
+            const grad = ctx.createRadialGradient(-6, -6, 3, 0, 0, this.radius);
+            grad.addColorStop(0, '#ffffff');
+            grad.addColorStop(0.2, '#ffe394');
+            grad.addColorStop(0.65, '#e08f16');
+            grad.addColorStop(1, '#8f4400');
+            ctx.beginPath();
+            ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+            ctx.fillStyle = grad;
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+            ctx.lineWidth = 2.5;
+            ctx.strokeStyle = '#fef08a';
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(0, 0, this.radius - 6, 0, Math.PI * 2);
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = '#b45309';
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(0, 0, 6, 0, Math.PI * 2);
+            ctx.fillStyle = '#dc2626';
+            ctx.fill();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+          }
+        } else if (this.type === 'queen') {
+          const grad = ctx.createRadialGradient(-5, -5, 2, 0, 0, this.radius);
+          grad.addColorStop(0, '#fecdd3');
+          grad.addColorStop(0.3, '#f43f5e');
+          grad.addColorStop(0.7, '#be123c');
+          grad.addColorStop(1, '#4c0519');
+          ctx.beginPath();
+          ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+          ctx.fillStyle = grad;
+          ctx.fill();
+
+          ctx.beginPath();
+          ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = '#fbbf24';
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.arc(0, 0, this.radius - 5, 0, Math.PI * 2);
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = 'rgba(251, 191, 36, 0.7)';
+          ctx.stroke();
+
+          drawStar(ctx, 0, 0, 5, 7, 3.5, '#fbbf24');
+        } else if (this.type === 'white') {
+          const grad = ctx.createRadialGradient(-4, -4, 2, 0, 0, this.radius);
+          grad.addColorStop(0, '#ffffff');
+          grad.addColorStop(0.35, '#fef3c7');
+          grad.addColorStop(0.75, '#d97706');
+          grad.addColorStop(1, '#78350f');
+          ctx.beginPath();
+          ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+          ctx.fillStyle = grad;
+          ctx.fill();
+
+          ctx.beginPath();
+          ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = '#fef3c7';
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.arc(0, 0, this.radius - 4, 0, Math.PI * 2);
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = 'rgba(180, 83, 9, 0.4)';
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.arc(0, 0, 3, 0, Math.PI * 2);
+          ctx.fillStyle = '#b45309';
+          ctx.fill();
+        } else if (this.type === 'black') {
+          const grad = ctx.createRadialGradient(-4, -4, 2, 0, 0, this.radius);
+          grad.addColorStop(0, '#64748b');
+          grad.addColorStop(0.3, '#334155');
+          grad.addColorStop(0.75, '#0f172a');
+          grad.addColorStop(1, '#020617');
+          ctx.beginPath();
+          ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+          ctx.fillStyle = grad;
+          ctx.fill();
+
+          ctx.beginPath();
+          ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = '#94a3b8';
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.arc(0, 0, this.radius - 4, 0, Math.PI * 2);
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.arc(0, 0, 3, 0, Math.PI * 2);
+          ctx.fillStyle = '#e2e8f0';
+          ctx.fill();
+        }
+
+        ctx.restore();
+      }
+    }
+
+    function drawStar(ctx, cx, cy, spikes, outerRadius, innerRadius, color) {
+      let rot = Math.PI / 2 * 3;
+      let x = cx;
+      let y = cy;
+      const step = Math.PI / spikes;
+
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - outerRadius);
+      for (let i = 0; i < spikes; i++) {
+        x = cx + Math.cos(rot) * outerRadius;
+        y = cy + Math.sin(rot) * outerRadius;
+        ctx.lineTo(x, y);
+        rot += step;
+
+        x = cx + Math.cos(rot) * innerRadius;
+        y = cy + Math.sin(rot) * innerRadius;
+        ctx.lineTo(x, y);
+        rot += step;
+      }
+      ctx.lineTo(cx, cy - outerRadius);
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.fill();
+    }
+
+    // Procedural High-Definition Carrom Board Surface
+    function drawProceduralBoard(ctx) {
+      // 1. Teakwood Frame (800x800)
+      const frameGrad = ctx.createLinearGradient(0, 0, BOARD_SIZE, BOARD_SIZE);
+      frameGrad.addColorStop(0, '#2d1406');
+      frameGrad.addColorStop(0.3, '#54270d');
+      frameGrad.addColorStop(0.7, '#3d1a08');
+      frameGrad.addColorStop(1, '#1f0d04');
+      ctx.fillStyle = frameGrad;
+      ctx.fillRect(0, 0, BOARD_SIZE, BOARD_SIZE);
+
+      // Frame Inner Bevel
+      ctx.strokeStyle = '#7c3f15';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(3, 3, BOARD_SIZE - 6, BOARD_SIZE - 6);
+
+      ctx.strokeStyle = '#140802';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(BORDER - 2, BORDER - 2, (BOARD_SIZE - 2 * BORDER) + 4, (BOARD_SIZE - 2 * BORDER) + 4);
+
+      // Miter joints
+      ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, 0); ctx.lineTo(BORDER, BORDER);
+      ctx.moveTo(BOARD_SIZE, 0); ctx.lineTo(BOARD_SIZE - BORDER, BORDER);
+      ctx.moveTo(0, BOARD_SIZE); ctx.lineTo(BORDER, BOARD_SIZE - BORDER);
+      ctx.moveTo(BOARD_SIZE, BOARD_SIZE); ctx.lineTo(BOARD_SIZE - BORDER, BOARD_SIZE - BORDER);
+      ctx.stroke();
+
+      // 2. Playing Surface (Satin Tournament Veneer)
+      const playGrad = ctx.createRadialGradient(CENTER, CENTER, 60, CENTER, CENTER, 460);
+      playGrad.addColorStop(0, '#fffbf2');
+      playGrad.addColorStop(0.4, '#faeed7');
+      playGrad.addColorStop(0.85, '#f3e1be');
+      playGrad.addColorStop(1, '#e5cca2');
+      ctx.fillStyle = playGrad;
+      ctx.fillRect(PLAY_LEFT, PLAY_TOP, PLAY_RIGHT - PLAY_LEFT, PLAY_BOTTOM - PLAY_TOP);
+
+      // Inner Cushion Bumper Line (Deep Rosewood)
+      ctx.strokeStyle = '#851d1d';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(PLAY_LEFT, PLAY_TOP, PLAY_RIGHT - PLAY_LEFT, PLAY_BOTTOM - PLAY_TOP);
+
+      // Cushion shadow
+      ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+      ctx.lineWidth = 8;
+      ctx.strokeRect(PLAY_LEFT + 4, PLAY_TOP + 4, (PLAY_RIGHT - PLAY_LEFT) - 8, (PLAY_BOTTOM - PLAY_TOP) - 8);
+
+      // 3. 4 Corner Pockets
+      pockets.forEach(p => {
+        // Brass metallic rim
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, POCKET_RADIUS + 4, 0, Math.PI * 2);
+        ctx.fillStyle = '#b45309';
+        ctx.fill();
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Pocket hole
+        const holeGrad = ctx.createRadialGradient(p.x, p.y, 5, p.x, p.y, POCKET_RADIUS);
+        holeGrad.addColorStop(0, '#000000');
+        holeGrad.addColorStop(0.8, '#0a0a0a');
+        holeGrad.addColorStop(1, '#1c1917');
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, POCKET_RADIUS, 0, Math.PI * 2);
+        ctx.fillStyle = holeGrad;
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, POCKET_RADIUS - 2, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+      });
+
+      // 4. Base Lines & Circles
+      ctx.lineWidth = 1.8;
+      ctx.strokeStyle = '#1e1b18';
+
+      const drawBaseBar = (minX, maxX, y1, y2, isVert = false) => {
+        ctx.beginPath();
+        if (!isVert) {
+          ctx.moveTo(minX, y1); ctx.lineTo(maxX, y1);
+          ctx.moveTo(minX, y2); ctx.lineTo(maxX, y2);
+        } else {
+          ctx.moveTo(y1, minX); ctx.lineTo(y1, maxX);
+          ctx.moveTo(y2, minX); ctx.lineTo(y2, maxX);
+        }
+        ctx.stroke();
+
+        const c1 = isVert ? { x: (y1+y2)/2, y: minX } : { x: minX, y: (y1+y2)/2 };
+        const c2 = isVert ? { x: (y1+y2)/2, y: maxX } : { x: maxX, y: (y1+y2)/2 };
+        [c1, c2].forEach(c => {
+          ctx.beginPath();
+          ctx.arc(c.x, c.y, 16, 0, Math.PI * 2);
+          ctx.fillStyle = '#fee2e2';
+          ctx.fill();
+          ctx.strokeStyle = '#1e1b18';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.arc(c.x, c.y, 10, 0, Math.PI * 2);
+          ctx.fillStyle = '#dc2626';
+          ctx.fill();
+        });
+      };
+
+      // Bottom bar
+      drawBaseBar(BASELINE_MIN_X, BASELINE_MAX_X, BASELINE_Y - 14, BASELINE_Y + 14);
+      // Top bar
+      drawBaseBar(BASELINE_MIN_X, BASELINE_MAX_X, (PLAY_TOP + 62) - 14, (PLAY_TOP + 62) + 14);
+      // Left bar
+      drawBaseBar(BASELINE_MIN_X, BASELINE_MAX_X, (PLAY_LEFT + 62) - 14, (PLAY_LEFT + 62) + 14, true);
+      // Right bar
+      drawBaseBar(BASELINE_MIN_X, BASELINE_MAX_X, (PLAY_RIGHT - 62) - 14, (PLAY_RIGHT - 62) + 14, true);
+
+      // 5. Diagonal Arrows
+      const arrowOrigins = [
+        { x: PLAY_LEFT + 140, y: PLAY_TOP + 140, px: pockets[0].x, py: pockets[0].y },
+        { x: PLAY_RIGHT - 140, y: PLAY_TOP + 140, px: pockets[1].x, py: pockets[1].y },
+        { x: PLAY_LEFT + 140, y: PLAY_BOTTOM - 140, px: pockets[2].x, py: pockets[2].y },
+        { x: PLAY_RIGHT - 140, y: PLAY_BOTTOM - 140, px: pockets[3].x, py: pockets[3].y }
+      ];
+      arrowOrigins.forEach(arr => {
+        ctx.beginPath();
+        ctx.arc(arr.x, arr.y, 14, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(220, 38, 38, 0.2)';
+        ctx.fill();
+        ctx.strokeStyle = '#dc2626';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(arr.x, arr.y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = '#dc2626';
+        ctx.fill();
+
+        const angle = Math.atan2(arr.py - arr.y, arr.px - arr.x);
+        const startX = arr.x + Math.cos(angle) * 16;
+        const startY = arr.y + Math.sin(angle) * 16;
+        const endX = arr.px - Math.cos(angle) * (POCKET_RADIUS + 4);
+        const endY = arr.py - Math.sin(angle) * (POCKET_RADIUS + 4);
+
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.lineTo(endX, endY);
+        ctx.strokeStyle = '#1e1b18';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+
+        const arrowHeadLen = 10;
+        ctx.beginPath();
+        ctx.moveTo(endX, endY);
+        ctx.lineTo(endX - arrowHeadLen * Math.cos(angle - Math.PI / 6), endY - arrowHeadLen * Math.sin(angle - Math.PI / 6));
+        ctx.moveTo(endX, endY);
+        ctx.lineTo(endX - arrowHeadLen * Math.cos(angle + Math.PI / 6), endY - arrowHeadLen * Math.sin(angle + Math.PI / 6));
+        ctx.stroke();
+      });
+
+      // 6. Central Rings & Queen Circle
+      ctx.beginPath();
+      ctx.arc(CENTER, CENTER, 75, 0, Math.PI * 2);
+      ctx.strokeStyle = '#1e1b18';
+      ctx.lineWidth = 1.8;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(CENTER, CENTER, 52, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(220, 38, 38, 0.55)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      for (let i = 0; i < 6; i++) {
+        const rad = (i * 60) * Math.PI / 180;
+        const px = CENTER + Math.cos(rad) * 36;
+        const py = CENTER + Math.sin(rad) * 36;
+        ctx.beginPath();
+        ctx.arc(px, py, 14, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(30, 27, 24, 0.35)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+
+      ctx.beginPath();
+      ctx.arc(CENTER, CENTER, COIN_RADIUS, 0, Math.PI * 2);
+      ctx.fillStyle = '#dc2626';
+      ctx.fill();
+      ctx.strokeStyle = '#991b1b';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(CENTER, CENTER, 4, 0, Math.PI * 2);
+      ctx.fillStyle = '#fbbf24';
+      ctx.fill();
+    }
+
+    function initBoard() {
+      pieces = [];
+      p1Score = 0;
+      p2Score = 0;
+      p1Due = 0;
+      p2Due = 0;
+      currentTurn = 'p1';
+      queenPocketed = false;
+      queenAwaitingCoverBy = null;
+      shotFired = false;
+      pocketedInCurrentShot = [];
+      isStrikerOverlapping = false;
+
+      updateUI();
+      if (overlapToast) overlapToast.classList.add('opacity-0', 'pointer-events-none');
+
+      // 1 Queen at Center
+      pieces.push(new Piece(CENTER, CENTER, COIN_RADIUS, 'queen'));
+
+      // Inner ring of 6 coins (3 White, 3 Black alternating)
+      const rInner = COIN_RADIUS * 2;
+      for (let i = 0; i < 6; i++) {
+        const angle = (i * 60) * Math.PI / 180;
+        const type = i % 2 === 0 ? 'white' : 'black';
+        pieces.push(new Piece(CENTER + Math.cos(angle) * rInner, CENTER + Math.sin(angle) * rInner, COIN_RADIUS, type));
+      }
+
+      // Outer ring of 12 coins (6 White, 6 Black)
+      const rOuter = COIN_RADIUS * 3.75;
+      for (let i = 0; i < 12; i++) {
+        const angle = (i * 30 + 15) * Math.PI / 180;
+        const type = (i % 2 === 0) ? 'black' : 'white';
+        pieces.push(new Piece(CENTER + Math.cos(angle) * rOuter, CENTER + Math.sin(angle) * rOuter, COIN_RADIUS, type));
+      }
+
+      // Striker setup
+      resetStriker();
+    }
+
+    window.resetCarromGame = function() {
+      initBoard();
+    };
+
+    function resetStriker() {
+      const activeBaselineY = getActiveBaselineY();
+      if (!striker) {
+        striker = new Piece(CENTER, activeBaselineY, STRIKER_RADIUS, 'striker');
+        pieces.push(striker);
+      } else {
+        striker.x = CENTER;
+        striker.y = activeBaselineY;
+        striker.vx = 0;
+        striker.vy = 0;
+        striker.isPocketed = false;
+      }
+      shotFired = false;
+      pocketedInCurrentShot = [];
+      updateSliderUI();
+      updateOverlapCheck();
+    }
+
+    function updateOverlapCheck() {
+      if (!striker || shotFired) return;
+      isStrikerOverlapping = false;
+      for (const p of pieces) {
+        if (p === striker || p.isPocketed) continue;
+        const dist = Math.hypot(striker.x - p.x, striker.y - p.y);
+        if (dist < striker.radius + p.radius) {
+          isStrikerOverlapping = true;
+          break;
+        }
+      }
+
+      if (overlapToast) {
+        if (isStrikerOverlapping) {
+          overlapToast.classList.remove('opacity-0', 'pointer-events-none');
+        } else {
+          overlapToast.classList.add('opacity-0', 'pointer-events-none');
+        }
+      }
+    }
+
+    function updateSliderUI() {
+      if (!striker || !sliderThumb) return;
+      const ratio = (striker.x - BASELINE_MIN_X) / (BASELINE_MAX_X - BASELINE_MIN_X);
+      const clamped = Math.max(0, Math.min(1, ratio));
+      sliderThumb.style.left = `${clamped * 100}%`;
+    }
+
+    function updateUI() {
+      if (window.CarromBridge) {
+        try {
+          window.CarromBridge.onGameState(currentTurn, p1Score, p2Score, queenAwaitingCoverBy || "");
+        } catch(e) {}
+      }
+    }
+
+    function showFoulAlert(msg) {
+      AudioEngine.play('foul_alert');
+      if (foulToast) {
+        foulToast.innerText = msg;
+        foulToast.classList.remove('opacity-0', 'pointer-events-none');
+        setTimeout(() => {
+          foulToast.classList.add('opacity-0', 'pointer-events-none');
+        }, 1800);
+      }
+    }
+
+    function returnCoinToCenter(type) {
+      const p = pieces.find(c => c.type === type && c.isPocketed);
+      if (p) {
+        p.isPocketed = false;
+        p.vx = 0;
+        p.vy = 0;
+        let placeX = CENTER;
+        let placeY = CENTER;
+        while (pieces.some(c => c !== p && !c.isPocketed && Math.hypot(c.x - placeX, c.y - placeY) < c.radius + p.radius)) {
+          placeX += (Math.random() - 0.5) * 20;
+          placeY += (Math.random() - 0.5) * 20;
+        }
+        p.x = placeX;
+        p.y = placeY;
+      }
+    }
+
+    function isBoardStill() {
+      for (const p of pieces) {
+        if (!p.isPocketed && (Math.abs(p.vx) > 0.20 || Math.abs(p.vy) > 0.20)) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    function handleSliderMove(clientX) {
+      if (shotFired) return;
+      const rect = sliderTrack.getBoundingClientRect();
+      const clickX = clientX - rect.left;
+      const ratio = Math.max(0, Math.min(1, clickX / rect.width));
+
+      striker.x = BASELINE_MIN_X + ratio * (BASELINE_MAX_X - BASELINE_MIN_X);
+      striker.y = getActiveBaselineY();
+      updateSliderUI();
+      updateOverlapCheck();
+    }
+
+    sliderTrack.addEventListener('pointerdown', (e) => {
+      if (!canLocalUserControl || shotFired) return;
+      AudioEngine.init();
+      isDraggingSlider = true;
+      sliderTrack.setPointerCapture(e.pointerId);
+      handleSliderMove(e.clientX);
+    });
+
+    sliderTrack.addEventListener('pointermove', (e) => {
+      if (!isDraggingSlider) return;
+      handleSliderMove(e.clientX);
+    });
+
+    sliderTrack.addEventListener('pointerup', (e) => {
+      isDraggingSlider = false;
+      try { sliderTrack.releasePointerCapture(e.pointerId); } catch(err) {}
+    });
+
+    sliderTrack.addEventListener('pointercancel', (e) => {
+      isDraggingSlider = false;
+      try { sliderTrack.releasePointerCapture(e.pointerId); } catch(err) {}
+    });
+
+    function getCanvasCoords(e) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = BOARD_SIZE / rect.width;
+      const scaleY = BOARD_SIZE / rect.height;
+      return {
+        x: (e.clientX - rect.left) * scaleX,
+        y: (e.clientY - rect.top) * scaleY
+      };
+    }
+
+    canvas.addEventListener('pointerdown', (e) => {
+      if (!canLocalUserControl || shotFired || !isBoardStill()) return;
+      AudioEngine.init();
+      const coords = getCanvasCoords(e);
+      const distToStriker = Math.hypot(coords.x - striker.x, coords.y - striker.y);
+
+      if (distToStriker < STRIKER_RADIUS + 40) {
+        if (isStrikerOverlapping) {
+          AudioEngine.play('foul_alert', 0.6);
+          return;
+        }
+        isAimingOnCanvas = true;
+        aimStartPos = coords;
+        aimDragPos = coords;
+        canvas.setPointerCapture(e.pointerId);
+      }
+    });
+
+    canvas.addEventListener('pointermove', (e) => {
+      if (!isAimingOnCanvas) return;
+      const coords = getCanvasCoords(e);
+      aimDragPos = coords;
+    });
+
+    canvas.addEventListener('pointerup', (e) => {
+      if (!isAimingOnCanvas) return;
+      isAimingOnCanvas = false;
+      try { canvas.releasePointerCapture(e.pointerId); } catch(err) {}
+      handleAimRelease();
+    });
+
+    canvas.addEventListener('pointercancel', (e) => {
+      if (!isAimingOnCanvas) return;
+      isAimingOnCanvas = false;
+      try { canvas.releasePointerCapture(e.pointerId); } catch(err) {}
+    });
+
+    function handleAimRelease() {
+      if (isStrikerOverlapping) return;
+
+      const pullX = striker.x - aimDragPos.x;
+      const pullY = striker.y - aimDragPos.y;
+      const pullDist = Math.hypot(pullX, pullY);
+
+      if (pullDist > 12) {
+        const maxPull = 160;
+        const clampedDist = Math.min(pullDist, maxPull);
+        const power = (clampedDist / maxPull) * 36;
+
+        const angle = Math.atan2(pullY, pullX);
+        striker.vx = Math.cos(angle) * power;
+        striker.vy = Math.sin(angle) * power;
+
+        AudioEngine.play('wood_hit', Math.min(power / 10, 1.0));
+        shotFired = true;
+        pocketedInCurrentShot = [];
+
+        if (window.CarromBridge && window.CarromBridge.onShoot) {
+          try {
+            window.CarromBridge.onShoot(striker.x, striker.y, striker.vx, striker.vy, currentTurn);
+          } catch(e) {}
+        }
+      }
+    }
+
+    function checkPostShotRules() {
+      if (!shotFired) return;
+      const still = isBoardStill();
+
+      if (still && wasMoving) {
+        shotFired = false;
+        const myType = currentTurn === 'p1' ? 'white' : 'black';
+        const oppType = currentTurn === 'p1' ? 'black' : 'white';
+
+        const strikerFell = pocketedInCurrentShot.some(p => p.type === 'striker');
+        const myCoinsPocketed = pocketedInCurrentShot.filter(p => p.type === myType).length;
+        const oppCoinsPocketed = pocketedInCurrentShot.filter(p => p.type === oppType).length;
+        const queenPocketedNow = pocketedInCurrentShot.some(p => p.type === 'queen');
+
+        let switchTurn = true;
+
+        if (oppCoinsPocketed > 0) {
+          if (currentTurn === 'p1') p2Score += oppCoinsPocketed;
+          else p1Score += oppCoinsPocketed;
+        }
+
+        if (strikerFell) {
+          showFoulAlert('⚠️ Striker pocketed! Foul penalty applied');
+          if (queenPocketedNow) {
+            returnCoinToCenter('queen');
+            queenPocketed = false;
+            queenAwaitingCoverBy = null;
+          }
+          if (myCoinsPocketed > 0) {
+            for (let i = 0; i < myCoinsPocketed; i++) {
+              returnCoinToCenter(myType);
+            }
+          }
+          if (currentTurn === 'p1') {
+            if (p1Score > 0) {
+              p1Score--;
+              returnCoinToCenter('white');
+            } else {
+              p1Due++;
+            }
+          } else {
+            if (p2Score > 0) {
+              p2Score--;
+              returnCoinToCenter('black');
+            } else {
+              p2Due++;
+            }
+          }
+          switchTurn = true;
+        } else {
+          if (myCoinsPocketed > 0) {
+            if (currentTurn === 'p1') {
+              p1Score += myCoinsPocketed;
+              if (p1Due > 0) {
+                const pay = Math.min(p1Due, myCoinsPocketed);
+                p1Due -= pay;
+                p1Score -= pay;
+                for (let i = 0; i < pay; i++) returnCoinToCenter('white');
+              }
+            } else {
+              p2Score += myCoinsPocketed;
+              if (p2Due > 0) {
+                const pay = Math.min(p2Due, myCoinsPocketed);
+                p2Due -= pay;
+                p2Score -= pay;
+                for (let i = 0; i < pay; i++) returnCoinToCenter('black');
+              }
+            }
+            switchTurn = false;
+          }
+
+          if (queenPocketedNow) {
+            queenPocketed = true;
+            queenAwaitingCoverBy = currentTurn;
+            switchTurn = false;
+          } else if (queenAwaitingCoverBy === currentTurn) {
+            if (myCoinsPocketed > 0) {
+              if (currentTurn === 'p1') p1Score += 3;
+              else p2Score += 3;
+              queenAwaitingCoverBy = null;
+              switchTurn = false;
+            } else {
+              returnCoinToCenter('queen');
+              queenPocketed = false;
+              queenAwaitingCoverBy = null;
+              switchTurn = true;
+            }
+          }
+        }
+
+        const remainingWhite = pieces.filter(p => p.type === 'white' && !p.isPocketed).length;
+        const remainingBlack = pieces.filter(p => p.type === 'black' && !p.isPocketed).length;
+
+        if (remainingWhite === 0 || remainingBlack === 0) {
+          declareWinner();
+          return;
+        }
+
+        if (switchTurn) {
+          currentTurn = currentTurn === 'p1' ? 'p2' : 'p1';
+        }
+
+        resetStriker();
+        updateUI();
+
+        if (window.CarromBridge && window.CarromBridge.onTurnFinished) {
+          try {
+            const coinsJson = JSON.stringify(pieces.filter(p => p.type !== 'striker').map(p => ({
+              x: Math.round(p.x * 10) / 10,
+              y: Math.round(p.y * 10) / 10,
+              type: p.type,
+              isPocketed: p.isPocketed
+            })));
+            window.CarromBridge.onTurnFinished(
+              currentTurn,
+              p1Score,
+              p2Score,
+              switchTurn ? "switch" : "repeat",
+              coinsJson
+            );
+          } catch(e) {}
+        }
+      }
+      wasMoving = !still;
+    }
+
+    function declareWinner() {
+      const winner = (p1Score >= p2Score ? 'p1' : 'p2');
+      if (window.CarromBridge) {
+        try {
+          window.CarromBridge.onGameOver(winner, p1Score, p2Score);
+        } catch(e) {}
+      }
+    }
+
+    function drawAimLine() {
+      if (!isAimingOnCanvas || isStrikerOverlapping) return;
+
+      const pullX = striker.x - aimDragPos.x;
+      const pullY = striker.y - aimDragPos.y;
+      const pullDist = Math.hypot(pullX, pullY);
+
+      if (pullDist < 10) return;
+
+      const angle = Math.atan2(pullY, pullX);
+      const maxPull = 160;
+      const clampedDist = Math.min(pullDist, maxPull);
+      const aimLen = (clampedDist / maxPull) * 320;
+
+      const endX = striker.x + Math.cos(angle) * aimLen;
+      const endY = striker.y + Math.sin(angle) * aimLen;
+
+      ctx.save();
+      ctx.setLineDash([8, 8]);
+      ctx.beginPath();
+      ctx.moveTo(striker.x, striker.y);
+      ctx.lineTo(endX, endY);
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(endX, endY, 6, 0, Math.PI * 2);
+      ctx.fillStyle = '#ef4444';
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Pull back vector
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(striker.x, striker.y);
+      ctx.lineTo(aimDragPos.x, aimDragPos.y);
+      ctx.strokeStyle = 'rgba(239, 68, 68, 0.6)';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    function resolveCollisions() {
+      for (let i = 0; i < pieces.length; i++) {
+        const p1 = pieces[i];
+        if (p1.isPocketed) continue;
+
+        for (let j = i + 1; j < pieces.length; j++) {
+          const p2 = pieces[j];
+          if (p2.isPocketed) continue;
+
+          const dx = p2.x - p1.x;
+          const dy = p2.y - p1.y;
+          const dist = Math.hypot(dx, dy);
+          const minDist = p1.radius + p2.radius;
+
+          if (dist < minDist) {
+            const overlap = (minDist - dist) / 2;
+            const nx = dx / (dist || 1);
+            const ny = dy / (dist || 1);
+
+            p1.x -= nx * overlap;
+            p1.y -= ny * overlap;
+            p2.x += nx * overlap;
+            p2.y += ny * overlap;
+
+            const kx = p1.vx - p2.vx;
+            const ky = p1.vy - p2.vy;
+            const p = 2 * (nx * kx + ny * ky) / (p1.mass + p2.mass);
+
+            p1.vx -= p * p2.mass * nx * 0.92;
+            p1.vy -= p * p2.mass * ny * 0.92;
+            p2.vx += p * p1.mass * nx * 0.92;
+            p2.vy += p * p1.mass * ny * 0.92;
+
+            const relativeSpeed = Math.hypot(kx, ky);
+            if (relativeSpeed > 1.2) {
+              AudioEngine.play('wood_hit', Math.min(relativeSpeed / 12, 1.0));
+            }
+          }
+        }
+      }
+    }
+
+    function loop() {
+      resolveCollisions();
+      pieces.forEach(p => p.update());
+      checkPostShotRules();
+
+      // Procedural Board is guaranteed to render crisp every single frame!
+      drawProceduralBoard(ctx);
+
+      drawAimLine();
+      pieces.forEach(p => p.draw(ctx));
+
+      requestAnimationFrame(loop);
+    }
+
+    initBoard();
+    loop();
+  </script>
+</body>
+</html>

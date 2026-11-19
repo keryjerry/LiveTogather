@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>HD Realistic 3D Ludo Pro</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #boardContainer {
+      width: 100%;
+      height: 100%;
+      aspect-ratio: 1 / 1;
+      max-width: 100vw;
+      max-height: 100vw;
+      position: relative;
+      background: #1e140a;
+      border-radius: 14px;
+      border: 3px solid #d4af37;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.8), inset 0 0 10px rgba(255,215,0,0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    #ludoCanvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="boardContainer">
+    <canvas id="ludoCanvas" width="900" height="900"></canvas>
+  </div>
+
+  <script>
+    // -------------------------------------------------------------
+    // WEBAUDIO SOUND ENGINE (AUTHENTIC REALISTIC SFX)
+    // -------------------------------------------------------------
+    const Sound = {
+      enabled: true,
+      ctx: null,
+      init() {
+        if (!this.ctx) {
+          const AC = window.AudioContext || window.webkitAudioContext;
+          if (AC) this.ctx = new AC();
+        }
+      },
+      play(name) {
+        if (!this.enabled) return;
+        this.init();
+        if (!this.ctx) return;
+        try {
+          if (this.ctx.state === 'suspended') this.ctx.resume();
+          const t = this.ctx.currentTime;
+          if (name === 'roll') {
+            for (let i = 0; i < 4; i++) {
+              const osc = this.ctx.createOscillator();
+              const g = this.ctx.createGain();
+              osc.type = 'triangle';
+              osc.frequency.setValueAtTime(280 + Math.random() * 240, t + i * 0.08);
+              g.gain.setValueAtTime(0.25, t + i * 0.08);
+              g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.08 + 0.06);
+              osc.connect(g); g.connect(this.ctx.destination);
+              osc.start(t + i * 0.08); osc.stop(t + i * 0.08 + 0.06);
+            }
+          } else if (name === 'six') {
+            [440, 554, 659].forEach((f, idx) => {
+              const osc = this.ctx.createOscillator();
+              const g = this.ctx.createGain();
+              osc.type = 'triangle';
+              osc.frequency.setValueAtTime(f, t + idx * 0.09);
+              g.gain.setValueAtTime(0.35, t + idx * 0.09);
+              g.gain.exponentialRampToValueAtTime(0.001, t + idx * 0.09 + 0.2);
+              osc.connect(g); g.connect(this.ctx.destination);
+              osc.start(t + idx * 0.09); osc.stop(t + idx * 0.09 + 0.2);
+            });
+          } else if (name === 'pop_out') {
+            const osc = this.ctx.createOscillator();
+            const g = this.ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(300, t);
+            osc.frequency.exponentialRampToValueAtTime(600, t + 0.15);
+            g.gain.setValueAtTime(0.5, t);
+            g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+            osc.connect(g); g.connect(this.ctx.destination);
+            osc.start(t); osc.stop(t + 0.15);
+          } else if (name === 'hop') {
+            const osc = this.ctx.createOscillator();
+            const g = this.ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(450, t);
+            osc.frequency.exponentialRampToValueAtTime(240, t + 0.07);
+            g.gain.setValueAtTime(0.4, t);
+            g.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+            osc.connect(g); g.connect(this.ctx.destination);
+            osc.start(t); osc.stop(t + 0.07);
+          } else if (name === 'star') {
+            [523, 659, 784, 1046].forEach((f, i) => {
+              const osc = this.ctx.createOscillator();
+              const g = this.ctx.createGain();
+              osc.type = 'sine';
+              osc.frequency.setValueAtTime(f, t + i * 0.06);
+              g.gain.setValueAtTime(0.25, t + i * 0.06);
+              g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.06 + 0.2);
+              osc.connect(g); g.connect(this.ctx.destination);
+              osc.start(t + i * 0.06); osc.stop(t + i * 0.06 + 0.2);
+            });
+          } else if (name === 'cut') {
+            const osc = this.ctx.createOscillator();
+            const g = this.ctx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(260, t);
+            osc.frequency.exponentialRampToValueAtTime(50, t + 0.25);
+            g.gain.setValueAtTime(0.7, t);
+            g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+            osc.connect(g); g.connect(this.ctx.destination);
+            osc.start(t); osc.stop(t + 0.25);
+          }
+        } catch(e) {}
+      }
+    };
+
+    // -------------------------------------------------------------
+    // BOARD & RULES CONFIGURATION
+    // -------------------------------------------------------------
+    const canvas = document.getElementById('ludoCanvas');
+    const ctx = canvas.getContext('2d');
+    const CELL = 900 / 15; // 60px
+
+    let currentDice = 6;
+    let turnColor = 'red';
+    let myColor = 'red';
+    let canControl = true;
+    let gameMode = '2p'; // '2p', '3p', '4p'
+    let isRolling = false;
+    let isAnimatingMove = false;
+
+    // Real players configuration (zero dummy bots)
+    let players = {
+      red:    { uid: '', name: 'Player 1', photo: '', active: true },
+      green:  { uid: '', name: 'Empty', photo: '', active: false },
+      yellow: { uid: '', name: 'Player 2', photo: '', active: true },
+      blue:   { uid: '', name: 'Empty', photo: '', active: false }
+    };
+
+    // Pawns: 4 per color. pos = -1 (base socket), 0..50 (main track), 51..55 (home runway), 56 (home victory)
+    let pawns = {
+      red:    [{ pos: -1 }, { pos: -1 }, { pos: -1 }, { pos: -1 }],
+      green:  [{ pos: -1 }, { pos: -1 }, { pos: -1 }, { pos: -1 }],
+      yellow: [{ pos: -1 }, { pos: -1 }, { pos: -1 }, { pos: -1 }],
+      blue:   [{ pos: -1 }, { pos: -1 }, { pos: -1 }, { pos: -1 }]
+    };
+
+    // Standard 52-cell track
+    const MAIN_PATH = [
+      {c: 6, r: 13}, {c: 6, r: 12}, {c: 6, r: 11}, {c: 6, r: 10}, {c: 6, r: 9},
+      {c: 5, r: 8},  {c: 4, r: 8},  {c: 3, r: 8},  {c: 2, r: 8},  {c: 1, r: 8}, {c: 0, r: 8},
+      {c: 0, r: 7},  {c: 0, r: 6},
+      {c: 1, r: 6},  {c: 2, r: 6},  {c: 3, r: 6},  {c: 4, r: 6},  {c: 5, r: 6},
+      {c: 6, r: 5},  {c: 6, r: 4},  {c: 6, r: 3},  {c: 6, r: 2},  {c: 6, r: 1}, {c: 6, r: 0},
+      {c: 7, r: 0},  {c: 8, r: 0},
+      {c: 8, r: 1},  {c: 8, r: 2},  {c: 8, r: 3},  {c: 8, r: 4},  {c: 8, r: 5},
+      {c: 9, r: 6},  {c: 10, r: 6}, {c: 11, r: 6}, {c: 12, r: 6}, {c: 13, r: 6}, {c: 14, r: 6},
+      {c: 14, r: 7}, {c: 14, r: 8},
+      {c: 13, r: 8}, {c: 12, r: 8}, {c: 11, r: 8}, {c: 10, r: 8}, {c: 9, r: 8},
+      {c: 8, r: 9},  {c: 8, r: 10}, {c: 8, r: 11}, {c: 8, r: 12}, {c: 8, r: 13}, {c: 8, r: 14},
+      {c: 7, r: 14}, {c: 6, r: 14}
+    ];
+
+    const START_OFFSET = { red: 0, green: 13, yellow: 26, blue: 39 };
+    const SAFE_INDICES = [0, 8, 13, 21, 26, 34, 39, 47];
+
+    const HOME_RUNWAY = {
+      red:    [{c: 7, r: 13}, {c: 7, r: 12}, {c: 7, r: 11}, {c: 7, r: 10}, {c: 7, r: 9}],
+      green:  [{c: 1, r: 7},  {c: 2, r: 7},  {c: 3, r: 7},  {c: 4, r: 7},  {c: 5, r: 7}],
+      yellow: [{c: 7, r: 1},  {c: 7, r: 2},  {c: 7, r: 3},  {c: 7, r: 4},  {c: 7, r: 5}],
+      blue:   [{c: 13, r: 7}, {c: 12, r: 7}, {c: 11, r: 7}, {c: 10, r: 7}, {c: 9, r: 7}]
+    };
+
+    const BASE_SOCKETS = {
+      green:  [{x: 1.5 * CELL, y: 5.2 * CELL}, {x: 2.7 * CELL, y: 5.2 * CELL}, {x: 3.9 * CELL, y: 5.2 * CELL}, {x: 5.1 * CELL, y: 5.2 * CELL}],
+      yellow: [{x: 9.9 * CELL, y: 5.2 * CELL}, {x: 11.1 * CELL, y: 5.2 * CELL}, {x: 12.3 * CELL, y: 5.2 * CELL}, {x: 13.5 * CELL, y: 5.2 * CELL}],
+      red:    [{x: 1.5 * CELL, y: 9.8 * CELL}, {x: 2.7 * CELL, y: 9.8 * CELL}, {x: 3.9 * CELL, y: 9.8 * CELL}, {x: 5.1 * CELL, y: 9.8 * CELL}],
+      blue:   [{x: 9.9 * CELL, y: 9.8 * CELL}, {x: 11.1 * CELL, y: 9.8 * CELL}, {x: 12.3 * CELL, y: 9.8 * CELL}, {x: 13.5 * CELL, y: 9.8 * CELL}]
+    };
+
+    const avatarImages = {};
+    function loadAvatar(color, url) {
+      if (!url) return;
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.src = url;
+      img.onload = () => {
+        avatarImages[color] = img;
+        render();
+      };
+    }
+
+    // -------------------------------------------------------------
+    // RENDER LUDO BOARD
+    // -------------------------------------------------------------
+    function render() {
+      ctx.clearRect(0, 0, 900, 900);
+
+      // Background
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(0, 0, 900, 900);
+
+      // Green Base (0..6, 0..6)
+      ctx.fillStyle = '#22c55e';
+      ctx.fillRect(0, 0, 6 * CELL, 6 * CELL);
+      ctx.fillStyle = '#15803d';
+      roundRect(ctx, 16, 16, 6 * CELL - 32, 6 * CELL - 32, 20, true, false);
+      if (players.green.active) {
+        drawProfile(ctx, 3 * CELL, 2.5 * CELL, 'green', '#22c55e');
+      } else {
+        drawChair(ctx, 3 * CELL, 2.5 * CELL);
+      }
+
+      // Yellow Base (9..15, 0..6)
+      ctx.fillStyle = '#eab308';
+      ctx.fillRect(9 * CELL, 0, 6 * CELL, 6 * CELL);
+      ctx.fillStyle = '#a16207';
+      roundRect(ctx, 9 * CELL + 16, 16, 6 * CELL - 32, 6 * CELL - 32, 20, true, false);
+      if (players.yellow.active) {
+        drawProfile(ctx, 12 * CELL, 2.5 * CELL, 'yellow', '#eab308');
+      } else {
+        drawChair(ctx, 12 * CELL, 2.5 * CELL);
+      }
+
+      // Red Base (0..6, 9..15) -> Player 1
+      ctx.fillStyle = '#ef4444';
+      ctx.fillRect(0, 9 * CELL, 6 * CELL, 6 * CELL);
+      ctx.fillStyle = '#b91c1c';
+      roundRect(ctx, 16, 9 * CELL + 16, 6 * CELL - 32, 6 * CELL - 32, 20, true, false);
+      drawProfile(ctx, 2.2 * CELL, 12.8 * CELL, 'red', '#ffd700');
+      draw3DDice(ctx, 4.3 * CELL, 12.8 * CELL, currentDice, turnColor === 'red');
+
+      // Blue Base (9..15, 9..15)
+      ctx.fillStyle = '#3b82f6';
+      ctx.fillRect(9 * CELL, 9 * CELL, 6 * CELL, 6 * CELL);
+      ctx.fillStyle = '#1d4ed8';
+      roundRect(ctx, 9 * CELL + 16, 9 * CELL + 16, 6 * CELL - 32, 6 * CELL - 32, 20, true, false);
+      if (players.blue.active) {
+        drawProfile(ctx, 12 * CELL, 12.5 * CELL, 'blue', '#3b82f6');
+      } else {
+        drawChair(ctx, 12 * CELL, 12.5 * CELL);
+      }
+
+      // Center Triangles
+      drawCenterTriangles();
+
+      // Tracks
+      drawTracks();
+
+      // Sockets
+      drawBaseSockets();
+
+      // Track Pawns
+      drawTrackGotis();
+    }
+
+    function roundRect(ctx, x, y, w, h, r, fill, stroke) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+      if (fill) ctx.fill();
+      if (stroke) ctx.stroke();
+    }
+
+    function drawChair(ctx, x, y) {
+      ctx.fillStyle = 'rgba(255,255,255,0.15)';
+      ctx.beginPath();
+      ctx.arc(x, y, 32, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.font = '28px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('🛋️', x, y);
+    }
+
+    function drawProfile(ctx, x, y, col, ringColor) {
+      ctx.save();
+      ctx.strokeStyle = ringColor;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(x, y, 36, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.fillStyle = '#1e293b';
+      ctx.beginPath();
+      ctx.arc(x, y, 34, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (avatarImages[col]) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(x, y, 33, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(avatarImages[col], x - 33, y - 33, 66, 66);
+        ctx.restore();
+      } else {
+        ctx.font = '30px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(col === 'red' ? '👑' : '👤', x, y);
+      }
+      ctx.restore();
+    }
+
+    function draw3DDice(ctx, x, y, val, isMyTurn) {
+      ctx.save();
+      const s = 62;
+      const hx = x - s/2;
+      const hy = y - s/2;
+
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      roundRect(ctx, hx + 4, hy + 4, s, s, 14, true, false);
+
+      const g = ctx.createLinearGradient(hx, hy, hx + s, hy + s);
+      g.addColorStop(0, '#ffffff');
+      g.addColorStop(1, '#e2e8f0');
+      ctx.fillStyle = g;
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 2.5;
+      roundRect(ctx, hx, hy, s, s, 14, true, true);
+
+      ctx.fillStyle = '#0f172a';
+      const pips = {
+        1: [{dx: 0, dy: 0}],
+        2: [{dx: -16, dy: -16}, {dx: 16, dy: 16}],
+        3: [{dx: -16, dy: -16}, {dx: 0, dy: 0}, {dx: 16, dy: 16}],
+        4: [{dx: -16, dy: -16}, {dx: 16, dy: -16}, {dx: -16, dy: 16}, {dx: 16, dy: 16}],
+        5: [{dx: -16, dy: -16}, {dx: 16, dy: -16}, {dx: 0, dy: 0}, {dx: -16, dy: 16}, {dx: 16, dy: 16}],
+        6: [{dx: -16, dy: -18}, {dx: -16, dy: 0}, {dx: -16, dy: 18}, {dx: 16, dy: -18}, {dx: 16, dy: 0}, {dx: 16, dy: 18}]
+      }[val] || [];
+
+      pips.forEach(p => {
+        ctx.beginPath();
+        ctx.arc(x + p.dx, y + p.dy, 5.5, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      if (isMyTurn && !isRolling) {
+        ctx.fillStyle = '#22c55e';
+        ctx.beginPath();
+        ctx.moveTo(x, hy - 6);
+        ctx.lineTo(x - 12, hy - 22);
+        ctx.lineTo(x - 5, hy - 22);
+        ctx.lineTo(x - 5, hy - 32);
+        ctx.lineTo(x + 5, hy - 32);
+        ctx.lineTo(x + 5, hy - 22);
+        ctx.lineTo(x + 12, hy - 22);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    function drawCenterTriangles() {
+      const cx = 7.5 * CELL;
+      const cy = 7.5 * CELL;
+      const r6 = 6 * CELL;
+      const r9 = 9 * CELL;
+
+      ctx.fillStyle = '#eab308';
+      ctx.beginPath();
+      ctx.moveTo(r6, r6); ctx.lineTo(r9, r6); ctx.lineTo(cx, cy); ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = '#3b82f6';
+      ctx.beginPath();
+      ctx.moveTo(r9, r6); ctx.lineTo(r9, r9); ctx.lineTo(cx, cy); ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath();
+      ctx.moveTo(r6, r9); ctx.lineTo(r9, r9); ctx.lineTo(cx, cy); ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = '#22c55e';
+      ctx.beginPath();
+      ctx.moveTo(r6, r6); ctx.lineTo(r6, r9); ctx.lineTo(cx, cy); ctx.closePath();
+      ctx.fill();
+
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(r6, r6); ctx.lineTo(r9, r9);
+      ctx.moveTo(r9, r6); ctx.lineTo(r6, r9);
+      ctx.stroke();
+    }
+
+    function drawTracks() {
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 1.5;
+
+      for (let c = 0; c < 15; c++) {
+        for (let r = 0; r < 15; r++) {
+          if ((c < 6 && r < 6) || (c >= 9 && r < 6) || (c < 6 && r >= 9) || (c >= 9 && r >= 9)) continue;
+          if (c >= 6 && c < 9 && r >= 6 && r < 9) continue;
+
+          let fill = '#ffffff';
+          if (r === 7 && c >= 1 && c <= 5) fill = '#22c55e';
+          else if (c === 7 && r >= 1 && r <= 5) fill = '#eab308';
+          else if (c === 7 && r >= 9 && r <= 13) fill = '#ef4444';
+          else if (r === 7 && c >= 9 && c <= 13) fill = '#3b82f6';
+          else if (c === 1 && r === 6) fill = '#22c55e';
+          else if (c === 8 && r === 1) fill = '#eab308';
+          else if (c === 6 && r === 13) fill = '#ef4444';
+          else if (c === 13 && r === 8) fill = '#3b82f6';
+
+          ctx.fillStyle = fill;
+          ctx.fillRect(c * CELL, r * CELL, CELL, CELL);
+          ctx.strokeRect(c * CELL, r * CELL, CELL, CELL);
+
+          const isStar = (c === 1 && r === 6) || (c === 2 && r === 8) ||
+                         (c === 6 && r === 13) || (c === 8 && r === 12) ||
+                         (c === 13 && r === 8) || (c === 12 && r === 6) ||
+                         (c === 8 && r === 1) || (c === 6 && r === 2);
+          if (isStar && fill === '#ffffff') {
+            ctx.fillStyle = '#64748b';
+            ctx.font = '22px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('⭐', (c + 0.5) * CELL, (r + 0.5) * CELL);
+          }
+        }
+      }
+    }
+
+    function drawBaseSockets() {
+      ['green', 'yellow', 'red', 'blue'].forEach(col => {
+        BASE_SOCKETS[col].forEach((sock, i) => {
+          const isPresentInBase = (pawns[col][i].pos === -1);
+
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+          ctx.beginPath();
+          ctx.arc(sock.x, sock.y, 22, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.strokeStyle = isPresentInBase ? '#ffffff' : 'rgba(255, 255, 255, 0.3)';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(sock.x, sock.y, 20, 0, Math.PI * 2);
+          ctx.stroke();
+
+          if (isPresentInBase) {
+            drawRealisticGoti(ctx, sock.x, sock.y, col, i + 1);
+          } else {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+            ctx.beginPath();
+            ctx.arc(sock.x, sock.y, 14, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        });
+      });
+    }
+
+    function drawRealisticGoti(ctx, x, y, col, number) {
+      ctx.save();
+      const colMap = {
+        red: '#ef4444',
+        green: '#22c55e',
+        yellow: '#eab308',
+        blue: '#3b82f6'
+      };
+      const baseColor = colMap[col];
+
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.beginPath();
+      ctx.ellipse(x, y + 10, 16, 7, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = '#ffd700';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(x, y, 17, 0, Math.PI * 2);
+      ctx.stroke();
+
+      const grad = ctx.createRadialGradient(x - 5, y - 6, 2, x, y, 18);
+      grad.addColorStop(0, '#ffffff');
+      grad.addColorStop(0.3, baseColor);
+      grad.addColorStop(1, '#000000');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(x, y, 16, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(col === 'red' ? '👑' : number, x, y);
+      ctx.restore();
+    }
+
+    function drawTrackGotis() {
+      ['red', 'yellow', 'green', 'blue'].forEach(col => {
+        pawns[col].forEach((pawn, i) => {
+          if (pawn.pos >= 0 && pawn.pos <= 50) {
+            const pathIdx = (START_OFFSET[col] + pawn.pos) % 52;
+            const coord = MAIN_PATH[pathIdx];
+            const gx = (coord.c + 0.5) * CELL;
+            const gy = (coord.r + 0.5) * CELL;
+            drawRealisticGoti(ctx, gx, gy, col, i + 1);
+          } else if (pawn.pos >= 51 && pawn.pos <= 55) {
+            const rIdx = pawn.pos - 51;
+            const coord = HOME_RUNWAY[col][rIdx];
+            const gx = (coord.c + 0.5) * CELL;
+            const gy = (coord.r + 0.5) * CELL;
+            drawRealisticGoti(ctx, gx, gy, col, i + 1);
+          }
+        });
+      });
+    }
+
+    // -------------------------------------------------------------
+    // INTERACTION & USER CLICKS
+    // -------------------------------------------------------------
+    canvas.addEventListener('click', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = 900 / rect.width;
+      const scaleY = 900 / rect.height;
+      const x = (e.clientX - rect.left) * scaleX;
+      const y = (e.clientY - rect.top) * scaleY;
+
+      // Click on Red 3D Dice: (4.3*CELL, 12.8*CELL)
+      const diceDist = Math.hypot(x - 4.3 * CELL, y - 12.8 * CELL);
+      if (diceDist < 45 && canControl && turnColor === myColor && !isRolling) {
+        rollDice();
+        return;
+      }
+
+      // Click on Gotis
+      if (canControl && turnColor === myColor && !isRolling) {
+        handlePawnClick(x, y);
+      }
+    });
+
+    function rollDice() {
+      if (isRolling) return;
+      isRolling = true;
+      Sound.play('roll');
+
+      let rollCount = 0;
+      const interval = setInterval(() => {
+        currentDice = Math.floor(Math.random() * 6) + 1;
+        render();
+        rollCount++;
+        if (rollCount >= 8) {
+          clearInterval(interval);
+          isRolling = false;
+          Sound.play(currentDice === 6 ? 'six' : 'hop');
+
+          // Notify Android
+          if (window.LudoBridge && window.LudoBridge.onDiceRolled) {
+            try { window.LudoBridge.onDiceRolled(myColor, currentDice); } catch(err) {}
+          }
+
+          checkPawnMovements(currentDice);
+        }
+      }, 55);
+    }
+
+    function checkPawnMovements(val) {
+      if (val === 6) {
+        const inBase = pawns[myColor].findIndex(p => p.pos === -1);
+        if (inBase !== -1) {
+          setTimeout(() => {
+            pawns[myColor][inBase].pos = 0;
+            Sound.play('pop_out');
+            render();
+          }, 350);
+          return;
+        }
+      }
+
+      // Move the first pawn on track
+      const onTrack = pawns[myColor].find(p => p.pos >= 0 && p.pos < 56);
+      if (onTrack) {
+        stepPawn(onTrack, val);
+      }
+    }
+
+    function stepPawn(pawn, steps) {
+      let remaining = steps;
+      const timer = setInterval(() => {
+        if (remaining > 0 && pawn.pos < 56) {
+          pawn.pos++;
+          Sound.play('hop');
+          render();
+          remaining--;
+        } else {
+          clearInterval(timer);
+          checkCapture(pawn);
+        }
+      }, 180);
+    }
+
+    function checkCapture(pawn) {
+      const myIdx = (START_OFFSET[myColor] + pawn.pos) % 52;
+      if (SAFE_INDICES.includes(myIdx)) {
+        Sound.play('star');
+        return;
+      }
+
+      // Check opponent pawns on same cell
+      ['yellow', 'green', 'blue'].forEach(col => {
+        if (col !== myColor && players[col].active) {
+          pawns[col].forEach(opp => {
+            if (opp.pos >= 0 && opp.pos <= 50) {
+              const oppIdx = (START_OFFSET[col] + opp.pos) % 52;
+              if (oppIdx === myIdx) {
+                // CAPTURE! Opponent cut and sent back to base!
+                opp.pos = -1;
+                Sound.play('cut');
+                render();
+              }
+            }
+          });
+        }
+      });
+    }
+
+    function handlePawnClick(x, y) {
+      // Find clicked pawn
+      pawns[myColor].forEach((pawn) => {
+        if (pawn.pos >= 0 && pawn.pos <= 50) {
+          const pathIdx = (START_OFFSET[myColor] + pawn.pos) % 52;
+          const coord = MAIN_PATH[pathIdx];
+          const gx = (coord.c + 0.5) * CELL;
+          const gy = (coord.r + 0.5) * CELL;
+          if (Math.hypot(x - gx, y - gy) < 24) {
+            stepPawn(pawn, currentDice);
+          }
+        }
+      });
+    }
+
+    // -------------------------------------------------------------
+    // ANDROID JS INTERFACE
+    // -------------------------------------------------------------
+    window.setLudoControl = function(isTurn, col, mode) {
+      canControl = !!isTurn;
+      if (col) { myColor = col; }
+      if (mode) { gameMode = mode; }
+      render();
+    };
+
+    window.applyRemoteDiceRoll = function(color, val) {
+      turnColor = color;
+      currentDice = Number(val);
+      Sound.play(val === 6 ? 'six' : 'hop');
+      render();
+    };
+
+    window.syncLudoPlayers = function(jsonStr) {
+      try {
+        const data = (typeof jsonStr === 'string') ? JSON.parse(jsonStr) : jsonStr;
+        if (data.red) { players.red = data.red; if (data.red.photo) loadAvatar('red', data.red.photo); }
+        if (data.yellow) { players.yellow = data.yellow; if (data.yellow.photo) loadAvatar('yellow', data.yellow.photo); }
+        if (data.green) { players.green = data.green; if (data.green.photo) loadAvatar('green', data.green.photo); }
+        if (data.blue) { players.blue = data.blue; if (data.blue.photo) loadAvatar('blue', data.blue.photo); }
+        render();
+      } catch(e) {}
+    };
+
+    // Initial render
+    render();
+  </script>
+</body>
+</html>

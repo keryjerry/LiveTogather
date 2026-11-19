@@ -4513,6 +4513,9 @@ fun RoomSettingsDialog(
                 val themeUrl = ImageUploadManager.uploadImage(context, uri, "rooms") ?: uri.toString()
                 onUpdateTheme(themeUrl)
                 db.collection("rooms").document(room.id).update("banner_image_url", themeUrl)
+                if (room.category.isNotBlank()) {
+                    db.collection("intent_categories").document(room.category).collection("rooms").document(room.id).update("banner_image_url", themeUrl)
+                }
                 Toast.makeText(context, "Theme updated from gallery!", Toast.LENGTH_SHORT).show()
                 isUploadingTheme = false
             }
@@ -4610,6 +4613,118 @@ fun RoomSettingsDialog(
                                         modifier = Modifier.fillMaxWidth().height(40.dp)
                                     ) {
                                         Text("🔄 Convert to Video Stream 📹", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 00B. OFFICIAL STAFF & MODERATOR ROOM SUSPENSION CONTROLS
+                    if (currentUser.hasRoomModerationAuthority()) {
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF2D151E)),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, Color(0xFFFF5252).copy(alpha = 0.5f))
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("🛡️ Official Room Moderation", color = Color(0xFFFF8A80), fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+                                        Surface(
+                                            color = if (room.isSuspended) Color(0xFFFF1744).copy(alpha = 0.25f) else Color(0xFF00E676).copy(alpha = 0.2f),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                text = if (room.isSuspended) "SUSPENDED" else "ACTIVE",
+                                                color = if (room.isSuspended) Color(0xFFFF5252) else Color(0xFF69F0AE),
+                                                fontSize = 9.5.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("Official staff power to suspend this room for community policy violations.", color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp)
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    if (room.isSuspended) {
+                                        Button(
+                                            onClick = {
+                                                val updates = mapOf<String, Any>(
+                                                    "isSuspended" to false,
+                                                    "suspendedUntil" to 0L,
+                                                    "suspensionReason" to "",
+                                                    "isLive" to true,
+                                                    "isHostLive" to true
+                                                )
+                                                db.collection("rooms").document(room.id).update(updates)
+                                                if (room.category.isNotBlank()) {
+                                                    db.collection("intent_categories").document(room.category).collection("rooms").document(room.id).update(updates)
+                                                }
+                                                val clearMsg = LiveRoomComment(
+                                                    id = UUID.randomUUID().toString(),
+                                                    roomId = room.id,
+                                                    userId = currentUser.uid,
+                                                    userName = "🛡️ STAFF PATROL",
+                                                    message = "✅ Suspension revoked by ${currentUser.name}. Room restored.",
+                                                    timestamp = System.currentTimeMillis()
+                                                )
+                                                db.collection("rooms").document(room.id).collection("live_comments").document(clearMsg.id).set(clearMsg)
+                                                Toast.makeText(context, "Room suspension revoked! 🛡️", Toast.LENGTH_SHORT).show()
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B5E20)),
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.fillMaxWidth().height(38.dp)
+                                        ) {
+                                            Text("✅ Lift Suspension & Reopen Room", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                        }
+                                    } else {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            val durations = listOf("2h" to 2 * 3600 * 1000L, "4h" to 4 * 3600 * 1000L, "24h" to 24 * 3600 * 1000L, "Perm" to Long.MAX_VALUE)
+                                            durations.forEach { (label, durMs) ->
+                                                OutlinedButton(
+                                                    onClick = {
+                                                        val until = if (durMs == Long.MAX_VALUE) Long.MAX_VALUE else System.currentTimeMillis() + durMs
+                                                        val reason = "Violations of community safety standards (Closed by ${currentUser.name})"
+                                                        val updates = mapOf<String, Any>(
+                                                            "isSuspended" to true,
+                                                            "suspendedUntil" to until,
+                                                            "suspensionReason" to reason,
+                                                            "isLive" to false,
+                                                            "isHostLive" to false
+                                                        )
+                                                        db.collection("rooms").document(room.id).update(updates)
+                                                        if (room.category.isNotBlank()) {
+                                                            db.collection("intent_categories").document(room.category).collection("rooms").document(room.id).update(updates)
+                                                        }
+                                                        val banMsg = LiveRoomComment(
+                                                            id = UUID.randomUUID().toString(),
+                                                            roomId = room.id,
+                                                            userId = currentUser.uid,
+                                                            userName = "🛡️ OFFICIAL MODERATION",
+                                                            message = "🚫 Room suspended ($label) by ${currentUser.name}: $reason",
+                                                            timestamp = System.currentTimeMillis()
+                                                        )
+                                                        db.collection("rooms").document(room.id).collection("live_comments").document(banMsg.id).set(banMsg)
+                                                        Toast.makeText(context, "Room suspended for $label! 🚫", Toast.LENGTH_SHORT).show()
+                                                    },
+                                                    colors = ButtonDefaults.outlinedButtonColors(containerColor = Color(0xFF3E1F28)),
+                                                    border = BorderStroke(1.dp, Color(0xFFFF5252).copy(alpha = 0.6f)),
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    modifier = Modifier.weight(1f).height(36.dp),
+                                                    contentPadding = PaddingValues(0.dp)
+                                                ) {
+                                                    Text(label, color = Color(0xFFFF8A80), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -5072,6 +5187,9 @@ fun RoomSettingsDialog(
                                             modifier = Modifier.clickable {
                                                 onUpdateTheme(preset.imageUrl)
                                                 db.collection("rooms").document(room.id).update("banner_image_url", preset.imageUrl)
+                                                if (room.category.isNotBlank()) {
+                                                    db.collection("intent_categories").document(room.category).collection("rooms").document(room.id).update("banner_image_url", preset.imageUrl)
+                                                }
                                                 Toast.makeText(context, "Theme set to: ${preset.name}", Toast.LENGTH_SHORT).show()
                                             }
                                         ) {
@@ -5718,6 +5836,9 @@ fun AudioHangoutRoomDialog(
                 try {
                     val dataUri = ImageUploadManager.convertImageToFirestoreDataUri(context, uri)
                     if (!dataUri.isNullOrBlank()) {
+                        withContext(Dispatchers.Main) {
+                            room = room.copy(banner_image_url = dataUri)
+                        }
                         db.collection("rooms").document(room.id).update("banner_image_url", dataUri)
                         if (room.category.isNotBlank()) {
                             db.collection("intent_categories").document(room.category)
@@ -6382,12 +6503,17 @@ fun AudioHangoutRoomDialog(
             .set(welcomeDoc)
     }
 
-    // Kick & Ban Auto-Dismissal Enforcement (Real-time Firestore sync)
-    LaunchedEffect(room.bannedUserIds, room.kickedUserIds) {
-        if (room.bannedUserIds.contains(currentUser.uid)) {
+    // Kick & Ban & Room Suspension Auto-Dismissal Enforcement (Real-time Firestore sync)
+    LaunchedEffect(room.bannedUserIds, room.kickedUserIds, room.isSuspended, room.suspendedUntil) {
+        if (room.isSuspended && !currentUser.hasRoomModerationAuthority()) {
+            val reason = if (room.suspensionReason.isNotBlank()) room.suspensionReason else "Room temporarily suspended by official moderation."
+            Toast.makeText(context, "🚫 $reason", Toast.LENGTH_LONG).show()
+            AudioPlayerManager.pause()
+            onDismiss()
+        } else if (room.bannedUserIds.contains(currentUser.uid) && !currentUser.hasSovereignImmunity()) {
             Toast.makeText(context, "You have been banned from this room by the host or admin.", Toast.LENGTH_LONG).show()
             onDismiss()
-        } else if (room.kickedUserIds.contains(currentUser.uid)) {
+        } else if (room.kickedUserIds.contains(currentUser.uid) && !currentUser.hasSovereignImmunity()) {
             Toast.makeText(context, "You have been kicked out of this room.", Toast.LENGTH_LONG).show()
             onDismiss()
         }
@@ -6933,18 +7059,26 @@ fun AudioHangoutRoomDialog(
                 .background(Color(0xFF0F0C10))
         ) {
             // Ambient Luxury Wallpaper in Background (Full Room Ambiance - 100% Edge-to-Edge)
-            val isVipRoom = room.isVipRoom || room.category.equals("vip_room", ignoreCase = true) || room.title.contains("VIP", ignoreCase = true) || room.privacy.equals("vip_only", ignoreCase = true) || room.banner_image_url == "vip_royal_stage"
-            if (isVipRoom) {
+            val isCustomTheme = room.banner_image_url.isNotBlank() && room.banner_image_url != "vip_royal_stage"
+            val isVipRoom = !isCustomTheme && (room.isVipRoom || room.category.equals("vip_room", ignoreCase = true) || room.title.contains("VIP", ignoreCase = true) || room.privacy.equals("vip_only", ignoreCase = true) || room.banner_image_url == "vip_royal_stage")
+            val wallpaperModel: Any = when {
+                room.banner_image_url == "vip_royal_stage" || (isVipRoom && room.banner_image_url.isBlank()) -> R.drawable.vip_royal_stage
+                room.banner_image_url.isNotBlank() -> room.banner_image_url
+                room.category.isNotBlank() -> getCategoryBanner(room.category).ifBlank { "https://images.unsplash.com/photo-1578683010236-d716f9a3f461" }
+                else -> "https://images.unsplash.com/photo-1578683010236-d716f9a3f461"
+            }
+
+            if (wallpaperModel is Int) {
                 Image(
-                    painter = painterResource(id = R.drawable.vip_royal_stage),
-                    contentDescription = "VIP Royal Stage Background",
+                    painter = painterResource(id = wallpaperModel),
+                    contentDescription = "Room Background Wallpaper",
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
             } else {
                 AsyncImage(
-                    model = if (room.banner_image_url == "vip_royal_stage") R.drawable.vip_royal_stage else room.banner_image_url.ifEmpty { "https://images.unsplash.com/photo-1578683010236-d716f9a3f461" },
-                    contentDescription = null,
+                    model = wallpaperModel,
+                    contentDescription = "Room Background Wallpaper",
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
@@ -6953,7 +7087,7 @@ fun AudioHangoutRoomDialog(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.25f))
+                    .background(Color.Black.copy(alpha = 0.15f))
             )
 
             Scaffold(
@@ -6966,7 +7100,7 @@ fun AudioHangoutRoomDialog(
                             .background(
                                 Brush.verticalGradient(
                                     listOf(
-                                        Color.Black.copy(alpha = 0.35f),
+                                        Color.Black.copy(alpha = 0.20f),
                                         Color.Transparent
                                     )
                                 )
@@ -6996,7 +7130,7 @@ fun AudioHangoutRoomDialog(
                                     )
                                 )
                                 Surface(
-                                    color = Color.Black.copy(alpha = 0.70f),
+                                    color = Color.Black.copy(alpha = 0.35f),
                                     shape = RoundedCornerShape(14.dp),
                                     border = BorderStroke(1.4.dp, luxurySweepBorder),
                                     modifier = Modifier.clickable { selectedMemberForSheet = hostMemberObj }
@@ -7155,8 +7289,8 @@ fun AudioHangoutRoomDialog(
                                 Row(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(50))
-                                        .background(Color.Black.copy(alpha = 0.55f))
-                                        .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(50))
+                                        .background(Color.Black.copy(alpha = 0.35f))
+                                        .border(1.dp, Color.White.copy(alpha = 0.20f), RoundedCornerShape(50))
                                         .clickable { showAllViewersDialog = true }
                                         .padding(horizontal = 6.dp, vertical = 3.dp),
                                     verticalAlignment = Alignment.CenterVertically
@@ -7563,9 +7697,24 @@ fun AudioHangoutRoomDialog(
                     }
 
                     // ---------------------------------------------------------
-                    // 2.5 STAGE SECTION (VIP ROYAL CANVAS OR 10-MIC STAGE)
+                    // 2.5 STAGE SECTION (15-MIC GALA, VIP ROYAL, OR 10-MIC STAGE)
                     // ---------------------------------------------------------
-                    val stageSeats = if (micSeats.isNotEmpty()) micSeats else (0..9).map { idx ->
+                    val is15MicRoom = room.category.equals("official_event", ignoreCase = true) ||
+                        room.category.equals("mega_star_gala", ignoreCase = true) ||
+                        room.title.contains("15-Mic", ignoreCase = true) ||
+                        room.title.contains("Gala", ignoreCase = true) ||
+                        room.roomName.contains("15-Mic", ignoreCase = true) ||
+                        micSeats.size >= 15
+
+                    val stageSeats = if (micSeats.isNotEmpty()) {
+                        if (is15MicRoom && micSeats.size < 16) {
+                            val existingMap = micSeats.associateBy { it.seatIndex }
+                            (0..15).map { idx ->
+                                existingMap[idx] ?: if (idx == 0) MicSeat(seatIndex = 0, label = "Host 👑", uid = targetHostId, name = hostName, photo = hostPhoto, role = "host")
+                                else MicSeat(seatIndex = idx, label = "Mic ${idx + 1}", uid = "", name = "", photo = "", role = "speaker")
+                            }
+                        } else micSeats
+                    } else (0 until (if (is15MicRoom) 16 else 10)).map { idx ->
                         if (idx == 0) MicSeat(seatIndex = 0, label = "Host 👑", uid = targetHostId, name = hostName, photo = hostPhoto, role = "host")
                         else MicSeat(seatIndex = idx, label = "Mic ${idx + 1}", uid = "", name = "", photo = "", role = "speaker")
                     }
@@ -7619,7 +7768,29 @@ fun AudioHangoutRoomDialog(
 
 
 
-                    if (isVipRoom) {
+                    if (is15MicRoom) {
+                        FifteenMicOfficialGalaStageSection(
+                            seats = stageSeats,
+                            currentUserId = currentUser.uid,
+                            isHost = isUserAdmin,
+                            isLocalTalking = isLocalTalking,
+                            allProfiles = allProfiles,
+                            userActiveFrame = activeUserFrame,
+                            userActiveMicEffect = userActiveMicEffect,
+                            activeEmojiReactions = activeEmojiReactions,
+                            onSeatClick = handleSeatClick,
+                            onProfileClick = { seat: MicSeat ->
+                                val profile = allProfiles.find { it.uid == seat.uid }
+                                selectedMemberForSheet = RoomMember(
+                                    uid = seat.uid,
+                                    userId = profile?.userId ?: "",
+                                    name = seat.name,
+                                    photoUrl = seat.photo,
+                                    role = seat.role
+                                )
+                            }
+                        )
+                    } else if (isVipRoom) {
                         VipRoyalStageCanvas(
                             seats = stageSeats,
                             currentUserId = currentUser.uid,
@@ -7632,7 +7803,7 @@ fun AudioHangoutRoomDialog(
                             activeMicLinkId = activeMicLinkDesignId,
                             activeIntimacyBonds = activeIntimacyBonds,
                             onSeatClick = handleSeatClick,
-                            onProfileClick = { seat ->
+                            onProfileClick = { seat: MicSeat ->
                                 val profile = allProfiles.find { it.uid == seat.uid }
                                 selectedMemberForSheet = RoomMember(
                                     uid = seat.uid,
@@ -7659,7 +7830,7 @@ fun AudioHangoutRoomDialog(
                             activeIntimacyBonds = activeIntimacyBonds,
                             onOpenMicLinkSelector = { showMicLinkSelectorDialog = true },
                             onSeatClick = handleSeatClick,
-                            onProfileClick = { seat ->
+                            onProfileClick = { seat: MicSeat ->
                                 val profile = allProfiles.find { it.uid == seat.uid }
                                 selectedMemberForSheet = RoomMember(
                                     uid = seat.uid,
@@ -8445,8 +8616,9 @@ fun AudioHangoutRoomDialog(
                     val targetProfile = allProfiles.find { it.uid == targetMember.uid }
                     val targetVip = targetProfile?.getVipLevel() ?: 0
                     val isTargetFounder = targetProfile?.isFounder() == true
-                    if ((isTargetFounder || targetVip >= 4) && !currentUser.isFounder()) {
-                        val title = if (isTargetFounder) "Founder 👑" else "VIP $targetVip 🛡️"
+                    val isTargetImmune = targetProfile?.hasSovereignImmunity() == true || isTargetFounder || targetVip >= 4
+                    if (isTargetImmune && !currentUser.isFounder()) {
+                        val title = if (isTargetFounder) "Founder 👑" else if (targetProfile?.hasSovereignImmunity() == true) "Official Staff / Patrol 🛡️" else "VIP $targetVip 🛡️"
                         Toast.makeText(context, "🛡️ $title has Sovereign Immunity. Cannot kick!", Toast.LENGTH_SHORT).show()
                     } else {
                         room = room.copy(kickedUserIds = room.kickedUserIds + targetMember.uid)
@@ -8462,8 +8634,9 @@ fun AudioHangoutRoomDialog(
                     val targetProfile = allProfiles.find { it.uid == targetMember.uid }
                     val targetVip = targetProfile?.getVipLevel() ?: 0
                     val isTargetFounder = targetProfile?.isFounder() == true
-                    if ((isTargetFounder || targetVip >= 4) && !currentUser.isFounder()) {
-                        val title = if (isTargetFounder) "Founder 👑" else "VIP $targetVip 🛡️"
+                    val isTargetImmune = targetProfile?.hasSovereignImmunity() == true || isTargetFounder || targetVip >= 4
+                    if (isTargetImmune && !currentUser.isFounder()) {
+                        val title = if (isTargetFounder) "Founder 👑" else if (targetProfile?.hasSovereignImmunity() == true) "Official Staff / Patrol 🛡️" else "VIP $targetVip 🛡️"
                         Toast.makeText(context, "🛡️ $title has Sovereign Immunity. Cannot ban!", Toast.LENGTH_SHORT).show()
                     } else {
                         room = room.copy(bannedUserIds = room.bannedUserIds + targetMember.uid)
@@ -8599,8 +8772,9 @@ fun AudioHangoutRoomDialog(
                     val targetProfile = allProfiles.find { it.uid == targetMember.uid }
                     val targetVip = targetProfile?.getVipLevel() ?: 0
                     val isTargetFounder = targetProfile?.isFounder() == true
-                    if ((isTargetFounder || targetVip >= 4) && !currentUser.isFounder()) {
-                        val title = if (isTargetFounder) "Founder 👑" else "VIP $targetVip 🛡️"
+                    val isTargetImmune = targetProfile?.hasSovereignImmunity() == true || isTargetFounder || targetVip >= 4
+                    if (isTargetImmune && !currentUser.isFounder()) {
+                        val title = if (isTargetFounder) "Founder 👑" else if (targetProfile?.hasSovereignImmunity() == true) "Official Staff / Patrol 🛡️" else "VIP $targetVip 🛡️"
                         Toast.makeText(context, "🛡️ $title has Sovereign Immunity. Cannot kick!", Toast.LENGTH_SHORT).show()
                     } else {
                         room = room.copy(kickedUserIds = room.kickedUserIds + targetMember.uid)
@@ -8615,8 +8789,9 @@ fun AudioHangoutRoomDialog(
                     val targetProfile = allProfiles.find { it.uid == targetMember.uid }
                     val targetVip = targetProfile?.getVipLevel() ?: 0
                     val isTargetFounder = targetProfile?.isFounder() == true
-                    if ((isTargetFounder || targetVip >= 4) && !currentUser.isFounder()) {
-                        val title = if (isTargetFounder) "Founder 👑" else "VIP $targetVip 🛡️"
+                    val isTargetImmune = targetProfile?.hasSovereignImmunity() == true || isTargetFounder || targetVip >= 4
+                    if (isTargetImmune && !currentUser.isFounder()) {
+                        val title = if (isTargetFounder) "Founder 👑" else if (targetProfile?.hasSovereignImmunity() == true) "Official Staff / Patrol 🛡️" else "VIP $targetVip 🛡️"
                         Toast.makeText(context, "🛡️ $title has Sovereign Immunity. Cannot ban!", Toast.LENGTH_SHORT).show()
                     } else {
                         room = room.copy(bannedUserIds = room.bannedUserIds + targetMember.uid)
@@ -8686,8 +8861,8 @@ fun AudioHangoutRoomDialog(
             val isTargetFounder = seatOccupant?.isFounder() == true
             val isCurrentFounder = currentUser.isFounder()
             val targetVip = seatOccupant?.getVipLevel() ?: 0
-            val isTargetImmune = (isTargetFounder || targetVip >= 4)
-            val canSovereignModerate = currentUser.isFounder() || currentUser.isCeo() || currentUser.isStaffMember()
+            val isTargetImmune = seatOccupant?.hasSovereignImmunity() == true || isTargetFounder || targetVip >= 4
+            val canSovereignModerate = currentUser.hasRoomModerationAuthority()
 
             HostSeatAdminDialog(
                 seat = seat,
@@ -12780,8 +12955,8 @@ private fun DiamondsRechargeSection(
 
         val packs = listOf(
             Triple(15000L, "₹49", "Starter Pack 💎"),
-            Triple(120000L, "₹299", "Super Value 💎"),
-            Triple(300000L, "₹599", "Royal VIP Pack 💎")
+            Triple(135000L, "₹299", "Super Value 💎"),
+            Triple(310000L, "₹599", "Royal VIP Pack 💎")
         )
 
         packs.forEach { (diamonds, price, label) ->
@@ -12815,9 +12990,8 @@ private fun DiamondsRechargeSection(
 
                 Button(
                     onClick = {
-                        val numAmount = price.replace("₹", "").trim()
-                        val pack = APP_COIN_PACKAGES.find { it.coins == diamonds }
-                            ?: CoinPackageItem("pack_$diamonds", diamonds, price, numAmount, label)
+                        val pack = APP_COIN_PACKAGES.find { it.coins == diamonds || it.priceInr == price }
+                            ?: APP_COIN_PACKAGES[0]
                         checkoutPackage = pack
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
