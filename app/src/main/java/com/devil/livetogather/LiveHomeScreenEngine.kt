@@ -2680,15 +2680,16 @@ fun EventHubSingleHomeBanner(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // BOTTOM ROW: Distinct Neon Dual Sine Wave Oscillograph Equalizer
-            EventHubCyberWaveVisualizer(
+            // BOTTOM ROW: Unique Mirrored Center-Axis Crystal Wave Equalizer
+            DenseGalaAudioEqualizer(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(20.dp)
+                    .height(22.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(Color.Black.copy(alpha = 0.45f))
                     .padding(horizontal = 6.dp, vertical = 2.dp),
-                isPlaying = true
+                barCount = 34,
+                styleTheme = "event_theme_celestial_gold"
             )
         }
     }

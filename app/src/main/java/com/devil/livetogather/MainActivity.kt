@@ -2364,7 +2364,9 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                 }
             }
 
-            if (room.roomType == "video" || room.roomType == "video_pk" || room.isVideoRoom) {
+            val isOfficialEventRoom = room.category.equals("official_event", ignoreCase = true) ||
+                room.category.equals("mega_star_gala", ignoreCase = true)
+            if (!isOfficialEventRoom && (room.roomType == "video" || room.roomType == "video_pk" || room.isVideoRoom)) {
                 VideoHangoutRoomDialog(
                     initialRoom = room,
                     currentUser = currentUser,
@@ -2405,6 +2407,28 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
         // 0.05 Category Hub / Lobby Dialog (Category-Scoped Sub-Rooms Grid)
         if (activeCategoryHub != null) {
             val cat = activeCategoryHub!!
+            if (cat.id == "official_event") {
+                OfficialEventArenaHubModal(
+                    currentUser = currentUser,
+                    allRooms = roomsList,
+                    allProfiles = discoverProfiles + currentUser,
+                    onDismiss = { activeCategoryHub = null },
+                    onJoinRoom = { room ->
+                        currentUser = currentUser.copy(current_room = room.id)
+                        saveProfileToPrefs(prefs, currentUser)
+                        if (currentUserId.isNotBlank()) {
+                            db.collection("users").document(currentUserId)
+                                .update("current_room", room.id)
+                        }
+                        activeCategoryHub = null
+                        activeAudioRoom = room
+                    },
+                    onOpenTopUpStore = {
+                        activeCategoryHub = null
+                        showMainSubscriptionModal = true
+                    }
+                )
+            } else {
             val bannerUrl = getCategoryBanner(cat.id)
             CategoryHubLobbyDialog(
                 category = cat,
@@ -2508,6 +2532,7 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                     activeAudioRoom = targetRoom
                 }
             )
+            }
         }
 
         // Subscription Paywall Modal
