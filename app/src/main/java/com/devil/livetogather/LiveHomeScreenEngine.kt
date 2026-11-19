@@ -138,9 +138,9 @@ fun LiveTogetherHomeScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color(0xFF070712))) {
-        // High-quality dark/gold luxury palace theme background with dark vignette overlay
+        // Clean minimalist midnight-indigo & aurora luxury background (100% edge-to-edge)
         Image(
-            painter = painterResource(id = R.drawable.vip_royal_stage),
+            painter = painterResource(id = R.drawable.home_clean_luxury_bg),
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
@@ -151,10 +151,10 @@ fun LiveTogetherHomeScreen(
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
-                            Color(0xCC070712),
-                            Color(0x990A0714),
-                            Color(0xDD070712),
-                            Color(0xFF070712)
+                            Color(0x28070712),
+                            Color(0x140A0714),
+                            Color(0x38070712),
+                            Color(0x66070712)
                         )
                     )
                 )

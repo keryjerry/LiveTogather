@@ -1441,33 +1441,81 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
             containerColor = BrandDark,
             topBar = {
                 if (!isProfileScreen && (activeAudioRoom == null || isAudioRoomMinimized)) {
+                    val isHomeDiscover = currentScreen == "discover"
+                    val homeAllUsers = remember(discoverProfiles, currentUser) {
+                        (discoverProfiles + currentUser).distinctBy { it.uid }
+                    }
+                    val homeActiveRoomsCount = remember(roomsList.map { "${it.id}_${it.isHostLive}_${it.statusMessage}" }) {
+                        roomsList.count {
+                            it.isHostLive &&
+                            !it.statusMessage.equals("OFFLINE", ignoreCase = true) &&
+                            !it.statusMessage.equals("CLOSED", ignoreCase = true) &&
+                            !it.statusMessage.equals("DELETED", ignoreCase = true)
+                        }
+                    }
+                    val homeOnlineUsersCount = remember(homeAllUsers, homeActiveRoomsCount) {
+                        val onlineCount = homeAllUsers.count { it.isUserOnline() }
+                        if (onlineCount > 0) onlineCount else if (homeActiveRoomsCount > 0) 1 else 0
+                    }
+                    val liveDotAnim = rememberInfiniteTransition(label = "homeLiveDot")
+                    val liveDotAlpha by liveDotAnim.animateFloat(
+                        initialValue = 0.35f,
+                        targetValue = 1.0f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(750, easing = FastOutSlowInEasing),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "homeLiveDotAlpha"
+                    )
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .statusBarsPadding()
-                            .background(if (isProfileScreen) Color.Transparent else BrandCard)
+                            .background(if (isHomeDiscover || isProfileScreen) Color.Transparent else BrandCard)
                     ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = if (isProfileScreen) 4.dp else 10.dp),
+                            .padding(horizontal = 16.dp, vertical = if (isHomeDiscover || isProfileScreen) 6.dp else 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.LocalFireDepartment,
-                                contentDescription = null,
-                                tint = BrandCoral,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "LiveTogather",
-                                color = BrandCoral,
-                                fontWeight = FontWeight.Black,
-                                fontSize = 20.sp
-                            )
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.LocalFireDepartment,
+                                    contentDescription = null,
+                                    tint = BrandCoral,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "LiveTogather",
+                                    color = BrandCoral,
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 19.sp
+                                )
+                            }
+                            if (isHomeDiscover) {
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.5.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF10B981).copy(alpha = liveDotAlpha))
+                                    )
+                                    Text(
+                                        text = "$homeOnlineUsersCount Online • $homeActiveRoomsCount Active Rooms",
+                                        color = Color.White.copy(alpha = 0.88f),
+                                        fontSize = 10.5.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
                         }
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1600,17 +1648,6 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                                                     rotationZ = bellRotationTop
                                                 }
                                             }
-                                    )
-                                }
-                            }
-
-                            // Discovery Filters (Manual distance, age & city filter)
-                            if (currentScreen == "discover") {
-                                IconButton(onClick = { showSettingsDialog = true }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Tune,
-                                        contentDescription = "Discovery Filters",
-                                        tint = Color.White
                                     )
                                 }
                             }
@@ -1935,7 +1972,7 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(
-                        if (currentScreen == "profile")
+                        if (currentScreen == "discover" || currentScreen == "profile")
                             PaddingValues(0.dp)
                         else
                             PaddingValues(top = paddingValues.calculateTopPadding(), bottom = 0.dp)

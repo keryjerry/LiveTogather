@@ -10664,6 +10664,9 @@ fun CategoryHubLobbyDialog(
                 // In Video Stream: ONLY real video rooms!
                 val isVideo = (r.category == "video_stream" || r.roomType == "video" || r.roomType == "video_pk" || r.isVideoRoom) && r.roomType != "audio"
                 return isVideo
+            } else if (category.id == "voice_party") {
+                // In Voice Party: show user's own existing audio room + all available online audio rooms!
+                return r.category != "video_stream" && r.roomType != "video" && r.roomType != "video_pk" && !r.isVideoRoom
             } else {
                 // In Audio categories: ONLY rooms of this category in audio mode!
                 return r.category == category.id && r.roomType != "video" && r.roomType != "video_pk"
@@ -10675,13 +10678,15 @@ fun CategoryHubLobbyDialog(
     }
 
     // Dynamic Multi-Tier Real-Time Auto-Ranking Comparator (NO DUMMY DATA)
+    // 0. Current user's own existing room pinned on top
     // 1. Live status (Live on top)
     // 2. Active viewers volume (Real-time Firestore user count)
     // 3. Host wealth & charm level
     // 4. Creation / update timestamp
-    val sortedCategoryRooms = remember(categoryRooms, allUsers) {
+    val sortedCategoryRooms = remember(categoryRooms, allUsers, currentUser.uid) {
         categoryRooms.sortedWith(
-            compareByDescending<RoomItem> { it.isHostLive }
+            compareByDescending<RoomItem> { currentUser.uid.isNotBlank() && (it.hostUid == currentUser.uid || it.hostId == currentUser.uid) }
+                .thenByDescending { it.isHostLive }
                 .thenByDescending { room ->
                     allUsers.count { it.current_room == room.id }.coerceAtLeast(room.activeUserCount)
                 }
@@ -10773,22 +10778,37 @@ fun CategoryHubLobbyDialog(
                         }
                     }
 
-                    // Compact, Stylish "+ Create" Pill Button
+                    // Conditional Top Action: "My Room" if user already has a room, else "+ Create" with plus icon
+                    val userExistingRoom = sortedCategoryRooms.firstOrNull {
+                        currentUser.uid.isNotBlank() && (it.hostUid == currentUser.uid || it.hostId == currentUser.uid)
+                    }
                     Surface(
-                        color = Color(0xFF262C3E),
+                        color = if (userExistingRoom != null) Color(0xFF4C1D95) else Color(0xFF262C3E),
                         shape = RoundedCornerShape(50),
-                        border = BorderStroke(1.dp, Color(0xFF3F4B6B)),
+                        border = BorderStroke(1.dp, if (userExistingRoom != null) Color(0xFFA78BFA) else Color(0xFF3F4B6B)),
                         modifier = Modifier
                             .height(32.dp)
-                            .clickable { onCreateRoom() }
+                            .clickable {
+                                if (userExistingRoom != null) onJoinRoom(userExistingRoom) else onCreateRoom()
+                            }
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
-                            Text("Create", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Icon(
+                                imageVector = if (userExistingRoom != null) Icons.Default.Mic else Icons.Default.Add,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Text(
+                                text = if (userExistingRoom != null) "My Room" else "Create",
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }
