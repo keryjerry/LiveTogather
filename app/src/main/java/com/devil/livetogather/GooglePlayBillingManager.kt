@@ -64,11 +64,13 @@ object GooglePlayBillingManager : PurchasesUpdatedListener, BillingClientStateLi
 
         val pendingPurchasesParams = PendingPurchasesParams.newBuilder()
             .enableOneTimeProducts()
+            .enablePrepaidPlans()
             .build()
 
         billingClient = BillingClient.newBuilder(context.applicationContext)
             .setListener(this)
             .enablePendingPurchases(pendingPurchasesParams)
+            .enableAutoServiceReconnection()
             .build()
 
         startConnection()
@@ -139,10 +141,11 @@ object GooglePlayBillingManager : PurchasesUpdatedListener, BillingClientStateLi
         ) { billingResult, queryProductDetailsResult ->
             if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
                 val list = queryProductDetailsResult.productDetailsList ?: emptyList()
+                val unfetched = queryProductDetailsResult.unfetchedProductList ?: emptyList()
                 val current = _productDetailsMap.value.toMutableMap()
                 list.forEach { current[it.productId] = it }
                 _productDetailsMap.value = current
-                Log.d(TAG, "Loaded ${list.size} INAPP coin products from Google Play: ${list.map { it.productId }}")
+                Log.d(TAG, "Loaded ${list.size} INAPP coin products from Google Play: ${list.map { it.productId }}; unfetched=${unfetched.map { "${it.productId}:${it.statusCode}" }}")
             } else {
                 Log.e(TAG, "Failed to query INAPP products: ${billingResult.responseCode} - ${billingResult.debugMessage}")
             }
@@ -259,6 +262,7 @@ object GooglePlayBillingManager : PurchasesUpdatedListener, BillingClientStateLi
                 QueryProductDetailsParams.newBuilder().setProductList(singlePrimaryList).build()
             ) { result, queryProductDetailsResult ->
                 val details = queryProductDetailsResult.productDetailsList?.firstOrNull()
+                val primaryUnfetched = queryProductDetailsResult.unfetchedProductList?.firstOrNull()
                 if (result.responseCode == BillingClient.BillingResponseCode.OK && details != null) {
                     val updated = _productDetailsMap.value.toMutableMap()
                     updated[cleanId] = details
@@ -283,16 +287,24 @@ object GooglePlayBillingManager : PurchasesUpdatedListener, BillingClientStateLi
                             launchBillingInternal(targetActivity, fallbackDetails, currentUser)
                         } else {
                             coroutineScope.launch(Dispatchers.Main) {
-                                val errorDetail = when (fallbackResult.responseCode) {
+                                val unfetchedStatus = primaryUnfetched?.statusCode
+                                val unfetchedHint = when (unfetchedStatus) {
+                                    UnfetchedProduct.StatusCode.PRODUCT_NOT_FOUND -> "PRODUCT_NOT_FOUND"
+                                    UnfetchedProduct.StatusCode.NO_ELIGIBLE_OFFER -> "NO_ELIGIBLE_OFFER"
+                                    UnfetchedProduct.StatusCode.INVALID_PRODUCT_ID_FORMAT -> "INVALID_ID"
+                                    else -> unfetchedStatus?.toString() ?: "EMPTY"
+                                }
+                                val errorDetail = when (result.responseCode) {
                                     BillingClient.BillingResponseCode.ITEM_UNAVAILABLE ->
-                                        "Product ($cleanId) is not available in Google Play Store. Please ensure its status is 'Active' in Google Play Console (can take a few minutes to propagate)."
+                                        "Product ($cleanId) is unavailable in Google Play Store."
                                     BillingClient.BillingResponseCode.BILLING_UNAVAILABLE ->
                                         "Google Play Billing is unavailable. Ensure you are signed into Google Play Store on this device."
                                     BillingClient.BillingResponseCode.DEVELOPER_ERROR ->
                                         "Google Play configuration error (Code 5: DEVELOPER_ERROR for $cleanId)."
                                     else ->
-                                        "Product not available in Google Play Store ($cleanId). (Play Code: ${fallbackResult.responseCode})"
+                                        "Product not available in Google Play Store ($cleanId) [Code: ${result.responseCode}, Status: $unfetchedHint]. If testing via APK, upload this version to Play Console Internal/Closed Testing."
                                 }
+                                Log.e(TAG, "Product query failed for $cleanId: primaryCode=${result.responseCode} (${result.debugMessage}), primaryUnfetched=$unfetchedStatus, fallbackCode=${fallbackResult.responseCode}")
                                 onError(errorDetail)
                             }
                         }
@@ -315,11 +327,21 @@ object GooglePlayBillingManager : PurchasesUpdatedListener, BillingClientStateLi
             val productDetailsParamsBuilder = BillingFlowParams.ProductDetailsParams.newBuilder()
                 .setProductDetails(productDetails)
 
-            // If subscription, pass active offerToken
+            // Billing Library 8.0+: Pass offerToken for BOTH Subscriptions AND One-Time Products with Purchase Options & Offers!
             if (productDetails.productType == BillingClient.ProductType.SUBS) {
-                val offerToken = productDetails.subscriptionOfferDetails?.firstOrNull()?.offerToken
+                val offerToken = productDetails.subscriptionOfferDetails
+                    ?.firstOrNull { !it.offerToken.isNullOrBlank() }
+                    ?.offerToken
                 if (!offerToken.isNullOrBlank()) {
                     productDetailsParamsBuilder.setOfferToken(offerToken)
+                }
+            } else {
+                val oneTimeOfferToken = productDetails.oneTimePurchaseOfferDetailsList
+                    ?.firstOrNull { !it.offerToken.isNullOrBlank() }
+                    ?.offerToken
+                    ?: productDetails.oneTimePurchaseOfferDetails?.offerToken
+                if (!oneTimeOfferToken.isNullOrBlank()) {
+                    productDetailsParamsBuilder.setOfferToken(oneTimeOfferToken)
                 }
             }
 
@@ -331,10 +353,10 @@ object GooglePlayBillingManager : PurchasesUpdatedListener, BillingClientStateLi
                 .build()
 
             val targetAct = if (!activity.isFinishing && !activity.isDestroyed) activity else (MainActivity.currentActivity ?: activity)
-            val responseCode = client.launchBillingFlow(targetAct, billingFlowParams).responseCode
-            if (responseCode != BillingClient.BillingResponseCode.OK) {
-                Log.e(TAG, "Failed to launch billing flow. Code: $responseCode")
-                onPurchaseErrorCallback?.invoke("Could not open Google Play payment dialog (Code: $responseCode)")
+            val flowResult = client.launchBillingFlow(targetAct, billingFlowParams)
+            if (flowResult.responseCode != BillingClient.BillingResponseCode.OK) {
+                Log.e(TAG, "Failed to launch billing flow. Code: ${flowResult.responseCode} - ${flowResult.debugMessage}")
+                onPurchaseErrorCallback?.invoke("Could not open Google Play payment dialog (Code: ${flowResult.responseCode}${if (flowResult.debugMessage.isNotBlank()) ": ${flowResult.debugMessage}" else ""})")
             }
         }
     }
@@ -380,8 +402,14 @@ object GooglePlayBillingManager : PurchasesUpdatedListener, BillingClientStateLi
                     creditUserPurchaseInFirestore(userId, purchase, pkg)
                 }
 
-                // 2. Consume the in-app purchase so user can buy again
-                consumePurchase(purchase)
+                // 2. Acknowledge VIP Subscriptions vs Consume One-Time Diamond Packs
+                val isSubscriptionPurchase = pkg?.id?.startsWith("vip_package_") == true ||
+                    purchase.products.any { it.startsWith("vip_package_") }
+                if (isSubscriptionPurchase) {
+                    acknowledgeSubscriptionPurchase(purchase)
+                } else {
+                    consumePurchase(purchase)
+                }
 
                 withContext(Dispatchers.Main) {
                     onPurchaseSuccessCallback?.invoke()
@@ -391,6 +419,20 @@ object GooglePlayBillingManager : PurchasesUpdatedListener, BillingClientStateLi
             }
         } else if (purchase.purchaseState == Purchase.PurchaseState.PENDING) {
             Log.d(TAG, "Purchase is pending user approval (e.g. offline bank/cash payment at convenience store).")
+        }
+    }
+
+    private suspend fun acknowledgeSubscriptionPurchase(purchase: Purchase) {
+        val client = billingClient ?: return
+        if (purchase.isAcknowledged) return
+        val ackParams = AcknowledgePurchaseParams.newBuilder()
+            .setPurchaseToken(purchase.purchaseToken)
+            .build()
+        val ackResult = client.acknowledgePurchase(ackParams)
+        if (ackResult.responseCode == BillingClient.BillingResponseCode.OK) {
+            Log.i(TAG, "Subscription acknowledged successfully: ${purchase.purchaseToken}")
+        } else {
+            Log.w(TAG, "Failed to acknowledge subscription: ${ackResult.responseCode} - ${ackResult.debugMessage}")
         }
     }
 
