@@ -5206,6 +5206,58 @@ fun RoomSettingsDialog(
                                     }
                                 }
                                 Spacer(modifier = Modifier.height(10.dp))
+                                Text("🌟 11 HD Official Event & Gala Themes", color = Color(0xFFFDE047), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.height(6.dp))
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    items(OFFICIAL_EVENT_HD_THEMES, key = { it.id }) { hdTheme ->
+                                        val isCurrentHd = room.banner_image_url == hdTheme.id || room.eventThemeStyle == hdTheme.id
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            modifier = Modifier.clickable {
+                                                onUpdateTheme(hdTheme.id)
+                                                db.collection("rooms").document(room.id).update(
+                                                    mapOf(
+                                                        "banner_image_url" to hdTheme.id,
+                                                        "eventThemeStyle" to hdTheme.id
+                                                    )
+                                                )
+                                                if (room.category.isNotBlank()) {
+                                                    db.collection("intent_categories").document(room.category)
+                                                        .collection("rooms").document(room.id)
+                                                        .update(
+                                                            mapOf(
+                                                                "banner_image_url" to hdTheme.id,
+                                                                "eventThemeStyle" to hdTheme.id
+                                                            )
+                                                        )
+                                                }
+                                                Toast.makeText(context, "🌟 HD Theme applied: ${hdTheme.label}", Toast.LENGTH_SHORT).show()
+                                            }
+                                        ) {
+                                            Image(
+                                                painter = painterResource(id = hdTheme.drawableRes),
+                                                contentDescription = hdTheme.label,
+                                                modifier = Modifier
+                                                    .size(64.dp)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .border(
+                                                        2.dp,
+                                                        if (isCurrentHd) hdTheme.accentColor else Color.White.copy(alpha = 0.2f),
+                                                        RoundedCornerShape(10.dp)
+                                                    ),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(
+                                                text = hdTheme.label.take(11),
+                                                color = if (isCurrentHd) hdTheme.accentColor else Color.LightGray,
+                                                fontSize = 8.5.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(10.dp))
                                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     items(ROOM_THEME_PRESETS) { preset ->
                                         val isCurrent = room.banner_image_url == preset.imageUrl
@@ -7140,9 +7192,13 @@ fun AudioHangoutRoomDialog(
                 .background(Color(0xFF0F0C10))
         ) {
             // Ambient Luxury Wallpaper in Background (Full Room Ambiance - 100% Edge-to-Edge)
+            val hdEventDrawable = getEventThemeDrawableRes(room.banner_image_url)
+                .takeIf { it != 0 }
+                ?: getEventThemeDrawableRes(room.eventThemeStyle)
             val isCustomTheme = room.banner_image_url.isNotBlank() && room.banner_image_url != "vip_royal_stage"
-            val isVipRoom = !isCustomTheme && (room.isVipRoom || room.category.equals("vip_room", ignoreCase = true) || room.title.contains("VIP", ignoreCase = true) || room.privacy.equals("vip_only", ignoreCase = true) || room.banner_image_url == "vip_royal_stage")
+            val isVipRoom = !isCustomTheme && hdEventDrawable == 0 && (room.isVipRoom || room.category.equals("vip_room", ignoreCase = true) || room.title.contains("VIP", ignoreCase = true) || room.privacy.equals("vip_only", ignoreCase = true) || room.banner_image_url == "vip_royal_stage")
             val wallpaperModel: Any = when {
+                hdEventDrawable != 0 -> hdEventDrawable
                 room.banner_image_url == "vip_royal_stage" || (isVipRoom && room.banner_image_url.isBlank()) -> R.drawable.vip_royal_stage
                 room.banner_image_url.isNotBlank() -> room.banner_image_url
                 room.category.isNotBlank() -> getCategoryBanner(room.category).ifBlank { "https://images.unsplash.com/photo-1578683010236-d716f9a3f461" }
@@ -7753,16 +7809,16 @@ fun AudioHangoutRoomDialog(
                         micSeats.size >= 15
 
                     val stageSeats = if (micSeats.isNotEmpty()) {
-                        if (is15MicRoom && micSeats.size < 16) {
+                        if (is15MicRoom && micSeats.size < 15) {
                             val existingMap = micSeats.associateBy { it.seatIndex }
-                            (0..15).map { idx ->
+                            (0..14).map { idx ->
                                 existingMap[idx] ?: if (idx == 0) MicSeat(seatIndex = 0, label = "Host 👑", uid = targetHostId, name = hostName, photo = hostPhoto, role = "host")
-                                else MicSeat(seatIndex = idx, label = "Mic ${idx + 1}", uid = "", name = "", photo = "", role = "speaker")
+                                else MicSeat(seatIndex = idx, label = "Mic $idx", uid = "", name = "", photo = "", role = "speaker")
                             }
                         } else micSeats
-                    } else (0 until (if (is15MicRoom) 16 else 10)).map { idx ->
+                    } else (0 until (if (is15MicRoom) 15 else 10)).map { idx ->
                         if (idx == 0) MicSeat(seatIndex = 0, label = "Host 👑", uid = targetHostId, name = hostName, photo = hostPhoto, role = "host")
-                        else MicSeat(seatIndex = idx, label = "Mic ${idx + 1}", uid = "", name = "", photo = "", role = "speaker")
+                        else MicSeat(seatIndex = idx, label = if (is15MicRoom) "Mic $idx" else "Mic ${idx + 1}", uid = "", name = "", photo = "", role = "speaker")
                     }
 
                     val canStaffModerate = isUserAdmin || currentUser.isStaffMember() || currentUser.isFounder() || currentUser.isCeo() || isUserHost
@@ -7815,11 +7871,33 @@ fun AudioHangoutRoomDialog(
 
 
                     if (is15MicRoom) {
+                        // Part 4: Real-Time Event Gifting Leaderboard & PK Scoreboard Strip
+                        OfficialEventLeaderboardStrip(
+                            roomId = room.id,
+                            isPkActive = room.isPkActive,
+                            pkBlueScore = room.pkHost1Score,
+                            pkRedScore = room.pkHost2Score,
+                            onOpenGiftSheet = { showGiftStoreDialog = true }
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        // Part 3: 15-Mic Dual-Mode (Audio + Video) Royal Amphitheater Stage
                         FifteenMicOfficialGalaStageSection(
                             seats = stageSeats,
                             currentUserId = currentUser.uid,
-                            isHost = isUserAdmin,
+                            isHost = isUserAdmin || isUserHost,
                             isLocalTalking = isLocalTalking,
+                            roomType = room.roomType,
+                            themeStyle = room.eventThemeStyle.ifBlank { room.banner_image_url },
+                            onToggleRoomMode = {
+                                val nextMode = if (room.roomType.equals("video", ignoreCase = true)) "audio" else "video"
+                                room = room.copy(roomType = nextMode)
+                                db.collection("rooms").document(room.id).update("roomType", nextMode)
+                                Toast.makeText(
+                                    context,
+                                    if (nextMode == "video") "📹 Switched to Dual-Mode Video + 15-Mic Stage!" else "🎙️ Switched to 15-Mic Audio Stage!",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            },
                             allProfiles = allProfiles,
                             userActiveFrame = activeUserFrame,
                             userActiveMicEffect = userActiveMicEffect,
@@ -9546,6 +9624,22 @@ fun AudioHangoutRoomDialog(
                                         Toast.makeText(context, "Gift sent, but intimacy request failed.", Toast.LENGTH_LONG).show()
                                     }
                             }
+                            // Real-Time Event Gifting Leaderboard Sync (Part 4 - 100% Firestore)
+                            if (currentUser.uid.isNotBlank() && giftItem.cost > 0L) {
+                                db.collection("rooms").document(room.id)
+                                    .collection("event_leaderboard").document(currentUser.uid)
+                                    .set(
+                                        mapOf(
+                                            "uid" to currentUser.uid,
+                                            "name" to currentUser.name.ifBlank { "Supporter" },
+                                            "photo" to currentUser.photo,
+                                            "totalDiamonds" to FieldValue.increment(giftItem.cost),
+                                            "giftCount" to FieldValue.increment(1L),
+                                            "updatedAt" to System.currentTimeMillis()
+                                        ),
+                                        SetOptions.merge()
+                                    )
+                            }
                             if (room.isPkActive) {
                                 val supportedTeam = selectedPkTeamForBoost
                                 val scoreField = if (supportedTeam == "red") "pkHost2Score" else "pkHost1Score"
@@ -9606,6 +9700,22 @@ fun AudioHangoutRoomDialog(
                                 drawableResId = giftItem.drawableResId,
                                 targetUserName = targetUserName
                             )
+                            // Real-Time Event Gifting Leaderboard Sync (Part 4 - 100% Firestore)
+                            if (currentUser.uid.isNotBlank() && giftItem.cost > 0L) {
+                                db.collection("rooms").document(room.id)
+                                    .collection("event_leaderboard").document(currentUser.uid)
+                                    .set(
+                                        mapOf(
+                                            "uid" to currentUser.uid,
+                                            "name" to currentUser.name.ifBlank { "Supporter" },
+                                            "photo" to currentUser.photo,
+                                            "totalDiamonds" to FieldValue.increment(giftItem.cost),
+                                            "giftCount" to FieldValue.increment(1L),
+                                            "updatedAt" to System.currentTimeMillis()
+                                        ),
+                                        SetOptions.merge()
+                                    )
+                            }
                             if (room.isPkActive) {
                                 val scoreField = if (selectedPkTeamForBoost == "red") "pkHost2Score" else "pkHost1Score"
                                 db.collection("rooms").document(room.id).update(
