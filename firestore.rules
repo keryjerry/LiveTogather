@@ -47,7 +47,10 @@ rules_version = '2';
 //
 // 9. rooms/{roomId}/gift_events/{eventId}
 //    - Document ID: Event ID
-//    - Fields: senderUid (string), receiverUid (string), giftId (string), diamonds (number)
+//    - Fields: id (string), roomId (string), senderId (string, == auth.uid), senderName (string),
+//              senderPhoto (string), giftId (string), giftName (string), giftEmoji (string),
+//              cost (number >= 0), animationType (string), timestamp (int), targetUserId (string),
+//              targetUserName (string), quantity (int), receiverUserIds (list), receiverNames (list)
 //
 // 10. matches/{matchId}
 //     - Document ID: Match ID (usually sorted user UIDs)
@@ -108,6 +111,24 @@ rules_version = '2';
 //     - Document ID: Supporter Firebase Auth UID
 //     - Fields: uid (string, required, immutable), name (string, required, 1..120), photo (string, optional, <=2048),
 //               totalDiamonds (number, required, >=0), giftCount (int, required, >=0), updatedAt (int, required, >0)
+//
+// 22. users/{userId}/gift_earnings_history/{histId}
+//     - Document ID: Notification/History UUID
+//     - Fields: id (string), targetUserId (string), senderId (string, == auth.uid), senderName (string),
+//               senderPhoto (string), giftId (string), giftName (string), giftEmoji (string), quantity (int),
+//               grossDiamonds (number), creatorDiamonds (number), commissionPercent (number), earningsInr (number),
+//               timestamp (int), roomId (string)
+//
+// 23. rooms/{roomId}/games/{gameId} & rooms/{roomId}/emoji_reactions/{reactionId}
+//     - Real-time in-room multiplayer games (Carrom, Ludo) and live emoji reaction streams
+//
+// 24. intimacy_requests/{requestId}
+//     - Document ID: Request UUID
+//     - Fields: senderUid (string, required, immutable), recipientUid (string, required, immutable),
+//               roomId (string), status (string), bondType (string), timestamp (int)
+//
+// 25. intent_categories/{catId}/rooms/{roomId} & .../members/{memberId}
+//     - Category-indexed live rooms and active member presence documents
 //
 // ===============================================================
 
@@ -487,6 +508,52 @@ service cloud.firestore {
         data.updatedAt > 0;
     }
 
+    // Domain validator for rooms/{roomId}/gift_events/{eventId}
+    function isValidRoomGiftEvent(data) {
+      return data.senderId is string &&
+        data.senderId == request.auth.uid &&
+        data.senderId.size() > 0 &&
+        data.senderId.size() <= 128 &&
+        data.cost is number &&
+        data.cost >= 0 &&
+        data.cost <= 100000000 &&
+        (!('id' in data) || (data.id is string && data.id.size() <= 256)) &&
+        (!('roomId' in data) || (data.roomId is string && data.roomId.size() <= 128)) &&
+        (!('senderName' in data) || (data.senderName is string && data.senderName.size() <= 120)) &&
+        (!('senderPhoto' in data) || (data.senderPhoto is string && data.senderPhoto.size() <= 2048)) &&
+        (!('giftId' in data) || (data.giftId is string && data.giftId.size() <= 128)) &&
+        (!('giftName' in data) || (data.giftName is string && data.giftName.size() <= 120)) &&
+        (!('giftEmoji' in data) || (data.giftEmoji is string && data.giftEmoji.size() <= 32)) &&
+        (!('animationType' in data) || (data.animationType is string && data.animationType.size() <= 64)) &&
+        (!('targetUserId' in data) || (data.targetUserId is string && data.targetUserId.size() <= 128)) &&
+        (!('targetUserName' in data) || (data.targetUserName is string && data.targetUserName.size() <= 120)) &&
+        (!('quantity' in data) || (data.quantity is int && data.quantity >= 0 && data.quantity <= 10000)) &&
+        (!('receiverUserIds' in data) || (data.receiverUserIds is list && data.receiverUserIds.size() <= 100)) &&
+        (!('receiverNames' in data) || (data.receiverNames is list && data.receiverNames.size() <= 100)) &&
+        (!('timestamp' in data) || (data.timestamp is int && data.timestamp > 0));
+    }
+
+    // Domain validator for users/{userId}/gift_earnings_history/{histId}
+    function isValidGiftEarningsHistory(data, userId) {
+      return data.senderId is string &&
+        data.senderId == request.auth.uid &&
+        data.senderId.size() > 0 &&
+        data.senderId.size() <= 128 &&
+        (!('targetUserId' in data) || (data.targetUserId is string && data.targetUserId == userId)) &&
+        (!('id' in data) || (data.id is string && data.id.size() <= 256)) &&
+        (!('senderName' in data) || (data.senderName is string && data.senderName.size() <= 120)) &&
+        (!('senderPhoto' in data) || (data.senderPhoto is string && data.senderPhoto.size() <= 2048)) &&
+        (!('giftId' in data) || (data.giftId is string && data.giftId.size() <= 128)) &&
+        (!('giftName' in data) || (data.giftName is string && data.giftName.size() <= 120)) &&
+        (!('giftEmoji' in data) || (data.giftEmoji is string && data.giftEmoji.size() <= 32)) &&
+        (!('roomId' in data) || (data.roomId is string && data.roomId.size() <= 128)) &&
+        (!('quantity' in data) || (data.quantity is int && data.quantity >= 0 && data.quantity <= 10000)) &&
+        (!('grossDiamonds' in data) || (data.grossDiamonds is number && data.grossDiamonds >= 0 && data.grossDiamonds <= 100000000)) &&
+        (!('creatorDiamonds' in data) || (data.creatorDiamonds is number && data.creatorDiamonds >= 0 && data.creatorDiamonds <= 100000000)) &&
+        (!('earningsInr' in data) || (data.earningsInr is number && data.earningsInr >= 0 && data.earningsInr <= 100000000)) &&
+        (!('timestamp' in data) || (data.timestamp is int && data.timestamp > 0));
+    }
+
     // ===============================================================
     // User Profiles & Followers
     // ===============================================================
@@ -527,16 +594,34 @@ service cloud.firestore {
         ) ||
         (
           isAuthenticated() &&
+          request.auth.uid != userId &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'followerCount',
             'charmXp',
             'charmLevel',
             'earningsInr',
             'totalEarningsInr',
+            'diamonds',
+            'coins',
+            'giftCount',
             'pkWins',
             'pkScore',
             'pkLevel'
-          ])
+          ]) &&
+          (
+            !('diamonds' in request.resource.data.diff(resource.data).affectedKeys()) ||
+            (
+              request.resource.data.diamonds is number &&
+              request.resource.data.diamonds >= resource.data.get('diamonds', 0)
+            )
+          ) &&
+          (
+            !('coins' in request.resource.data.diff(resource.data).affectedKeys()) ||
+            (
+              request.resource.data.coins is number &&
+              request.resource.data.coins >= resource.data.get('coins', 0)
+            )
+          )
         );
 
       // Deletion of user profile requires admin privileges
@@ -602,6 +687,15 @@ service cloud.firestore {
         allow read: if isOwner(userId) || isAdmin();
         allow create: if isAuthenticated();
         allow update, delete: if isOwner(userId) || isAdmin();
+      }
+
+      // Creator Gift Earnings History subcollection
+      match /gift_earnings_history/{histId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isAuthenticated() &&
+          request.resource.data.senderId == request.auth.uid &&
+          isValidGiftEarningsHistory(request.resource.data, userId);
+        allow update, delete: if isAdmin();
       }
     }
 
@@ -684,7 +778,35 @@ service cloud.firestore {
         resource.data.get('hostUid', '') == request.auth.uid ||
         resource.data.get('hostId', '') == request.auth.uid ||
         resource.data.get('adminUserIds', []).hasAny([request.auth.uid]) ||
-        isAdmin()
+        isAdmin() ||
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'pkHost1Score',
+            'pkHost2Score',
+            'activeUserCount'
+          ]) &&
+          (
+            !('pkHost1Score' in request.resource.data.diff(resource.data).affectedKeys()) ||
+            (
+              request.resource.data.pkHost1Score is number &&
+              request.resource.data.pkHost1Score >= resource.data.get('pkHost1Score', 0)
+            )
+          ) &&
+          (
+            !('pkHost2Score' in request.resource.data.diff(resource.data).affectedKeys()) ||
+            (
+              request.resource.data.pkHost2Score is number &&
+              request.resource.data.pkHost2Score >= resource.data.get('pkHost2Score', 0)
+            )
+          ) &&
+          (
+            !('activeUserCount' in request.resource.data.diff(resource.data).affectedKeys()) ||
+            (
+              request.resource.data.activeUserCount is int &&
+              request.resource.data.activeUserCount >= 0
+            )
+          )
+        )
       );
       allow delete: if isAuthenticated() && (
         resource.data.get('hostUid', '') == request.auth.uid ||
@@ -708,8 +830,21 @@ service cloud.firestore {
       // Gift Events in Room
       match /gift_events/{eventId} {
         allow read: if isAuthenticated();
-        allow create: if false;
+        allow create: if isAuthenticated() &&
+          request.resource.data.senderId == request.auth.uid &&
+          request.resource.data.cost >= 0 &&
+          isValidRoomGiftEvent(request.resource.data);
         allow update, delete: if isAdmin();
+      }
+
+      // Real-time In-Room Games (Carrom & Ludo multiplayer sync)
+      match /games/{gameId} {
+        allow read, write: if isAuthenticated();
+      }
+
+      // Live Emoji Reactions in Room
+      match /emoji_reactions/{reactionId} {
+        allow read, write: if isAuthenticated();
       }
 
       // Active Room Members
@@ -839,6 +974,26 @@ service cloud.firestore {
       );
     }
 
+    match /intimacy_requests/{requestId} {
+      allow read: if isAuthenticated() && (
+        resource.data.senderUid == request.auth.uid ||
+        resource.data.recipientUid == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if isAuthenticated() &&
+        request.resource.data.senderUid == request.auth.uid;
+      allow update: if isAuthenticated() && (
+        resource.data.senderUid == request.auth.uid ||
+        resource.data.recipientUid == request.auth.uid ||
+        isAdmin()
+      ) && areImmutableFieldsUnchanged(['senderUid', 'recipientUid']);
+      allow delete: if isAuthenticated() && (
+        resource.data.senderUid == request.auth.uid ||
+        resource.data.recipientUid == request.auth.uid ||
+        isAdmin()
+      );
+    }
+
     match /proposals/{proposalId} {
       allow read: if isAuthenticated() && (
         resource.data.user1Id == request.auth.uid ||
@@ -860,6 +1015,14 @@ service cloud.firestore {
     match /intent_categories/{catId} {
       allow read: if isAuthenticated();
       allow write: if isAuthenticated();
+
+      match /rooms/{roomId} {
+        allow read, write: if isAuthenticated();
+
+        match /members/{memberId} {
+          allow read, write: if isAuthenticated();
+        }
+      }
     }
 
     // ===============================================================
