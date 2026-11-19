@@ -4812,13 +4812,13 @@ fun ProfileScreenContent(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(380.dp)
+                    .height((androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * 0.6f).dp)
                     .align(Alignment.TopCenter)
             )
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(380.dp)
+                    .height((androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * 0.6f).dp)
                     .align(Alignment.TopCenter)
                     .background(
                         Brush.verticalGradient(
@@ -4946,6 +4946,7 @@ fun ProfileScreenContent(
             }
         }
 
+        val profileScreenHeightDp = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -4954,6 +4955,12 @@ fun ProfileScreenContent(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 48.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+
+            // 1.5 SHEET RESTING POSITION: transparent spacer so the glass sheet opens at ~50% of the screen,
+            // revealing the fixed backdrop above. Dragging up slides the sheet over the backdrop; dragging down returns to 50%.
+            item {
+                Spacer(modifier = Modifier.height((profileScreenHeightDp * 0.42f).dp))
+            }
 
             // 2. SOULMATE / COUPLE DUAL-AVATAR HEADER & VOICE INTRO (MATCHING REFERENCE IMAGES)
             item {
@@ -4969,13 +4976,23 @@ fun ProfileScreenContent(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Box(modifier = Modifier.fillMaxWidth().heightIn(min = 320.dp)) {
-                        // Glassmorphic semi-transparent frosted glass sliding card over the fixed palace backdrop
+                        // Glassmorphic semi-transparent frosted white sliding sheet over the fixed palace backdrop
                         Box(
                             modifier = Modifier
                                 .matchParentSize()
-                                .clip(RoundedCornerShape(26.dp))
-                                .background(Color.White.copy(alpha = 0.12f))
-                                .border(1.2.dp, Color.White.copy(alpha = 0.28f), RoundedCornerShape(26.dp))
+                                .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp, bottomStart = 20.dp, bottomEnd = 20.dp))
+                                .background(Color.White.copy(alpha = 0.55f))
+                                .border(1.2.dp, Color.White.copy(alpha = 0.7f), RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp, bottomStart = 20.dp, bottomEnd = 20.dp))
+                        )
+                        // Drag handle
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(top = 8.dp)
+                                .width(42.dp)
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(Color(0xFF64748B).copy(alpha = 0.6f))
                         )
 
                         // Content inside the card
@@ -5250,7 +5267,7 @@ fun ProfileScreenContent(
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Text(
                                                 text = name,
-                                                color = if (vipLvl > 0) Color(0xFFFFD700) else Color.White,
+                                                color = if (vipLvl > 0) Color(0xFFB45309) else Color(0xFF1B1433),
                                                 fontSize = 18.sp,
                                                 fontWeight = FontWeight.Black
                                             )
