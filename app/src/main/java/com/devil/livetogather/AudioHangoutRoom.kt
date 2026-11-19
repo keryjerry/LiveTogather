@@ -3697,7 +3697,16 @@ private fun UserFullProfileDialog(
                         if (d.getString("user1Id") == profile.uid) d.getString("user2Id") else d.getString("user1Id")
                     }.filter { it.isNotBlank() }.distinct()
                     activeBondsCount = uniquePartnerIds.size
-                    val doc = userBonds.firstOrNull()
+                    val doc = userBonds
+                        .sortedWith(
+                            compareByDescending<com.google.firebase.firestore.DocumentSnapshot> { d ->
+                                val bt = d.getString("bondType") ?: ""
+                                bt.equals("couple", ignoreCase = true) || bt.equals("proposal", ignoreCase = true) || bt.equals("love", ignoreCase = true)
+                            }.thenByDescending { d ->
+                                d.getLong("createdAt") ?: 0L
+                            }
+                        )
+                        .firstOrNull()
                     if (doc != null) {
                         val isU1 = doc.getString("user1Id") == profile.uid
                         val pUid = if (isU1) doc.getString("user2Id") else doc.getString("user1Id")
@@ -6188,7 +6197,8 @@ fun AudioHangoutRoomDialog(
         }
     }
 
-    // Real-time listener for room video gift events
+    // Real-time listener for room video gift events (strictly deduplicated by event ID so full-length video never restarts or aborts)
+    var lastPlayedGiftEventId by remember(room.id) { mutableStateOf("") }
     LaunchedEffect(room.id) {
         if (room.id.isBlank()) return@LaunchedEffect
         db.collection("rooms").document(room.id)
@@ -6200,7 +6210,8 @@ fun AudioHangoutRoomDialog(
                     val latest = snapshot.documents[0].toObject(GiftEvent::class.java)
                     if (latest != null) {
                         val now = System.currentTimeMillis()
-                        if (now - latest.timestamp < 15000L && latest.id != activeGiftEvent?.id) {
+                        if (now - latest.timestamp < 15000L && latest.id.isNotBlank() && latest.id != lastPlayedGiftEventId && latest.id != activeGiftEvent?.id) {
+                            lastPlayedGiftEventId = latest.id
                             activeGiftEvent = latest
                         }
                     }
@@ -9419,12 +9430,38 @@ fun AudioHangoutRoomDialog(
                                     .fillMaxWidth()
                                     .clickable(enabled = !isSendingIntimacyStoreItem) {
                                         if (isSendingIntimacyStoreItem) return@clickable
+                                        val existingActiveBond = activeIntimacyBonds.firstOrNull { b ->
+                                            b.status == "active" && (
+                                                (b.user1Id == currentUser.uid && b.user2Id == recipient.uid) ||
+                                                (b.user1Id == recipient.uid && b.user2Id == currentUser.uid)
+                                            )
+                                        }
+                                        if (existingActiveBond != null) {
+                                            val bondLabel = when {
+                                                existingActiveBond.bondType.equals("bestie", ignoreCase = true) -> "Besties"
+                                                existingActiveBond.bondType.equals("cyber", ignoreCase = true) -> "Cyber Linked"
+                                                else -> "bonded as Couple"
+                                            }
+                                            Toast.makeText(
+                                                context,
+                                                "You are already $bondLabel with ${recipient.name}! End the current bond in Profile first.",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                            return@clickable
+                                        }
                                         isSendingIntimacyStoreItem = true
                                         val requestId = UUID.randomUUID().toString()
+                                        val sortedBondId = listOf(currentUser.uid, recipient.uid).sorted().joinToString("_")
+                                        val existingBondRef = db.collection("intimacy_bonds").document(sortedBondId)
                                         val senderRef = db.collection("users").document(currentUser.uid)
                                         val requestRef = db.collection("intimacy_requests").document(requestId)
                                         val effectiveCost = if (currentUser.isFounder() || currentUser.ownedMicLinks.contains(item.id)) 0L else item.diamondPrice
                                         db.runTransaction { transaction ->
+                                            val existingBondSnap = transaction.get(existingBondRef)
+                                            if (existingBondSnap.exists() && existingBondSnap.getString("status") == "active") {
+                                                val bType = existingBondSnap.getString("bondType") ?: "couple"
+                                                throw IllegalStateException("ALREADY_BONDED:$bType")
+                                            }
                                             val sender = transaction.get(senderRef)
                                             if (!sender.exists()) throw IllegalStateException("Sender profile is unavailable.")
                                             val balance = sender.getLong("diamonds") ?: 0L
@@ -9441,6 +9478,7 @@ fun AudioHangoutRoomDialog(
                                                 )
                                             }
                                             val bondType = when {
+                                                item.id.contains("ring", true) || item.id.contains("proposal", true) -> "couple"
                                                 item.id.contains("bestie", true) -> "bestie"
                                                 item.id.contains("soulmate", true) -> "soulmate"
                                                 item.id.contains("eternal", true) -> "eternal"
@@ -9479,8 +9517,15 @@ fun AudioHangoutRoomDialog(
                                             }
                                         }.addOnFailureListener { error ->
                                             isSendingIntimacyStoreItem = false
-                                            Log.e("AudioHangoutRoom", "Failed to send intimacy item ${item.id}", error)
-                                            Toast.makeText(context, "Could not send invitation: ${error.localizedMessage ?: "Please try again."}", Toast.LENGTH_LONG).show()
+                                            val msg = error.message ?: ""
+                                            if (msg.startsWith("ALREADY_BONDED:")) {
+                                                val bType = msg.substringAfter("ALREADY_BONDED:")
+                                                val label = if (bType.equals("bestie", true)) "Besties" else "bonded as Couple"
+                                                Toast.makeText(context, "You are already $label with ${recipient.name}! End your bond in Profile first.", Toast.LENGTH_LONG).show()
+                                            } else {
+                                                Log.e("AudioHangoutRoom", "Failed to send intimacy item ${item.id}", error)
+                                                Toast.makeText(context, "Could not send invitation: ${error.localizedMessage ?: "Please try again."}", Toast.LENGTH_LONG).show()
+                                            }
                                         }
                                     }
                             ) {
@@ -9689,8 +9734,31 @@ fun AudioHangoutRoomDialog(
                 },
                 onSendGift = { giftItem, selectedRecipientUid, selectedRecipientName ->
                     val recipientUid = selectedRecipientUid.ifBlank { targetHostId.ifBlank { room.hostUid.ifBlank { room.hostId } } }
+                    val isIntimacyGift = giftItem.id.contains("ring", true) || giftItem.id.contains("intimacy", true) ||
+                        giftItem.id.contains("bestie", true) || giftItem.id.contains("couple", true) ||
+                        giftItem.id.contains("proposal", true) || giftItem.id.contains("necklace", true)
+                    val existingBondWithRecipient = if (isIntimacyGift) {
+                        activeIntimacyBonds.firstOrNull { b ->
+                            b.status == "active" && (
+                                (b.user1Id == currentUser.uid && b.user2Id == recipientUid) ||
+                                (b.user1Id == recipientUid && b.user2Id == currentUser.uid)
+                            )
+                        }
+                    } else null
                     if (recipientUid.isBlank() || recipientUid == currentUser.uid) {
                         Toast.makeText(context, "Select a valid gift recipient.", Toast.LENGTH_SHORT).show()
+                    } else if (existingBondWithRecipient != null) {
+                        val bondLabel = when {
+                            existingBondWithRecipient.bondType.equals("bestie", ignoreCase = true) -> "Besties"
+                            existingBondWithRecipient.bondType.equals("cyber", ignoreCase = true) -> "Cyber Linked"
+                            else -> "bonded as Couple"
+                        }
+                        val targetLabel = selectedRecipientName.ifBlank { room.hostName.ifBlank { "this user" } }
+                        Toast.makeText(
+                            context,
+                            "You are already $bondLabel with $targetLabel! End the current bond in Profile first.",
+                            Toast.LENGTH_LONG
+                        ).show()
                     } else {
                         // Close Gift Store Dialog IMMEDIATELY on send tap so full-length gift playback starts instantly in view!
                         showGiftStoreDialog = false
@@ -9704,12 +9772,16 @@ fun AudioHangoutRoomDialog(
                         ).addOnSuccessListener { result ->
                             userDiamonds = result.senderDiamonds ?: userDiamonds.toLong()
                             if (activeGiftEvent?.id != result.event.id) {
+                                lastPlayedGiftEventId = result.event.id
                                 activeGiftEvent = result.event
                             }
-                            val isIntimacyGift = giftItem.id.contains("ring", true) || giftItem.id.contains("intimacy", true) ||
-                                giftItem.id.contains("bestie", true) || giftItem.id.contains("couple", true) ||
-                                giftItem.id.contains("proposal", true) || giftItem.id.contains("necklace", true)
                             if (isIntimacyGift) {
+                                val resolvedBondType = when {
+                                    giftItem.id.contains("ring", true) || giftItem.id.contains("proposal", true) -> "couple"
+                                    giftItem.id.contains("bestie", true) -> "bestie"
+                                    giftItem.id.contains("cyber", true) -> "cyber"
+                                    else -> "couple"
+                                }
                                 val requestId = UUID.randomUUID().toString()
                                 val request = mapOf<String, Any?>(
                                     "id" to requestId, "requestType" to "mic_link", "roomId" to room.id,
@@ -9718,7 +9790,7 @@ fun AudioHangoutRoomDialog(
                                     "recipientName" to selectedRecipientName.ifBlank { room.hostName },
                                     "giftId" to giftItem.id, "giftName" to giftItem.name,
                                     "giftEmoji" to giftItem.emoji,
-                                    "bondType" to if (giftItem.id.contains("bestie", true)) "bestie" else "couple",
+                                    "bondType" to resolvedBondType,
                                     "status" to "pending", "timestamp" to System.currentTimeMillis()
                                 )
                                 db.collection("intimacy_requests").document(requestId).set(request)
@@ -11557,7 +11629,8 @@ fun StageFourSeatsRow(
             }
         }
 
-        // Automatic Adjacent Mic Link Connectors (Left and Right for any adjacent occupied pair)
+        // Automatic Adjacent Mic Link & Proposal Ring Connectors (Left & Right for ANY active bonded pair, cleanly edge-to-edge)
+        val edgeInsetPx = with(density) { 26.dp.toPx() }
         for (col in 0..2) {
             val seatLeft = seats.find { it.seatIndex == baseIndex + col }
             val seatRight = seats.find { it.seatIndex == baseIndex + col + 1 }
@@ -11565,26 +11638,39 @@ fun StageFourSeatsRow(
                 val pairBond = activeSeatedBonds.firstOrNull { b ->
                     (b.user1Id == seatLeft.uid && b.user2Id == seatRight.uid) ||
                     (b.user1Id == seatRight.uid && b.user2Id == seatLeft.uid)
+                } ?: continue
+
+                val linkDesignId = pairBond.activeMicLinkId.ifBlank {
+                    when {
+                        pairBond.bondType.equals("bestie", ignoreCase = true) -> "mic_link_twin_besties"
+                        pairBond.bondType.equals("cyber", ignoreCase = true) -> "mic_link_cyberpunk_reactor"
+                        pairBond.bondType.equals("soulmate", ignoreCase = true) -> "mic_link_celestial_wings"
+                        pairBond.bondType.equals("eternal", ignoreCase = true) -> "mic_link_emerald_infinity"
+                        else -> activeMicLinkId
+                    }
                 }
-                val isPairCouple = pairBond != null && (pairBond.bondType.equals("couple", ignoreCase = true) || pairBond.bondType.equals("love", ignoreCase = true) || pairBond.bondType.equals("proposal", ignoreCase = true))
-                if (!isPairCouple) {
-                    continue // Strictly NO RING for Besties or unbonded users! Ring is reserved strictly for Couples.
+                val isProposalRingLink = linkDesignId.contains("ring", ignoreCase = true) ||
+                    linkDesignId.contains("proposal", ignoreCase = true)
+                val dRes = getProposalRingThumbRes(linkDesignId)
+                val (pCol, sCol) = when {
+                    linkDesignId.contains("twin_besties", ignoreCase = true) -> Color(0xFF00E5FF) to Color(0xFFFF4081)
+                    linkDesignId.contains("cyberpunk", ignoreCase = true) || linkDesignId.contains("cyber", ignoreCase = true) -> Color(0xFF00F5FF) to Color(0xFFA855F7)
+                    linkDesignId.contains("celestial_wings", ignoreCase = true) -> Color(0xFFFFD700) to Color(0xFFE0F7FA)
+                    linkDesignId.contains("emerald_infinity", ignoreCase = true) -> Color(0xFF00E676) to Color(0xFFFFD700)
+                    linkDesignId.contains("sapphire", ignoreCase = true) -> Color(0xFF38BDF8) to Color(0xFFE0F2FE)
+                    linkDesignId.contains("crimson", ignoreCase = true) || linkDesignId.contains("velvet", ignoreCase = true) -> Color(0xFFFF1744) to Color(0xFFFF80AB)
+                    isProposalRingLink -> Color(0xFFFF4081) to Color(0xFFFFD700)
+                    else -> Color(0xFFFF1744) to Color(0xFFFFD700)
                 }
-                val linkDesignId = pairBond?.activeMicLinkId?.ifBlank { activeMicLinkId } ?: activeMicLinkId
-                val (dRes, pCol, sCol) = when (linkDesignId) {
-                    "mic_link_twin_besties" -> Triple(R.drawable.photoreal_link_twin_besties, Color(0xFF00E5FF), Color(0xFFFF4081))
-                    "mic_link_cyberpunk_reactor" -> Triple(R.drawable.photoreal_link_cyberpunk_reactor, Color(0xFF00F5FF), Color(0xFFA855F7))
-                    "mic_link_celestial_wings" -> Triple(R.drawable.photoreal_link_celestial_wings, Color(0xFFFFD700), Color(0xFFE0F7FA))
-                    "mic_link_emerald_infinity" -> Triple(R.drawable.photoreal_link_emerald_infinity, Color(0xFF00E676), Color(0xFFFFD700))
-                    else -> Triple(R.drawable.photoreal_link_ruby_crown, Color(0xFFFF1744), Color(0xFFFFD700))
-                }
+                val startX = (colXPxs[col] + edgeInsetPx).coerceAtMost((colXPxs[col] + colXPxs[col + 1]) / 2f - 4f)
+                val endX = (colXPxs[col + 1] - edgeInsetPx).coerceAtLeast((colXPxs[col] + colXPxs[col + 1]) / 2f + 4f)
                 StageMicLinkOverlay(
-                    startOffset = androidx.compose.ui.geometry.Offset(colXPxs[col], centerYPx),
-                    endOffset = androidx.compose.ui.geometry.Offset(colXPxs[col + 1], centerYPx),
+                    startOffset = androidx.compose.ui.geometry.Offset(startX, centerYPx),
+                    endOffset = androidx.compose.ui.geometry.Offset(endX, centerYPx),
                     drawableRes = dRes,
                     primaryColor = pCol,
                     secondaryColor = sCol,
-                    emblemSize = 34.dp,
+                    emblemSize = if (isProposalRingLink) 30.dp else 34.dp,
                     modifier = Modifier.matchParentSize()
                 )
             }
@@ -11794,7 +11880,7 @@ fun VipRoyalStageCanvas(
             }
         }
 
-        // Real-Time Active Mic Link Overlay in VIP Room (Between Seat 0 Host and Seat 1 Mic 2)
+        // Real-Time Active Mic Link / Proposal Ring Overlay in VIP Room (Between Seat 0 Host and Seat 1 Mic 2)
         val seat0 = seats.find { it.seatIndex == 0 }
         val seat1 = seats.find { it.seatIndex == 1 }
         val seat0And1Bond = if (seat0?.uid?.isNotBlank() == true && seat1?.uid?.isNotBlank() == true) {
@@ -11803,22 +11889,34 @@ fun VipRoyalStageCanvas(
                     (bond.user1Id == seat1.uid && bond.user2Id == seat0.uid)
             }
         } else null
-        val isSeat0And1Couple = seat0And1Bond != null && (seat0And1Bond.bondType.equals("couple", ignoreCase = true) || seat0And1Bond.bondType.equals("love", ignoreCase = true) || seat0And1Bond.bondType.equals("proposal", ignoreCase = true))
-        if (isSeat0And1Couple && seat0And1Bond != null) {
-            val linkDesignId = seat0And1Bond.activeMicLinkId.ifBlank { activeMicLinkId }
-            val (dRes, pCol, sCol) = when (linkDesignId) {
-                "mic_link_twin_besties" -> Triple(R.drawable.photoreal_link_twin_besties, Color(0xFF00E5FF), Color(0xFFFF4081))
-                "mic_link_cyberpunk_reactor" -> Triple(R.drawable.photoreal_link_cyberpunk_reactor, Color(0xFF00F5FF), Color(0xFFA855F7))
-                "mic_link_celestial_wings" -> Triple(R.drawable.photoreal_link_celestial_wings, Color(0xFFFFD700), Color(0xFFE0F7FA))
-                "mic_link_emerald_infinity" -> Triple(R.drawable.photoreal_link_emerald_infinity, Color(0xFF00E676), Color(0xFFFFD700))
-                else -> Triple(R.drawable.photoreal_link_ruby_crown, Color(0xFFFF1744), Color(0xFFFFD700))
+        if (seat0And1Bond != null) {
+            val linkDesignId = seat0And1Bond.activeMicLinkId.ifBlank {
+                when {
+                    seat0And1Bond.bondType.equals("bestie", ignoreCase = true) -> "mic_link_twin_besties"
+                    seat0And1Bond.bondType.equals("cyber", ignoreCase = true) -> "mic_link_cyberpunk_reactor"
+                    seat0And1Bond.bondType.equals("soulmate", ignoreCase = true) -> "mic_link_celestial_wings"
+                    seat0And1Bond.bondType.equals("eternal", ignoreCase = true) -> "mic_link_emerald_infinity"
+                    else -> activeMicLinkId
+                }
+            }
+            val isProposalRingLink = linkDesignId.contains("ring", ignoreCase = true) ||
+                linkDesignId.contains("proposal", ignoreCase = true)
+            val dRes = getProposalRingThumbRes(linkDesignId)
+            val (pCol, sCol) = when {
+                linkDesignId.contains("twin_besties", ignoreCase = true) -> Color(0xFF00E5FF) to Color(0xFFFF4081)
+                linkDesignId.contains("cyberpunk", ignoreCase = true) || linkDesignId.contains("cyber", ignoreCase = true) -> Color(0xFF00F5FF) to Color(0xFFA855F7)
+                linkDesignId.contains("celestial_wings", ignoreCase = true) -> Color(0xFFFFD700) to Color(0xFFE0F7FA)
+                linkDesignId.contains("emerald_infinity", ignoreCase = true) -> Color(0xFF00E676) to Color(0xFFFFD700)
+                isProposalRingLink -> Color(0xFFFF4081) to Color(0xFFFFD700)
+                else -> Color(0xFFFF1744) to Color(0xFFFFD700)
             }
 
             val density = androidx.compose.ui.platform.LocalDensity.current
+            val edgeInsetPx = with(density) { 26.dp.toPx() }
             val startX = with(density) { (stageWidth * 0.50f).toPx() }
-            val startY = with(density) { (stageHeight * 0.80f).toPx() }
+            val startY = with(density) { (stageHeight * 0.80f).toPx() } - edgeInsetPx
             val endX = with(density) { (stageWidth * 0.50f).toPx() }
-            val endY = with(density) { (stageHeight * 0.50f).toPx() }
+            val endY = with(density) { (stageHeight * 0.50f).toPx() } + edgeInsetPx
 
             StageMicLinkOverlay(
                 startOffset = androidx.compose.ui.geometry.Offset(startX, startY),
@@ -11826,7 +11924,7 @@ fun VipRoyalStageCanvas(
                 drawableRes = dRes,
                 primaryColor = pCol,
                 secondaryColor = sCol,
-                emblemSize = 36.dp,
+                emblemSize = if (isProposalRingLink) 30.dp else 34.dp,
                 modifier = Modifier.matchParentSize()
             )
         }
@@ -12376,11 +12474,20 @@ fun IntimacyGiftingAcceptanceDialog(
                             if (isSubmitting || reqId.isBlank() || senderUid.isBlank() || currentUser.uid.isBlank()) return@Button
                             isSubmitting = true
                             val bondId = listOf(senderUid, currentUser.uid).sorted().joinToString("_")
+                            val isProposalRing = giftId.contains("ring", ignoreCase = true) || giftId.contains("proposal", ignoreCase = true)
+                            val effectiveBondType = when {
+                                isProposalRing -> "couple"
+                                bondType.isNotBlank() -> bondType
+                                giftId.contains("bestie", ignoreCase = true) -> "bestie"
+                                giftId.contains("cyber", ignoreCase = true) -> "cyber"
+                                else -> "couple"
+                            }
                             val activeMicLink = when {
-                                giftId in LuxuryStoreCatalog.micLinks.map { it.id } -> giftId
-                                bondType.equals("bestie", ignoreCase = true) -> "mic_link_twin_besties"
-                                bondType.equals("soulmate", ignoreCase = true) -> "mic_link_celestial_wings"
-                                bondType.equals("eternal", ignoreCase = true) -> "mic_link_emerald_infinity"
+                                giftId.isNotBlank() -> giftId
+                                effectiveBondType.equals("bestie", ignoreCase = true) -> "mic_link_twin_besties"
+                                effectiveBondType.equals("cyber", ignoreCase = true) -> "mic_link_cyberpunk_reactor"
+                                effectiveBondType.equals("soulmate", ignoreCase = true) -> "mic_link_celestial_wings"
+                                effectiveBondType.equals("eternal", ignoreCase = true) -> "mic_link_emerald_infinity"
                                 else -> "mic_link_ruby_crown"
                             }
 
@@ -12392,7 +12499,7 @@ fun IntimacyGiftingAcceptanceDialog(
                                 user2Name = currentUser.name,
                                 user1Photo = senderPhoto,
                                 user2Photo = currentUser.photo,
-                                bondType = bondType,
+                                bondType = effectiveBondType,
                                 intimacyLevel = 2,
                                 intimacyXp = 500L,
                                 streakDays = 3,
@@ -13708,7 +13815,11 @@ fun FullScreenGiftAnimationOverlay(
     onDismiss: () -> Unit,
     isVideoRoom: Boolean = false
 ) {
-    val isVideo = giftEvent.animationType == "video_mp4"
+    val isVideo = giftEvent.animationType.equals("video_mp4", ignoreCase = true) ||
+        giftEvent.giftId.endsWith("_mp4", ignoreCase = true) ||
+        giftEvent.giftId.startsWith("hindi_romantic_", ignoreCase = true) ||
+        giftEvent.giftId.startsWith("proposal_ring_", ignoreCase = true) ||
+        VIDEO_GIFT_CATALOG.any { it.id == giftEvent.giftId }
     val activeDuration = 3800L
 
     val infiniteTransition = rememberInfiniteTransition(label = "gift_anim")
@@ -13853,7 +13964,7 @@ fun FullScreenGiftAnimationOverlay(
             }
 
             // 2. Full-Screen Transparent Animation Visuals
-            when (giftEvent.animationType) {
+            when (if (isVideo) "video_mp4" else giftEvent.animationType) {
                 "micro_gift", "firecracker_burst" -> {
                     MicroGiftFlightAndBurstOverlay(
                         giftEvent = giftEvent,
@@ -13926,7 +14037,7 @@ fun FullScreenGiftAnimationOverlay(
                                     )
                                 },
                                 modifier = Modifier.fillMaxSize(),
-                                update = { it.isOpaque = false },
+                                update = {},
                                 onRelease = { it.release() }
                             )
                         }

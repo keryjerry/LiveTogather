@@ -1818,13 +1818,31 @@ fun getProposalRingStripRes(ringOrGiftId: String): Int {
 }
 
 fun getProposalRingThumbRes(ringOrGiftId: String): Int {
-    val id = ringOrGiftId.lowercase()
+    val raw = ringOrGiftId.trim()
+    if (raw.isNotBlank()) {
+        // 1. Exact lookup in LuxuryStoreCatalog (Proposal Rings + Mic Links)
+        LuxuryStoreCatalog.allItems.firstOrNull { it.id.equals(raw, ignoreCase = true) }?.drawableRes
+            ?.takeIf { it != 0 }?.let { return it }
+        // 2. Exact lookup in VIDEO_GIFT_CATALOG (Proposal Rings & Video Gifts)
+        VIDEO_GIFT_CATALOG.firstOrNull { it.id.equals(raw, ignoreCase = true) }?.thumbnailResId
+            ?.takeIf { it != 0 }?.let { return it }
+        // 3. Exact lookup in ROOM_GIFT_CATALOG
+        ROOM_GIFT_CATALOG.firstOrNull { it.id.equals(raw, ignoreCase = true) }?.drawableResId
+            ?.takeIf { it != 0 }?.let { return it }
+    }
+    val id = raw.lowercase()
     return when {
+        id.contains("twin_besties") -> R.drawable.photoreal_link_twin_besties
+        id.contains("cyberpunk_reactor") || id.contains("cyber") -> R.drawable.photoreal_link_cyberpunk_reactor
+        id.contains("celestial_wings") -> R.drawable.photoreal_link_celestial_wings
+        id.contains("emerald_infinity") -> R.drawable.photoreal_link_emerald_infinity
+        id.contains("ruby_crown") -> R.drawable.photoreal_link_ruby_crown
+        id.contains("diamond_ring_proposal") -> R.drawable.thumb_diamond_ring_proposal
         id.contains("crimson_rose") || id.contains("rose_gold_solitaire") -> R.drawable.thumb_proposal_ring_crimson_rose
         id.contains("velvet_rose") || id.contains("blooming_rose") -> R.drawable.thumb_proposal_ring_velvet_rose
         id.contains("royal_floral") || id.contains("twin_hearts") -> R.drawable.thumb_proposal_ring_royal_floral
         id.contains("sapphire_blossom") || id.contains("angel_wings") -> R.drawable.thumb_proposal_ring_sapphire_blossom
-        id.contains("imperial_lotus") || id.contains("ruby_crown") -> R.drawable.thumb_proposal_ring_imperial_lotus
+        id.contains("imperial_lotus") -> R.drawable.thumb_proposal_ring_imperial_lotus
         id.contains("golden_rose") -> R.drawable.thumb_proposal_ring_golden_rose
         else -> R.drawable.thumb_proposal_ring_golden_rose
     }

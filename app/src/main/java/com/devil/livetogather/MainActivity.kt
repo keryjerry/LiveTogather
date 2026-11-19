@@ -302,6 +302,9 @@ class MainActivity : ComponentActivity() {
             .crossfade(true)
             .build()
         Coil.setImageLoader(imageLoader)
+        if (intent?.getBooleanExtra("OPEN_INBOX", false) == true) {
+            pendingDeepLinkOpenInbox.value = true
+        }
         setContent {
             LiveTogatherApp(
                 initialRoomId = initialDeepLinkRoomId,
@@ -320,6 +323,9 @@ class MainActivity : ComponentActivity() {
         val chatUserId = extractChatUserId(intent)
         if (!chatUserId.isNullOrBlank()) {
             pendingDeepLinkChatUserId.value = chatUserId
+        }
+        if (intent.getBooleanExtra("OPEN_INBOX", false)) {
+            pendingDeepLinkOpenInbox.value = true
         }
     }
 
@@ -378,6 +384,7 @@ class MainActivity : ComponentActivity() {
         var currentActivity: Activity? = null
         val pendingDeepLinkRoomId = mutableStateOf<String?>(null)
         val pendingDeepLinkChatUserId = mutableStateOf<String?>(null)
+        val pendingDeepLinkOpenInbox = mutableStateOf(false)
     }
 }
 
@@ -1142,7 +1149,8 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
             }
         }
 
-        // 3. Notifications Listener (Real-Time Bell & Status Bar)
+        // 3. Notifications Listener (Real-Time Bell & Status Bar — excludes Gift Rewards & Level Up which live exclusively in Inbox)
+        val inboxOnlyTypes = setOf("gift_reward", "creator_earning", "gift_received", "level_up")
         val isUserAdminOrFounderListener = currentUser.isAdmin || currentUser.isFounder() || currentUser.isOfficialAdmin(auth.currentUser?.email)
         val notifTargets = if (isUserAdminOrFounderListener) listOf(currentUserId, "admin", "founder") else listOf(currentUserId)
         db.collection("notifications")
@@ -1157,7 +1165,7 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                         .sortedByDescending { it.timestamp }
 
                     val items = rawItems.filter { notif ->
-                        val isSelf = notif.senderId == currentUserId
+                        if (notif.type.lowercase() in inboxOnlyTypes) return@filter false
                         val isAdminType = notif.type.contains("report") || notif.type.contains("payment") || notif.type.contains("utr") || notif.type.contains("pay_req") || notif.type.contains("verify") || notif.type.contains("selfie")
                         if (!isUserAdminOrFounderListener && isAdminType) {
                             false // Regular user should never see admin reports/payments in their bell
@@ -1169,6 +1177,7 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                     for (dc in snapshot.documentChanges) {
                         if (dc.type == com.google.firebase.firestore.DocumentChange.Type.ADDED) {
                             val notif = dc.document.toObject(NotificationItem::class.java)
+                            val isInboxSystem = notif.type.lowercase() in inboxOnlyTypes
                             val isSelf = notif.senderId == currentUserId
                             val isAdminType = notif.type.contains("report") || notif.type.contains("payment") || notif.type.contains("utr") || notif.type.contains("pay_req") || notif.type.contains("verify") || notif.type.contains("selfie")
                             val shouldShowSystem = if (isAdminType) {
@@ -1198,8 +1207,11 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                                         context = context,
                                         title = notif.title.ifBlank { "LiveTogether Alert" },
                                         message = notif.message,
-                                        roomId = notif.roomId,
-                                        isLiveAlert = notif.type.contains("LIVE", ignoreCase = true) || notif.type.contains("host_live", ignoreCase = true)
+                                        roomId = notif.roomId.ifBlank { null },
+                                        chatPartnerUid = if (!isInboxSystem && notif.senderId.isNotBlank() && notif.senderId != "system_livetogather") notif.senderId else null,
+                                        isLiveAlert = notif.type.contains("LIVE", ignoreCase = true) || notif.type.contains("host_live", ignoreCase = true),
+                                        giftId = notif.giftId.ifBlank { null },
+                                        openInbox = isInboxSystem
                                     )
                                 }
                             }
@@ -1212,11 +1224,29 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
             }
 
         // 3B. User Personal Notifications Listener (users/{currentUserId}/notifications)
+        // Gift rewards & Level-Up messages route straight to Official Inbox threads + clickable OS status bar alert!
         db.collection("users").document(currentUserId)
             .collection("notifications")
             .addSnapshotListener { snapshot, error ->
                 if (error != null || snapshot == null) return@addSnapshotListener
-                val userNotifs = snapshot.documents.mapNotNull { it.toObject(NotificationItem::class.java) }
+                for (dc in snapshot.documentChanges) {
+                    if (dc.type == com.google.firebase.firestore.DocumentChange.Type.ADDED) {
+                        val uNotif = dc.document.toObject(NotificationItem::class.java)
+                        val isInboxSystem = uNotif.type.lowercase() in inboxOnlyTypes
+                        if (isInboxSystem && !uNotif.isRead && (System.currentTimeMillis() - uNotif.timestamp) < 120_000L) {
+                            AppNotificationHelper.showSystemNotification(
+                                context = context,
+                                title = uNotif.title.ifBlank { "LiveTogather System" },
+                                message = uNotif.message,
+                                giftId = uNotif.giftId.ifBlank { null },
+                                openInbox = true
+                            )
+                        }
+                    }
+                }
+                val userNotifs = snapshot.documents
+                    .mapNotNull { it.toObject(NotificationItem::class.java) }
+                    .filter { it.type.lowercase() !in inboxOnlyTypes }
                 userNotifs.forEach { uNotif ->
                     val existingIdx = notifications.indexOfFirst { it.id == uNotif.id }
                     if (existingIdx >= 0) {
@@ -2956,6 +2986,14 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
             )
         }
 
+        // Automatic Inbox Deep-Linking from Android Notification Bar tap
+        LaunchedEffect(MainActivity.pendingDeepLinkOpenInbox.value) {
+            if (MainActivity.pendingDeepLinkOpenInbox.value) {
+                currentScreen = "chats"
+                MainActivity.pendingDeepLinkOpenInbox.value = false
+            }
+        }
+
         // 3. Real-Time Notification Center Dialog
         if (showNotificationsDialog) {
             NotificationsDialog(
@@ -2990,6 +3028,12 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                         adminDashboardInitialTab = tab
                         showAdminDashboardModal = true
                     }
+                },
+                onOpenInbox = {
+                    currentScreen = "chats"
+                },
+                onOpenProfile = {
+                    currentScreen = "profile"
                 },
                 onMarkAllRead = {
                     val toDelete = notifications.toList()
@@ -4252,6 +4296,40 @@ fun ChatsScreenContent(
     var selectedProfilePartner by remember { mutableStateOf<UserProfile?>(null) }
     val archivedMatchIds = remember { mutableStateListOf<String>() }
 
+    // Real-time Official System Inbox Messages (Gift Rewards + Level Up Milestones from Firestore)
+    val officialSystemMessages = remember { mutableStateListOf<NotificationItem>() }
+    var openOfficialThread by remember { mutableStateOf<String?>(null) } // "rewards" or "level_up"
+
+    DisposableEffect(currentUserId) {
+        if (currentUserId.isBlank()) return@DisposableEffect onDispose {}
+        val reg = db.collection("users").document(currentUserId)
+            .collection("notifications")
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .limit(80)
+            .addSnapshotListener { snap, _ ->
+                if (snap != null) {
+                    val parsed = snap.documents.mapNotNull { d ->
+                        d.toObject(NotificationItem::class.java)?.let { item ->
+                            if (item.id.isBlank()) item.copy(id = d.id) else item
+                        }
+                    }
+                    officialSystemMessages.clear()
+                    officialSystemMessages.addAll(parsed)
+                }
+            }
+        onDispose { reg.remove() }
+    }
+
+    val rewardInboxMsgs = officialSystemMessages.filter {
+        val t = it.type.lowercase()
+        t == "gift_reward" || t == "creator_earning" || t == "gift_received"
+    }
+    val levelUpInboxMsgs = officialSystemMessages.filter {
+        it.type.equals("level_up", ignoreCase = true)
+    }
+    val unreadRewardCount = rewardInboxMsgs.count { !it.isRead }
+    val unreadLevelUpCount = levelUpInboxMsgs.count { !it.isRead }
+
     LaunchedEffect(matches) {
         matches.forEach { match ->
             val pId = match.users.firstOrNull { it != currentUserId }
@@ -4280,16 +4358,186 @@ fun ChatsScreenContent(
         }
         Spacer(modifier = Modifier.height(12.dp))
 
-        if (visibleMatches.isEmpty()) {
-            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("No messages yet. Like back profiles to start chatting!", color = Color.Gray, fontSize = 13.sp)
-                    Spacer(modifier = Modifier.height(16.dp))
-
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // 1. Official Clickable Inbox Thread: Gift Rewards & Monetized Earnings (with Gift Thumbnail)
+            item(key = "official_inbox_rewards") {
+                val latestReward = rewardInboxMsgs.firstOrNull()
+                val latestThumb = latestReward?.giftId?.let { giftThumbnailResourceId(it) } ?: 0
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            openOfficialThread = "rewards"
+                            rewardInboxMsgs.filter { !it.isRead && it.id.isNotBlank() }.forEach { msg ->
+                                db.collection("users").document(currentUserId)
+                                    .collection("notifications").document(msg.id)
+                                    .update("isRead", true)
+                            }
+                        },
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1432)),
+                    border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.55f)),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(46.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Brush.linearGradient(listOf(Color(0xFFFFD700), Color(0xFFFF4081))))
+                                .border(1.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(12.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (latestThumb != 0) {
+                                Image(
+                                    painter = painterResource(id = latestThumb),
+                                    contentDescription = latestReward?.giftName ?: "Gift Reward",
+                                    modifier = Modifier.fillMaxSize().padding(3.dp).clip(RoundedCornerShape(10.dp)),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                Text("🎁", fontSize = 22.sp)
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "LiveTogather Rewards",
+                                    color = BrandGold,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 14.sp
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(
+                                    color = BrandGold.copy(alpha = 0.2f),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        "OFFICIAL",
+                                        color = BrandGold,
+                                        fontSize = 8.5.sp,
+                                        fontWeight = FontWeight.Black,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                    )
+                                }
+                            }
+                            Text(
+                                text = latestReward?.message ?: "All received gifts & wallet credits appear here.",
+                                color = Color(0xFFE2E8F0),
+                                fontSize = 11.5.sp,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                        }
+                        if (unreadRewardCount > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFFF2A55))
+                                    .padding(horizontal = 7.dp, vertical = 2.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("$unreadRewardCount", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                            }
+                        } else {
+                            Text("›", color = BrandGold, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
-        } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+
+            // 2. Official Clickable Inbox Thread: Level Up Milestones
+            item(key = "official_inbox_level_up") {
+                val latestLvl = levelUpInboxMsgs.firstOrNull()
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            openOfficialThread = "level_up"
+                            levelUpInboxMsgs.filter { !it.isRead && it.id.isNotBlank() }.forEach { msg ->
+                                db.collection("users").document(currentUserId)
+                                    .collection("notifications").document(msg.id)
+                                    .update("isRead", true)
+                            }
+                        },
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF151C36)),
+                    border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.50f)),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(46.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Brush.linearGradient(listOf(Color(0xFF38BDF8), Color(0xFF8B5CF6)))),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("⭐", fontSize = 22.sp)
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "LiveTogather Level Up",
+                                    color = Color(0xFF7DD3FC),
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 14.sp
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(
+                                    color = Color(0xFF38BDF8).copy(alpha = 0.2f),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        "SYSTEM",
+                                        color = Color(0xFF7DD3FC),
+                                        fontSize = 8.5.sp,
+                                        fontWeight = FontWeight.Black,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                    )
+                                }
+                            }
+                            Text(
+                                text = latestLvl?.message ?: "Wealth & Charm level-up celebrations appear here.",
+                                color = Color(0xFFE2E8F0),
+                                fontSize = 11.5.sp,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                        }
+                        if (unreadLevelUpCount > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF38BDF8))
+                                    .padding(horizontal = 7.dp, vertical = 2.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("$unreadLevelUpCount", color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                            }
+                        } else {
+                            Text("›", color = Color(0xFF7DD3FC), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+
+            if (visibleMatches.isEmpty()) {
+                item(key = "empty_matches_hint") {
+                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 28.dp), contentAlignment = Alignment.Center) {
+                        Text("No personal chats yet. Like back profiles to start chatting!", color = Color.Gray, fontSize = 12.5.sp)
+                    }
+                }
+            } else {
                 items(visibleMatches) { match ->
                     val pId = match.users.firstOrNull { it != currentUserId }
                     val partner = partnerMap[pId]
@@ -4366,6 +4614,128 @@ fun ChatsScreenContent(
                                     modifier = Modifier.size(36.dp)
                                 ) {
                                     Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = Color.LightGray)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Official Clickable System Inbox Thread Dialog (Gift Rewards with Thumbnails & Level-Up Milestones)
+    if (openOfficialThread != null) {
+        val isRewardsThread = openOfficialThread == "rewards"
+        val threadMsgs = if (isRewardsThread) rewardInboxMsgs else levelUpInboxMsgs
+        Dialog(onDismissRequest = { openOfficialThread = null }) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.78f),
+                colors = CardDefaults.cardColors(containerColor = BrandCard),
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, if (isRewardsThread) BrandGold.copy(alpha = 0.55f) else Color(0xFF38BDF8).copy(alpha = 0.55f))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (isRewardsThread) "🎁 LiveTogather Rewards" else "⭐ LiveTogather Level Up",
+                            color = if (isRewardsThread) BrandGold else Color(0xFF7DD3FC),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        TextButton(onClick = { openOfficialThread = null }) {
+                            Text("Close", color = BrandCoral, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    if (threadMsgs.isEmpty()) {
+                        Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            Text(
+                                text = if (isRewardsThread) "No gift reward messages yet." else "No level-up messages yet.",
+                                color = Color.Gray,
+                                fontSize = 13.sp
+                            )
+                        }
+                    } else {
+                        val sdf = remember { java.text.SimpleDateFormat("dd MMM • hh:mm a", java.util.Locale.getDefault()) }
+                        LazyColumn(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            items(threadMsgs, key = { it.id.ifBlank { it.timestamp.toString() } }) { msg ->
+                                val thumbRes = if (msg.giftId.isNotBlank()) giftThumbnailResourceId(msg.giftId) else 0
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            if (msg.senderId.isNotBlank() && msg.senderId != "system_livetogather" && msg.senderId != currentUserId) {
+                                                db.collection("users").document(msg.senderId).get().addOnSuccessListener { doc ->
+                                                    if (doc != null && doc.exists()) {
+                                                        openOfficialThread = null
+                                                        onOpenChat(parseUserProfileFromDoc(doc).copy(uid = doc.id))
+                                                    }
+                                                }
+                                            } else {
+                                                Toast.makeText(context, msg.message, Toast.LENGTH_LONG).show()
+                                            }
+                                        },
+                                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1A142B)),
+                                    border = BorderStroke(1.dp, if (isRewardsThread) BrandGold.copy(alpha = 0.35f) else Color(0xFF38BDF8).copy(alpha = 0.35f)),
+                                    shape = RoundedCornerShape(14.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        if (thumbRes != 0) {
+                                            Image(
+                                                painter = painterResource(id = thumbRes),
+                                                contentDescription = msg.giftName.ifBlank { "Gift" },
+                                                modifier = Modifier
+                                                    .size(50.dp)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .border(1.dp, BrandGold.copy(alpha = 0.7f), RoundedCornerShape(10.dp)),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                        } else {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(46.dp)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(if (isRewardsThread) BrandGold.copy(alpha = 0.18f) else Color(0xFF38BDF8).copy(alpha = 0.18f)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(if (isRewardsThread) "🎁" else "⭐", fontSize = 22.sp)
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = msg.title.ifBlank { if (isRewardsThread) "🎁 Gift Received!" else "⭐ Level Up!" },
+                                                color = if (isRewardsThread) BrandGold else Color(0xFF7DD3FC),
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp
+                                            )
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = msg.message,
+                                                color = Color.White,
+                                                fontSize = 12.sp,
+                                                lineHeight = 16.sp
+                                            )
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(
+                                                text = if (msg.timestamp > 0L) sdf.format(java.util.Date(msg.timestamp)) else "",
+                                                color = Color.Gray,
+                                                fontSize = 10.sp
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -5338,36 +5708,36 @@ fun ProfileScreenContent(
 
                                         val isCoupleBond = activeCoupleBond.bondType.equals("couple", ignoreCase = true) || activeCoupleBond.bondType.equals("love", ignoreCase = true) || activeCoupleBond.bondType.equals("proposal", ignoreCase = true)
                                         if (isCoupleBond) {
-                                            // 3D Moving & Flowing Intimacy Ring Attachment (Strictly for Couples only)
+                                            // Exact Sent Proposal Ring / Couple Emblem Attachment Bridge
                                             IntimacyRingAttachmentBridge(
                                                 activeRingId = activeCoupleBond.activeMicLinkId,
                                                 modifier = Modifier.align(Alignment.Center).zIndex(50f),
                                                 onClick = { showIntimacyRingPickerModal = true }
                                             )
                                         } else {
-                                            // Bestie Bond: STRICTLY NO RING! Show equipped mic effect thumbnail / bestie badge
-                                            val effectThumbRes = getMicEffectThumbRes(currentUser.activeMicEffect.ifBlank { "mic_effect_golden_amber_aura" })
+                                            // Bestie / Cyber Bond: Show exact sent Mic Link emblem (e.g. Twin Besties Crystal / Cyberpunk Plasma Reactor)
+                                            val bestieLinkId = activeCoupleBond.activeMicLinkId.ifBlank {
+                                                if (activeCoupleBond.bondType.equals("cyber", ignoreCase = true)) "mic_link_cyberpunk_reactor"
+                                                else "mic_link_twin_besties"
+                                            }
+                                            val bestieThumbRes = getProposalRingThumbRes(bestieLinkId)
                                             Box(
                                                 modifier = Modifier
                                                     .align(Alignment.Center)
                                                     .zIndex(50f)
-                                                    .size(46.dp)
+                                                    .size(48.dp)
                                                     .clip(CircleShape)
                                                     .background(Color(0xFF1E2235).copy(alpha = 0.92f))
                                                     .border(1.5.dp, Color(0xFF00E5FF), CircleShape)
                                                     .clickable { showIntimacyRingPickerModal = true },
                                                 contentAlignment = Alignment.Center
                                             ) {
-                                                if (currentUser.activeMicEffect.isNotBlank()) {
-                                                    Image(
-                                                        painter = painterResource(id = effectThumbRes),
-                                                        contentDescription = "Active Mic Effect",
-                                                        modifier = Modifier.fillMaxSize().padding(3.dp).clip(CircleShape),
-                                                        contentScale = ContentScale.Crop
-                                                    )
-                                                } else {
-                                                    Text("🤝", fontSize = 22.sp)
-                                                }
+                                                Image(
+                                                    painter = painterResource(id = bestieThumbRes),
+                                                    contentDescription = "Active Mic Link",
+                                                    modifier = Modifier.fillMaxSize().padding(3.dp).clip(CircleShape),
+                                                    contentScale = ContentScale.Fit
+                                                )
                                             }
                                         }
                                     }
@@ -9971,8 +10341,13 @@ fun NotificationsDialog(
     onOpenRoom: ((String) -> Unit)? = null,
     onOpenChat: ((String) -> Unit)? = null,
     onOpenAdmin: ((Int) -> Unit)? = null,
+    onOpenInbox: (() -> Unit)? = null,
+    onOpenProfile: (() -> Unit)? = null,
     onMarkAllRead: () -> Unit
 ) {
+    val context = LocalContext.current
+    val inboxOnlyTypes = remember { setOf("gift_reward", "creator_earning", "gift_received", "level_up") }
+    val visibleNotifications = notifications.filter { it.type.lowercase() !in inboxOnlyTypes }
     Dialog(onDismissRequest = onDismiss) {
         Card(
             modifier = Modifier
@@ -9999,7 +10374,7 @@ fun NotificationsDialog(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                if (notifications.isEmpty()) {
+                if (visibleNotifications.isEmpty()) {
                     Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                         Text("No notifications yet", color = Color.Gray, fontSize = 13.sp)
                     }
@@ -10008,7 +10383,7 @@ fun NotificationsDialog(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        items(notifications) { notif ->
+                        items(visibleNotifications) { notif ->
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -10023,18 +10398,33 @@ fun NotificationsDialog(
                                             }
                                             onNotificationRead?.invoke(notif.id)
                                         }
-                                        if (notif.type.contains("report")) {
-                                            onOpenAdmin?.invoke(1)
-                                            onDismiss()
-                                        } else if (notif.type.contains("payment") || notif.type.contains("utr") || notif.type.contains("pay_req")) {
-                                            onOpenAdmin?.invoke(0)
-                                            onDismiss()
-                                        } else if (notif.roomId.isNotBlank()) {
-                                            onOpenRoom?.invoke(notif.roomId)
-                                            onDismiss()
-                                        } else if (notif.senderId.isNotBlank() && notif.senderId != "system_livetogather") {
-                                            onOpenChat?.invoke(notif.senderId)
-                                            onDismiss()
+                                        val t = notif.type.lowercase()
+                                        when {
+                                            t.contains("report") -> {
+                                                onOpenAdmin?.invoke(1)
+                                                onDismiss()
+                                            }
+                                            t.contains("payment") || t.contains("utr") || t.contains("pay_req") -> {
+                                                onOpenAdmin?.invoke(0)
+                                                onDismiss()
+                                            }
+                                            notif.roomId.isNotBlank() -> {
+                                                onOpenRoom?.invoke(notif.roomId)
+                                                onDismiss()
+                                            }
+                                            t.contains("intimacy") || t.contains("ring") || t.contains("purchase") || t.contains("vip") -> {
+                                                onOpenProfile?.invoke()
+                                                onDismiss()
+                                            }
+                                            notif.senderId.isNotBlank() && notif.senderId != "system_livetogather" && notif.senderId != currentUserId -> {
+                                                onOpenChat?.invoke(notif.senderId)
+                                                onDismiss()
+                                            }
+                                            else -> {
+                                                onOpenInbox?.invoke()
+                                                Toast.makeText(context, notif.message.ifBlank { notif.title }, Toast.LENGTH_SHORT).show()
+                                                onDismiss()
+                                            }
                                         }
                                     },
                                 colors = CardDefaults.cardColors(
@@ -10055,7 +10445,7 @@ fun NotificationsDialog(
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
                                     }
-                                    val giftThumbnailResId = if (notif.type.equals("GIFT_RECEIVED", ignoreCase = true)) {
+                                    val giftThumbnailResId = if (notif.giftId.isNotBlank()) {
                                         giftThumbnailResourceId(notif.giftId)
                                     } else {
                                         0
@@ -10080,6 +10470,8 @@ fun NotificationsDialog(
                                         Text(notif.title, color = BrandCoral, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                         Text(notif.message, color = Color.White, fontSize = 12.sp)
                                     }
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("›", color = Color.Gray, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -11786,6 +12178,14 @@ fun IntimacyRequestsDialog(
                                                 val sortedKey = listOf(senderId, currentUser.uid).sorted().joinToString("_")
                                                 val bondId = sortedKey
                                                 val ringGiftId = ((req["giftId"] as? String) ?: (req["ringId"] as? String) ?: "proposal_ring_golden_rose").ifBlank { "proposal_ring_golden_rose" }
+                                                val isProposalRing = ringGiftId.contains("ring", ignoreCase = true) || ringGiftId.contains("proposal", ignoreCase = true)
+                                                val resolvedBondType = when {
+                                                    isProposalRing -> "couple"
+                                                    bondType.isNotBlank() -> bondType
+                                                    ringGiftId.contains("bestie", ignoreCase = true) -> "bestie"
+                                                    ringGiftId.contains("cyber", ignoreCase = true) -> "cyber"
+                                                    else -> "couple"
+                                                }
                                                 val newBond = IntimacyBond(
                                                     bondId = bondId,
                                                     user1Id = senderId,
@@ -11794,7 +12194,7 @@ fun IntimacyRequestsDialog(
                                                     user2Name = currentUser.name,
                                                     user1Photo = senderPhoto,
                                                     user2Photo = currentUser.photo,
-                                                    bondType = if (bondType.isBlank()) "couple" else bondType,
+                                                    bondType = resolvedBondType,
                                                     intimacyLevel = 1,
                                                     streakDays = 1,
                                                     status = "active",

@@ -88,6 +88,7 @@ object GiftTransactionService {
                 newSenderDiamonds = currentDiamonds - totalCost
                 val xpEarned = totalCost * 10L
                 val newWealthXp = currentWealthXp + xpEarned
+                val oldWealthLvl = (senderSnapshot.getLong("wealthLevel") ?: 1L).toInt()
                 val newWealthLevel = LevelBadgeSystem.calculateLevelFromXp(newWealthXp)
 
                 senderFieldUpdates = mapOf<String, Any>(
@@ -95,6 +96,23 @@ object GiftTransactionService {
                     "wealthXp" to newWealthXp,
                     "wealthLevel" to newWealthLevel
                 )
+                if (newWealthLevel > oldWealthLvl) {
+                    val lvlNotifId = UUID.randomUUID().toString()
+                    notificationsToDispatch.add(
+                        NotificationItem(
+                            id = lvlNotifId,
+                            targetUserId = senderUid,
+                            senderId = "system_livetogather",
+                            senderName = "LiveTogather Official",
+                            senderPhoto = "",
+                            type = "level_up",
+                            title = "⭐ Level Up! Wealth Lv.$newWealthLevel",
+                            message = "Congratulations! You leveled up to Wealth Level $newWealthLevel (${LevelBadgeSystem.getLevelTierInfo(newWealthLevel).tierName}). New level badges unlocked!",
+                            timestamp = System.currentTimeMillis(),
+                            isRead = false
+                        )
+                    )
+                }
             }
 
             // --- STEP D: PROCESS RECIPIENT DATA & CALCULATE COMMISSIONS ---
@@ -108,6 +126,7 @@ object GiftTransactionService {
                 val recName = recSnap.getString("name") ?: "Host"
                 recipientNames.add(recName)
 
+                val oldCharmLvl = (recSnap.getLong("charmLevel") ?: 1L).toInt()
                 val curCharmXp = recSnap.getLong("charmXp") ?: 0L
                 val charmEarned = (unitCost * quantity * 10L)
                 val newCharmXp = curCharmXp + charmEarned
@@ -117,6 +136,23 @@ object GiftTransactionService {
                     "charmXp" to newCharmXp,
                     "charmLevel" to newCharmLvl
                 )
+                if (newCharmLvl > oldCharmLvl) {
+                    val charmLvlNotifId = UUID.randomUUID().toString()
+                    notificationsToDispatch.add(
+                        NotificationItem(
+                            id = charmLvlNotifId,
+                            targetUserId = recUid,
+                            senderId = "system_livetogather",
+                            senderName = "LiveTogather Official",
+                            senderPhoto = "",
+                            type = "level_up",
+                            title = "🌸 Level Up! Charm Lv.$newCharmLvl",
+                            message = "Congratulations! You reached Charm Level $newCharmLvl (${LevelBadgeSystem.getLevelTierInfo(newCharmLvl).tierName})!",
+                            timestamp = System.currentTimeMillis(),
+                            isRead = false
+                        )
+                    )
+                }
 
                 val grossDiamonds = unitCost * quantity
                 val isMonetized = recSnap.getBoolean("isHostMonetized") ?: false
@@ -176,8 +212,8 @@ object GiftTransactionService {
                         )
                     )
                 } else if (!fromBackpack && unitCost > 0) {
-                    // 2. Normal (non-monetized) user: 30% platform deduction, 70% credited into wallet!
-                    val netDiamonds = (grossDiamonds * 0.70).toLong()
+                    // 2. Normal (non-monetized) user: 70% deduction, 30% credited directly to wallet (no percentage shown in message!)
+                    val netDiamonds = (grossDiamonds * 0.30).toLong()
                     recUpdates["diamonds"] = FieldValue.increment(netDiamonds)
 
                     val notifId = UUID.randomUUID().toString()
@@ -190,7 +226,7 @@ object GiftTransactionService {
                             senderPhoto = senderPhoto,
                             type = "gift_reward",
                             title = "🎁 You Have Been Rewarded!",
-                            message = "$senderName sent you $quantity x $giftName ($giftEmoji)! You received $netDiamonds 💎 in your wallet.",
+                            message = "You received $quantity x $giftName from $senderName and got %,d 💎 in your wallet.".format(netDiamonds),
                             timestamp = System.currentTimeMillis(),
                             isRead = false,
                             roomId = roomId,
@@ -309,12 +345,11 @@ object GiftTransactionService {
                 .collection("live_comments").document(commentId)
                 .set(giftComment)
 
-            // 2. Real-time inbox notifications to recipients (reward notification with diamond amount & gift icon)
+            // 2. Real-time Official Inbox System Messages (saved to users/{uid}/notifications for Inbox Rewards & Level-Up threads — NOT global notification bar!)
             notificationsToDispatch.forEach { notif ->
                 db.collection("users").document(notif.targetUserId)
                     .collection("notifications").document(notif.id)
                     .set(notif)
-                db.collection("notifications").document(notif.id).set(notif)
             }
 
             // 3. Creator earnings history records (real money INR breakdown)

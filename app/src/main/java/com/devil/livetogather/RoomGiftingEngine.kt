@@ -606,7 +606,7 @@ private fun Compact3DGiftCard(
                             .background(Color.Black.copy(alpha = 0.72f), RoundedCornerShape(4.dp))
                             .padding(horizontal = 3.dp, vertical = 1.dp)
                     ) {
-                        Text("▶ 5s", fontSize = 7.sp, color = BrandGold, fontWeight = FontWeight.Bold)
+                        Text("▶ HD", fontSize = 7.sp, color = BrandGold, fontWeight = FontWeight.Bold)
                     }
                 }
             }

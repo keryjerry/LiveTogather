@@ -287,7 +287,7 @@ fun FlowingAvatarFrame(
         if (isVipSuiteFrame) targetAvatarSize / vipApertureRatio
         else avatarSize * minScale
     } else if (micEffectId.isNotBlank() && isSpeaking) {
-        avatarSize + 16.dp
+        avatarSize + 34.dp
     } else {
         avatarSize
     }
@@ -332,7 +332,7 @@ fun FlowingAvatarFrame(
                 VideoMicMagicEffectOverlay(
                     videoRes = activeVideoRes,
                     avatarSize = targetAvatarSize,
-                    effectSize = targetAvatarSize + 16.dp
+                    effectSize = targetAvatarSize + 34.dp
                 )
             }
 
@@ -879,15 +879,13 @@ fun VideoMicMagicEffectOverlay(
     if (videoRes == 0) return
 
     Box(
-        modifier = modifier
-            .size(effectSize)
-            .clip(CircleShape), // 1. COMPLETELY REMOVES 4 SQUARE CORNERS
+        modifier = modifier.size(effectSize), // NO hard CircleShape clip border line!
         contentAlignment = Alignment.Center
     ) {
         AndroidView(
             factory = { ctx ->
                 TextureView(ctx).apply {
-                    isOpaque = false // Enables transparency
+                    isOpaque = false
                     surfaceTextureListener = object : TextureView.SurfaceTextureListener {
                         var mediaPlayer: MediaPlayer? = null
                         override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
@@ -918,11 +916,21 @@ fun VideoMicMagicEffectOverlay(
                 .fillMaxSize()
                 .graphicsLayer(
                     compositingStrategy = CompositingStrategy.Offscreen,
-                    blendMode = BlendMode.Screen // 2. REMOVES BLACK BACKGROUND (#000000 -> 100% TRANSPARENT)
+                    alpha = 0.96f // Vivid, crisp visibility (reduced transparency!)
                 )
                 .drawWithContent {
                     drawContent()
-                    // 3. PUNCH OUT 100% TRANSPARENT CIRCULAR HOLE FOR AVATAR FACE
+                    // Smooth radial outer feather (ZERO hard circular border line!)
+                    drawRect(
+                        brush = Brush.radialGradient(
+                            0.0f to Color.Black,
+                            0.74f to Color.Black,
+                            1.0f to Color.Transparent,
+                            radius = size.minDimension / 2f
+                        ),
+                        blendMode = BlendMode.DstIn
+                    )
+                    // Clean circular aperture for avatar face
                     drawCircle(
                         color = Color.Transparent,
                         radius = (avatarSize.toPx() / 2f),

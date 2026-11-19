@@ -141,7 +141,8 @@ object AppNotificationHelper {
         chatPartnerUid: String? = null,
         isLiveAlert: Boolean = false,
         isPurchaseAlert: Boolean = false,
-        giftId: String? = null
+        giftId: String? = null,
+        openInbox: Boolean = false
     ) {
         ensureChannels(context)
         val channelId = when {
@@ -162,6 +163,9 @@ object AppNotificationHelper {
                 putExtra("OPEN_CHAT_USER_ID", chatPartnerUid)
                 putExtra("senderId", chatPartnerUid)
                 putExtra("chatPartnerUid", chatPartnerUid)
+            }
+            if (openInbox) {
+                putExtra("OPEN_INBOX", true)
             }
         }
         val pendingIntent = PendingIntent.getActivity(

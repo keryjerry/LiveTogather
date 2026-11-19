@@ -1697,7 +1697,9 @@ fun IntimacyRecipientSelectorDialog(
                                             val requestRef = db.collection("intimacy_requests").document(requestId)
 
                                             val bondType = when {
+                                                ringItem.id.contains("ring", true) || ringItem.id.contains("proposal", true) -> "couple"
                                                 ringItem.id.contains("bestie", true) -> "bestie"
+                                                ringItem.id.contains("cyber", true) -> "cyber"
                                                 ringItem.id.contains("soulmate", true) -> "soulmate"
                                                 ringItem.id.contains("eternal", true) -> "eternal"
                                                 else -> "couple"
@@ -1707,8 +1709,14 @@ fun IntimacyRecipientSelectorDialog(
                                                 val sortedKey = listOf(currentUser.uid, friend.uid).sorted().joinToString("_")
                                                 val b1 = transaction.get(db.collection("intimacy_bonds").document(sortedKey))
                                                 val b2 = transaction.get(db.collection("intimacy_bonds").document("bond_$sortedKey"))
-                                                if (b1.exists() || b2.exists()) {
-                                                    throw IllegalStateException("ALREADY_SOULMATES")
+                                                val existingSnap = when {
+                                                    b1.exists() && b1.getString("status") == "active" -> b1
+                                                    b2.exists() && b2.getString("status") == "active" -> b2
+                                                    else -> null
+                                                }
+                                                if (existingSnap != null) {
+                                                    val existingType = existingSnap.getString("bondType") ?: "couple"
+                                                    throw IllegalStateException("ALREADY_BONDED:$existingType")
                                                 }
                                                 val senderSnap = transaction.get(senderRef)
                                                 if (!senderSnap.exists()) throw IllegalStateException("Sender profile unavailable")
@@ -1774,8 +1782,15 @@ fun IntimacyRecipientSelectorDialog(
                                                 }
                                             }.addOnFailureListener { err ->
                                                 isSending = false
-                                                if (err.message?.contains("ALREADY_SOULMATES") == true) {
-                                                    Toast.makeText(context, "You are already soulmates with this person", Toast.LENGTH_LONG).show()
+                                                val msg = err.message ?: ""
+                                                if (msg.contains("ALREADY_BONDED:") || msg.contains("ALREADY_SOULMATES")) {
+                                                    val existingType = msg.substringAfter("ALREADY_BONDED:", "couple")
+                                                    val label = when {
+                                                        existingType.equals("bestie", ignoreCase = true) -> "Besties"
+                                                        existingType.equals("cyber", ignoreCase = true) -> "Cyber Linked"
+                                                        else -> "bonded as Couple"
+                                                    }
+                                                    Toast.makeText(context, "You are already $label with ${friend.name}! End it in Profile first.", Toast.LENGTH_LONG).show()
                                                     onDismiss()
                                                 } else {
                                                     Toast.makeText(context, "Failed: ${err.message}", Toast.LENGTH_SHORT).show()
