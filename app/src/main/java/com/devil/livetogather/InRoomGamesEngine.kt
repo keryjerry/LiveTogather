@@ -174,17 +174,18 @@ fun InRoomGameArenaOverlay(
             }
         }
 
-        // MIDDLE-SCREEN EDGE-TO-EDGE CARROM CONTAINER (Top header & top mics stay 100% visible above!)
+        // MIDDLE-SCREEN EDGE-TO-EDGE CARROM CONTAINER (Zero black heads above/below; top mics stay 100% visible!)
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = 136.dp, bottom = 74.dp),
+                .padding(top = 124.dp, bottom = 64.dp),
             contentAlignment = Alignment.Center
         ) {
             Column(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color(0xEE0B0E1A))
+                    .fillMaxWidth()
+                    .wrapContentHeight()
+                    .background(Color.Transparent)
             ) {
                 // ROW 1: TOP CONTROL BAR (TITLE, CHIP, SOUND TOGGLE, END MATCH) - ZERO OVERLAP
                 Row(
@@ -430,34 +431,39 @@ fun InRoomGameArenaOverlay(
                     }
                 }
 
-                // THE CARROM BOARD BOX: PURE BOARD + REAL-TIME ARENA INSIDE (100% EDGE-TO-EDGE)
+                // THE CARROM BOARD BOX: TIGHT SQUARE ASPECT RATIO (ZERO WIDE BLACK HEADS!)
+                // While WAITING, render ONLY the native Join & Bet Lobby (never mount WebView over Join button!)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f)
-                        .background(Color.Black)
+                        .aspectRatio(0.91f)
+                        .background(Color.Transparent)
                 ) {
-                    CarromGameArena(
-                        roomId = roomId,
-                        gameState = gameState,
-                        currentUser = currentUser,
-                        db = db,
-                        allProfiles = allProfiles,
-                        liveComments = liveComments,
-                        onWebViewReady = { webView -> carromWebView = webView },
-                        onGameStateChange = { turn, p1, p2 ->
-                            carromTurn = turn
-                            carromP1Score = p1
-                            carromP2Score = p2
-                        }
-                    )
+                    if (!isGameWaiting) {
+                        CarromGameArena(
+                            roomId = roomId,
+                            gameState = gameState,
+                            currentUser = currentUser,
+                            db = db,
+                            allProfiles = allProfiles,
+                            liveComments = liveComments,
+                            onWebViewReady = { webView -> carromWebView = webView },
+                            onGameStateChange = { turn, p1, p2 ->
+                                carromTurn = turn
+                                carromP1Score = p1
+                                carromP2Score = p2
+                            }
+                        )
+                    }
 
-                    // LOBBY WAITING OVERLAY
+                    // LOBBY WAITING OVERLAY (Clean native Compose Join & Bet Lobby)
                     if (isGameWaiting) {
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .background(Color.Black.copy(alpha = 0.82f)),
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(Color(0xEA0F1224))
+                                .border(1.2.dp, Color(0xFFFFD700).copy(alpha = 0.55f), RoundedCornerShape(18.dp)),
                             contentAlignment = Alignment.Center
                         ) {
                             Column(
@@ -597,36 +603,42 @@ fun InRoomGameArenaOverlay(
             }
         }
     } else {
+        // MIDDLE-SCREEN CENTERED CONTAINER FOR LUDO & IN-ROOM CLUB GAMES (Top mics stay 100% visible!)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = 124.dp, bottom = 64.dp),
+            contentAlignment = Alignment.Center
+        ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(430.dp)
-                .clip(RoundedCornerShape(22.dp))
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        Color(0xFF0F111E),
-                        Color(0xFF16192E),
-                        Color(0xFF0B0D17)
+                .wrapContentHeight()
+                .clip(RoundedCornerShape(20.dp))
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            Color(0xE60F111E),
+                            Color(0xE616192E),
+                            Color(0xE60B0D17)
+                        )
                     )
                 )
-            )
-            .border(
-                1.5.dp,
-                Brush.linearGradient(
-                    listOf(
-                        Color(0xFFFFD700),
-                        Color(0xFF6366F1),
-                        Color(0xFFEC4899),
-                        Color(0xFFFFD700)
-                    )
-                ),
-                if (isCarrom) RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)
-                else RoundedCornerShape(22.dp)
-            )
-            .shadow(16.dp, RoundedCornerShape(22.dp), spotColor = Color(0xFFFFD700))
-    ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+                .border(
+                    1.5.dp,
+                    Brush.linearGradient(
+                        listOf(
+                            Color(0xFFFFD700),
+                            Color(0xFF6366F1),
+                            Color(0xFFEC4899),
+                            Color(0xFFFFD700)
+                        )
+                    ),
+                    RoundedCornerShape(20.dp)
+                )
+                .shadow(16.dp, RoundedCornerShape(20.dp), spotColor = Color(0xFFFFD700))
+        ) {
+        Column(modifier = Modifier.fillMaxWidth().wrapContentHeight()) {
             // GAME ARENA TOP BAR
             Row(
                 modifier = Modifier
@@ -750,12 +762,12 @@ fun InRoomGameArenaOverlay(
                 }
             }
 
-            // GAME CANVAS CONTAINER
+            // GAME CANVAS CONTAINER (Tight wrap height, zero wasted black bars!)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
-                    .padding(6.dp),
+                    .wrapContentHeight()
+                    .padding(4.dp),
                 contentAlignment = Alignment.Center
             ) {
                 when (gameState.gameType) {
@@ -767,8 +779,9 @@ fun InRoomGameArenaOverlay(
                 }
             }
         }
+        }
+        }
     }
-}
 
     // CONFIRMATION DIALOG FOR ENDING THE GAME (AVAILABLE FOR BOTH CARROM & LUDO)
     if (showEndGameConfirm) {
@@ -828,7 +841,7 @@ fun InRoomGameArenaOverlay(
 }
 
 // -------------------------------------------------------------
-// 1. HD REALISTIC LUDO CLUB MASTER (4 CORNER PLAYERS, WOODEN BOARD, 3D IVORY DICE)
+// 1. HD 3D REALISTIC LUDO CLUB MASTER (REAL-TIME JOIN LOBBY, 4 CORNER AVATARS, 30s TIMER, FULL RULES)
 // -------------------------------------------------------------
 @Composable
 fun LudoGameArena(
@@ -838,274 +851,321 @@ fun LudoGameArena(
     db: FirebaseFirestore,
     allProfiles: List<UserProfile>
 ) {
-    var diceNumber by remember { mutableIntStateOf(gameState.diceValue.coerceIn(1, 6)) }
-    var isRolling by remember { mutableStateOf(false) }
-    val diceRotation by animateFloatAsState(
-        targetValue = if (isRolling) 720f else 0f,
-        animationSpec = tween(durationMillis = 600, easing = FastOutSlowInEasing),
-        label = "diceRoll"
-    )
+    val context = LocalContext.current
+    val participants = gameState.participants
+    val isLudoWaiting = gameState.gameStage != "PLAYING"
+    val betDiamonds = (gameState.playerScores["betDiamonds"] ?: 0).toLong()
+    val isUserInGame = participants.contains(currentUser.uid) || gameState.startedBy == currentUser.uid
+    val canJoinLudo = !isUserInGame && participants.size < 4
+    val isHostOrStarter = gameState.startedBy == currentUser.uid || currentUser.isAdmin || currentUser.isOfficialAdmin(currentUser.uid)
 
-    // Setup 4 players in 4 corners: Red (TL), Green (TR), Blue (BL), Yellow (BR)
-    val fourPlayers = remember(allProfiles) {
-        val list = allProfiles.take(4).toMutableList()
-        val defaultColors = listOf(
-            Triple("Red", Color(0xFFDC2626), "🔴"),
-            Triple("Green", Color(0xFF16A34A), "🟢"),
-            Triple("Blue", Color(0xFF2563EB), "🔵"),
-            Triple("Yellow", Color(0xFFEAB308), "🟡")
-        )
-        while (list.size < 4) {
-            val idx = list.size
-            list.add(UserProfile(name = "Player ${idx + 1}", uid = "player_$idx"))
+    // Real-time allotted corner players: 0=Red (TL), 1=Green (TR), 2=Yellow (BR), 3=Blue (BL)
+    val ludoColorMeta = listOf(
+        Triple("Red", Color(0xFFDC2626), "🔴"),
+        Triple("Green", Color(0xFF16A34A), "🟢"),
+        Triple("Yellow", Color(0xFFEAB308), "🟡"),
+        Triple("Blue", Color(0xFF2563EB), "🔵")
+    )
+    val joinedPlayersJson = remember(participants, allProfiles, currentUser) {
+        val arr = org.json.JSONArray()
+        participants.take(4).forEachIndexed { idx, uid ->
+            val prof = allProfiles.find { it.uid == uid } ?: if (uid == currentUser.uid) currentUser else UserProfile(uid = uid, name = "Player ${idx + 1}")
+            arr.put(org.json.JSONObject().apply {
+                put("uid", uid)
+                put("name", prof.name.ifBlank { "Player ${idx + 1}" })
+                put("photo", prof.photo)
+                put("colorIdx", idx)
+            })
         }
-        list.mapIndexed { idx, prof ->
-            val colorInfo = defaultColors[idx % 4]
-            LudoPlayerSlot(
-                profile = prof,
-                colorName = colorInfo.first,
-                badgeColor = colorInfo.second,
-                colorEmoji = colorInfo.third,
-                score = (idx * 3 + 2).coerceAtMost(16)
+        arr.toString()
+    }
+
+    val myColorIdx = participants.indexOf(currentUser.uid)
+    val activeColorIdx = if (participants.isNotEmpty()) (gameState.currentTurnIndex % participants.size) else 0
+    val activeTurnUid = participants.getOrNull(activeColorIdx) ?: gameState.startedBy
+
+    // 30-second real-time turn countdown timer with automatic Firestore turn advance
+    var ludoTurnSec by remember(gameState.currentTurnIndex, gameState.lastShotTimestamp, isLudoWaiting) {
+        mutableIntStateOf(30)
+    }
+    var ludoWebView by remember { mutableStateOf<WebView?>(null) }
+
+    LaunchedEffect(gameState.currentTurnIndex, gameState.lastShotTimestamp, isLudoWaiting, participants.size) {
+        if (!isLudoWaiting && participants.size >= 2) {
+            ludoTurnSec = 30
+            while (ludoTurnSec > 0) {
+                kotlinx.coroutines.delay(1000L)
+                ludoTurnSec -= 1
+            }
+            if (activeTurnUid == currentUser.uid || isHostOrStarter) {
+                val nextIdx = (activeColorIdx + 1) % participants.size
+                val nextUid = participants.getOrNull(nextIdx) ?: participants.first()
+                db.collection("rooms").document(roomId)
+                    .collection("inRoomGame").document("active")
+                    .update(
+                        mapOf(
+                            "currentTurnIndex" to nextIdx,
+                            "currentTurnUserId" to nextUid,
+                            "timerRemaining" to 30,
+                            "lastShotTimestamp" to System.currentTimeMillis()
+                        )
+                    )
+            }
+        } else {
+            ludoTurnSec = 30
+        }
+    }
+
+    // Push real-time state into HD 3D Ludo WebView whenever Firestore or timer ticks
+    LaunchedEffect(joinedPlayersJson, gameState.coinsStateJson, activeColorIdx, myColorIdx, ludoTurnSec, gameState.diceValue, ludoWebView, isLudoWaiting) {
+        if (!isLudoWaiting && ludoWebView != null) {
+            val safePlayers = org.json.JSONObject.quote(joinedPlayersJson)
+            val safeState = org.json.JSONObject.quote(gameState.coinsStateJson)
+            ludoWebView?.evaluateJavascript(
+                "if (window.syncLudoState) window.syncLudoState($safePlayers, $safeState, $activeColorIdx, $myColorIdx, $ludoTurnSec, ${gameState.diceValue});",
+                null
             )
         }
     }
 
-    val activeTurnIndex = gameState.currentTurnIndex % 4
-    val activePlayer = fourPlayers[activeTurnIndex]
-    val isMyTurn = activePlayer.profile.uid == currentUser.uid || activeTurnIndex == 0
-
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween
-    ) {
-        // TOP 2 PLAYERS ROW (RED & GREEN)
-        Row(
+    if (isLudoWaiting) {
+        // REAL-TIME JOIN & BET LOBBY (Minimum 2 real players required before Start!)
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 12.dp, vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            LudoPlayerCard(fourPlayers[0], isTurn = activeTurnIndex == 0)
+            Text("🎲 HD 3D Ludo Club Lobby", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Black)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Players: ${participants.size} / 4 • ${if (betDiamonds > 0L) "💎 Bet: $betDiamonds" else "🆓 Free Play"}",
+                color = Color(0xFFFFD700),
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            // 4 Allotted Corner Color Seats Preview
+            Spacer(modifier = Modifier.height(10.dp))
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(20))
-                    .background(Color.Black.copy(alpha = 0.5f))
-                    .border(0.8.dp, activePlayer.badgeColor, RoundedCornerShape(20))
-                    .padding(horizontal = 10.dp, vertical = 3.dp)
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Text(activePlayer.colorEmoji, fontSize = 11.sp)
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    "Turn: ${activePlayer.profile.name.take(9)}",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 10.sp
-                )
-            }
-            LudoPlayerCard(fourPlayers[1], isTurn = activeTurnIndex == 1)
-        }
-
-        // REALISTIC HD LUDO BOARD IN CENTER
-        Box(
-            modifier = Modifier
-                .size(240.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(
-                    Brush.radialGradient(
-                        listOf(Color(0xFF2E1065), Color(0xFF0F172A))
-                    )
-                )
-                .border(4.dp, Brush.linearGradient(listOf(Color(0xFF78350F), Color(0xFFD97706), Color(0xFF78350F))), RoundedCornerShape(14.dp))
-                .shadow(12.dp, RoundedCornerShape(14.dp)),
-            contentAlignment = Alignment.Center
-        ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val w = size.width
-                val step = w / 15f
-
-                // Draw Rich HD Bases:
-                // Red Base (Top-Left)
-                drawRoundRect(
-                    Brush.verticalGradient(listOf(Color(0xFFEF4444), Color(0xFF991B1B))),
-                    Offset(2f, 2f),
-                    Size(step * 6 - 4f, step * 6 - 4f),
-                    androidx.compose.ui.geometry.CornerRadius(12f, 12f)
-                )
-                // Green Base (Top-Right)
-                drawRoundRect(
-                    Brush.verticalGradient(listOf(Color(0xFF22C55E), Color(0xFF15803D))),
-                    Offset(step * 9 + 2f, 2f),
-                    Size(step * 6 - 4f, step * 6 - 4f),
-                    androidx.compose.ui.geometry.CornerRadius(12f, 12f)
-                )
-                // Blue Base (Bottom-Left)
-                drawRoundRect(
-                    Brush.verticalGradient(listOf(Color(0xFF3B82F6), Color(0xFF1E40AF))),
-                    Offset(2f, step * 9 + 2f),
-                    Size(step * 6 - 4f, step * 6 - 4f),
-                    androidx.compose.ui.geometry.CornerRadius(12f, 12f)
-                )
-                // Yellow Base (Bottom-Right)
-                drawRoundRect(
-                    Brush.verticalGradient(listOf(Color(0xFFFBBF24), Color(0xFFB45309))),
-                    Offset(step * 9 + 2f, step * 9 + 2f),
-                    Size(step * 6 - 4f, step * 6 - 4f),
-                    androidx.compose.ui.geometry.CornerRadius(12f, 12f)
-                )
-
-                // White token holders inside each base
-                val baseRadius = step * 1.0f
-                listOf(
-                    Offset(step * 2, step * 2), Offset(step * 4, step * 2),
-                    Offset(step * 2, step * 4), Offset(step * 4, step * 4),
-                    Offset(step * 11, step * 2), Offset(step * 13, step * 2),
-                    Offset(step * 11, step * 4), Offset(step * 13, step * 4),
-                    Offset(step * 2, step * 11), Offset(step * 4, step * 11),
-                    Offset(step * 2, step * 13), Offset(step * 4, step * 13),
-                    Offset(step * 11, step * 11), Offset(step * 13, step * 11),
-                    Offset(step * 11, step * 13), Offset(step * 13, step * 13)
-                ).forEach { pt ->
-                    drawCircle(Color.White.copy(alpha = 0.9f), baseRadius, pt)
-                    drawCircle(Color(0xFF1E293B), baseRadius - 3f, pt)
-                }
-
-                // Center Home Victory Triangle
-                val pCenter = Path().apply {
-                    moveTo(step * 6, step * 6)
-                    lineTo(step * 9, step * 6)
-                    lineTo(step * 7.5f, step * 7.5f)
-                    close()
-                }
-                drawPath(pCenter, Color(0xFF15803D))
-
-                val pRed = Path().apply {
-                    moveTo(step * 6, step * 6)
-                    lineTo(step * 6, step * 9)
-                    lineTo(step * 7.5f, step * 7.5f)
-                    close()
-                }
-                drawPath(pRed, Color(0xFF991B1B))
-
-                val pBlue = Path().apply {
-                    moveTo(step * 6, step * 9)
-                    lineTo(step * 9, step * 9)
-                    lineTo(step * 7.5f, step * 7.5f)
-                    close()
-                }
-                drawPath(pBlue, Color(0xFF1E40AF))
-
-                val pYellow = Path().apply {
-                    moveTo(step * 9, step * 6)
-                    lineTo(step * 9, step * 9)
-                    lineTo(step * 7.5f, step * 7.5f)
-                    close()
-                }
-                drawPath(pYellow, Color(0xFFB45309))
-
-                // Grid paths
-                for (i in 0..15) {
-                    drawLine(Color.White.copy(alpha = 0.25f), Offset(i * step, 0f), Offset(i * step, size.height), strokeWidth = 0.8f)
-                    drawLine(Color.White.copy(alpha = 0.25f), Offset(0f, i * step), Offset(size.width, i * step), strokeWidth = 0.8f)
-                }
-            }
-
-            // Realistic 3D Central Golden Crown
-            Box(
-                modifier = Modifier
-                    .size(26.dp)
-                    .clip(CircleShape)
-                    .background(Brush.radialGradient(listOf(Color(0xFFFFD700), Color(0xFFB45309))))
-                    .border(1.5.dp, Color.White, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("👑", fontSize = 13.sp)
-            }
-        }
-
-        // BOTTOM 2 PLAYERS ROW (BLUE & YELLOW)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            LudoPlayerCard(fourPlayers[2], isTurn = activeTurnIndex == 2)
-
-            // INTERACTIVE 3D IVORY DICE WITH REALISTIC ROLLING
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        if (isMyTurn) "👉 TAP DICE" else "Waiting...",
-                        color = if (isMyTurn) Color(0xFFFFD700) else Color.LightGray,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 10.sp
-                    )
-                    Text("Value: $diceNumber", color = Color.White, fontSize = 9.sp)
-                }
-
-                Button(
-                    onClick = {
-                        if (!isRolling) {
-                            isRolling = true
-                            val newRoll = Random.nextInt(1, 7)
-                            diceNumber = newRoll
-                            val nextTurn = (activeTurnIndex + 1) % 4
-                            db.collection("rooms").document(roomId)
-                                .collection("inRoomGame").document("active")
-                                .update(
-                                    mapOf(
-                                        "diceValue" to newRoll,
-                                        "currentTurnIndex" to nextTurn,
-                                        "currentTurnUserId" to fourPlayers[nextTurn].profile.uid,
-                                        "timerRemaining" to 30
-                                    )
-                                )
-                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                                isRolling = false
-                            }, 600)
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
-                    contentPadding = PaddingValues(0.dp),
-                    modifier = Modifier
-                        .size(48.dp)
-                        .rotate(diceRotation)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(Color(0xFFFFFFFF), Color(0xFFF1F5F9), Color(0xFFCBD5E1))
-                                )
-                            )
-                            .border(2.dp, Color(0xFFDC2626), RoundedCornerShape(12.dp))
-                            .shadow(8.dp, RoundedCornerShape(12.dp), spotColor = Color(0xFFDC2626)),
-                        contentAlignment = Alignment.Center
+                for (i in 0 until 4) {
+                    val uid = participants.getOrNull(i)
+                    val prof = if (uid != null) (allProfiles.find { it.uid == uid } ?: if (uid == currentUser.uid) currentUser else UserProfile(uid = uid, name = "Player ${i + 1}")) else null
+                    val (cName, cColor, cEmoji) = ludoColorMeta[i]
+                    Surface(
+                        color = if (prof != null) cColor.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.06f),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.2.dp, if (prof != null) cColor else Color.White.copy(alpha = 0.18f)),
+                        modifier = Modifier.weight(1f)
                     ) {
-                        val diceEmoji = when (diceNumber) {
-                            1 -> "⚀"
-                            2 -> "⚁"
-                            3 -> "⚂"
-                            4 -> "⚃"
-                            5 -> "⚄"
-                            else -> "⚅"
+                        Column(
+                            modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            if (prof != null) {
+                                AsyncImage(
+                                    model = prof.photo.ifBlank { "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde" },
+                                    contentDescription = prof.name,
+                                    modifier = Modifier.size(34.dp).clip(CircleShape).border(1.5.dp, cColor, CircleShape),
+                                    contentScale = ContentScale.Crop
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(prof.name.take(7), color = Color.White, fontSize = 9.5.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                            } else {
+                                Box(
+                                    modifier = Modifier.size(34.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.1f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(cEmoji, fontSize = 15.sp)
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(cName, color = Color.Gray, fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold)
+                            }
                         }
-                        Text(diceEmoji, fontSize = 32.sp, color = Color(0xFFDC2626), fontWeight = FontWeight.Black)
                     }
                 }
             }
 
-            LudoPlayerCard(fourPlayers[3], isTurn = activeTurnIndex == 3)
+            // Host Real-Time Free vs Diamond Bet Selector
+            if (isHostOrStarter) {
+                Spacer(modifier = Modifier.height(10.dp))
+                val betOptions = listOf(0L to "🆓 Free", 50L to "💎 50", 100L to "💎 100", 500L to "💎 500", 1000L to "💎 1K")
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    betOptions.forEach { (amt, label) ->
+                        val isSelected = betDiamonds == amt
+                        Surface(
+                            color = if (isSelected) Color(0xFFFFD700) else Color.White.copy(alpha = 0.12f),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, if (isSelected) Color.White else Color.White.copy(alpha = 0.25f)),
+                            modifier = Modifier.clickable {
+                                val updatedScores = gameState.playerScores.toMutableMap()
+                                updatedScores["betDiamonds"] = amt.toInt()
+                                db.collection("rooms").document(roomId)
+                                    .collection("inRoomGame").document("active")
+                                    .update("playerScores", updatedScores)
+                            }
+                        ) {
+                            Text(
+                                text = label,
+                                color = if (isSelected) Color.Black else Color.White,
+                                fontSize = 9.5.sp,
+                                fontWeight = FontWeight.Black,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Join Match Button for non-joined room members
+            if (canJoinLudo) {
+                Button(
+                    onClick = {
+                        if (betDiamonds > 0L && currentUser.diamonds < betDiamonds) {
+                            Toast.makeText(context, "💎 Need at least $betDiamonds diamonds to join!", Toast.LENGTH_LONG).show()
+                            return@Button
+                        }
+                        db.collection("rooms").document(roomId)
+                            .collection("inRoomGame").document("active")
+                            .update("participants", FieldValue.arrayUnion(currentUser.uid))
+                        Toast.makeText(context, "🎲 Joined Ludo Match!", Toast.LENGTH_SHORT).show()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                    shape = RoundedCornerShape(20.dp)
+                ) {
+                    Text(
+                        text = if (betDiamonds > 0L) "+ Join Ludo (💎 $betDiamonds)" else "+ Join Free Ludo",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            // Start Match Button (Host/Starter only, strictly >= 2 real players)
+            if (isHostOrStarter) {
+                if (participants.size >= 2) {
+                    Button(
+                        onClick = {
+                            if (betDiamonds > 0L) {
+                                participants.forEach { pUid ->
+                                    db.collection("users").document(pUid)
+                                        .update("diamonds", FieldValue.increment(-betDiamonds))
+                                }
+                            }
+                            db.collection("rooms").document(roomId)
+                                .collection("inRoomGame").document("active")
+                                .update(
+                                    mapOf(
+                                        "status" to "ACTIVE",
+                                        "gameStage" to "PLAYING",
+                                        "currentTurnIndex" to 0,
+                                        "currentTurnUserId" to participants.first(),
+                                        "timerRemaining" to 30,
+                                        "coinsStateJson" to "",
+                                        "lastShotTimestamp" to System.currentTimeMillis()
+                                    )
+                                )
+                            Toast.makeText(context, "🎲 Starting HD 3D Ludo Match!", Toast.LENGTH_SHORT).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE11D48)),
+                        shape = RoundedCornerShape(20.dp)
+                    ) {
+                        Text("🚀 Start Ludo Match (${participants.size} Players)", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    Text(
+                        text = "Waiting for at least 1 more player to join (min 2 players)...",
+                        color = Color.LightGray,
+                        fontSize = 11.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            } else {
+                Text(
+                    text = if (isUserInGame) "You joined! Waiting for Host to start..." else "Tap Join to enter your color corner!",
+                    color = Color.LightGray,
+                    fontSize = 11.sp,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+    } else {
+        // LIVE HD 3D REALISTIC LUDO BOARD (60 FPS WebView Canvas, zero black bars!)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(0.84f)
+                .background(Color.Transparent)
+        ) {
+            AndroidView(
+                factory = { ctx ->
+                    WebView(ctx).apply {
+                        layoutParams = ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
+                        settings.allowFileAccess = true
+                        addJavascriptInterface(object {
+                            @android.webkit.JavascriptInterface
+                            fun onMoveCompleted(stateJson: String, rolledDice: Int, switchTurn: Boolean) {
+                                (context as? android.app.Activity)?.runOnUiThread {
+                                    if (participants.isEmpty()) return@runOnUiThread
+                                    val nextIdx = if (switchTurn) (activeColorIdx + 1) % participants.size else activeColorIdx
+                                    val nextUid = participants.getOrNull(nextIdx) ?: participants.first()
+                                    db.collection("rooms").document(roomId)
+                                        .collection("inRoomGame").document("active")
+                                        .update(
+                                            mapOf(
+                                                "coinsStateJson" to stateJson,
+                                                "diceValue" to rolledDice,
+                                                "currentTurnIndex" to nextIdx,
+                                                "currentTurnUserId" to nextUid,
+                                                "timerRemaining" to 30,
+                                                "lastShotTimestamp" to System.currentTimeMillis()
+                                            )
+                                        )
+                                }
+                            }
+
+                            @android.webkit.JavascriptInterface
+                            fun onGameOver(winnerColorIdx: Int) {
+                                (context as? android.app.Activity)?.runOnUiThread {
+                                    val winnerUid = participants.getOrNull(winnerColorIdx) ?: ""
+                                    val winnerName = allProfiles.find { it.uid == winnerUid }?.name ?: ludoColorMeta.getOrNull(winnerColorIdx)?.first ?: "Winner"
+                                    if (betDiamonds > 0L && winnerUid.isNotBlank()) {
+                                        val totalPot = betDiamonds * participants.size
+                                        db.collection("users").document(winnerUid)
+                                            .update("diamonds", FieldValue.increment(totalPot))
+                                    }
+                                    Toast.makeText(context, "🏆 $winnerName Wins HD Ludo Match!", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }, "LudoBridge")
+                        webViewClient = object : android.webkit.WebViewClient() {
+                            override fun onPageFinished(view: WebView?, url: String?) {
+                                val safePlayers = org.json.JSONObject.quote(joinedPlayersJson)
+                                val safeState = org.json.JSONObject.quote(gameState.coinsStateJson)
+                                view?.evaluateJavascript(
+                                    "if (window.syncLudoState) window.syncLudoState($safePlayers, $safeState, $activeColorIdx, $myColorIdx, $ludoTurnSec, ${gameState.diceValue});",
+                                    null
+                                )
+                            }
+                        }
+                        loadUrl("file:///android_asset/ludo_game.html")
+                        ludoWebView = this
+                    }
+                },
+                modifier = Modifier.fillMaxSize()
+            )
         }
     }
 }
@@ -1366,6 +1426,7 @@ fun CarromGameArena(
                             }
                         }, "CarromBridge")
                         loadUrl("file:///android_asset/carrom_game.html")
+                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
                         activeWebView = this
                         onWebViewReady(this)
                     }

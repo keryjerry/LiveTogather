@@ -10,7 +10,7 @@
       width: 100%;
       height: 100%;
       overflow: hidden;
-      background: #000000;
+      background: transparent;
       user-select: none;
       -webkit-user-select: none;
       touch-action: none;
@@ -312,21 +312,24 @@
         this.vx = 0;
         this.vy = 0;
         this.mass = type === 'striker' ? 3.0 : 1.0;
-        this.friction = 0.965;
+        this.friction = 0.948;
         this.isPocketed = false;
       }
 
-      update() {
+      update(stepScale = 1.0) {
         if (this.isPocketed) return;
 
-        this.x += this.vx;
-        this.y += this.vy;
+        this.x += this.vx * stepScale;
+        this.y += this.vy * stepScale;
 
-        this.vx *= this.friction;
-        this.vy *= this.friction;
+        const stepFriction = Math.pow(this.friction, stepScale);
+        this.vx *= stepFriction;
+        this.vy *= stepFriction;
 
-        if (Math.abs(this.vx) < 0.20) this.vx = 0;
-        if (Math.abs(this.vy) < 0.20) this.vy = 0;
+        if (Math.hypot(this.vx, this.vy) < 0.35) {
+          this.vx = 0;
+          this.vy = 0;
+        }
 
         const minX = PLAY_LEFT + this.radius;
         const maxX = PLAY_RIGHT - this.radius;
@@ -799,6 +802,12 @@
       initBoard();
     };
 
+    window.forceSwitchTurn = function() {
+      currentTurn = (currentTurn === 'p1') ? 'p2' : 'p1';
+      resetStriker();
+      updateUI();
+    };
+
     function resetStriker() {
       const activeBaselineY = getActiveBaselineY();
       if (!striker) {
@@ -1223,13 +1232,27 @@
       }
     }
 
+    // Offscreen board cache for zero-lag 60 FPS rendering on Android WebView
+    const boardCacheCanvas = document.createElement('canvas');
+    boardCacheCanvas.width = BOARD_SIZE;
+    boardCacheCanvas.height = BOARD_SIZE;
+    const boardCacheCtx = boardCacheCanvas.getContext('2d');
+    let isBoardCached = false;
+
     function loop() {
-      resolveCollisions();
-      pieces.forEach(p => p.update());
+      // 2 physics sub-steps per frame for razor-sharp point-to-point collision precision
+      for (let step = 0; step < 2; step++) {
+        pieces.forEach(p => p.update(0.5));
+        resolveCollisions();
+      }
       checkPostShotRules();
 
-      // Procedural Board is guaranteed to render crisp every single frame!
-      drawProceduralBoard(ctx);
+      if (!isBoardCached) {
+        drawProceduralBoard(boardCacheCtx);
+        isBoardCached = true;
+      }
+      ctx.clearRect(0, 0, BOARD_SIZE, BOARD_SIZE);
+      ctx.drawImage(boardCacheCanvas, 0, 0);
 
       drawAimLine();
       pieces.forEach(p => p.draw(ctx));
