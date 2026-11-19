@@ -218,6 +218,34 @@ object GiftTransactionService {
                 transaction.update(recRef, updates)
             }
 
+            // 3.5 Record real-time Received Gift on every recipient's profile (users/{recUid}/received_gifts)
+            val nowTs = System.currentTimeMillis()
+            distinctRecipients.forEach { recUid ->
+                val receivedGiftDocId = if (distinctRecipients.size == 1) eventId else "${eventId}_${recUid}"
+                val receivedGiftRef = db.collection("users").document(recUid)
+                    .collection("received_gifts").document(receivedGiftDocId)
+                val perRecipientCost = if (fromBackpack) 0L else (unitCost * quantity)
+                transaction.set(
+                    receivedGiftRef,
+                    mapOf(
+                        "id" to receivedGiftDocId,
+                        "giftId" to giftId,
+                        "giftName" to giftName,
+                        "giftEmoji" to giftEmoji,
+                        "quantity" to quantity,
+                        "cost" to if (distinctRecipients.size == 1 && !fromBackpack) totalCost else perRecipientCost,
+                        "diamondValue" to (unitCost * quantity),
+                        "senderId" to senderUid,
+                        "senderUid" to senderUid,
+                        "senderName" to senderName,
+                        "senderPhoto" to senderPhoto,
+                        "receiverId" to recUid,
+                        "roomId" to roomId,
+                        "timestamp" to nowTs
+                    )
+                )
+            }
+
             // 4. Construct Gift Event
             val giftEvent = GiftEvent(
                 id = eventId,

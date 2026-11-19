@@ -726,9 +726,9 @@ fun OfficialEventArenaHubModal(
                                                                 db.collection("rooms").document(launchedRoom.id).set(roomMap)
                                                                     .addOnSuccessListener {
                                                                         val batch = db.batch()
-                                                                        (0..14).forEach { idx ->
+                                                                        (0..16).forEach { idx ->
                                                                             val seat = if (idx == 0) MicSeat(seatIndex = 0, label = "Host 👑", uid = currentUser.uid, name = currentUser.name, photo = currentUser.photo, role = "host")
-                                                                            else MicSeat(seatIndex = idx, label = "Mic ${idx + 1}", uid = "", name = "", photo = "", role = "speaker")
+                                                                            else MicSeat(seatIndex = idx, label = "Mic $idx", uid = "", name = "", photo = "", role = "speaker")
                                                                             batch.set(db.collection("rooms").document(launchedRoom.id).collection("mic_seats").document(idx.toString()), seat)
                                                                         }
                                                                         batch.commit()
@@ -1244,11 +1244,11 @@ fun OfficialEventSchedulingDialog(
                                 createdAt = System.currentTimeMillis()
                             )
 
-                            val initialSeats = (0..14).map { idx ->
+                            val initialSeats = (0..16).map { idx ->
                                 if (idx == 0) {
                                     MicSeat(seatIndex = 0, label = "Host 👑", uid = currentUser.uid, name = currentUser.name, photo = currentUser.photo, role = "host")
                                 } else {
-                                    MicSeat(seatIndex = idx, label = "Mic ${idx + 1}", uid = "", name = "", photo = "", role = "speaker")
+                                    MicSeat(seatIndex = idx, label = "Mic $idx", uid = "", name = "", photo = "", role = "speaker")
                                 }
                             }
 
@@ -1438,8 +1438,8 @@ fun FifteenMicOfficialGalaStageSection(
             }
         }
 
-        // 14 GUEST MICS IN 3 BALANCED ROWS (5 + 5 + 4 = 14 Guest Mics, Total = 15 Interactive Mics)
-        val guestRows = listOf(1..5, 6..10, 11..14)
+        // 16 GUEST MICS IN 4 CLEAN ROWS OF 4 (4x4 = 16 Guest Mics + 1 Host Crown = 17 Total Mics, ZERO avatar/wing overlap!)
+        val guestRows = listOf(1..4, 5..8, 9..12, 13..16)
         guestRows.forEach { range ->
             Row(
                 modifier = Modifier.fillMaxWidth(),

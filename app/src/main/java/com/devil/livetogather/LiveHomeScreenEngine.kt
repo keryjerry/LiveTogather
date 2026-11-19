@@ -168,18 +168,6 @@ fun LiveTogetherHomeScreen(
                 )
         )
         
-        // 1. TOP ~40% SECTION: FREE EDGE-TO-EDGE FLOATING BUBBLES STAGE (DRIFTS FROM MIDDLE TO VERY TOP GLASS EDGE)
-        FreeFloatingAvatarStage(
-            profiles = allUsers,
-            rooms = rooms,
-            onSelectUserProfile = onSelectUserProfile,
-            onJoinRoom = onJoinRoom,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(380.dp)
-                .align(Alignment.TopCenter)
-        )
-
         // MAIN SCROLLABLE CONTENT (SPANS 100% EDGE-TO-EDGE FROM THE VERY TOP UNDER STATUS BAR)
         LazyColumn(
             state = listState,
@@ -187,9 +175,17 @@ fun LiveTogetherHomeScreen(
             contentPadding = PaddingValues(top = 0.dp, bottom = 100.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Transparent top spacer allowing the floating avatar bubbles to be completely seen in the stage!
+            // 1. TOP FLOATING BUBBLES STAGE (Placed directly inside top item so every rising bubble is 100% clickable!)
             item {
-                Spacer(modifier = Modifier.height(260.dp))
+                FreeFloatingAvatarStage(
+                    profiles = allUsers,
+                    rooms = rooms,
+                    onSelectUserProfile = onSelectUserProfile,
+                    onJoinRoom = onJoinRoom,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(260.dp)
+                )
             }
 
             // 1.5 SINGLE EVENT HUB BANNER (12 PM - 6 AM OPERATIONAL, RUNNING TOP-RIGHT HOST TICKER)
@@ -2021,15 +2017,36 @@ fun FreeFloatingAvatarStage(
         animationSpec = infiniteRepeatable(tween(8500, delayMillis = 1700, easing = LinearEasing), RepeatMode.Restart), label = "d6"
     )
 
-    // STRICT REAL-TIME USER PROFILES ONLY (NO DUMMY / FAKE PROFILES)
-    val realProfiles = remember(profiles) {
+    // STRICT REAL-TIME USER PROFILES ONLY (Prioritize LIVE users in rooms first, zero dummy profiles)
+    val liveRoomByUser = remember(rooms.map { "${it.id}_${it.isLive}_${it.isHostLive}_${it.statusMessage}" }, profiles.map { "${it.uid}_${it.current_room}" }) {
+        val activeRooms = rooms.filter {
+            (it.isHostLive || it.isLive) &&
+            !it.statusMessage.equals("OFFLINE", ignoreCase = true) &&
+            !it.statusMessage.equals("CLOSED", ignoreCase = true) &&
+            !it.statusMessage.equals("DELETED", ignoreCase = true)
+        }
+        val map = mutableMapOf<String, RoomItem>()
+        profiles.forEach { p ->
+            val r = activeRooms.firstOrNull {
+                (p.current_room.isNotBlank() && (it.id == p.current_room || it.roomId == p.current_room)) ||
+                (it.hostUid.isNotBlank() && it.hostUid == p.uid) ||
+                (it.hostId.isNotBlank() && it.hostId == p.uid)
+            }
+            if (r != null) map[p.uid] = r
+        }
+        map
+    }
+
+    val realProfiles = remember(profiles, liveRoomByUser) {
         profiles.filter { profile ->
             profile.photo.isNotBlank() &&
             profile.name.isNotBlank() &&
             !profile.uid.startsWith("seed_") &&
             !profile.uid.startsWith("dummy") &&
             !profile.uid.startsWith("mock")
-        }.distinctBy { it.uid }.take(6)
+        }.distinctBy { it.uid }
+            .sortedByDescending { if (liveRoomByUser.containsKey(it.uid)) 2 else if (it.isUserOnline()) 1 else 0 }
+            .take(6)
     }
 
     val drifts = listOf(drift1, drift2, drift3, drift4, drift5, drift6)
@@ -2038,7 +2055,6 @@ fun FreeFloatingAvatarStage(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .height(380.dp)
             // NO clip! Allows avatars to drift all the way up through status bar and top glass edge!
     ) {
         val stageWidth = maxWidth
@@ -2047,12 +2063,7 @@ fun FreeFloatingAvatarStage(
             val yDrift = drifts[idx % drifts.size]
             val xPos = stageWidth * xPositions[idx % xPositions.size] - 22.dp
 
-            val activeRoom = rooms.firstOrNull {
-                (it.hostUid == profile.uid || it.hostId == profile.uid) &&
-                it.isHostLive &&
-                !it.statusMessage.equals("OFFLINE", ignoreCase = true) &&
-                !it.statusMessage.equals("CLOSED", ignoreCase = true)
-            }
+            val activeRoom = liveRoomByUser[profile.uid]
             val isUserLive = activeRoom != null
 
             Column(

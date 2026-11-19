@@ -81,6 +81,34 @@ rules_version = '2';
 //     - Document ID: Sanitized Device UUID or IP Address
 //     - Fields: uid (string), claimedAt (timestamp/number), deviceModel (string)
 //
+// 18. users/{userId}/profile_visitors/{visitorId}
+//     - Document ID: Visitor Firebase Auth UID
+//     - Fields: visitorUid (string, required, immutable), visitorName (string, required, <=120),
+//               visitorPhoto (string, optional, <=2048), visitorVipLevel (int, optional, 0..10),
+//               visitedAt (int, required, >0)
+//
+// 19. users/{userId}/received_gifts/{giftId}
+//     - Document ID: Gift transaction/event ID
+//     - Fields: id (string, optional), giftId (string, required, immutable), giftName (string, optional),
+//               giftEmoji (string, optional), quantity (int, optional, 1..10000), cost (number, required, >=0, immutable),
+//               diamondValue (number, optional, >=0), senderId (string, required, immutable),
+//               senderUid (string, optional), senderName (string, optional), senderPhoto (string, optional),
+//               receiverId (string, required, immutable), roomId (string, optional), timestamp (int, required, immutable)
+//
+// 20. official_events/{eventId} & official_events/{eventId}/reminders/{uid}
+//     - Event Document ID: Event UUID
+//     - Event Fields: id (string, optional), title (string, required, 1..200), hostUid (string, required, immutable),
+//                     hostName (string, optional), hostPhotoUrl (string, optional), roomType (string, optional: audio|video),
+//                     eventThemeStyle (string, optional), status (string, required: UPCOMING|LIVE|ENDED|CANCELLED),
+//                     scheduledStartAt (int, optional, >0), createdAt (int, required, immutable), roomId (string, optional)
+//     - Reminder Document ID: Subscriber Firebase Auth UID
+//     - Reminder Fields: uid (string, required, immutable), name (string, optional), at (int, required, >0)
+//
+// 21. rooms/{roomId}/event_leaderboard/{uid}
+//     - Document ID: Supporter Firebase Auth UID
+//     - Fields: uid (string, required, immutable), name (string, required, 1..120), photo (string, optional, <=2048),
+//               totalDiamonds (number, required, >=0), giftCount (int, required, >=0), updatedAt (int, required, >0)
+//
 // ===============================================================
 
 service cloud.firestore {
@@ -315,6 +343,150 @@ service cloud.firestore {
       );
     }
 
+    // Domain validator for users/{userId}/profile_visitors/{visitorId}
+    function isValidProfileVisitor(data, visitorId) {
+      return data.keys().hasOnly([
+          'visitorUid',
+          'visitorName',
+          'visitorPhoto',
+          'visitorVipLevel',
+          'visitedAt'
+        ]) &&
+        data.keys().hasAll(['visitorUid', 'visitorName', 'visitedAt']) &&
+        data.visitorUid is string &&
+        data.visitorUid == visitorId &&
+        data.visitorUid.size() > 0 &&
+        data.visitorUid.size() <= 128 &&
+        data.visitorName is string &&
+        data.visitorName.size() > 0 &&
+        data.visitorName.size() <= 120 &&
+        (!('visitorPhoto' in data) || (data.visitorPhoto is string && data.visitorPhoto.size() <= 2048)) &&
+        (!('visitorVipLevel' in data) || (data.visitorVipLevel is int && data.visitorVipLevel >= 0 && data.visitorVipLevel <= 10)) &&
+        data.visitedAt is int &&
+        data.visitedAt > 0;
+    }
+
+    // Domain validator for users/{userId}/received_gifts/{giftId}
+    function isValidReceivedGift(data, userId) {
+      return data.keys().hasOnly([
+          'id',
+          'giftId',
+          'giftName',
+          'giftEmoji',
+          'quantity',
+          'cost',
+          'diamondValue',
+          'senderId',
+          'senderUid',
+          'senderName',
+          'senderPhoto',
+          'receiverId',
+          'roomId',
+          'timestamp'
+        ]) &&
+        data.keys().hasAll(['giftId', 'cost', 'senderId', 'receiverId', 'timestamp']) &&
+        data.senderId is string &&
+        data.senderId.size() > 0 &&
+        data.senderId.size() <= 128 &&
+        (!('senderUid' in data) || (data.senderUid is string && data.senderUid == data.senderId && data.senderUid.size() <= 128)) &&
+        data.receiverId is string &&
+        data.receiverId == userId &&
+        data.receiverId.size() <= 128 &&
+        data.giftId is string &&
+        data.giftId.size() > 0 &&
+        data.giftId.size() <= 128 &&
+        data.cost is number &&
+        data.cost >= 0 &&
+        data.cost <= 100000000 &&
+        (!('diamondValue' in data) || (data.diamondValue is number && data.diamondValue >= 0 && data.diamondValue <= 100000000)) &&
+        (!('quantity' in data) || (data.quantity is int && data.quantity >= 1 && data.quantity <= 10000)) &&
+        (!('id' in data) || (data.id is string && data.id.size() <= 256)) &&
+        (!('giftName' in data) || (data.giftName is string && data.giftName.size() <= 120)) &&
+        (!('giftEmoji' in data) || (data.giftEmoji is string && data.giftEmoji.size() <= 32)) &&
+        (!('senderName' in data) || (data.senderName is string && data.senderName.size() <= 120)) &&
+        (!('senderPhoto' in data) || (data.senderPhoto is string && data.senderPhoto.size() <= 2048)) &&
+        (!('roomId' in data) || (data.roomId is string && data.roomId.size() <= 128)) &&
+        data.timestamp is int &&
+        data.timestamp > 0;
+    }
+
+    // Domain validator for official_events/{eventId}
+    function isValidOfficialEvent(data) {
+      return data.keys().hasOnly([
+          'id',
+          'title',
+          'hostUid',
+          'hostName',
+          'hostPhotoUrl',
+          'roomType',
+          'eventThemeStyle',
+          'status',
+          'scheduledStartAt',
+          'createdAt',
+          'roomId'
+        ]) &&
+        data.keys().hasAll(['title', 'hostUid', 'status', 'createdAt']) &&
+        (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
+        data.title is string &&
+        data.title.size() > 0 &&
+        data.title.size() <= 200 &&
+        data.hostUid is string &&
+        data.hostUid.size() > 0 &&
+        data.hostUid.size() <= 128 &&
+        (!('hostName' in data) || (data.hostName is string && data.hostName.size() <= 120)) &&
+        (!('hostPhotoUrl' in data) || (data.hostPhotoUrl is string && data.hostPhotoUrl.size() <= 2048)) &&
+        (!('roomType' in data) || (data.roomType is string && data.roomType in ['audio', 'video'])) &&
+        (!('eventThemeStyle' in data) || (data.eventThemeStyle is string && data.eventThemeStyle.size() <= 64)) &&
+        data.status is string &&
+        data.status in ['UPCOMING', 'LIVE', 'ENDED', 'CANCELLED'] &&
+        (!('scheduledStartAt' in data) || (data.scheduledStartAt is int && data.scheduledStartAt > 0)) &&
+        data.createdAt is int &&
+        data.createdAt > 0 &&
+        (!('roomId' in data) || (data.roomId is string && data.roomId.size() <= 128));
+    }
+
+    // Domain validator for official_events/{eventId}/reminders/{uid}
+    function isValidEventReminder(data, uid) {
+      return data.keys().hasOnly(['uid', 'name', 'at']) &&
+        data.keys().hasAll(['uid', 'at']) &&
+        data.uid is string &&
+        data.uid == uid &&
+        data.uid.size() > 0 &&
+        data.uid.size() <= 128 &&
+        (!('name' in data) || (data.name is string && data.name.size() <= 120)) &&
+        data.at is int &&
+        data.at > 0;
+    }
+
+    // Domain validator for rooms/{roomId}/event_leaderboard/{uid}
+    function isValidEventLeaderboardEntry(data, uid) {
+      return data.keys().hasOnly([
+          'uid',
+          'name',
+          'photo',
+          'totalDiamonds',
+          'giftCount',
+          'updatedAt'
+        ]) &&
+        data.keys().hasAll(['uid', 'name', 'totalDiamonds', 'giftCount', 'updatedAt']) &&
+        data.uid is string &&
+        data.uid == uid &&
+        data.uid.size() > 0 &&
+        data.uid.size() <= 128 &&
+        data.name is string &&
+        data.name.size() > 0 &&
+        data.name.size() <= 120 &&
+        (!('photo' in data) || (data.photo is string && data.photo.size() <= 2048)) &&
+        data.totalDiamonds is number &&
+        data.totalDiamonds >= 0 &&
+        data.totalDiamonds <= 1000000000 &&
+        data.giftCount is int &&
+        data.giftCount >= 0 &&
+        data.giftCount <= 1000000 &&
+        data.updatedAt is int &&
+        data.updatedAt > 0;
+    }
+
     // ===============================================================
     // User Profiles & Followers
     // ===============================================================
@@ -388,18 +560,36 @@ service cloud.firestore {
         allow write: if isAuthenticated();
       }
 
+      // Profile Visitors subcollection: users/{userId}/profile_visitors/{visitorId}
+      match /profile_visitors/{visitorId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() &&
+          request.auth.uid == visitorId &&
+          request.auth.uid != userId &&
+          request.resource.data.visitorUid == request.auth.uid &&
+          isValidProfileVisitor(request.resource.data, visitorId);
+        allow update: if isAuthenticated() &&
+          request.auth.uid == visitorId &&
+          request.auth.uid != userId &&
+          request.resource.data.visitorUid == request.auth.uid &&
+          areImmutableFieldsUnchanged(['visitorUid']) &&
+          isValidProfileVisitor(request.resource.data, visitorId);
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
       match /received_gifts/{giftId} {
-        allow read: if isOwner(userId) || isAdmin();
+        allow read: if isAuthenticated();
         allow create: if isAuthenticated() &&
           request.resource.data.senderId == request.auth.uid &&
           request.resource.data.receiverId == userId &&
           request.resource.data.giftId is string &&
           request.resource.data.cost is number &&
-          request.resource.data.cost > 0 &&
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.diamonds -
-            request.resource.data.cost ==
-          getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.diamonds;
-        allow update, delete: if isOwner(userId) || isAdmin();
+          request.resource.data.cost >= 0 &&
+          isValidReceivedGift(request.resource.data, userId);
+        allow update: if (isOwner(userId) || isAdmin()) &&
+          areImmutableFieldsUnchanged(['senderId', 'receiverId', 'giftId', 'cost', 'timestamp']) &&
+          isValidReceivedGift(request.resource.data, userId);
+        allow delete: if isOwner(userId) || isAdmin();
       }
 
       // User coin & earning transaction ledgers
@@ -545,6 +735,26 @@ service cloud.firestore {
         allow read: if isAuthenticated();
         allow write: if isAuthenticated();
       }
+
+      // Official Event Gifting Leaderboard
+      match /event_leaderboard/{uid} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() &&
+          (request.auth.uid == uid || isAdmin()) &&
+          isValidEventLeaderboardEntry(request.resource.data, uid);
+        allow update: if isAuthenticated() &&
+          (
+            isAdmin() ||
+            (
+              request.auth.uid == uid &&
+              areImmutableFieldsUnchanged(['uid']) &&
+              request.resource.data.totalDiamonds >= resource.data.get('totalDiamonds', 0) &&
+              request.resource.data.giftCount >= resource.data.get('giftCount', 0)
+            )
+          ) &&
+          isValidEventLeaderboardEntry(request.resource.data, uid);
+        allow delete: if isAuthenticated() && (request.auth.uid == uid || isAdmin());
+      }
     }
 
     // ===============================================================
@@ -689,6 +899,37 @@ service cloud.firestore {
         resource.data.get('uid', '') == request.auth.uid ||
         isAdmin()
       );
+    }
+
+    // ===============================================================
+    // Official Scheduled & Live Events
+    // ===============================================================
+
+    match /official_events/{eventId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() &&
+        (request.resource.data.hostUid == request.auth.uid || isAdmin()) &&
+        isValidOfficialEvent(request.resource.data);
+      allow update: if isAuthenticated() &&
+        (
+          isAdmin() ||
+          (
+            resource.data.hostUid == request.auth.uid &&
+            areImmutableFieldsUnchanged(['hostUid', 'createdAt'])
+          )
+        ) &&
+        isValidOfficialEvent(request.resource.data);
+      allow delete: if isAuthenticated() && (resource.data.hostUid == request.auth.uid || isAdmin());
+
+      match /reminders/{uid} {
+        allow read: if isOwner(uid) || isAdmin();
+        allow create: if isOwner(uid) &&
+          isValidEventReminder(request.resource.data, uid);
+        allow update: if isOwner(uid) &&
+          areImmutableFieldsUnchanged(['uid']) &&
+          isValidEventReminder(request.resource.data, uid);
+        allow delete: if isOwner(uid) || isAdmin();
+      }
     }
 
     // ===============================================================

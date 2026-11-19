@@ -3261,9 +3261,9 @@ fun RoomMemberProfileSheet(
                                 }
                             }
 
+                            // Row 10: Bottom 4 Action Icons (Admin, Leave, Mute, Kick out) — ONLY visible inside an active Room!
+                            if (showRoomActions && roomId.isNotBlank()) {
                             Spacer(modifier = Modifier.height(14.dp))
-
-                            // Row 10: Bottom 4 Action Icons (Admin, Leave, Close, Kick out)
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -3362,6 +3362,7 @@ fun RoomMemberProfileSheet(
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text("Kick out", color = Color(0xFF94A3B8), fontSize = 10.sp)
                                 }
+                            }
                             }
                         }
                     }
@@ -3704,7 +3705,7 @@ private fun UserFullProfileDialog(
         val giftsQuery = db.collection("users").document(profile.uid)
             .collection("received_gifts")
             .orderBy("timestamp", Query.Direction.DESCENDING)
-            .limit(12)
+            .limit(50)
             .addSnapshotListener { snap, _ ->
                 if (snap != null) {
                     receivedGiftsList.clear()
@@ -4222,19 +4223,40 @@ private fun UserFullProfileDialog(
                             } else {
                                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                     items(receivedGiftsList) { g ->
+                                        val gId = (g["giftId"] as? String).orEmpty()
                                         val giftName = (g["giftName"] as? String) ?: "Luxury Gift"
                                         val giftEmoji = (g["giftEmoji"] as? String) ?: "🎁"
                                         val senderName = (g["senderName"] as? String) ?: "Fan"
+                                        val gQty = (g["quantity"] as? Number)?.toInt()?.coerceAtLeast(1) ?: 1
+                                        val catalogDrawable = remember(gId) {
+                                            ROOM_GIFT_CATALOG.find { it.id == gId }?.drawableResId
+                                                ?: VIDEO_GIFT_CATALOG.find { it.id == gId }?.thumbnailResId
+                                                ?: 0
+                                        }
                                         Column(
                                             horizontalAlignment = Alignment.CenterHorizontally,
                                             modifier = Modifier
                                                 .background(Color(0xFF1E1728), RoundedCornerShape(10.dp))
                                                 .padding(horizontal = 8.dp, vertical = 6.dp)
                                         ) {
-                                            Text(giftEmoji, fontSize = 24.sp)
-                                            Spacer(modifier = Modifier.height(2.dp))
-                                            Text(giftName.take(10), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                            Text("from $senderName", color = Color.Gray, fontSize = 8.5.sp)
+                                            if (catalogDrawable != 0) {
+                                                Image(
+                                                    painter = painterResource(id = catalogDrawable),
+                                                    contentDescription = giftName,
+                                                    contentScale = ContentScale.Fit,
+                                                    modifier = Modifier.size(34.dp).clip(RoundedCornerShape(6.dp))
+                                                )
+                                            } else {
+                                                Text(giftEmoji, fontSize = 24.sp)
+                                            }
+                                            Spacer(modifier = Modifier.height(3.dp))
+                                            Text(
+                                                text = if (gQty > 1) "${giftName.take(10)} x$gQty" else giftName.take(12),
+                                                color = Color.White,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text("from $senderName", color = Color(0xFFFBBF24), fontSize = 8.5.sp)
                                         }
                                     }
                                 }
@@ -6176,6 +6198,19 @@ fun AudioHangoutRoomDialog(
     var showMicLinkSelectorDialog by remember { mutableStateOf(false) }
     val activeEmojiReactions = remember { mutableStateMapOf<String, String>() }
 
+    // Keep Firestore user current_room synced in real time so Inbox Jump Banner & Home Floating Bubbles always detect active room!
+    DisposableEffect(room.id, currentUser.uid) {
+        if (room.id.isNotBlank() && currentUser.uid.isNotBlank()) {
+            db.collection("users").document(currentUser.uid)
+                .update(mapOf("current_room" to room.id, "isOnline" to true, "lastSeen" to System.currentTimeMillis()))
+        }
+        onDispose {
+            if (currentUser.uid.isNotBlank()) {
+                db.collection("users").document(currentUser.uid).update("current_room", "")
+            }
+        }
+    }
+
     // Real-time listener for live floating emoji reactions
     LaunchedEffect(room.id) {
         if (room.id.isBlank()) return@LaunchedEffect
@@ -7273,16 +7308,16 @@ fun AudioHangoutRoomDialog(
                                     modifier = Modifier.clickable { selectedMemberForSheet = hostMemberObj }
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(start = 4.dp, top = 3.dp, bottom = 3.dp, end = 5.dp),
+                                        modifier = Modifier.padding(start = 3.dp, top = 3.dp, bottom = 3.dp, end = 8.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        // Dedicated Room DP / Icon Box with Local Storage Picker
+                                        // Dedicated Room DP / Icon Box sized flush with header height (zero distortion)
                                         val displayRoomIcon = room.hostPhotoUrl.ifBlank { hostPhoto }.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" }
                                         Box(
                                             modifier = Modifier
-                                                .size(width = 46.dp, height = 38.dp)
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .border(1.2.dp, Color(0xFF8B5CF6), RoundedCornerShape(8.dp))
+                                                .size(40.dp)
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .border(1.2.dp, Color(0xFF8B5CF6), RoundedCornerShape(10.dp))
                                                 .clickable(enabled = isUserHost) {
                                                     roomIconPickerLauncher.launch("image/*")
                                                 },
@@ -7313,7 +7348,7 @@ fun AudioHangoutRoomDialog(
                                             }
                                         }
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Column(modifier = Modifier.widthIn(max = 100.dp)) {
+                                        Column(modifier = Modifier.widthIn(max = 112.dp)) {
                                             Row(
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -7324,6 +7359,7 @@ fun AudioHangoutRoomDialog(
                                                     fontSize = 11.5.sp,
                                                     fontWeight = FontWeight.Bold,
                                                     maxLines = 1,
+                                                    softWrap = false,
                                                     modifier = Modifier.weight(1f, fill = false).basicMarquee(iterations = Int.MAX_VALUE)
                                                 )
                                                 MiniLiveEqualizer(modifier = Modifier.padding(bottom = 1.dp))
@@ -7334,18 +7370,18 @@ fun AudioHangoutRoomDialog(
                                                 fontSize = 8.5.sp,
                                                 fontWeight = FontWeight.SemiBold,
                                                 maxLines = 1,
+                                                softWrap = false,
                                                 overflow = TextOverflow.Ellipsis
                                             )
                                         }
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Surface(
-                                            color = if (isFollowingHost) Color(0x334CAF50) else if (isUserHost) Color(0x33FFB300) else BrandCoral,
-                                            shape = RoundedCornerShape(8.dp),
-                                            border = if (isFollowingHost) BorderStroke(1.dp, Color(0xFF4CAF50)) else if (isUserHost) BorderStroke(0.8.dp, Color(0xFF8B5CF6).copy(alpha = 0.6f)) else null,
-                                            modifier = Modifier.clickable {
-                                                if (isUserHost) {
-                                                    Toast.makeText(context, "👑 You are the Host ($hostFollowerCount followers)", Toast.LENGTH_SHORT).show()
-                                                } else {
+                                        // Only show Follow button for viewers — NO broken "👑 Host" pill inside host box!
+                                        if (!isUserHost) {
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Surface(
+                                                color = if (isFollowingHost) Color(0x334CAF50) else BrandCoral,
+                                                shape = RoundedCornerShape(8.dp),
+                                                border = if (isFollowingHost) BorderStroke(1.dp, Color(0xFF4CAF50)) else null,
+                                                modifier = Modifier.clickable {
                                                     val newFollowing = !isFollowingHost
                                                     isFollowingHost = newFollowing
                                                     if (newFollowing) {
@@ -7375,27 +7411,29 @@ fun AudioHangoutRoomDialog(
                                                         }
                                                     }
                                                 }
-                                            }
-                                        ) {
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                             ) {
-                                                if (!isFollowingHost && !isUserHost) {
-                                                    Icon(
-                                                        imageVector = Icons.Default.Add,
-                                                        contentDescription = null,
-                                                        tint = Color.White,
-                                                        modifier = Modifier.size(10.dp)
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                                                ) {
+                                                    if (!isFollowingHost) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Add,
+                                                            contentDescription = null,
+                                                            tint = Color.White,
+                                                            modifier = Modifier.size(10.dp)
+                                                        )
+                                                        Spacer(modifier = Modifier.width(2.dp))
+                                                    }
+                                                    Text(
+                                                        text = if (isFollowingHost) "✓" else "Follow",
+                                                        color = if (isFollowingHost) Color(0xFF81C784) else Color.White,
+                                                        fontSize = 9.5.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        maxLines = 1,
+                                                        softWrap = false
                                                     )
-                                                    Spacer(modifier = Modifier.width(2.dp))
                                                 }
-                                                Text(
-                                                    text = if (isFollowingHost) "✓ Following" else if (isUserHost) "👑 Host" else "Follow",
-                                                    color = if (isFollowingHost) Color(0xFF81C784) else if (isUserHost) Color(0xFFC084FC) else Color.White,
-                                                    fontSize = 9.5.sp,
-                                                    fontWeight = FontWeight.Bold
-                                                )
                                             }
                                         }
                                     }
@@ -7809,14 +7847,14 @@ fun AudioHangoutRoomDialog(
                         micSeats.size >= 15
 
                     val stageSeats = if (micSeats.isNotEmpty()) {
-                        if (is15MicRoom && micSeats.size < 15) {
+                        if (is15MicRoom && micSeats.size < 17) {
                             val existingMap = micSeats.associateBy { it.seatIndex }
-                            (0..14).map { idx ->
+                            (0..16).map { idx ->
                                 existingMap[idx] ?: if (idx == 0) MicSeat(seatIndex = 0, label = "Host 👑", uid = targetHostId, name = hostName, photo = hostPhoto, role = "host")
                                 else MicSeat(seatIndex = idx, label = "Mic $idx", uid = "", name = "", photo = "", role = "speaker")
                             }
                         } else micSeats
-                    } else (0 until (if (is15MicRoom) 15 else 10)).map { idx ->
+                    } else (0 until (if (is15MicRoom) 17 else 10)).map { idx ->
                         if (idx == 0) MicSeat(seatIndex = 0, label = "Host 👑", uid = targetHostId, name = hostName, photo = hostPhoto, role = "host")
                         else MicSeat(seatIndex = idx, label = if (is15MicRoom) "Mic $idx" else "Mic ${idx + 1}", uid = "", name = "", photo = "", role = "speaker")
                     }
@@ -9309,105 +9347,143 @@ fun AudioHangoutRoomDialog(
 
         if (intimacyStoreItemToSend != null) {
             val item = intimacyStoreItemToSend!!
+            val isMicLinkItem = item.category == "mic_link" || item.subCategory.contains("Mic Link", ignoreCase = true) || item.id.startsWith("mic_link_")
+            val seatedAsMembers = micSeats
+                .filter { it.uid.isNotBlank() && it.uid != currentUser.uid }
+                .map { seat ->
+                    RoomMember(
+                        uid = seat.uid,
+                        name = seat.name.ifBlank { "Speaker" },
+                        photoUrl = seat.photo,
+                        role = if (seat.seatIndex == 0) "Host" else "Mic ${seat.seatIndex}"
+                    )
+                }
+            val recipients = (seatedAsMembers + activeMembers.filter { it.uid.isNotBlank() && it.uid != currentUser.uid })
+                .distinctBy { it.uid }
+
             AlertDialog(
                 onDismissRequest = {
                     if (!isSendingIntimacyStoreItem) intimacyStoreItemToSend = null
                 },
-                title = { Text("Send ${item.name}", color = Color.White) },
+                title = {
+                    Column {
+                        Text(
+                            text = if (isMicLinkItem) "🔗 Send Mic Link Invitation" else "💍 Send Intimacy Invitation",
+                            color = Color(0xFFFFD700),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Black
+                        )
+                        Text(
+                            text = "${item.name} • Select member to invite",
+                            color = Color.LightGray,
+                            fontSize = 11.sp
+                        )
+                    }
+                },
                 text = {
                     LazyColumn(
                         modifier = Modifier.heightIn(max = 360.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        val recipients = activeMembers.filter { it.uid.isNotBlank() && it.uid != currentUser.uid }
                         if (recipients.isEmpty()) {
-                            item { Text("No other room members are available.", color = Color.LightGray) }
+                            item { Text("No other room members are currently available to invite.", color = Color.LightGray, fontSize = 12.sp) }
                         }
-                        items(recipients) { recipient ->
-                            OutlinedButton(
-                                onClick = {
-                                    if (isSendingIntimacyStoreItem) return@OutlinedButton
-                                    if (currentUser.bestFriends.contains(recipient.uid)) {
-                                        Toast.makeText(context, "You are already soulmates with this person", Toast.LENGTH_LONG).show()
-                                        intimacyStoreItemToSend = null
-                                        return@OutlinedButton
-                                    }
-                                    isSendingIntimacyStoreItem = true
-                                    val requestId = UUID.randomUUID().toString()
-                                    val senderRef = db.collection("users").document(currentUser.uid)
-                                    val requestRef = db.collection("intimacy_requests").document(requestId)
-                                    db.runTransaction { transaction ->
-                                        val sortedKey = listOf(currentUser.uid, recipient.uid).sorted().joinToString("_")
-                                        val b1 = transaction.get(db.collection("intimacy_bonds").document(sortedKey))
-                                        val b2 = transaction.get(db.collection("intimacy_bonds").document("bond_$sortedKey"))
-                                        if (b1.exists() || b2.exists()) {
-                                            throw IllegalStateException("ALREADY_SOULMATES")
-                                        }
-                                        val sender = transaction.get(senderRef)
-                                        if (!sender.exists()) throw IllegalStateException("Sender profile is unavailable.")
-                                        val balance = sender.getLong("diamonds") ?: 0L
-                                        if (balance < item.diamondPrice) return@runTransaction null
-                                        val newBalance = balance - item.diamondPrice
-                                        transaction.update(
-                                            senderRef,
-                                            mapOf(
-                                                "diamonds" to newBalance,
-                                                "diamondsSpentCount" to FieldValue.increment(1),
-                                                "wealthXp" to FieldValue.increment(item.diamondPrice * 10L)
+                        items(recipients, key = { it.uid }) { recipient ->
+                            Surface(
+                                color = Color(0xFF1F1635),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, Color(0xFF8B5CF6).copy(alpha = 0.55f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable(enabled = !isSendingIntimacyStoreItem) {
+                                        if (isSendingIntimacyStoreItem) return@clickable
+                                        isSendingIntimacyStoreItem = true
+                                        val requestId = UUID.randomUUID().toString()
+                                        val senderRef = db.collection("users").document(currentUser.uid)
+                                        val requestRef = db.collection("intimacy_requests").document(requestId)
+                                        val effectiveCost = if (currentUser.isFounder() || currentUser.ownedMicLinks.contains(item.id)) 0L else item.diamondPrice
+                                        db.runTransaction { transaction ->
+                                            val sender = transaction.get(senderRef)
+                                            if (!sender.exists()) throw IllegalStateException("Sender profile is unavailable.")
+                                            val balance = sender.getLong("diamonds") ?: 0L
+                                            if (effectiveCost > 0L && balance < effectiveCost) return@runTransaction null
+                                            val newBalance = balance - effectiveCost
+                                            if (effectiveCost > 0L) {
+                                                transaction.update(
+                                                    senderRef,
+                                                    mapOf(
+                                                        "diamonds" to newBalance,
+                                                        "diamondsSpentCount" to FieldValue.increment(1),
+                                                        "wealthXp" to FieldValue.increment(effectiveCost * 10L)
+                                                    )
+                                                )
+                                            }
+                                            val bondType = when {
+                                                item.id.contains("bestie", true) -> "bestie"
+                                                item.id.contains("soulmate", true) -> "soulmate"
+                                                item.id.contains("eternal", true) -> "eternal"
+                                                item.id.contains("cyber", true) -> "cyber"
+                                                else -> "couple"
+                                            }
+                                            transaction.set(
+                                                requestRef,
+                                                mapOf(
+                                                    "id" to requestId,
+                                                    "requestType" to "mic_link",
+                                                    "roomId" to room.id,
+                                                    "senderUid" to currentUser.uid,
+                                                    "senderName" to currentUser.name,
+                                                    "senderPhoto" to currentUser.photo,
+                                                    "recipientUid" to recipient.uid,
+                                                    "recipientName" to recipient.name,
+                                                    "recipientPhoto" to recipient.photoUrl,
+                                                    "giftId" to item.id,
+                                                    "giftName" to item.name,
+                                                    "giftEmoji" to item.iconEmoji,
+                                                    "bondType" to bondType,
+                                                    "status" to "pending",
+                                                    "timestamp" to System.currentTimeMillis()
+                                                )
                                             )
-                                        )
-                                        val bondType = when {
-                                            item.id.contains("bestie", true) -> "bestie"
-                                            item.id.contains("soulmate", true) -> "soulmate"
-                                            item.id.contains("eternal", true) -> "eternal"
-                                            item.id.contains("cyber", true) -> "cyber"
-                                            else -> "couple"
-                                        }
-                                        transaction.set(
-                                            requestRef,
-                                            mapOf(
-                                                "id" to requestId,
-                                                "requestType" to "mic_link",
-                                                "roomId" to room.id,
-                                                "senderUid" to currentUser.uid,
-                                                "senderName" to currentUser.name,
-                                                "senderPhoto" to currentUser.photo,
-                                                "recipientUid" to recipient.uid,
-                                                "recipientName" to recipient.name,
-                                                "recipientPhoto" to recipient.photoUrl,
-                                                "giftId" to item.id,
-                                                "giftName" to item.name,
-                                                "giftEmoji" to item.iconEmoji,
-                                                "bondType" to bondType,
-                                                "status" to "pending",
-                                                "timestamp" to System.currentTimeMillis()
-                                            )
-                                        )
-                                        newBalance
-                                    }.addOnSuccessListener { updatedBalance ->
-                                        isSendingIntimacyStoreItem = false
-                                        if (updatedBalance != null) {
-                                            userDiamonds = updatedBalance
-                                            intimacyStoreItemToSend = null
-                                            Toast.makeText(context, "${item.name} sent to ${recipient.name} for acceptance.", Toast.LENGTH_LONG).show()
-                                        } else {
-                                            Toast.makeText(context, "You need ${item.diamondPrice} diamonds to send this link.", Toast.LENGTH_LONG).show()
-                                        }
-                                    }.addOnFailureListener { error ->
-                                        isSendingIntimacyStoreItem = false
-                                        if (error.message?.contains("ALREADY_SOULMATES") == true) {
-                                            Toast.makeText(context, "You are already soulmates with this person", Toast.LENGTH_LONG).show()
-                                            intimacyStoreItemToSend = null
-                                        } else {
+                                            newBalance
+                                        }.addOnSuccessListener { updatedBalance ->
+                                            isSendingIntimacyStoreItem = false
+                                            if (updatedBalance != null) {
+                                                userDiamonds = updatedBalance
+                                                intimacyStoreItemToSend = null
+                                                Toast.makeText(context, "🔗 Invitation sent to ${recipient.name} for Accept/Decline!", Toast.LENGTH_LONG).show()
+                                            } else {
+                                                Toast.makeText(context, "You need ${item.diamondPrice} diamonds to send this invitation.", Toast.LENGTH_LONG).show()
+                                            }
+                                        }.addOnFailureListener { error ->
+                                            isSendingIntimacyStoreItem = false
                                             Log.e("AudioHangoutRoom", "Failed to send intimacy item ${item.id}", error)
-                                            Toast.makeText(context, "Could not send request: ${error.localizedMessage ?: "Please try again."}", Toast.LENGTH_LONG).show()
+                                            Toast.makeText(context, "Could not send invitation: ${error.localizedMessage ?: "Please try again."}", Toast.LENGTH_LONG).show()
                                         }
                                     }
-                                },
-                                enabled = !isSendingIntimacyStoreItem,
-                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text("${recipient.name}  •  ${recipient.role}", color = Color.White)
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    AsyncImage(
+                                        model = recipient.photoUrl.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80" },
+                                        contentDescription = recipient.name,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.size(34.dp).clip(CircleShape)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(recipient.name, color = Color.White, fontSize = 12.5.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text(recipient.role.ifBlank { "Member" }, color = Color(0xFFA78BFA), fontSize = 10.sp)
+                                    }
+                                    Surface(
+                                        color = Color(0xFF9333EA),
+                                        shape = RoundedCornerShape(50)
+                                    ) {
+                                        Text("Invite 🔗", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
+                                    }
+                                }
                             }
                         }
                     }

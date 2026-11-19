@@ -726,8 +726,8 @@ fun StoreItemCard(
     val isMicLink = item.category == "mic_link" || item.subCategory.contains("Mic Link", ignoreCase = true) || item.id.startsWith("mic_link_")
     val isAvatarFrame = item.category == "avatar_frame"
     val isRing = item.category == "ring" || item.category == "proposal_ring"
-    val isEquippable = isMicEffect || isAvatarFrame || isMicLink
-    val isIntimacySendable = isRing && !isMicLink
+    val isEquippable = isMicEffect || isAvatarFrame
+    val isIntimacySendable = isRing || isMicLink
     val expiry = when {
         isMicEffect -> currentUser.micEffectExpiries[item.id] ?: 0L
         isMicLink -> currentUser.micLinkExpiries[item.id] ?: 0L
@@ -736,15 +736,13 @@ fun StoreItemCard(
     }
     val isExpired = expiry > 0L && now > expiry
     val isSupremeAccess = currentUser.isFounder()
-    val isOwned = isSupremeAccess || (isEquippable && !isExpired && (when {
+    val isOwned = !isMicLink && (isSupremeAccess || (isEquippable && !isExpired && (when {
         isMicEffect -> currentUser.ownedMicEffects.contains(item.id) || currentUser.activeMicEffect == item.id
-        isMicLink -> currentUser.ownedMicLinks.contains(item.id) || currentUser.activeMicLinkId == item.id || currentUser.activeIntimacyBadge == item.id
         isAvatarFrame -> currentUser.ownedFrames.contains(item.id) || currentUser.activeFrame == item.id
         else -> false
-    }))
-    val isEquipped = when {
+    })))
+    val isEquipped = !isMicLink && when {
         isMicEffect -> currentUser.activeMicEffect == item.id
-        isMicLink -> currentUser.activeMicLinkId == item.id || currentUser.activeIntimacyBadge == item.id
         isAvatarFrame -> currentUser.activeFrame == item.id
         else -> false
     }
@@ -1041,7 +1039,7 @@ fun StoreItemCard(
                 }
                 isIntimacySendable -> {
                     Surface(
-                        color = Color(0xFFE040FB),
+                        color = if (isMicLink) Color(0xFF9333EA) else Color(0xFFE040FB),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1050,7 +1048,7 @@ fun StoreItemCard(
                             }
                     ) {
                         Text(
-                            text = "Send 💍",
+                            text = if (isMicLink) "Invite 🔗" else "Send 💍",
                             fontSize = 9.5.sp,
                             fontWeight = FontWeight.Black,
                             color = Color.White,

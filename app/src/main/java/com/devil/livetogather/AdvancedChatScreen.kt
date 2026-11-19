@@ -104,13 +104,16 @@ fun Advanced1v1ChatScreen(
     }
 
     var partnerActiveRoom by remember { mutableStateOf<RoomItem?>(null) }
-    DisposableEffect(livePartner.current_room) {
+    DisposableEffect(livePartner.current_room, livePartner.uid) {
         val targetRoomId = livePartner.current_room.trim()
         if (targetRoomId.isNotBlank()) {
             val listener = db.collection("rooms").document(targetRoomId).addSnapshotListener { snap, _ ->
                 if (snap != null && snap.exists()) {
                     val r = parseRoomFromDoc(snap)
-                    if (r != null && !r.isEnded && (r.isLive || r.isHostLive)) {
+                    if (r != null && !r.isEnded && (r.isLive || r.isHostLive) &&
+                        !r.statusMessage.equals("CLOSED", ignoreCase = true) &&
+                        !r.statusMessage.equals("OFFLINE", ignoreCase = true)
+                    ) {
                         partnerActiveRoom = r
                     } else {
                         partnerActiveRoom = null
@@ -120,6 +123,19 @@ fun Advanced1v1ChatScreen(
                 }
             }
             onDispose { listener.remove() }
+        } else if (livePartner.uid.isNotBlank()) {
+            // Fallback real-time check: if partner is currently hosting any live room in Firestore
+            val hostListener = db.collection("rooms")
+                .whereEqualTo("hostUid", livePartner.uid)
+                .addSnapshotListener { snap, _ ->
+                    val hostedLive = snap?.documents?.mapNotNull { parseRoomFromDoc(it) }?.firstOrNull { r ->
+                        !r.isEnded && (r.isLive || r.isHostLive) &&
+                            !r.statusMessage.equals("CLOSED", ignoreCase = true) &&
+                            !r.statusMessage.equals("OFFLINE", ignoreCase = true)
+                    }
+                    partnerActiveRoom = hostedLive
+                }
+            onDispose { hostListener.remove() }
         } else {
             partnerActiveRoom = null
             onDispose {}
@@ -637,11 +653,18 @@ fun Advanced1v1ChatScreen(
             }
 
             // -------------------------------------------------------------
-            // 1.5 INBOX REAL-TIME ROOM JUMP EQUALIZER BANNER
+            // 1.5 INBOX REAL-TIME ROOM JUMP EQUALIZER BANNER (Room Name + 8-Digit ID + Live Equalizer + Jump)
             // -------------------------------------------------------------
             if (partnerActiveRoom != null) {
                 val currentTargetRoom = partnerActiveRoom!!
                 val isHost = currentTargetRoom.hostUid == livePartner.uid || currentTargetRoom.hostId == livePartner.uid
+                val publicRoomId = remember(currentTargetRoom.id, currentTargetRoom.roomId) {
+                    when {
+                        currentTargetRoom.roomId.length == 8 && currentTargetRoom.roomId.all { it.isDigit() } -> currentTargetRoom.roomId
+                        currentTargetRoom.id.length == 8 && currentTargetRoom.id.all { it.isDigit() } -> currentTargetRoom.id
+                        else -> (10000000 + kotlin.math.abs(currentTargetRoom.id.hashCode()) % 90000000).toString()
+                    }
+                }
                 Surface(
                     color = Color(0xFF1E1338),
                     shape = RoundedCornerShape(16.dp),
@@ -662,19 +685,19 @@ fun Advanced1v1ChatScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                            // Animated Neon Equalizer Bars
+                            // Animated Live Equalizer
                             Box(
                                 modifier = Modifier
-                                    .size(34.dp)
+                                    .size(width = 40.dp, height = 32.dp)
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(Color(0xFFEC4899).copy(alpha = 0.2f))
+                                    .background(Color(0xFFEC4899).copy(alpha = 0.22f))
                                     .padding(4.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                CategoryEqualizerThemeVisualizer(
+                                DenseGalaAudioEqualizer(
                                     modifier = Modifier.fillMaxSize(),
-                                    isLive = true,
-                                    isPlaying = true
+                                    barCount = 12,
+                                    styleTheme = "event_theme_cyber_neon"
                                 )
                             }
                             Spacer(modifier = Modifier.width(10.dp))
@@ -685,7 +708,7 @@ fun Advanced1v1ChatScreen(
                                         shape = RoundedCornerShape(4.dp)
                                     ) {
                                         Text(
-                                            text = if (isHost) "🔴 HOSTING" else "🎙️ IN ROOM",
+                                            text = if (isHost) "🔴 LIVE" else "🎙️ IN ROOM",
                                             color = Color.White,
                                             fontSize = 8.5.sp,
                                             fontWeight = FontWeight.Black,
@@ -694,7 +717,7 @@ fun Advanced1v1ChatScreen(
                                     }
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = currentTargetRoom.title.ifBlank { currentTargetRoom.roomName },
+                                        text = currentTargetRoom.title.ifBlank { currentTargetRoom.roomName.ifBlank { "Live Room" } },
                                         color = Color.White,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 12.sp,
@@ -703,9 +726,10 @@ fun Advanced1v1ChatScreen(
                                     )
                                 }
                                 Text(
-                                    text = "Host: ${currentTargetRoom.hostName.ifBlank { "Host" }} • ${maxOf(1, currentTargetRoom.activeUserCount)} in room",
-                                    color = Color(0xFFFBCFE8),
+                                    text = "ID: $publicRoomId • ${maxOf(1, currentTargetRoom.activeUserCount)} in room",
+                                    color = Color(0xFFFDE047),
                                     fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
                                     maxLines = 1
                                 )
                             }

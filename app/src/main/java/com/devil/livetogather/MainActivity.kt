@@ -3114,37 +3114,9 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
             )
         }
 
-        // 5. Direct Message Routing to Advanced 1-on-1 Chat Screen
+        // 5. Direct Message Routing to Advanced 1-on-1 Chat Screen (Half-profile does NOT log profile visits; ONLY Full Profile visits log visitors!)
         if (selectedUserProfile != null) {
             val profile = selectedUserProfile!!
-            LaunchedEffect(profile.uid) {
-                if (profile.uid.isNotBlank() && currentUserId.isNotBlank() && profile.uid != currentUserId) {
-                    val nowMs = System.currentTimeMillis()
-                    val visitPayload = hashMapOf(
-                        "visitorUid" to currentUserId,
-                        "visitorName" to currentUser.name.ifBlank { "Member" },
-                        "visitorPhoto" to currentUser.photo,
-                        "visitorVipLevel" to currentUser.getVipLevel(),
-                        "visitedAt" to nowMs
-                    )
-                    db.collection("users").document(profile.uid)
-                        .collection("profile_visitors").document(currentUserId)
-                        .set(visitPayload)
-                    val notifId = "visit_${currentUserId}_${nowMs / 3600000L}"
-                    val notifPayload = hashMapOf(
-                        "id" to notifId,
-                        "title" to "👁️ New Profile Visitor",
-                        "message" to "You have been visited by someone! Unlock VIP to see who visited your profile.",
-                        "type" to "profile_visit",
-                        "senderUid" to currentUserId,
-                        "isRead" to false,
-                        "timestamp" to nowMs
-                    )
-                    db.collection("users").document(profile.uid)
-                        .collection("notifications").document(notifId)
-                        .set(notifPayload)
-                }
-            }
             RoomMemberProfileSheet(
                 member = RoomMember(
                     uid = profile.uid,
@@ -4910,7 +4882,7 @@ fun ProfileScreenContent(
             db.collection("users").document(currentUser.uid)
                 .collection("received_gifts")
                 .orderBy("timestamp", Query.Direction.DESCENDING)
-                .limit(30)
+                .limit(100)
                 .addSnapshotListener { snap, _ ->
                     if (snap != null) {
                         receivedGiftsList.clear()
@@ -5941,10 +5913,17 @@ fun ProfileScreenContent(
                                             }
                                         } else {
                                             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                items(receivedGiftsList.take(10)) { g ->
+                                                items(receivedGiftsList.take(15)) { g ->
+                                                    val gId = (g["giftId"] as? String).orEmpty()
                                                     val gEmoji = (g["giftEmoji"] as? String) ?: "🎁"
                                                     val gName = (g["giftName"] as? String) ?: "Gift"
                                                     val gSender = (g["senderName"] as? String) ?: "Fan"
+                                                    val gQty = (g["quantity"] as? Number)?.toInt()?.coerceAtLeast(1) ?: 1
+                                                    val catalogDrawable = remember(gId) {
+                                                        ROOM_GIFT_CATALOG.find { it.id == gId }?.drawableResId
+                                                            ?: VIDEO_GIFT_CATALOG.find { it.id == gId }?.thumbnailResId
+                                                            ?: 0
+                                                    }
                                                     Surface(
                                                         color = Color(0xFF14102E).copy(alpha = 0.9f),
                                                         shape = RoundedCornerShape(10.dp),
@@ -5954,10 +5933,25 @@ fun ProfileScreenContent(
                                                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
                                                             verticalAlignment = Alignment.CenterVertically
                                                         ) {
-                                                            Text(gEmoji, fontSize = 16.sp)
-                                                            Spacer(modifier = Modifier.width(5.dp))
+                                                            if (catalogDrawable != 0) {
+                                                                Image(
+                                                                    painter = painterResource(id = catalogDrawable),
+                                                                    contentDescription = gName,
+                                                                    contentScale = ContentScale.Fit,
+                                                                    modifier = Modifier.size(28.dp).clip(RoundedCornerShape(6.dp))
+                                                                )
+                                                            } else {
+                                                                Text(gEmoji, fontSize = 18.sp)
+                                                            }
+                                                            Spacer(modifier = Modifier.width(6.dp))
                                                             Column {
-                                                                Text(gName, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                                                                Text(
+                                                                    text = if (gQty > 1) "$gName x$gQty" else gName,
+                                                                    color = Color.White,
+                                                                    fontSize = 10.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    maxLines = 1
+                                                                )
                                                                 Text("by $gSender", color = Color(0xFFFBBF24), fontSize = 8.5.sp, maxLines = 1)
                                                             }
                                                         }
@@ -7187,10 +7181,17 @@ fun ProfileScreenContent(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         items(receivedGiftsList) { g ->
+                            val gId = (g["giftId"] as? String).orEmpty()
                             val gEmoji = (g["giftEmoji"] as? String) ?: "🎁"
                             val gName = (g["giftName"] as? String) ?: "Luxury Gift"
                             val gSender = (g["senderName"] as? String) ?: "Fan"
+                            val gQty = (g["quantity"] as? Number)?.toInt()?.coerceAtLeast(1) ?: 1
                             val gValue = (g["diamondValue"] as? Number)?.toLong() ?: (g["cost"] as? Number)?.toLong() ?: 0L
+                            val catalogDrawable = remember(gId) {
+                                ROOM_GIFT_CATALOG.find { it.id == gId }?.drawableResId
+                                    ?: VIDEO_GIFT_CATALOG.find { it.id == gId }?.thumbnailResId
+                                    ?: 0
+                            }
                             Surface(
                                 color = Color.White.copy(alpha = 0.08f),
                                 shape = RoundedCornerShape(12.dp),
@@ -7201,14 +7202,28 @@ fun ProfileScreenContent(
                                     modifier = Modifier.padding(10.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(gEmoji, fontSize = 24.sp)
+                                    if (catalogDrawable != 0) {
+                                        Image(
+                                            painter = painterResource(id = catalogDrawable),
+                                            contentDescription = gName,
+                                            contentScale = ContentScale.Fit,
+                                            modifier = Modifier.size(40.dp).clip(RoundedCornerShape(8.dp))
+                                        )
+                                    } else {
+                                        Text(gEmoji, fontSize = 26.sp)
+                                    }
                                     Spacer(modifier = Modifier.width(10.dp))
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text(gName, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            text = if (gQty > 1) "$gName  x$gQty" else gName,
+                                            color = Color.White,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
                                         Text("Sent by $gSender", color = Color(0xFFFBBF24), fontSize = 11.sp)
                                     }
                                     if (gValue > 0L) {
-                                        Text("💎 $gValue", color = Color(0xFFE9D5FF), fontSize = 11.5.sp, fontWeight = FontWeight.Black)
+                                        Text("💎 %,d".format(gValue), color = Color(0xFFE9D5FF), fontSize = 11.5.sp, fontWeight = FontWeight.Black)
                                     }
                                 }
                             }
