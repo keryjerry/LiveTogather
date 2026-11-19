@@ -1443,18 +1443,18 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
             topBar = {
                 if (!isProfileScreen && (activeAudioRoom == null || isAudioRoomMinimized)) {
                     val isHomeDiscover = currentScreen == "discover"
-                    val homeAllUsers = remember(discoverProfiles, currentUser) {
+                    val homeAllUsers = remember(discoverProfiles.toList(), currentUser) {
                         (discoverProfiles + currentUser).distinctBy { it.uid }
                     }
-                    val homeActiveRoomsCount = remember(roomsList.map { "${it.id}_${it.isHostLive}_${it.statusMessage}" }) {
+                    val homeActiveRoomsCount = remember(roomsList.map { "${it.id}_${it.isHostLive}_${it.isLive}_${it.statusMessage}" }) {
                         roomsList.count {
-                            it.isHostLive &&
+                            (it.isHostLive || it.isLive) &&
                             !it.statusMessage.equals("OFFLINE", ignoreCase = true) &&
                             !it.statusMessage.equals("CLOSED", ignoreCase = true) &&
                             !it.statusMessage.equals("DELETED", ignoreCase = true)
                         }
                     }
-                    val homeOnlineUsersCount = remember(homeAllUsers, homeActiveRoomsCount) {
+                    val homeOnlineUsersCount = remember(homeAllUsers.map { "${it.uid}_${it.isUserOnline()}" }, homeActiveRoomsCount) {
                         val onlineCount = homeAllUsers.count { it.isUserOnline() }
                         if (onlineCount > 0) onlineCount else if (homeActiveRoomsCount > 0) 1 else 0
                     }
@@ -2670,7 +2670,14 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         items(myLiveRoomsList) { room ->
-                            val isLiveNow = room.isHostLive && !room.statusMessage.equals("OFFLINE", ignoreCase = true) && !room.statusMessage.equals("CLOSED", ignoreCase = true)
+                            val isLiveNow = (room.isHostLive || room.isLive) && !room.statusMessage.equals("OFFLINE", ignoreCase = true) && !room.statusMessage.equals("CLOSED", ignoreCase = true)
+                            val publicRoomNumber = remember(room.id, room.roomId) {
+                                when {
+                                    room.roomId.length == 8 && room.roomId.all { it.isDigit() } -> room.roomId
+                                    room.id.length == 8 && room.id.all { it.isDigit() } -> room.id
+                                    else -> (10000000 + kotlin.math.abs(room.id.hashCode()) % 90000000).toString()
+                                }
+                            }
                             Surface(
                                 color = Color.White.copy(alpha = 0.08f),
                                 shape = RoundedCornerShape(14.dp),
@@ -2690,7 +2697,7 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                                         model = room.hostPhotoUrl.ifBlank { room.banner_image_url }.ifBlank { currentUser.photo },
                                         contentDescription = room.title,
                                         modifier = Modifier
-                                            .size(48.dp)
+                                            .size(50.dp)
                                             .clip(RoundedCornerShape(10.dp)),
                                         contentScale = ContentScale.Crop
                                     )
@@ -2703,19 +2710,29 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                                             fontWeight = FontWeight.Bold,
                                             maxLines = 1
                                         )
-                                        Text(
-                                            text = "ID: ${room.id} • ${if (isLiveNow) "🟢 LIVE" else "Tap to Go Live"}",
-                                            color = if (isLiveNow) Color(0xFF34D399) else Color(0xFFFBBF24),
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Text(
+                                                text = "Room #$publicRoomNumber",
+                                                color = Color(0xFFFBBF24),
+                                                fontSize = 10.5.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                            DenseGalaAudioEqualizer(
+                                                styleTheme = if (isLiveNow) "emerald" else "gold",
+                                                modifier = Modifier.width(34.dp).height(12.dp)
+                                            )
+                                        }
                                     }
                                     Surface(
                                         color = BrandCoral,
                                         shape = RoundedCornerShape(50)
                                     ) {
                                         Text(
-                                            text = "Enter",
+                                            text = if (isLiveNow) "LIVE" else "Enter",
                                             color = Color.White,
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold,

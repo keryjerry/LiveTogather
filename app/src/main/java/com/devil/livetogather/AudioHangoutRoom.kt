@@ -5990,6 +5990,24 @@ fun AudioHangoutRoomDialog(
     var intimacyStoreItemToSend by remember { mutableStateOf<StoreItem?>(null) }
     var isSendingIntimacyStoreItem by remember { mutableStateOf(false) }
     var activeGiftEvent by remember { mutableStateOf<GiftEvent?>(null) }
+    var showInRoomGameLauncher by remember { mutableStateOf(false) }
+    var activeInRoomGame by remember { mutableStateOf<InRoomGameState?>(null) }
+
+    // Real-time Firestore listener for In-Room Club Games (Ludo, Carrom, Truth & Dare, Lucky 7)
+    DisposableEffect(room.id) {
+        if (room.id.isBlank()) return@DisposableEffect onDispose {}
+        val gameReg = db.collection("rooms").document(room.id)
+            .collection("inRoomGame").document("active")
+            .addSnapshotListener { snap, _ ->
+                if (snap != null && snap.exists()) {
+                    val state = snap.toObject(InRoomGameState::class.java)
+                    activeInRoomGame = if (state != null && state.status == "ACTIVE") state else null
+                } else {
+                    activeInRoomGame = null
+                }
+            }
+        onDispose { gameReg.remove() }
+    }
 
     // Real-time listener for current user diamonds and active frame
     LaunchedEffect(currentUser.uid) {
@@ -7638,6 +7656,11 @@ fun AudioHangoutRoomDialog(
                                 ) {
                                     Text("🛍️", fontSize = 18.sp)
                                 }
+
+                                // 6.5 IN-ROOM 3D GAME CLUB LAUNCHER BUTTON (Ludo, Carrom, Truth & Dare, Lucky 7)
+                                Animated3DGameLauncherButton(
+                                    onClick = { showInRoomGameLauncher = true }
+                                )
 
                                 // 7. GIFT STORE BUTTON
                                 Box(
@@ -9324,6 +9347,50 @@ fun AudioHangoutRoomDialog(
             )
         }
 
+        // 7.5 In-Room Game Club Launcher Dialog
+        if (showInRoomGameLauncher) {
+            InRoomGameLauncherDialog(
+                roomId = room.id,
+                onDismiss = { showInRoomGameLauncher = false },
+                onGameSelected = { gameType ->
+                    showInRoomGameLauncher = false
+                    launchInRoomGame(
+                        roomId = room.id,
+                        gameType = gameType,
+                        currentUser = currentUser,
+                        db = db,
+                        allProfiles = allProfiles
+                    )
+                },
+                onCarromSelected = { maxPlayers, _ ->
+                    showInRoomGameLauncher = false
+                    launchInRoomGame(
+                        roomId = room.id,
+                        gameType = "carrom",
+                        currentUser = currentUser,
+                        db = db,
+                        maxPlayers = maxPlayers,
+                        allProfiles = allProfiles
+                    )
+                }
+            )
+        }
+
+        // 7.6 Active In-Room Game Arena Overlay
+        if (activeInRoomGame != null) {
+            InRoomGameArenaOverlay(
+                roomId = room.id,
+                gameState = activeInRoomGame!!,
+                currentUser = currentUser,
+                isHost = isUserHost,
+                isAdmin = isUserAdmin,
+                allProfiles = allProfiles,
+                liveComments = liveComments,
+                db = db,
+                onClose = { activeInRoomGame = null }
+            )
+        }
+
         // 8. Luxury Gift Sheet Dialog
         if (showGiftStoreDialog) {
             GiftStoreDialog(
@@ -10719,8 +10786,12 @@ fun CategoryHubLobbyDialog(
         )
     }
 
-    val activeCategoryCount = remember(allUsers, category.id) {
-        allUsers.count { it.activeIntent == category.id || it.current_room.contains(category.id) }
+    val activeCategoryCount = remember(sortedCategoryRooms, allUsers, category.id) {
+        val inRoomsCount = sortedCategoryRooms.sumOf { r ->
+            allUsers.count { u -> u.current_room == r.id }.coerceAtLeast(r.activeUserCount)
+        }
+        val intentCount = allUsers.count { it.activeIntent == category.id || it.current_room.contains(category.id) }
+        maxOf(inRoomsCount, intentCount)
     }
 
     val isKeyboardOpen = WindowInsets.isImeVisible

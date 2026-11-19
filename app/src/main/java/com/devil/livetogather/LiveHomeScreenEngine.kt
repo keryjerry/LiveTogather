@@ -103,36 +103,44 @@ fun LiveTogetherHomeScreen(
     }
 
     // STRICT USER RULE: Only Voice Party rooms can host games!
-    val voiceRooms = remember(rooms) {
+    val roomsSnapshotKey = rooms.map {
+        "${it.id}_${it.isHostLive}_${it.isLive}_${it.statusMessage}_${it.activeUserCount}_${it.category}_${it.roomType}"
+    }
+    val voiceRooms = remember(roomsSnapshotKey) {
         rooms.filter {
+            !it.statusMessage.equals("DELETED", ignoreCase = true) &&
             it.category != "video_stream" && it.roomType != "video" && it.roomType != "video_pk" && !it.isVideoRoom
         }
     }
-    val videoRooms = remember(rooms) {
+    val videoRooms = remember(roomsSnapshotKey) {
         rooms.filter {
-            it.category == "video_stream" || it.roomType == "video" || it.roomType == "video_pk" || it.isVideoRoom
+            !it.statusMessage.equals("DELETED", ignoreCase = true) &&
+            (it.category == "video_stream" || it.roomType == "video" || it.roomType == "video_pk" || it.isVideoRoom)
         }
     }
 
-    // STRICT REAL-TIME COUNTERS (NO DUMMY NUMBERS: IF NONE, SHOW 0)
-    val liveVoiceRooms = remember(rooms) {
+    // STRICT REAL-TIME COUNTERS (100% FIREBASE LIVE SYNC, NO DUMMY NUMBERS)
+    val liveVoiceRooms = remember(roomsSnapshotKey) {
         rooms.filter {
-            it.isHostLive &&
+            (it.isHostLive || it.isLive) &&
             !it.statusMessage.equals("OFFLINE", ignoreCase = true) &&
             !it.statusMessage.equals("CLOSED", ignoreCase = true) &&
+            !it.statusMessage.equals("DELETED", ignoreCase = true) &&
             it.category != "video_stream" && it.roomType != "video" && it.roomType != "video_pk" && !it.isVideoRoom
         }
     }
-    val liveVideoRooms = remember(rooms) {
+    val liveVideoRooms = remember(roomsSnapshotKey) {
         rooms.filter {
-            it.isHostLive &&
+            (it.isHostLive || it.isLive) &&
             !it.statusMessage.equals("OFFLINE", ignoreCase = true) &&
             !it.statusMessage.equals("CLOSED", ignoreCase = true) &&
+            !it.statusMessage.equals("DELETED", ignoreCase = true) &&
             (it.category == "video_stream" || it.roomType == "video" || it.roomType == "video_pk" || it.isVideoRoom)
         }
     }
     val realTimeRoomsCount = liveVoiceRooms.size + liveVideoRooms.size
-    val realTimeUsersCount = remember(allUsers, realTimeRoomsCount) {
+    val usersSnapshotKey = allUsers.map { "${it.uid}_${it.isUserOnline()}_${it.current_room}" }
+    val realTimeUsersCount = remember(usersSnapshotKey, realTimeRoomsCount) {
         val onlineCount = allUsers.count { it.isUserOnline() }
         if (onlineCount > 0) onlineCount else if (realTimeRoomsCount > 0) 1 else 0
     }
