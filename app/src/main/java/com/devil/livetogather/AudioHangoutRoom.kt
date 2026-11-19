@@ -3602,6 +3602,33 @@ private fun UserFullProfileDialog(
     DisposableEffect(profile.uid, viewer.uid) {
         if (profile.uid.isBlank()) return@DisposableEffect onDispose {}
 
+        // Record real-time profile visit + send visitor notification when another user visits this profile
+        if (!isSelf && viewer.uid.isNotBlank()) {
+            val nowMs = System.currentTimeMillis()
+            val visitPayload = hashMapOf(
+                "visitorUid" to viewer.uid,
+                "visitorName" to viewer.name.ifBlank { "Member" },
+                "visitorPhoto" to viewer.photo,
+                "visitorVipLevel" to viewer.getVipLevel(),
+                "visitedAt" to nowMs
+            )
+            db.collection("users").document(profile.uid)
+                .collection("profile_visitors").document(viewer.uid)
+                .set(visitPayload)
+            val notifPayload = hashMapOf(
+                "id" to "visit_${viewer.uid}_${nowMs / 3600000L}",
+                "title" to "👁️ New Profile Visitor",
+                "message" to "You have been visited by someone! Unlock VIP to see who visited your profile.",
+                "type" to "profile_visit",
+                "senderUid" to viewer.uid,
+                "isRead" to false,
+                "timestamp" to nowMs
+            )
+            db.collection("users").document(profile.uid)
+                .collection("notifications").document("visit_${viewer.uid}_${nowMs / 3600000L}")
+                .set(notifPayload)
+        }
+
         // Listen to User Profile doc
         val userListener = db.collection("users").document(profile.uid)
             .addSnapshotListener { snapshot, _ ->

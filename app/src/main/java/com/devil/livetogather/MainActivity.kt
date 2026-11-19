@@ -2935,6 +2935,34 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
         // 5. Direct Message Routing to Advanced 1-on-1 Chat Screen
         if (selectedUserProfile != null) {
             val profile = selectedUserProfile!!
+            LaunchedEffect(profile.uid) {
+                if (profile.uid.isNotBlank() && currentUserId.isNotBlank() && profile.uid != currentUserId) {
+                    val nowMs = System.currentTimeMillis()
+                    val visitPayload = hashMapOf(
+                        "visitorUid" to currentUserId,
+                        "visitorName" to currentUser.name.ifBlank { "Member" },
+                        "visitorPhoto" to currentUser.photo,
+                        "visitorVipLevel" to currentUser.getVipLevel(),
+                        "visitedAt" to nowMs
+                    )
+                    db.collection("users").document(profile.uid)
+                        .collection("profile_visitors").document(currentUserId)
+                        .set(visitPayload)
+                    val notifId = "visit_${currentUserId}_${nowMs / 3600000L}"
+                    val notifPayload = hashMapOf(
+                        "id" to notifId,
+                        "title" to "👁️ New Profile Visitor",
+                        "message" to "You have been visited by someone! Unlock VIP to see who visited your profile.",
+                        "type" to "profile_visit",
+                        "senderUid" to currentUserId,
+                        "isRead" to false,
+                        "timestamp" to nowMs
+                    )
+                    db.collection("users").document(profile.uid)
+                        .collection("notifications").document(notifId)
+                        .set(notifPayload)
+                }
+            }
             RoomMemberProfileSheet(
                 member = RoomMember(
                     uid = profile.uid,
@@ -4680,8 +4708,34 @@ fun ProfileScreenContent(
     var selectedBondForDetails by remember { mutableStateOf<IntimacyBond?>(null) }
     var showAvatarClickOptions by remember { mutableStateOf(false) }
     var pendingIntimacyIncomingCount by remember { mutableIntStateOf(0) }
+    val profileVisitorsList = remember { mutableStateListOf<Map<String, Any>>() }
+    val receivedGiftsList = remember { mutableStateListOf<Map<String, Any>>() }
+    var showVisitorsModal by remember { mutableStateOf(false) }
+    var showReceivedGiftsModal by remember { mutableStateOf(false) }
     LaunchedEffect(currentUser.uid) {
         if (currentUser.uid.isNotBlank()) {
+            db.collection("users").document(currentUser.uid)
+                .collection("profile_visitors")
+                .orderBy("visitedAt", Query.Direction.DESCENDING)
+                .limit(50)
+                .addSnapshotListener { snap, _ ->
+                    if (snap != null) {
+                        profileVisitorsList.clear()
+                        profileVisitorsList.addAll(snap.documents.mapNotNull { it.data })
+                    }
+                }
+
+            db.collection("users").document(currentUser.uid)
+                .collection("received_gifts")
+                .orderBy("timestamp", Query.Direction.DESCENDING)
+                .limit(30)
+                .addSnapshotListener { snap, _ ->
+                    if (snap != null) {
+                        receivedGiftsList.clear()
+                        receivedGiftsList.addAll(snap.documents.mapNotNull { it.data })
+                    }
+                }
+
             db.collection("intimacy_requests")
                 .whereEqualTo("recipientUid", currentUser.uid)
                 .whereEqualTo("status", "pending")
@@ -4802,7 +4856,7 @@ fun ProfileScreenContent(
             .fillMaxSize()
             .background(BrandDark)
     ) {
-        // 1. 100% FIXED & STATIC TOP BACKGROUND IMAGE (VIP PALACE COVER)
+        // 1. 100% FIXED & STATIC FULL-SCREEN BACKGROUND IMAGE (VIP PALACE COVER)
         val profileVipLvl = currentUser.getVipLevel()
         val fixedProfileVipCoverRes = getVipMobileBackgroundDrawable(if (profileVipLvl in 1..5) profileVipLvl else 3)
         if (fixedProfileVipCoverRes != 0) {
@@ -4810,26 +4864,8 @@ fun ProfileScreenContent(
                 painter = painterResource(id = fixedProfileVipCoverRes),
                 contentDescription = "Profile Fixed Palace Backdrop",
                 contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height((androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * 0.6f).dp)
-                    .align(Alignment.TopCenter)
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height((androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * 0.6f).dp)
-                    .align(Alignment.TopCenter)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                Color.Transparent,
-                                Color(0x3309070D),
-                                Color(0x8809070D),
-                                BrandDark
-                            )
-                        )
-                    )
+                alignment = Alignment.Center,
+                modifier = Modifier.fillMaxSize()
             )
         }
 
@@ -4956,10 +4992,10 @@ fun ProfileScreenContent(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
 
-            // 1.5 SHEET RESTING POSITION: transparent spacer so the glass sheet opens at ~50% of the screen,
-            // revealing the fixed backdrop above. Dragging up slides the sheet over the backdrop; dragging down returns to 50%.
+            // 1.5 SHEET RESTING POSITION: transparent spacer so the glowing white glass sheet opens at ~50% of the screen,
+            // keeping the full fixed background character visible above. Dragging up slides smoothly over the backdrop.
             item {
-                Spacer(modifier = Modifier.height((profileScreenHeightDp * 0.42f).dp))
+                Spacer(modifier = Modifier.height((profileScreenHeightDp * 0.43f).dp))
             }
 
             // 2. SOULMATE / COUPLE DUAL-AVATAR HEADER & VOICE INTRO (MATCHING REFERENCE IMAGES)
@@ -4971,28 +5007,40 @@ fun ProfileScreenContent(
                 val vipCoverRes = getVipMobileBackgroundDrawable(if (vipLvl in 1..5) vipLvl else 3)
                 Surface(
                     color = Color.Transparent,
-                    shape = RoundedCornerShape(24.dp),
+                    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp, bottomStart = 22.dp, bottomEnd = 22.dp),
                     shadowElevation = 0.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Box(modifier = Modifier.fillMaxWidth().heightIn(min = 320.dp)) {
-                        // Glassmorphic semi-transparent frosted white sliding sheet over the fixed palace backdrop
+                    Box(modifier = Modifier.fillMaxWidth().heightIn(min = 300.dp)) {
+                        // Glowing semi-transparent white frosted glass sliding sheet (matches reference screenshots)
                         Box(
                             modifier = Modifier
                                 .matchParentSize()
-                                .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp, bottomStart = 20.dp, bottomEnd = 20.dp))
-                                .background(Color.White.copy(alpha = 0.55f))
-                                .border(1.2.dp, Color.White.copy(alpha = 0.7f), RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp, bottomStart = 20.dp, bottomEnd = 20.dp))
+                                .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp, bottomStart = 22.dp, bottomEnd = 22.dp))
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(
+                                            Color.White.copy(alpha = 0.80f),
+                                            Color.White.copy(alpha = 0.70f),
+                                            Color.White.copy(alpha = 0.74f)
+                                        )
+                                    )
+                                )
+                                .border(
+                                    1.4.dp,
+                                    Color.White.copy(alpha = 0.92f),
+                                    RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp, bottomStart = 22.dp, bottomEnd = 22.dp)
+                                )
                         )
-                        // Drag handle
+                        // Subtle top drag handle pill
                         Box(
                             modifier = Modifier
                                 .align(Alignment.TopCenter)
                                 .padding(top = 8.dp)
-                                .width(42.dp)
+                                .width(44.dp)
                                 .height(4.dp)
                                 .clip(RoundedCornerShape(2.dp))
-                                .background(Color(0xFF64748B).copy(alpha = 0.6f))
+                                .background(Color(0xFF94A3B8).copy(alpha = 0.65f))
                         )
 
                         // Content inside the card
@@ -5600,47 +5648,161 @@ fun ProfileScreenContent(
                                     Spacer(modifier = Modifier.height(6.dp))
                                 }
 
-                                Spacer(modifier = Modifier.height(14.dp))
+                                Spacer(modifier = Modifier.height(10.dp))
 
-                                // Counters Row: Following, Followers, Moments
+                                // Compact Glowing White Frosted Glass 4-Column Stats Bar: Followers | Following | Intimacy | Visitors
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .background(Color(0xFF181324).copy(alpha = 0.85f), RoundedCornerShape(16.dp))
-                                        .padding(vertical = 10.dp),
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(Color.White.copy(alpha = 0.68f))
+                                        .border(1.dp, Color.White.copy(alpha = 0.92f), RoundedCornerShape(14.dp))
+                                        .padding(vertical = 8.dp),
                                     horizontalArrangement = Arrangement.SpaceAround,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column(
                                         horizontalAlignment = Alignment.CenterHorizontally,
-                                        modifier = Modifier.clickable {
-                                            socialConnectionsInitialTab = 0
-                                            showSocialConnectionsDialog = true
-                                        }
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable {
+                                                socialConnectionsInitialTab = 1
+                                                showSocialConnectionsDialog = true
+                                            }
                                     ) {
-                                        Text(text = "${currentUser.followingCount}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black)
-                                        Text(text = "Following", color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                                        Text(text = "${currentUser.followerCount}", color = Color(0xFF0F172A), fontSize = 14.sp, fontWeight = FontWeight.Black)
+                                        Text(text = "Followers", color = Color(0xFF475569), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
                                     }
-                                    Box(modifier = Modifier.width(1.dp).height(20.dp).background(Color(0xFF33264A)))
+                                    Box(modifier = Modifier.width(1.dp).height(22.dp).background(Color(0xFFCBD5E1)))
                                     Column(
                                         horizontalAlignment = Alignment.CenterHorizontally,
-                                        modifier = Modifier.clickable {
-                                            socialConnectionsInitialTab = 1
-                                            showSocialConnectionsDialog = true
-                                        }
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable {
+                                                socialConnectionsInitialTab = 0
+                                                showSocialConnectionsDialog = true
+                                            }
                                     ) {
-                                        Text(text = "${currentUser.followerCount}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black)
-                                        Text(text = "Followers", color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                                        Text(text = "${currentUser.followingCount}", color = Color(0xFF0F172A), fontSize = 14.sp, fontWeight = FontWeight.Black)
+                                        Text(text = "Following", color = Color(0xFF475569), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
                                     }
-                                    Box(modifier = Modifier.width(1.dp).height(20.dp).background(Color(0xFF33264A)))
+                                    Box(modifier = Modifier.width(1.dp).height(22.dp).background(Color(0xFFCBD5E1)))
                                     Column(
                                         horizontalAlignment = Alignment.CenterHorizontally,
-                                        modifier = Modifier.clickable {
-                                            onNavigateToMoments()
-                                        }
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable {
+                                                showIntimacyRequestsModal = true
+                                            }
                                     ) {
-                                        Text(text = "${userMoments.size}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black)
-                                        Text(text = "Moments", color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                                        Text(text = "${activeIntimacyBonds.size}", color = Color(0xFF0F172A), fontSize = 14.sp, fontWeight = FontWeight.Black)
+                                        Text(text = "Intimacy", color = Color(0xFF475569), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+                                    Box(modifier = Modifier.width(1.dp).height(22.dp).background(Color(0xFFCBD5E1)))
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable {
+                                                showVisitorsModal = true
+                                            }
+                                    ) {
+                                        Text(text = "${profileVisitorsList.size}", color = Color(0xFF0F172A), fontSize = 14.sp, fontWeight = FontWeight.Black)
+                                        Text(text = "Visitors", color = Color(0xFF475569), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                // Received Gifts Showcase Card (Real-time Firestore + Top Gifters & Gifting Level)
+                                Surface(
+                                    color = Color(0xFF231E46).copy(alpha = 0.92f),
+                                    shape = RoundedCornerShape(16.dp),
+                                    border = BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.55f)),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { showReceivedGiftsModal = true }
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "🎁 Received Gifts (${receivedGiftsList.size})",
+                                                color = Color.White,
+                                                fontSize = 12.5.sp,
+                                                fontWeight = FontWeight.Black
+                                            )
+                                            Text(
+                                                text = "View All ❯",
+                                                color = Color(0xFFFFD700),
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        if (receivedGiftsList.isEmpty()) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(Color(0xFF14102E).copy(alpha = 0.85f))
+                                                    .padding(horizontal = 10.dp, vertical = 8.dp)
+                                            ) {
+                                                Text(
+                                                    text = "✨ No gifts received yet • Live gifts from fans show here",
+                                                    color = Color(0xFFE2E8F0),
+                                                    fontSize = 10.5.sp
+                                                )
+                                            }
+                                        } else {
+                                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                items(receivedGiftsList.take(10)) { g ->
+                                                    val gEmoji = (g["giftEmoji"] as? String) ?: "🎁"
+                                                    val gName = (g["giftName"] as? String) ?: "Gift"
+                                                    val gSender = (g["senderName"] as? String) ?: "Fan"
+                                                    Surface(
+                                                        color = Color(0xFF14102E).copy(alpha = 0.9f),
+                                                        shape = RoundedCornerShape(10.dp),
+                                                        border = BorderStroke(0.8.dp, Color(0xFFFFD700).copy(alpha = 0.4f))
+                                                    ) {
+                                                        Row(
+                                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Text(gEmoji, fontSize = 16.sp)
+                                                            Spacer(modifier = Modifier.width(5.dp))
+                                                            Column {
+                                                                Text(gName, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                                                                Text("by $gSender", color = Color(0xFFFBBF24), fontSize = 8.5.sp, maxLines = 1)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Bio Quote Pill (Frosted White Glass matching reference screenshot)
+                                if (currentUser.bio.isNotBlank()) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Surface(
+                                        color = Color.White.copy(alpha = 0.65f),
+                                        shape = RoundedCornerShape(12.dp),
+                                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.88f)),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            text = "❝ ${currentUser.bio} ❞",
+                                            color = Color(0xFF334155),
+                                            fontSize = 11.5.sp,
+                                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                            fontWeight = FontWeight.Medium,
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                                        )
                                     }
                                 }
                             }
@@ -5671,11 +5833,11 @@ fun ProfileScreenContent(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    // Wealth Level Card with Real 3D Metallic Badge (Glassmorphic Frosted Transparency)
+                    // Wealth Level Card with Real 3D Metallic Badge (Consistent Glowing White Frosted Glass)
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.12f)),
+                        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.74f)),
                         shape = RoundedCornerShape(18.dp),
-                        border = BorderStroke(1.2.dp, Color.White.copy(alpha = 0.25f)),
+                        border = BorderStroke(1.2.dp, Color.White.copy(alpha = 0.90f)),
                         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -5685,33 +5847,39 @@ fun ProfileScreenContent(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                Row(
+                                    modifier = Modifier.weight(1f),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
                                     Image(
                                         painter = painterResource(id = wealthTier.badgeDrawableRes),
                                         contentDescription = wealthTier.tierName,
-                                        modifier = Modifier.size(44.dp)
+                                        modifier = Modifier.size(40.dp)
                                     )
-                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     Column {
                                         Text(
                                             text = "Wealth Level • Lv.$effWealthLvlVal",
-                                            color = Color.White,
+                                            color = Color(0xFF0F172A),
                                             fontWeight = FontWeight.Black,
-                                            fontSize = 13.sp
+                                            fontSize = 12.5.sp,
+                                            maxLines = 1
                                         )
                                         Text(
                                             text = "${wealthTier.crownEmoji} ${wealthTier.tierName}",
-                                            color = Color(0xFFFFD700),
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold
+                                            color = Color(0xFFB45309),
+                                            fontSize = 10.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1
                                         )
                                     }
                                 }
                                 Text(
-                                    text = "%,d / %,d XP".format(effWealthXp, maxWealthXp),
-                                    color = Color.LightGray,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold
+                                    text = "${formatCompactDiamonds(effWealthXp)} / ${formatCompactDiamonds(maxWealthXp)} XP",
+                                    color = Color(0xFF475569),
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1
                                 )
                             }
                             Spacer(modifier = Modifier.height(10.dp))
@@ -5722,16 +5890,16 @@ fun ProfileScreenContent(
                                     .height(6.dp)
                                     .clip(RoundedCornerShape(3.dp)),
                                 color = wealthTier.gradientColors.first(),
-                                trackColor = Color.White.copy(alpha = 0.2f)
+                                trackColor = Color(0xFFCBD5E1)
                             )
                         }
                     }
 
-                    // Charm Level Card (Glassmorphic Frosted Transparency)
+                    // Charm Level Card (Consistent Glowing White Frosted Glass)
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.12f)),
+                        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.74f)),
                         shape = RoundedCornerShape(18.dp),
-                        border = BorderStroke(1.2.dp, Color.White.copy(alpha = 0.25f)),
+                        border = BorderStroke(1.2.dp, Color.White.copy(alpha = 0.90f)),
                         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -5741,33 +5909,39 @@ fun ProfileScreenContent(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                Row(
+                                    modifier = Modifier.weight(1f),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
                                     Image(
                                         painter = painterResource(id = charmTier.badgeDrawableRes),
                                         contentDescription = charmTier.tierName,
-                                        modifier = Modifier.size(44.dp)
+                                        modifier = Modifier.size(40.dp)
                                     )
-                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     Column {
                                         Text(
                                             text = "Charm Level • Lv.$effCharmLvl",
-                                            color = Color.White,
+                                            color = Color(0xFF0F172A),
                                             fontWeight = FontWeight.Black,
-                                            fontSize = 13.sp
+                                            fontSize = 12.5.sp,
+                                            maxLines = 1
                                         )
                                         Text(
                                             text = "${charmTier.crownEmoji} ${charmTier.tierName}",
-                                            color = Color(0xFFF472B6),
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold
+                                            color = Color(0xFFBE185D),
+                                            fontSize = 10.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1
                                         )
                                     }
                                 }
                                 Text(
-                                    text = "%,d / %,d XP".format(effCharmXp, maxCharmXp),
-                                    color = Color.LightGray,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold
+                                    text = "${formatCompactDiamonds(effCharmXp)} / ${formatCompactDiamonds(maxCharmXp)} XP",
+                                    color = Color(0xFF475569),
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1
                                 )
                             }
                             Spacer(modifier = Modifier.height(10.dp))
@@ -5778,7 +5952,7 @@ fun ProfileScreenContent(
                                     .height(6.dp)
                                     .clip(RoundedCornerShape(3.dp)),
                                 color = charmTier.gradientColors.first(),
-                                trackColor = Color.White.copy(alpha = 0.2f)
+                                trackColor = Color(0xFFCBD5E1)
                             )
                         }
                     }
@@ -6629,41 +6803,41 @@ fun ProfileScreenContent(
             }
         }
 
-        // Safety & Account (Glassmorphic Frosted Transparency)
+        // Safety & Account (Consistent Glowing White Frosted Glass)
         item {
             Card(
-                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.12f)),
+                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.76f)),
                 shape = RoundedCornerShape(18.dp),
-                border = BorderStroke(1.2.dp, Color.White.copy(alpha = 0.28f)),
+                border = BorderStroke(1.2.dp, Color.White.copy(alpha = 0.90f)),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
             ) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Safety & Account", color = Color.White.copy(alpha = 0.85f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("Safety & Account", color = Color(0xFF334155), fontSize = 12.sp, fontWeight = FontWeight.Bold)
 
                     // Logout Button
                     Button(
                         onClick = onLogout,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.15f)),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF1F5F9)),
+                        border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth().height(46.dp)
                     ) {
-                        Icon(Icons.Default.ExitToApp, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.ExitToApp, contentDescription = null, tint = Color(0xFF0F172A), modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Log Out", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Text("Log Out", color = Color(0xFF0F172A), fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     }
 
                     // Delete Account Button
                     Button(
                         onClick = { showDeleteConfirmDialog = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444).copy(alpha = 0.22f)),
-                        border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.5f)),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFEE2E2)),
+                        border = BorderStroke(1.dp, Color(0xFFFCA5A5)),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth().height(46.dp)
                     ) {
-                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFFF6B6B), modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFDC2626), modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Delete Account", color = Color(0xFFFF6B6B), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Text("Delete Account", color = Color(0xFFDC2626), fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -6676,6 +6850,197 @@ fun ProfileScreenContent(
     }
 
 }
+
+    // Real-Time Profile Visitors Modal (Number visible to all; Detailed list unlocked for VIP Level 1+)
+    if (showVisitorsModal) {
+        val canViewVisitors = currentUser.getVipLevel() >= 1 || currentUser.isVipOrPlatinum() || currentUser.isAdmin || currentUser.isFounder()
+        AlertDialog(
+            onDismissRequest = { showVisitorsModal = false },
+            containerColor = Color(0xFF141026),
+            title = {
+                Text(
+                    text = "👁️ Profile Visitors (${profileVisitorsList.size})",
+                    color = Color.White,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 16.sp
+                )
+            },
+            text = {
+                if (!canViewVisitors) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("👑", fontSize = 36.sp)
+                        Text(
+                            text = "${profileVisitorsList.size} user(s) have visited your profile!",
+                            color = Color(0xFFFFD700),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.5.sp
+                        )
+                        Text(
+                            text = "Upgrade to minimum VIP Level 1 to see who visited your profile in real time.",
+                            color = Color.LightGray,
+                            fontSize = 12.sp
+                        )
+                    }
+                } else if (profileVisitorsList.isEmpty()) {
+                    Text(
+                        text = "No visitors yet. When users visit your profile, they will appear here in real time.",
+                        color = Color.LightGray,
+                        fontSize = 12.5.sp
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 320.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(profileVisitorsList) { v ->
+                            val vUid = (v["visitorUid"] as? String) ?: ""
+                            val vName = (v["visitorName"] as? String) ?: "Member"
+                            val vPhoto = (v["visitorPhoto"] as? String) ?: ""
+                            val vVip = ((v["visitorVipLevel"] as? Number)?.toInt()) ?: 0
+                            Surface(
+                                color = Color.White.copy(alpha = 0.08f),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.16f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        if (vUid.isNotBlank()) {
+                                            db.collection("users").document(vUid).get().addOnSuccessListener { d ->
+                                                if (d.exists()) {
+                                                    showVisitorsModal = false
+                                                    onOpenUserChat(parseUserProfileFromDoc(d).copy(uid = d.id))
+                                                }
+                                            }
+                                        }
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    AsyncImage(
+                                        model = vPhoto.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80" },
+                                        contentDescription = vName,
+                                        modifier = Modifier.size(38.dp).clip(CircleShape),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(vName, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            text = if (vVip > 0) "👑 VIP $vVip • Visited your profile" else "Visited your profile",
+                                            color = if (vVip > 0) Color(0xFFFFD700) else Color.LightGray,
+                                            fontSize = 10.5.sp
+                                        )
+                                    }
+                                    Text("💬", fontSize = 16.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                if (!canViewVisitors) {
+                    Button(
+                        onClick = {
+                            showVisitorsModal = false
+                            showVipCenterModal = true
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD700))
+                    ) {
+                        Text("Unlock VIP 👑", color = Color.Black, fontWeight = FontWeight.Black)
+                    }
+                } else {
+                    TextButton(onClick = { showVisitorsModal = false }) {
+                        Text("Close", color = Color(0xFFFFD700), fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            dismissButton = if (!canViewVisitors) {
+                {
+                    TextButton(onClick = { showVisitorsModal = false }) {
+                        Text("Later", color = Color.Gray)
+                    }
+                }
+            } else null
+        )
+    }
+
+    // Real-Time Received Gifts & Gifting Level Modal
+    if (showReceivedGiftsModal) {
+        AlertDialog(
+            onDismissRequest = { showReceivedGiftsModal = false },
+            containerColor = Color(0xFF141026),
+            title = {
+                Column {
+                    Text(
+                        text = "🎁 Received Gifts (${receivedGiftsList.size})",
+                        color = Color.White,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 16.sp
+                    )
+                    Text(
+                        text = "Gifting Charm Level: Lv.${currentUser.getEffectiveCharmLevel()} • ${currentUser.getCharmTierInfo().tierName}",
+                        color = Color(0xFFFFD700),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            text = {
+                if (receivedGiftsList.isEmpty()) {
+                    Text(
+                        text = "No gifts received yet. When fans send you gifts in rooms, top gifters and gift values will appear here in real time!",
+                        color = Color.LightGray,
+                        fontSize = 12.5.sp
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 320.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(receivedGiftsList) { g ->
+                            val gEmoji = (g["giftEmoji"] as? String) ?: "🎁"
+                            val gName = (g["giftName"] as? String) ?: "Luxury Gift"
+                            val gSender = (g["senderName"] as? String) ?: "Fan"
+                            val gValue = (g["diamondValue"] as? Number)?.toLong() ?: (g["cost"] as? Number)?.toLong() ?: 0L
+                            Surface(
+                                color = Color.White.copy(alpha = 0.08f),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(0.8.dp, Color(0xFFF59E0B).copy(alpha = 0.4f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(gEmoji, fontSize = 24.sp)
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(gName, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                        Text("Sent by $gSender", color = Color(0xFFFBBF24), fontSize = 11.sp)
+                                    }
+                                    if (gValue > 0L) {
+                                        Text("💎 $gValue", color = Color(0xFFE9D5FF), fontSize = 11.5.sp, fontWeight = FontWeight.Black)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showReceivedGiftsModal = false }) {
+                    Text("Close", color = Color(0xFFFFD700), fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
 
 
 
