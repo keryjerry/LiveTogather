@@ -12,8 +12,8 @@ android {
         applicationId = "com.devil.livetogather"
         minSdk = 26
         targetSdk = 36
-        versionCode = 69
-        versionName = "1.0.68"
+        versionCode = 70
+        versionName = "1.0.69"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -107,8 +107,8 @@ dependencies {
     implementation("com.google.android.gms:play-services-auth:21.2.0")
     implementation("com.facebook.android:facebook-login:17.0.2")
 
-    // Google Play Billing Library (Kotlin & Coroutines) - 7.x Standard
-    implementation("com.android.billingclient:billing-ktx:7.1.1")
+    // Google Play Billing Library (Kotlin & Coroutines) - 8.x Play Console Compliant
+    implementation("com.android.billingclient:billing-ktx:8.0.0")
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

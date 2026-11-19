@@ -136,9 +136,9 @@ object GooglePlayBillingManager : PurchasesUpdatedListener, BillingClientStateLi
         }
         client.queryProductDetailsAsync(
             QueryProductDetailsParams.newBuilder().setProductList(inAppProductList).build()
-        ) { billingResult, productDetailsList ->
+        ) { billingResult, queryProductDetailsResult ->
             if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
-                val list = productDetailsList ?: emptyList()
+                val list = queryProductDetailsResult.productDetailsList ?: emptyList()
                 val current = _productDetailsMap.value.toMutableMap()
                 list.forEach { current[it.productId] = it }
                 _productDetailsMap.value = current
@@ -164,9 +164,9 @@ object GooglePlayBillingManager : PurchasesUpdatedListener, BillingClientStateLi
         }
         client.queryProductDetailsAsync(
             QueryProductDetailsParams.newBuilder().setProductList(vipInAppList).build()
-        ) { billingResult, productDetailsList ->
+        ) { billingResult, queryProductDetailsResult ->
             if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
-                val list = productDetailsList ?: emptyList()
+                val list = queryProductDetailsResult.productDetailsList ?: emptyList()
                 if (list.isNotEmpty()) {
                     val current = _productDetailsMap.value.toMutableMap()
                     list.forEach { current[it.productId] = it }
@@ -185,9 +185,9 @@ object GooglePlayBillingManager : PurchasesUpdatedListener, BillingClientStateLi
         }
         client.queryProductDetailsAsync(
             QueryProductDetailsParams.newBuilder().setProductList(vipSubList).build()
-        ) { billingResult, productDetailsList ->
+        ) { billingResult, queryProductDetailsResult ->
             if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
-                val list = productDetailsList ?: emptyList()
+                val list = queryProductDetailsResult.productDetailsList ?: emptyList()
                 if (list.isNotEmpty()) {
                     val current = _productDetailsMap.value.toMutableMap()
                     list.forEach { current[it.productId] = it }
@@ -257,8 +257,8 @@ object GooglePlayBillingManager : PurchasesUpdatedListener, BillingClientStateLi
             )
             client.queryProductDetailsAsync(
                 QueryProductDetailsParams.newBuilder().setProductList(singlePrimaryList).build()
-            ) { result, productDetailsList ->
-                val details = productDetailsList.firstOrNull()
+            ) { result, queryProductDetailsResult ->
+                val details = queryProductDetailsResult.productDetailsList?.firstOrNull()
                 if (result.responseCode == BillingClient.BillingResponseCode.OK && details != null) {
                     val updated = _productDetailsMap.value.toMutableMap()
                     updated[cleanId] = details
@@ -274,8 +274,8 @@ object GooglePlayBillingManager : PurchasesUpdatedListener, BillingClientStateLi
                     )
                     client.queryProductDetailsAsync(
                         QueryProductDetailsParams.newBuilder().setProductList(singleFallbackList).build()
-                    ) { fallbackResult, fallbackProductDetailsList ->
-                        val fallbackDetails = fallbackProductDetailsList.firstOrNull()
+                    ) { fallbackResult, fallbackQueryProductDetailsResult ->
+                        val fallbackDetails = fallbackQueryProductDetailsResult.productDetailsList?.firstOrNull()
                         if (fallbackResult.responseCode == BillingClient.BillingResponseCode.OK && fallbackDetails != null) {
                             val updated = _productDetailsMap.value.toMutableMap()
                             updated[cleanId] = fallbackDetails
