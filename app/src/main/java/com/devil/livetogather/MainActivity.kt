@@ -808,6 +808,7 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
         }
     }
     var showCreateRoomDialog by remember { mutableStateOf(false) }
+    var showGoLiveMyRoomsDialog by remember { mutableStateOf(false) }
     var createRoomInitialCategory by remember { mutableStateOf("free_tonight") }
     var activeCategoryHub by remember { mutableStateOf<IntentCategory?>(null) }
     var matchedPartner by remember { mutableStateOf<UserProfile?>(null) }
@@ -1949,14 +1950,15 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                         onToggleExpand = { isGlobalCapsuleExpanded = !isGlobalCapsuleExpanded },
                         onNavigate = { route -> currentScreen = route },
                         onCreateRoom = {
-                            val existingVoiceRoom = roomsList.firstOrNull { 
+                            val myExistingVoiceRooms = roomsList.filter {
                                 ((it.hostUid.isNotBlank() && it.hostUid == currentUserId) || (it.hostId.isNotBlank() && it.hostId == currentUserId)) &&
+                                !it.statusMessage.equals("DELETED", ignoreCase = true) &&
                                 it.category != "video_stream" && it.roomType != "video" && it.roomType != "video_pk" && !it.isVideoRoom
                             }
-                            if (existingVoiceRoom != null) {
-                                activeAudioRoom = existingVoiceRoom.copy(roomType = "audio")
+                            if (myExistingVoiceRooms.isNotEmpty()) {
+                                showGoLiveMyRoomsDialog = true
                             } else {
-                                createRoomInitialCategory = "voice_party"
+                                createRoomInitialCategory = "party_rooms"
                                 showCreateRoomDialog = true
                             }
                         },
@@ -2054,14 +2056,15 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                                 activeAudioRoom = if (isVideo) room.copy(roomType = "video") else room.copy(roomType = "audio")
                             },
                             onCreateRoom = {
-                                val existingVoiceRoom = roomsList.firstOrNull { 
+                                val myExistingVoiceRooms = roomsList.filter {
                                     ((it.hostUid.isNotBlank() && it.hostUid == currentUserId) || (it.hostId.isNotBlank() && it.hostId == currentUserId)) &&
+                                    !it.statusMessage.equals("DELETED", ignoreCase = true) &&
                                     it.category != "video_stream" && it.roomType != "video" && it.roomType != "video_pk" && !it.isVideoRoom
                                 }
-                                if (existingVoiceRoom != null) {
-                                    activeAudioRoom = existingVoiceRoom.copy(roomType = "audio")
+                                if (myExistingVoiceRooms.isNotEmpty()) {
+                                    showGoLiveMyRoomsDialog = true
                                 } else {
-                                    createRoomInitialCategory = "voice_party"
+                                    createRoomInitialCategory = "party_rooms"
                                     showCreateRoomDialog = true
                                 }
                             },
@@ -2627,6 +2630,106 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                         shape = RoundedCornerShape(50)
                     ) {
                         Text("लॉगिन स्क्रीन पर जाएं", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                }
+            )
+        }
+
+        // 0.09 Go Live - User's Own Existing Room List Modal (Never auto-enters directly)
+        if (showGoLiveMyRoomsDialog) {
+            val myLiveRoomsList = remember(roomsList.toList(), currentUserId) {
+                roomsList.filter {
+                    ((it.hostUid.isNotBlank() && it.hostUid == currentUserId) || (it.hostId.isNotBlank() && it.hostId == currentUserId)) &&
+                    !it.statusMessage.equals("DELETED", ignoreCase = true) &&
+                    it.category != "video_stream" && it.roomType != "video" && it.roomType != "video_pk" && !it.isVideoRoom
+                }
+            }
+            AlertDialog(
+                onDismissRequest = { showGoLiveMyRoomsDialog = false },
+                containerColor = Color(0xFF141026),
+                title = {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "🎙️ My Live Room (${myLiveRoomsList.size})",
+                            color = Color.White,
+                            fontWeight = FontWeight.Black,
+                            fontSize = 16.sp
+                        )
+                        IconButton(onClick = { showGoLiveMyRoomsDialog = false }, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.LightGray)
+                        }
+                    }
+                },
+                text = {
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 320.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(myLiveRoomsList) { room ->
+                            val isLiveNow = room.isHostLive && !room.statusMessage.equals("OFFLINE", ignoreCase = true) && !room.statusMessage.equals("CLOSED", ignoreCase = true)
+                            Surface(
+                                color = Color.White.copy(alpha = 0.08f),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, if (isLiveNow) Color(0xFF10B981) else Color(0xFF8B5CF6).copy(alpha = 0.6f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        showGoLiveMyRoomsDialog = false
+                                        activeAudioRoom = room.copy(roomType = "audio")
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    AsyncImage(
+                                        model = room.hostPhotoUrl.ifBlank { room.banner_image_url }.ifBlank { currentUser.photo },
+                                        contentDescription = room.title,
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .clip(RoundedCornerShape(10.dp)),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = room.title.ifBlank { room.roomName.ifBlank { "My Voice Room" } },
+                                            color = Color.White,
+                                            fontSize = 13.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1
+                                        )
+                                        Text(
+                                            text = "ID: ${room.id} • ${if (isLiveNow) "🟢 LIVE" else "Tap to Go Live"}",
+                                            color = if (isLiveNow) Color(0xFF34D399) else Color(0xFFFBBF24),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                    Surface(
+                                        color = BrandCoral,
+                                        shape = RoundedCornerShape(50)
+                                    ) {
+                                        Text(
+                                            text = "Enter",
+                                            color = Color.White,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showGoLiveMyRoomsDialog = false }) {
+                        Text("Close", color = Color(0xFFFFD700), fontWeight = FontWeight.Bold)
                     }
                 }
             )

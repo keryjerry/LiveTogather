@@ -10664,7 +10664,7 @@ fun CategoryHubLobbyDialog(
                 // In Video Stream: ONLY real video rooms!
                 val isVideo = (r.category == "video_stream" || r.roomType == "video" || r.roomType == "video_pk" || r.isVideoRoom) && r.roomType != "audio"
                 return isVideo
-            } else if (category.id == "voice_party") {
+            } else if (category.id == "voice_party" || category.id == "party_rooms") {
                 // In Voice Party: show user's own existing audio room + all available online audio rooms!
                 return r.category != "video_stream" && r.roomType != "video" && r.roomType != "video_pk" && !r.isVideoRoom
             } else {
