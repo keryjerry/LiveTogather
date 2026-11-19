@@ -5760,7 +5760,7 @@ fun ProfileScreenContent(
                                             list.add(bItem.drawableRes to bItem.title)
                                         }
                                     }
-                                    if (currentUser.isFounder() || userEquippedBadges.isEmpty()) {
+                                    if (currentUser.isFounder()) {
                                         listOf(
                                             "badge_honor_supreme_emperor", "badge_honor_grand_duke",
                                             "badge_honor_earl", "badge_honor_baron",

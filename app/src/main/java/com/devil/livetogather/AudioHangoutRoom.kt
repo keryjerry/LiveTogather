@@ -71,6 +71,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.BlendMode
@@ -2633,6 +2634,7 @@ fun RoomMemberProfileSheet(
 
     var isFollowingMember by remember { mutableStateOf(false) }
     var memberFollowerCount by remember { mutableStateOf(userProfile?.followerCount ?: 0) }
+    var memberIntimacyCount by remember(member.uid) { mutableIntStateOf(0) }
     var memberAdminRooms by remember { mutableStateOf<List<String>>(userProfile?.adminInRoomIds ?: emptyList()) }
     var showAdminRoomsDialog by remember { mutableStateOf(false) }
     var showProfileGiftPicker by remember { mutableStateOf(false) }
@@ -2668,6 +2670,22 @@ fun RoomMemberProfileSheet(
                     memberAdminRooms = rooms
                 }
             }
+        val intimacyBondsDoc = db.collection("intimacy_bonds")
+            .whereEqualTo("status", "active")
+            .addSnapshotListener { snap, _ ->
+                if (snap != null) {
+                    val uniquePartners = snap.documents.mapNotNull { d ->
+                        val u1 = d.getString("user1Id") ?: ""
+                        val u2 = d.getString("user2Id") ?: ""
+                        when (targetUid) {
+                            u1 -> u2
+                            u2 -> u1
+                            else -> null
+                        }
+                    }.filter { it.isNotBlank() }.distinct()
+                    memberIntimacyCount = uniquePartners.size
+                }
+            }
         val followDoc = if (!isSelf && member.uid.isNotBlank()) {
             db.collection("users").document(member.uid)
                 .collection("followers").document(currentUser.uid)
@@ -2679,6 +2697,7 @@ fun RoomMemberProfileSheet(
         onDispose {
             countDoc.remove()
             userDoc.remove()
+            intimacyBondsDoc.remove()
             followDoc?.remove()
         }
     }
@@ -2908,7 +2927,7 @@ fun RoomMemberProfileSheet(
                                         Spacer(modifier = Modifier.width(4.dp))
                                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                             Text("Intimacy", color = Color(0xFFEC4899), fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                                            Text("4", color = Color(0xFFBE185D), fontSize = 10.sp, fontWeight = FontWeight.Black)
+                                            Text("$memberIntimacyCount", color = Color(0xFFBE185D), fontSize = 10.sp, fontWeight = FontWeight.Black)
                                         }
                                     }
                                 }
@@ -3104,7 +3123,7 @@ fun RoomMemberProfileSheet(
                                         list.add(bItem.drawableRes to bItem.title)
                                     }
                                 }
-                                if (isMemberFounder || sheetEquippedBadges.isEmpty()) {
+                                if (isMemberFounder) {
                                     listOf(
                                         "badge_honor_supreme_emperor", "badge_honor_grand_duke",
                                         "badge_honor_earl", "badge_honor_baron",
@@ -3586,10 +3605,12 @@ private fun UserFullProfileDialog(
     var followingCount by remember(profile.uid) { mutableIntStateOf(profile.followingCount) }
     var isFollowing by remember(profile.uid) { mutableStateOf(false) }
 
-    // 2. Real-time Couple / Intimacy bond
+    // 2. Real-time Couple / Intimacy bond & Visitors (100% Firestore, ZERO dummy data)
     var partnerPhoto by remember(profile.uid) { mutableStateOf("") }
     var activeRingId by remember(profile.uid) { mutableStateOf("") }
     var intimacyLvl by remember(profile.uid) { mutableIntStateOf(0) }
+    var activeBondsCount by remember(profile.uid) { mutableIntStateOf(0) }
+    var visitorCount by remember(profile.uid) { mutableIntStateOf(0) }
     var partnerUser by remember(profile.uid) { mutableStateOf<UserProfile?>(null) }
     var partnerName by remember(profile.uid) { mutableStateOf("") }
     var isCoupleBond by remember(profile.uid) { mutableStateOf(false) }
@@ -3664,14 +3685,19 @@ private fun UserFullProfileDialog(
                 }
         } else null
 
-        // Intimacy bond query
+        // Intimacy bond query (100% real Firestore active bonds only)
         val bondQuery = db.collection("intimacy_bonds")
             .whereEqualTo("status", "active")
             .addSnapshotListener { snap, _ ->
                 if (snap != null) {
-                    val doc = snap.documents.firstOrNull { d ->
+                    val userBonds = snap.documents.filter { d ->
                         d.getString("user1Id") == profile.uid || d.getString("user2Id") == profile.uid
                     }
+                    val uniquePartnerIds = userBonds.mapNotNull { d ->
+                        if (d.getString("user1Id") == profile.uid) d.getString("user2Id") else d.getString("user1Id")
+                    }.filter { it.isNotBlank() }.distinct()
+                    activeBondsCount = uniquePartnerIds.size
+                    val doc = userBonds.firstOrNull()
                     if (doc != null) {
                         val isU1 = doc.getString("user1Id") == profile.uid
                         val pUid = if (isU1) doc.getString("user2Id") else doc.getString("user1Id")
@@ -3679,10 +3705,9 @@ private fun UserFullProfileDialog(
                         val pUrl = if (isU1) doc.getString("user2Photo") else doc.getString("user1Photo")
                         val bType = doc.getString("bondType") ?: "couple"
                         isCoupleBond = !bType.contains("bestie", ignoreCase = true)
-                        if (!pName.isNullOrBlank()) partnerName = pName
-                        if (!pUrl.isNullOrBlank()) partnerPhoto = pUrl
-                        val rId = doc.getString("activeMicLinkId")
-                        if (!rId.isNullOrBlank()) activeRingId = rId
+                        partnerName = pName.orEmpty()
+                        partnerPhoto = pUrl.orEmpty()
+                        activeRingId = doc.getString("activeMicLinkId").orEmpty()
                         intimacyLvl = (doc.getLong("intimacyLevel") ?: 1L).toInt()
 
                         if (!pUid.isNullOrBlank()) {
@@ -3697,8 +3722,22 @@ private fun UserFullProfileDialog(
                                 }
                             }
                         }
+                    } else {
+                        partnerName = ""
+                        partnerPhoto = ""
+                        partnerUser = null
+                        activeRingId = ""
+                        intimacyLvl = 0
+                        isCoupleBond = false
                     }
                 }
+            }
+
+        // Real-time Profile Visitors count listener
+        val visitorsListener = db.collection("users").document(profile.uid)
+            .collection("profile_visitors")
+            .addSnapshotListener { snap, _ ->
+                if (snap != null) visitorCount = snap.size()
             }
 
         // Query received gifts
@@ -3730,6 +3769,7 @@ private fun UserFullProfileDialog(
             followingListener.remove()
             isFollowingListener?.remove()
             bondQuery.remove()
+            visitorsListener.remove()
             giftsQuery.remove()
             momentsQuery.remove()
         }
@@ -3821,36 +3861,14 @@ private fun UserFullProfileDialog(
                             ) {
                                 Text("🔥", fontSize = 11.sp)
                                 Spacer(modifier = Modifier.width(3.dp))
-                                Text("Sovereign Emperor • Lv.$wealthLvl", color = BrandGold, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+                                Text("${LevelBadgeSystem.getLevelTierInfo(wealthLvl).tierName} • Lv.$wealthLvl", color = BrandGold, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
                             }
-                        }
-                    }
-
-                    // Bottom-Right Voice Intro Pill (▶ |||||| 8s)
-                    Surface(
-                        color = Color(0xFF8B5CF6).copy(alpha = 0.92f),
-                        shape = RoundedCornerShape(50),
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(end = 22.dp, bottom = 26.dp)
-                            .clickable {
-                                Toast.makeText(context, "🔊 Playing voice intro...", Toast.LENGTH_SHORT).show()
-                            }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("▶", color = Color.White, fontSize = 9.sp)
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("|||||||", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("8s", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
 
-                // B. Dual-Avatar Couple Section (User Avatar, Proposal Ring & Partner Avatar)
+                // B. User Avatar (+ Real-Time Intimacy Partner & Ring ONLY when an active Firestore bond exists — ZERO dummy ring!)
+                val hasRealActiveBond = activeBondsCount > 0 && (partnerName.isNotBlank() || partnerPhoto.isNotBlank())
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -3862,9 +3880,8 @@ private fun UserFullProfileDialog(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.Bottom
                     ) {
-                        // Left: Dual Avatars & Proposal Ring
+                        // Left: Main User Avatar (+ Proposal Ring & Partner ONLY if genuinely bonded in Firestore)
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            // User Main Avatar with Active Video Frame
                             Box(modifier = Modifier.size(105.dp), contentAlignment = Alignment.Center) {
                                 FlowingAvatarFrame(
                                     photoUrl = displayUser.photo.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
@@ -3875,73 +3892,59 @@ private fun UserFullProfileDialog(
                                 )
                             }
 
-                            // Proposal Ring Thumbnail
-                            Image(
-                                painter = painterResource(id = ringThumbRes),
-                                contentDescription = "Proposal Ring",
-                                modifier = Modifier
-                                    .offset(x = (-8).dp, y = 4.dp)
-                                    .size(52.dp),
-                                contentScale = ContentScale.Fit
-                            )
-
-                            // Partner Avatar with Animated Frame (matching user avatar)
-                            Box(
-                                modifier = Modifier
-                                    .offset(x = (-10).dp, y = 0.dp)
-                                    .size(105.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                FlowingAvatarFrame(
-                                    photoUrl = partnerPhoto.ifBlank { "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80" },
-                                    frameId = partnerUser?.activeFrame ?: "",
-                                    avatarSize = 64.dp,
-                                    frameSize = 118.dp,
-                                    vipLevel = partnerUser?.getVipLevel() ?: 0
+                            if (hasRealActiveBond) {
+                                Image(
+                                    painter = painterResource(id = ringThumbRes),
+                                    contentDescription = "Proposal Ring",
+                                    modifier = Modifier
+                                        .offset(x = (-8).dp, y = 4.dp)
+                                        .size(52.dp),
+                                    contentScale = ContentScale.Fit
                                 )
-                            }
-                        }
 
-                        // Right: Single-Line Intimacy Pill & Love Zone
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.offset(y = 12.dp)
-                        ) {
-                            Surface(
-                                color = Color.Black.copy(alpha = 0.5f),
-                                shape = RoundedCornerShape(50),
-                                border = BorderStroke(1.dp, Color(0xFFFFB6C1).copy(alpha = 0.8f))
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                Box(
+                                    modifier = Modifier
+                                        .offset(x = (-10).dp, y = 0.dp)
+                                        .size(105.dp),
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    Text("❤️", fontSize = 11.sp)
-                                    Spacer(modifier = Modifier.width(5.dp))
-                                    Text(
-                                        text = "Intimacy $intimacyLvl",
-                                        color = Color(0xFFFF80AB),
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        softWrap = false
+                                    FlowingAvatarFrame(
+                                        photoUrl = partnerPhoto,
+                                        frameId = partnerUser?.activeFrame ?: "",
+                                        avatarSize = 64.dp,
+                                        frameSize = 118.dp,
+                                        vipLevel = partnerUser?.getVipLevel() ?: 0
                                     )
                                 }
                             }
+                        }
 
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text("🏠", fontSize = 22.sp)
-                            Surface(
-                                color = Color.Black.copy(alpha = 0.5f),
-                                shape = RoundedCornerShape(50),
-                                border = BorderStroke(0.8.dp, Color(0xFFFDBA74).copy(alpha = 0.7f))
+                        // Right: Real-Time Intimacy Pill ONLY when active bond exists
+                        if (hasRealActiveBond) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.offset(y = 12.dp)
                             ) {
-                                Text(
-                                    text = "Love Zone • Lv.60",
-                                    color = Color(0xFFFDBA74),
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                                )
+                                Surface(
+                                    color = Color.Black.copy(alpha = 0.5f),
+                                    shape = RoundedCornerShape(50),
+                                    border = BorderStroke(1.dp, Color(0xFFFFB6C1).copy(alpha = 0.8f))
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("❤️", fontSize = 11.sp)
+                                        Spacer(modifier = Modifier.width(5.dp))
+                                        Text(
+                                            text = "Intimacy Lv.$intimacyLvl",
+                                            color = Color(0xFFFF80AB),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            softWrap = false
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -4070,71 +4073,87 @@ private fun UserFullProfileDialog(
                             )
                         }
 
-                        Surface(
-                            color = Color(0xFFF59E0B),
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, Color(0xFFFDE68A))
-                        ) {
-                            Text(
-                                text = "👑 VIP $effectiveVipForBorder",
-                                color = Color.White,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                            )
+                        if (vipLvl > 0) {
+                            Surface(
+                                color = Color(0xFFF59E0B),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, Color(0xFFFDE68A))
+                            ) {
+                                Text(
+                                    text = "👑 VIP $vipLvl",
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
                         }
                     }
 
                     Spacer(modifier = Modifier.height(18.dp))
 
-                    // Row 5: Real Social Stats (View-Only, Non-Clickable as commanded by user)
+                    // Row 5: Real-Time 4-Column Social Stats (Followers | Following | Intimacy | Visitors — 100% Firestore)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(16.dp))
                             .background(Color(0xFF161224))
+                            .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(16.dp))
                             .padding(vertical = 12.dp),
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = "$followingCount",
-                                color = Color.White,
-                                fontSize = 17.sp,
-                                fontWeight = FontWeight.Black
-                            )
-                            Text("Following", color = Color.Gray, fontSize = 11.sp)
-                        }
-
-                        Box(modifier = Modifier.height(28.dp).width(1.dp).background(Color.White.copy(alpha = 0.15f)))
-
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "$followerCount",
                                 color = Color.White,
-                                fontSize = 17.sp,
+                                fontSize = 16.sp,
                                 fontWeight = FontWeight.Black
                             )
-                            Text("Followers", color = Color.Gray, fontSize = 11.sp)
+                            Text("Followers", color = Color(0xFFCBD5E1), fontSize = 10.5.sp)
                         }
 
-                        Box(modifier = Modifier.height(28.dp).width(1.dp).background(Color.White.copy(alpha = 0.15f)))
+                        Box(modifier = Modifier.height(26.dp).width(1.dp).background(Color.White.copy(alpha = 0.15f)))
 
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "${userMoments.size}",
+                                text = "$followingCount",
                                 color = Color.White,
-                                fontSize = 17.sp,
+                                fontSize = 16.sp,
                                 fontWeight = FontWeight.Black
                             )
-                            Text("Moments", color = Color.Gray, fontSize = 11.sp)
+                            Text("Following", color = Color(0xFFCBD5E1), fontSize = 10.5.sp)
+                        }
+
+                        Box(modifier = Modifier.height(26.dp).width(1.dp).background(Color.White.copy(alpha = 0.15f)))
+
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "$activeBondsCount",
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                            Text("Intimacy", color = Color(0xFFCBD5E1), fontSize = 10.5.sp)
+                        }
+
+                        Box(modifier = Modifier.height(26.dp).width(1.dp).background(Color.White.copy(alpha = 0.15f)))
+
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "$visitorCount",
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                            Text("Visitors", color = Color(0xFFCBD5E1), fontSize = 10.5.sp)
                         }
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // D. Wealth Level Progress Card (Matching Photo 3)
+                    // D. Real-Time Wealth Level Progress Card
+                    val realWealthTier = LevelBadgeSystem.getLevelTierInfo(wealthLvl)
                     Card(
                         colors = CardDefaults.cardColors(containerColor = Color(0xFF140F20)),
                         shape = RoundedCornerShape(16.dp),
@@ -4158,7 +4177,7 @@ private fun UserFullProfileDialog(
                                             fontWeight = FontWeight.Bold
                                         )
                                         Text(
-                                            text = "👑 Sovereign Emperor",
+                                            text = "👑 ${realWealthTier.tierName}",
                                             color = BrandGold,
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.SemiBold
@@ -4173,8 +4192,11 @@ private fun UserFullProfileDialog(
                                 )
                             }
                             Spacer(modifier = Modifier.height(10.dp))
+                            val (lvlMinXp, lvlMaxXp) = LevelBadgeSystem.getXpThresholds(wealthLvl)
+                            val xpRange = (lvlMaxXp - lvlMinXp).coerceAtLeast(1L)
+                            val realProgress = ((displayUser.getEffectiveWealthXp() - lvlMinXp).toFloat() / xpRange.toFloat()).coerceIn(0.05f, 1f)
                             LinearProgressIndicator(
-                                progress = { 1.0f },
+                                progress = { realProgress },
                                 modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
                                 color = BrandGold,
                                 trackColor = Color.White.copy(alpha = 0.1f)
@@ -8223,7 +8245,7 @@ fun AudioHangoutRoomDialog(
                                                             bList.add(b.drawableRes)
                                                         }
                                                     }
-                                                    if (bList.isEmpty() || (isCommentFounder && bList.size <= 1)) {
+                                                    if (isCommentFounder && bList.size <= 1) {
                                                         listOf(
                                                             "badge_honor_supreme_emperor",
                                                             "badge_honor_grand_duke",
@@ -9670,6 +9692,9 @@ fun AudioHangoutRoomDialog(
                     if (recipientUid.isBlank() || recipientUid == currentUser.uid) {
                         Toast.makeText(context, "Select a valid gift recipient.", Toast.LENGTH_SHORT).show()
                     } else {
+                        // Close Gift Store Dialog IMMEDIATELY on send tap so full-length gift playback starts instantly in view!
+                        showGiftStoreDialog = false
+                        giftCenterRecipient = null
                         GiftTransactionService.sendGift(
                             roomId = room.id,
                             giftId = giftItem.id,
@@ -9678,7 +9703,9 @@ fun AudioHangoutRoomDialog(
                             fromBackpack = false
                         ).addOnSuccessListener { result ->
                             userDiamonds = result.senderDiamonds ?: userDiamonds.toLong()
-                            activeGiftEvent = result.event
+                            if (activeGiftEvent?.id != result.event.id) {
+                                activeGiftEvent = result.event
+                            }
                             val isIntimacyGift = giftItem.id.contains("ring", true) || giftItem.id.contains("intimacy", true) ||
                                 giftItem.id.contains("bestie", true) || giftItem.id.contains("couple", true) ||
                                 giftItem.id.contains("proposal", true) || giftItem.id.contains("necklace", true)
@@ -9762,6 +9789,8 @@ fun AudioHangoutRoomDialog(
                     if (effectiveRecipients.isEmpty()) {
                         Toast.makeText(context, "Select an active host or seated member to send gift.", Toast.LENGTH_SHORT).show()
                     } else {
+                        // Close Gift Store Dialog IMMEDIATELY on send tap so gift animation plays instantly without delay!
+                        showGiftStoreDialog = false
                         val totalCost = giftItem.cost * quantity * effectiveRecipients.size
                         GiftTransactionService.sendGift(
                             roomId = room.id,
@@ -9772,10 +9801,12 @@ fun AudioHangoutRoomDialog(
                             targetMicSeatIndex = targetSeatIndex
                         ).addOnSuccessListener { result ->
                             result.senderDiamonds?.let { userDiamonds = it }
-                            activeGiftEvent = result.event.copy(
-                                drawableResId = giftItem.drawableResId,
-                                targetUserName = targetUserName
-                            )
+                            if (activeGiftEvent?.id != result.event.id) {
+                                activeGiftEvent = result.event.copy(
+                                    drawableResId = giftItem.drawableResId,
+                                    targetUserName = targetUserName
+                                )
+                            }
                             // Real-Time Event Gifting Leaderboard Sync (Part 4 - 100% Firestore)
                             if (currentUser.uid.isNotBlank() && giftItem.cost > 0L) {
                                 db.collection("rooms").document(room.id)
@@ -13867,15 +13898,24 @@ fun FullScreenGiftAnimationOverlay(
                     }
                     key(giftEvent.id) {
                         Box(
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+                                .drawWithContent {
+                                    drawContent()
+                                    // Top 10% & Bottom 10% fully transparent fade; Middle 80% crisp 90% opaque vivid HD video!
+                                    drawRect(
+                                        brush = Brush.verticalGradient(
+                                            0.00f to Color.Transparent,
+                                            0.10f to Color.Black.copy(alpha = 0.90f),
+                                            0.90f to Color.Black.copy(alpha = 0.90f),
+                                            1.00f to Color.Transparent
+                                        ),
+                                        blendMode = BlendMode.DstIn
+                                    )
+                                },
                             contentAlignment = Alignment.Center
                         ) {
-                            // Reduced transparency by 10-12% so characters and details are crisp and clear without being washed out
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(Color.Black.copy(alpha = 0.12f))
-                            )
                             AndroidView(
                                 factory = { ctx ->
                                     GiftVideoTextureView(
@@ -13885,10 +13925,7 @@ fun FullScreenGiftAnimationOverlay(
                                         onFailure = { onDismiss() }
                                     )
                                 },
-                                modifier = Modifier.fillMaxSize().graphicsLayer(
-                                    compositingStrategy = CompositingStrategy.Offscreen,
-                                    blendMode = BlendMode.Screen
-                                ),
+                                modifier = Modifier.fillMaxSize(),
                                 update = { it.isOpaque = false },
                                 onRelease = { it.release() }
                             )

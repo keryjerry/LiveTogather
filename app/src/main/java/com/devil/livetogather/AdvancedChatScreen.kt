@@ -124,18 +124,41 @@ fun Advanced1v1ChatScreen(
             }
             onDispose { listener.remove() }
         } else if (livePartner.uid.isNotBlank()) {
-            // Fallback real-time check: if partner is currently hosting any live room in Firestore
-            val hostListener = db.collection("rooms")
-                .whereEqualTo("hostUid", livePartner.uid)
+            // Real-time fallback detection across live rooms (checks hostUid, hostId, AND active room members so older APKs are also detected!)
+            val liveRoomsListener = db.collection("rooms")
+                .whereEqualTo("isLive", true)
                 .addSnapshotListener { snap, _ ->
-                    val hostedLive = snap?.documents?.mapNotNull { parseRoomFromDoc(it) }?.firstOrNull { r ->
+                    val liveDocs = snap?.documents?.mapNotNull { parseRoomFromDoc(it) }?.filter { r ->
                         !r.isEnded && (r.isLive || r.isHostLive) &&
                             !r.statusMessage.equals("CLOSED", ignoreCase = true) &&
-                            !r.statusMessage.equals("OFFLINE", ignoreCase = true)
+                            !r.statusMessage.equals("OFFLINE", ignoreCase = true) &&
+                            !r.statusMessage.equals("DELETED", ignoreCase = true)
+                    }.orEmpty()
+
+                    val hostedLive = liveDocs.firstOrNull { r ->
+                        r.hostUid == livePartner.uid || r.hostId == livePartner.uid
                     }
-                    partnerActiveRoom = hostedLive
+                    if (hostedLive != null) {
+                        partnerActiveRoom = hostedLive
+                    } else if (liveDocs.isNotEmpty()) {
+                        var found = false
+                        liveDocs.take(12).forEach { candidate ->
+                            db.collection("rooms").document(candidate.id)
+                                .collection("members").document(livePartner.uid)
+                                .get()
+                                .addOnSuccessListener { memSnap ->
+                                    if (!found && memSnap.exists()) {
+                                        found = true
+                                        partnerActiveRoom = candidate
+                                    }
+                                }
+                        }
+                        if (!found) partnerActiveRoom = null
+                    } else {
+                        partnerActiveRoom = null
+                    }
                 }
-            onDispose { hostListener.remove() }
+            onDispose { liveRoomsListener.remove() }
         } else {
             partnerActiveRoom = null
             onDispose {}
