@@ -801,8 +801,8 @@ fun ModernInboxScreen(
                     item(key = "row_vip_service") {
                         SeamlessOfficialChatRow(
                             title = "VIP Service",
-                            subtitle = "[Privilege] Exclusive 3D Frames, Badges & Concierge",
-                            timestampText = "24/7",
+                            subtitle = "[VIP 1–5] Official VIP Tiers, 3D Frames & Concierge",
+                            timestampText = if (currentUser.getVipLevel() in 1..5) "VIP ${currentUser.getVipLevel()}" else "VIP 1–5",
                             unreadCount = 0,
                             showOfficialPill = false,
                             avatarContent = {

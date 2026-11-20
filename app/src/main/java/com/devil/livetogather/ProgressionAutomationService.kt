@@ -168,6 +168,38 @@ object ProgressionAutomationService {
             rewardItemName = "Emerald Celestial Wave Mic Effect",
             durationHours = 24,
             condition = { it.totalRoomTimeSeconds >= 1800L }
+        ),
+
+        // Official VIP 1–5 Service Milestone Notifications (Replaces deprecated Dating Passes)
+        MilestoneRewardRule(
+            key = "vip_service_tier_1",
+            title = "👑 VIP 1 Silver Archangel Activated!",
+            description = "Welcome to LiveTogather VIP 1! Your Silver Archangel VIP privileges and bonus 3-Day Aurora Lights 3D Frame are ready!",
+            rewardItemId = "frame_aurora_lights",
+            rewardItemType = "avatar_frame",
+            rewardItemName = "Aurora Lights 3D Frame",
+            durationHours = 72,
+            condition = { it.getVipLevel() >= 1 }
+        ),
+        MilestoneRewardRule(
+            key = "vip_service_tier_3",
+            title = "👑 VIP 3 Imperial Obsidian Activated!",
+            description = "Welcome to VIP 3! Enjoy your Imperial Obsidian privileges plus a bonus 3-Day Sovereign Gold Wings Mic Effect!",
+            rewardItemId = "mic_effect_sovereign_gold_wings",
+            rewardItemType = "mic_effect",
+            rewardItemName = "Sovereign Gold Wings Mic Effect",
+            durationHours = 72,
+            condition = { it.getVipLevel() >= 3 }
+        ),
+        MilestoneRewardRule(
+            key = "vip_service_tier_5",
+            title = "👑 VIP 5 Celestial Sapphire Sovereign!",
+            description = "Maximum VIP 5 Prestige unlocked! Your Celestial Sapphire suite and bonus 3-Day Ruby Emperor 3D Frame are active!",
+            rewardItemId = "frame_ruby_emperor",
+            rewardItemType = "avatar_frame",
+            rewardItemName = "Ruby Emperor 3D Frame",
+            durationHours = 72,
+            condition = { it.getVipLevel() >= 5 }
         )
     )
 

@@ -576,23 +576,32 @@ fun VipStyledChatBubble(
             modifier = modifier.padding(vertical = 3.dp),
             verticalAlignment = Alignment.Top
         ) {
-            // 1. Profile Photo embedded inside VIP circular crest
+            // 1. Real User Profile Photo embedded inside VIP circular crest (ZERO fake/dummy Unsplash avatar!)
             Box(
                 modifier = Modifier
                     .size(36.dp)
                     .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.6f))
+                    .background(Brush.linearGradient(listOf(primaryColor.copy(alpha = 0.35f), accentColor.copy(alpha = 0.25f))))
                     .border(1.5.dp, Brush.sweepGradient(listOf(primaryColor, accentColor, primaryColor)), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                AsyncImage(
-                    model = avatarUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
-                    contentDescription = userName,
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clip(CircleShape),
-                    contentScale = ContentScale.Crop
-                )
+                if (avatarUrl.isNotBlank()) {
+                    AsyncImage(
+                        model = avatarUrl,
+                        contentDescription = userName,
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Text(
+                        text = userName.trim().take(1).uppercase().ifBlank { "U" },
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Black
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.width(6.dp))

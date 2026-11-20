@@ -1332,6 +1332,8 @@ fun Advanced1v1ChatScreen(
                                 if (hasVipBubble) {
                                     VipStyledChatBubble(
                                         messageText = msg.text,
+                                        avatarUrl = if (isMe) currentUser.photo else livePartner.photo,
+                                        userName = if (isMe) currentUser.name else livePartner.name,
                                         isMe = isMe,
                                         chatFrameId = effectiveFrameId,
                                         vipLevel = effectiveVipLvl,

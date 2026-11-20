@@ -1467,14 +1467,16 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
 
     val isProfileScreen = currentScreen == "profile"
     val isChatsScreen = currentScreen == "chats"
+    val isMomentsScreen = currentScreen == "moments"
 
-    // Automated Level-Up, Recharge & Activity Milestone Assistant (dispatches free 24h / 3-day 3D rewards to Inbox)
+    // Automated Level-Up, Recharge, VIP 1-5 & Activity Milestone Assistant (dispatches free 24h / 3-day 3D rewards to Inbox)
     LaunchedEffect(
         currentUser.uid,
         currentUser.wealthXp,
         currentUser.charmXp,
         currentUser.rechargeCount,
         currentUser.hasRecharged,
+        currentUser.getVipLevel(),
         currentUser.totalRoomTimeSeconds / 1800L
     ) {
         if (currentUser.uid.isNotBlank()) {
@@ -1490,7 +1492,7 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
         Scaffold(
             containerColor = BrandDark,
             topBar = {
-                if (!isProfileScreen && !isChatsScreen && (activeAudioRoom == null || isAudioRoomMinimized)) {
+                if (!isProfileScreen && !isChatsScreen && !isMomentsScreen && (activeAudioRoom == null || isAudioRoomMinimized)) {
                     val isHomeDiscover = currentScreen == "discover"
                     val homeAllUsers = remember(discoverProfiles.toList(), currentUser) {
                         (discoverProfiles + currentUser).distinctBy { it.uid }
@@ -2023,7 +2025,7 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(
-                        if (currentScreen == "discover" || currentScreen == "profile" || currentScreen == "chats")
+                        if (currentScreen == "discover" || currentScreen == "profile" || currentScreen == "chats" || currentScreen == "moments")
                             PaddingValues(0.dp)
                         else
                             PaddingValues(top = paddingValues.calculateTopPadding(), bottom = 0.dp)
@@ -2605,22 +2607,23 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
             }
         }
 
-        // Subscription Paywall Modal
+        // Official VIP 1-5 Center Modal (Replaces removed Dating & Matching Passes)
         if (showMainSubscriptionModal) {
-            SubscriptionPlansModal(
-                currentPlan = currentUser.plan,
-                customNotice = subscriptionPaywallNotice,
+            VipCenterDialog(
+                currentUser = currentUser,
+                db = db,
                 onDismiss = {
                     showMainSubscriptionModal = false
                     subscriptionPaywallNotice = null
                 },
-                onSelectPlan = { plan ->
-                    currentUser = currentUser.copy(plan = plan.title)
-                    saveProfileToPrefs(prefs, currentUser)
-                    db.collection("users").document(currentUserId).update("plan", plan.title)
-                    Toast.makeText(context, "Upgraded to ${plan.title}! 🎉", Toast.LENGTH_SHORT).show()
+                onOpenTopUp = {
                     showMainSubscriptionModal = false
                     subscriptionPaywallNotice = null
+                    currentScreen = "profile"
+                },
+                onProfileUpdated = { updated ->
+                    currentUser = updated
+                    saveProfileToPrefs(prefs, updated)
                 }
             )
         }
@@ -4975,29 +4978,55 @@ fun MomentsScreenContent(
     onDeleteMoment: (MomentItem) -> Unit = {}
 ) {
     var selectedGallery by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.White)
+    ) {
+        // Full-Screen Edge-to-Edge Bright Lavender-White Header (Zero Black Header!)
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color(0xFFEDE7FF), Color(0xFFF6F3FF), Color.White)
+                    )
+                )
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Moments Feed", color = BrandCoral, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text(
+                text = "Moments",
+                color = Color(0xFF151726),
+                fontSize = 20.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
             Button(
                 onClick = onPostClick,
-                colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
-                shape = RoundedCornerShape(50)
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED)),
+                shape = RoundedCornerShape(50),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                modifier = Modifier.height(34.dp)
             ) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("+ Post Moment", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("Post Moment", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        HorizontalDivider(color = Color(0xFFF0F1F7), thickness = 1.dp)
 
         if (moments.isEmpty()) {
-            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Text("No moments posted yet. Be the first to share one!", color = Color.Gray, fontSize = 13.sp)
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(bottom = 96.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("No moments posted yet. Be the first to share one!", color = Color(0xFF8B90A7), fontSize = 13.5.sp)
             }
         } else {
             val listState = rememberLazyListState()
@@ -5011,15 +5040,18 @@ fun MomentsScreenContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 104.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(moments, key = { it.id }) { item ->
-                    Card(
+                    Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = BrandCard),
-                        shape = RoundedCornerShape(16.dp)
+                        color = Color.White,
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, Color(0xFFECEAF5)),
+                        shadowElevation = 1.dp
                     ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
+                        Column(modifier = Modifier.padding(14.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -5029,7 +5061,7 @@ fun MomentsScreenContent(
                                     AsyncImage(
                                         model = item.userPhoto.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80" },
                                         contentDescription = "View ${item.userName}'s profile",
-                                        modifier = Modifier.size(34.dp).clip(CircleShape)
+                                        modifier = Modifier.size(38.dp).clip(CircleShape)
                                             .clickable { if (item.userId.isNotBlank()) onOpenProfile(item.userId) },
                                         contentScale = ContentScale.Crop
                                     )
@@ -5037,8 +5069,8 @@ fun MomentsScreenContent(
                                     Column(modifier = Modifier.clickable {
                                         if (item.userId.isNotBlank()) onOpenProfile(item.userId)
                                     }) {
-                                        Text(item.userName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                        Text(formatRelativeTime(item.timestamp), color = Color.Gray, fontSize = 10.sp)
+                                        Text(item.userName, color = Color(0xFF151726), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                        Text(formatRelativeTime(item.timestamp), color = Color(0xFF8B90A7), fontSize = 11.sp)
                                     }
                                 }
 
@@ -5051,8 +5083,8 @@ fun MomentsScreenContent(
                                             Icon(
                                                 Icons.Default.Edit,
                                                 contentDescription = "Edit Post",
-                                                tint = BrandCoral,
-                                                modifier = Modifier.size(15.dp)
+                                                tint = Color(0xFF7C3AED),
+                                                modifier = Modifier.size(16.dp)
                                             )
                                         }
                                         Spacer(modifier = Modifier.width(2.dp))
@@ -5063,8 +5095,8 @@ fun MomentsScreenContent(
                                             Icon(
                                                 Icons.Default.Delete,
                                                 contentDescription = "Delete Post",
-                                                tint = Color.Red.copy(alpha = 0.85f),
-                                                modifier = Modifier.size(15.dp)
+                                                tint = Color(0xFFDC2626),
+                                                modifier = Modifier.size(16.dp)
                                             )
                                         }
                                     }
@@ -5072,17 +5104,17 @@ fun MomentsScreenContent(
                             }
 
                             Spacer(modifier = Modifier.height(8.dp))
-                            Text(item.caption, color = Color.White, fontSize = 13.sp)
+                            Text(item.caption, color = Color(0xFF262A3E), fontSize = 13.5.sp, lineHeight = 19.sp)
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            val displayPhotos = if (item.mediaUrls.isNotEmpty()) item.mediaUrls 
-                                else if (item.mediaUrl.isNotBlank()) listOf(item.mediaUrl) 
+                            val displayPhotos = if (item.mediaUrls.isNotEmpty()) item.mediaUrls
+                                else if (item.mediaUrl.isNotBlank()) listOf(item.mediaUrl)
                                 else emptyList()
 
                             if (displayPhotos.size == 1) {
                                 MomentMediaThumbnail(
                                     url = displayPhotos.first(),
-                                    modifier = Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(12.dp)),
+                                    modifier = Modifier.fillMaxWidth().height(200.dp).clip(RoundedCornerShape(12.dp)),
                                     onClick = { selectedGallery = displayPhotos to 0 }
                                 )
                             } else if (displayPhotos.size > 1) {
@@ -5090,7 +5122,7 @@ fun MomentsScreenContent(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(180.dp)
+                                        .height(200.dp)
                                 ) {
                                     itemsIndexed(displayPhotos) { index, mediaUrl ->
                                         MomentMediaThumbnail(
@@ -5113,11 +5145,11 @@ fun MomentsScreenContent(
                                     Icon(
                                         imageVector = if (isLikedByMe) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                                         contentDescription = "Like",
-                                        tint = if (isLikedByMe) BrandCoral else Color.Gray,
+                                        tint = if (isLikedByMe) Color(0xFFFF3B6B) else Color(0xFF8B90A7),
                                         modifier = Modifier.size(20.dp)
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("${item.likes}", color = Color.White, fontSize = 12.sp)
+                                    Text("${item.likes}", color = Color(0xFF474C66), fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
                                 }
 
                                 Spacer(modifier = Modifier.width(20.dp))
@@ -5129,11 +5161,11 @@ fun MomentsScreenContent(
                                     Icon(
                                         imageVector = Icons.Default.ChatBubble,
                                         contentDescription = "Comment",
-                                        tint = Color.Gray,
+                                        tint = Color(0xFF8B90A7),
                                         modifier = Modifier.size(18.dp)
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("${item.commentCount}", color = Color.White, fontSize = 12.sp)
+                                    Text("${item.commentCount}", color = Color(0xFF474C66), fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
                                 }
                             }
                         }
@@ -7692,13 +7724,15 @@ fun ProfileScreenContent(
     }
 
     if (showSubscriptionModal) {
-        SubscriptionPlansModal(
-            currentPlan = currentUser.plan,
+        VipCenterDialog(
+            currentUser = currentUser,
+            db = db,
             onDismiss = { showSubscriptionModal = false },
-            onSelectPlan = { plan ->
-                onSelectPlan(plan)
+            onOpenTopUp = {
                 showSubscriptionModal = false
-            }
+                showCoinStoreModal = true
+            },
+            onProfileUpdated = { updated -> onUpdateProfile(updated) }
         )
     }
 
