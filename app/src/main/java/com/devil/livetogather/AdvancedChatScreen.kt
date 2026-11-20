@@ -440,7 +440,7 @@ fun Advanced1v1ChatScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(BrandDark)
+                .background(Color(0xFFF7F5FF))
         ) {
         Column(
             modifier = Modifier
@@ -448,18 +448,20 @@ fun Advanced1v1ChatScreen(
                 .imePadding()
         ) {
             // -------------------------------------------------------------
-            // 1. CHAT HEADER (BACK, AVATAR, STREAK BADGE, HEARTS & 3-DOTS)
+            // 1. BRIGHT CHAT HEADER (BACK, AVATAR, STREAK BADGE, HEARTS & 3-DOTS)
             // -------------------------------------------------------------
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(BrandCard)
+                    .background(
+                        Brush.verticalGradient(listOf(Color(0xFFEDE7FF), Color(0xFFFFFFFF)))
+                    )
                     .statusBarsPadding()
                     .padding(horizontal = 10.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onDismiss) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color(0xFF151726))
                 }
 
                 Box(
@@ -472,13 +474,13 @@ fun Advanced1v1ChatScreen(
                         modifier = Modifier
                             .size(42.dp)
                             .clip(CircleShape)
-                            .border(1.5.dp, if (isDoubleHeartUnlocked) Color(0xFFFF4081) else Color(0xFFFFD700), CircleShape),
+                            .border(1.5.dp, if (isDoubleHeartUnlocked) Color(0xFFFF3B6B) else Color(0xFF7C3AED), CircleShape),
                         contentScale = ContentScale.Crop
                     )
                     Surface(
-                        color = if (isPartnerOnline) Color(0xFF00E676).copy(alpha = blinkAlpha) else Color(0xFF64748B),
+                        color = if (isPartnerOnline) Color(0xFF10B981).copy(alpha = blinkAlpha) else Color(0xFF94A3B8),
                         shape = CircleShape,
-                        border = BorderStroke(1.dp, Color.Black),
+                        border = BorderStroke(1.5.dp, Color.White),
                         modifier = Modifier
                             .size(11.dp)
                             .graphicsLayer(scaleX = if (isPartnerOnline) blinkScale else 1f, scaleY = if (isPartnerOnline) blinkScale else 1f)
@@ -495,20 +497,20 @@ fun Advanced1v1ChatScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = livePartner.name,
-                            color = Color.White,
+                            color = Color(0xFF151726),
                             fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
+                            fontSize = 15.5.sp,
                             maxLines = 1
                         )
                         if (isBlocked) {
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 "[Blocked]",
-                                color = Color.Red,
+                                color = Color(0xFFDC2626),
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier
-                                    .background(Color.Red.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
+                                    .background(Color(0xFFFEE2E2), RoundedCornerShape(4.dp))
                                     .padding(horizontal = 4.dp, vertical = 1.dp)
                             )
                         }
@@ -517,8 +519,8 @@ fun Advanced1v1ChatScreen(
                     // Online Presence & Active Room Indicator
                     Text(
                         text = if (partnerActiveRoom != null) "🎙️ In Room: ${partnerActiveRoom!!.title.take(14)}" else if (isPartnerOnline) "🟢 Online" else "⚪ Offline",
-                        color = if (partnerActiveRoom != null) Color(0xFFF472B6) else if (isPartnerOnline) Color(0xFF34D399) else Color(0xFF94A3B8),
-                        fontSize = 9.5.sp,
+                        color = if (partnerActiveRoom != null) Color(0xFFDB2777) else if (isPartnerOnline) Color(0xFF059669) else Color(0xFF8B90A7),
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -530,13 +532,13 @@ fun Advanced1v1ChatScreen(
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Surface(
-                            color = Color(0xFF221538),
+                            color = Color(0xFFFFF7E6),
                             shape = RoundedCornerShape(6.dp),
-                            border = BorderStroke(0.6.dp, Color(0xFFFFD700).copy(alpha = 0.7f))
+                            border = BorderStroke(0.8.dp, Color(0xFFF59E0B).copy(alpha = 0.55f))
                         ) {
                             Text(
                                 text = "🔥 Day $currentStreak • Lv.$currentIntimacyLevel",
-                                color = Color(0xFFFFD700),
+                                color = Color(0xFFB45309),
                                 fontSize = 9.5.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
@@ -584,16 +586,16 @@ fun Advanced1v1ChatScreen(
                 // 3-Dots Menu
                 Box {
                     IconButton(onClick = { showChatMenu = true }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = Color.White)
+                        Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = Color(0xFF151726))
                     }
                     DropdownMenu(
                         expanded = showChatMenu,
                         onDismissRequest = { showChatMenu = false },
-                        modifier = Modifier.background(Color(0xFF1E1430)),
+                        modifier = Modifier.background(Color.White),
                         properties = androidx.compose.ui.window.PopupProperties(focusable = true)
                     ) {
                         DropdownMenuItem(
-                            text = { Text("🧹 Clear Chat History", color = Color.White, fontSize = 13.sp) },
+                            text = { Text("🧹 Clear Chat History", color = Color(0xFF151726), fontSize = 13.sp) },
                             onClick = {
                                 showChatMenu = false
                                 showClearConfirmDialog = true
@@ -610,7 +612,7 @@ fun Advanced1v1ChatScreen(
                                 ) {
                                     Text(
                                         if (partnerAllowed) "📷 Allow ${partner.name} Media: ON" else "📷 Allow ${partner.name} Media: OFF",
-                                        color = if (partnerAllowed) Color(0xFF00E676) else Color.LightGray,
+                                        color = if (partnerAllowed) Color(0xFF059669) else Color(0xFF475569),
                                         fontSize = 12.5.sp
                                     )
                                 }
@@ -631,7 +633,7 @@ fun Advanced1v1ChatScreen(
                             text = {
                                 Text(
                                     if (isPermitted) "🛡️ Screenshots: PERMITTED" else "🔒 Screenshots: BLOCKED (Default)",
-                                    color = if (isPermitted) Color(0xFFFFB300) else Color(0xFF00E676),
+                                    color = if (isPermitted) Color(0xFFD97706) else Color(0xFF059669),
                                     fontSize = 12.5.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -645,20 +647,20 @@ fun Advanced1v1ChatScreen(
                         )
 
                         DropdownMenuItem(
-                            text = { Text("🚨 Report User", color = Color(0xFFFF9100), fontSize = 13.sp) },
+                            text = { Text("🚨 Report User", color = Color(0xFFEA580C), fontSize = 13.sp) },
                             onClick = {
                                 showChatMenu = false
                                 showReportConfirmDialog = true
                             }
                         )
 
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f), thickness = 0.5.dp)
+                        HorizontalDivider(color = Color(0xFFEAE8F2), thickness = 0.8.dp)
 
                         DropdownMenuItem(
                             text = {
                                 Text(
                                     if (isBlocked) "✅ Unblock User" else "🚫 Block User",
-                                    color = if (isBlocked) Color(0xFF00E676) else Color(0xFFFF5252),
+                                    color = if (isBlocked) Color(0xFF059669) else Color(0xFFDC2626),
                                     fontSize = 13.sp
                                 )
                             },
@@ -674,6 +676,7 @@ fun Advanced1v1ChatScreen(
                     }
                 }
             }
+            HorizontalDivider(color = Color(0xFFECEAF5), thickness = 1.dp)
 
             // -------------------------------------------------------------
             // 1.5 INBOX REAL-TIME ROOM JUMP EQUALIZER BANNER (Room Name + 8-Digit ID + Live Equalizer + Jump)
@@ -689,9 +692,9 @@ fun Advanced1v1ChatScreen(
                     }
                 }
                 Surface(
-                    color = Color(0xFF1E1338),
+                    color = Color(0xFFF3EEFF),
                     shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(Color(0xFFFF2E93), Color(0xFF8B5CF6), Color(0xFF3B82F6)))),
+                    border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(Color(0xFFEC4899), Color(0xFF7C3AED), Color(0xFF3B82F6)))),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 10.dp, vertical = 6.dp)
@@ -713,7 +716,7 @@ fun Advanced1v1ChatScreen(
                                 modifier = Modifier
                                     .size(width = 40.dp, height = 32.dp)
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(Color(0xFFEC4899).copy(alpha = 0.22f))
+                                    .background(Color(0xFF7C3AED).copy(alpha = 0.14f))
                                     .padding(4.dp),
                                 contentAlignment = Alignment.Center
                             ) {
@@ -741,17 +744,17 @@ fun Advanced1v1ChatScreen(
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
                                         text = currentTargetRoom.title.ifBlank { currentTargetRoom.roomName.ifBlank { "Live Room" } },
-                                        color = Color.White,
+                                        color = Color(0xFF151726),
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp,
+                                        fontSize = 12.5.sp,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                 }
                                 Text(
                                     text = "ID: $publicRoomId • ${maxOf(1, currentTargetRoom.activeUserCount)} in room",
-                                    color = Color(0xFFFDE047),
-                                    fontSize = 10.sp,
+                                    color = Color(0xFF6D28D9),
+                                    fontSize = 10.5.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     maxLines = 1
                                 )
@@ -993,9 +996,9 @@ fun Advanced1v1ChatScreen(
                                 horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start
                             ) {
                                 Surface(
-                                    color = if (isMe) Color(0xFF2B1845) else Color(0xFF1E1B33),
+                                    color = if (isMe) Color(0xFFF3EEFF) else Color.White,
                                     shape = RoundedCornerShape(16.dp),
-                                    border = BorderStroke(1.2.dp, Color(0xFFFFD700).copy(alpha = 0.75f)),
+                                    border = BorderStroke(1.2.dp, Color(0xFFF59E0B).copy(alpha = 0.7f)),
                                     modifier = Modifier.widthIn(min = 190.dp, max = 270.dp)
                                 ) {
                                     Row(
@@ -1009,7 +1012,7 @@ fun Advanced1v1ChatScreen(
                                                 modifier = Modifier
                                                     .size(50.dp)
                                                     .clip(RoundedCornerShape(10.dp))
-                                                    .border(1.dp, Color(0xFFFFD700).copy(alpha = 0.6f), RoundedCornerShape(10.dp)),
+                                                    .border(1.dp, Color(0xFFF59E0B).copy(alpha = 0.6f), RoundedCornerShape(10.dp)),
                                                 contentScale = ContentScale.Crop
                                             )
                                         } else {
@@ -1017,7 +1020,7 @@ fun Advanced1v1ChatScreen(
                                                 modifier = Modifier
                                                     .size(46.dp)
                                                     .clip(RoundedCornerShape(10.dp))
-                                                    .background(Color(0xFFFFD700).copy(alpha = 0.16f)),
+                                                    .background(Color(0xFFFFF7E6)),
                                                 contentAlignment = Alignment.Center
                                             ) {
                                                 Text("🎁", fontSize = 24.sp)
@@ -1027,7 +1030,7 @@ fun Advanced1v1ChatScreen(
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(
                                                 text = msg.giftName.ifBlank { msg.text.removePrefix("🎁 Sent ").ifBlank { "Luxury Gift" } },
-                                                color = Color(0xFFFFD700),
+                                                color = Color(0xFFB45309),
                                                 fontWeight = FontWeight.ExtraBold,
                                                 fontSize = 13.sp,
                                                 maxLines = 1,
@@ -1035,14 +1038,14 @@ fun Advanced1v1ChatScreen(
                                             )
                                             Text(
                                                 text = "${msg.text} • %,d 💎".format(msg.giftAmount),
-                                                color = Color.White.copy(alpha = 0.9f),
-                                                fontSize = 11.sp,
+                                                color = Color(0xFF151726),
+                                                fontSize = 11.5.sp,
                                                 maxLines = 2
                                             )
                                             Spacer(modifier = Modifier.height(2.dp))
                                             Text(
                                                 text = timeStr,
-                                                color = Color.White.copy(alpha = 0.55f),
+                                                color = Color(0xFF8B90A7),
                                                 fontSize = 9.5.sp
                                             )
                                         }
@@ -1313,7 +1316,7 @@ fun Advanced1v1ChatScreen(
                         }
 
                         else -> {
-                            // VIP Styled Text Bubble (Crystal beveled border & VIP badge pill)
+                            // Bright Mode Text Bubble (with VIP Styled Bubble preserved for VIP Frame users)
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start
@@ -1324,15 +1327,46 @@ fun Advanced1v1ChatScreen(
                                 val effectiveVipLvl = if (msg.vipLevel in 1..4) msg.vipLevel else if (isMe) currentUser.getVipLevel() else partner.getVipLevel()
                                 val effectiveIsFounder = msg.isFounder || (if (isMe) currentUser.isFounder() else partner.isFounder())
                                 val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(msg.timestamp))
+                                val hasVipBubble = effectiveFrameId.isNotBlank() || effectiveVipLvl in 1..5 || effectiveIsFounder
 
-                                VipStyledChatBubble(
-                                    messageText = msg.text,
-                                    isMe = isMe,
-                                    chatFrameId = effectiveFrameId,
-                                    vipLevel = effectiveVipLvl,
-                                    isFounder = effectiveIsFounder,
-                                    timestampText = timeStr
-                                )
+                                if (hasVipBubble) {
+                                    VipStyledChatBubble(
+                                        messageText = msg.text,
+                                        isMe = isMe,
+                                        chatFrameId = effectiveFrameId,
+                                        vipLevel = effectiveVipLvl,
+                                        isFounder = effectiveIsFounder,
+                                        timestampText = timeStr
+                                    )
+                                } else {
+                                    Surface(
+                                        color = if (isMe) Color(0xFF7C3AED) else Color.White,
+                                        shape = RoundedCornerShape(
+                                            topStart = 18.dp,
+                                            topEnd = 18.dp,
+                                            bottomStart = if (isMe) 18.dp else 4.dp,
+                                            bottomEnd = if (isMe) 4.dp else 18.dp
+                                        ),
+                                        border = if (isMe) null else BorderStroke(1.dp, Color(0xFFE6E2F5)),
+                                        modifier = Modifier.widthIn(max = 270.dp)
+                                    ) {
+                                        Column(modifier = Modifier.padding(horizontal = 13.dp, vertical = 9.dp)) {
+                                            Text(
+                                                text = msg.text,
+                                                color = if (isMe) Color.White else Color(0xFF151726),
+                                                fontSize = 14.sp,
+                                                lineHeight = 19.sp
+                                            )
+                                            Spacer(modifier = Modifier.height(3.dp))
+                                            Text(
+                                                text = timeStr,
+                                                color = if (isMe) Color.White.copy(alpha = 0.72f) else Color(0xFF8B90A7),
+                                                fontSize = 10.sp,
+                                                modifier = Modifier.align(Alignment.End)
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1401,8 +1435,9 @@ fun Advanced1v1ChatScreen(
                 }
             }
 
+            HorizontalDivider(color = Color(0xFFECEAF5), thickness = 1.dp)
             Surface(
-                color = BrandCard,
+                color = Color.White,
                 modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
@@ -1416,7 +1451,7 @@ fun Advanced1v1ChatScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
-                        Text("You have blocked ${partner.name}.", color = Color.LightGray, fontSize = 12.sp)
+                        Text("You have blocked ${partner.name}.", color = Color(0xFF64748B), fontSize = 12.sp)
                     }
                 } else if (isMutualFollow == false || !isChatUnlocked) {
                     // Input locked until mutual follow and unlock gift
@@ -1427,11 +1462,11 @@ fun Advanced1v1ChatScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
-                        Icon(Icons.Default.Lock, contentDescription = "Locked", tint = Color.Gray, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.Lock, contentDescription = "Locked", tint = Color(0xFF8B90A7), modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = if (isMutualFollow == false) "Follow each other to unlock chat" else "Send 5,000 💎 gift to unlock messaging",
-                            color = Color.Gray,
+                            color = Color(0xFF64748B),
                             fontSize = 11.5.sp
                         )
                     }
@@ -1440,7 +1475,7 @@ fun Advanced1v1ChatScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Color(0xFF261022))
+                            .background(Color(0xFFFFF1F5))
                             .padding(horizontal = 14.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
@@ -1456,7 +1491,7 @@ fun Advanced1v1ChatScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 "Recording... 0:${String.format(Locale.getDefault(), "%02d", voiceRecordDuration)}",
-                                color = Color.White,
+                                color = Color(0xFF151726),
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.5.sp
                             )
@@ -1529,12 +1564,12 @@ fun Advanced1v1ChatScreen(
                             },
                             modifier = Modifier
                                 .size(40.dp)
-                                .background(Color(0xFF261B36), CircleShape)
+                                .background(Color(0xFFF2EEFF), CircleShape)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.AttachFile,
                                 contentDescription = "Attach Media",
-                                tint = if (canSendMedia) Color(0xFF00E5FF) else Color.LightGray,
+                                tint = if (canSendMedia) Color(0xFF7C3AED) else Color(0xFF64748B),
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -1556,22 +1591,22 @@ fun Advanced1v1ChatScreen(
 
                         Spacer(modifier = Modifier.width(6.dp))
 
-                        // 2. Rounded Text Field with Enter-to-Send
+                        // 2. Rounded Text Field with Enter-to-Send (Bright Mode)
                         Surface(
-                            color = Color(0xFF1B1428),
+                            color = Color(0xFFF4F3FA),
                             shape = RoundedCornerShape(24.dp),
-                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+                            border = BorderStroke(1.dp, Color(0xFFE5E2F5)),
                             modifier = Modifier.weight(1f)
                         ) {
                             TextField(
                                 value = chatInput,
                                 onValueChange = { chatInput = it },
-                                placeholder = { Text("Type a message...", color = Color.Gray, fontSize = 13.sp) },
+                                placeholder = { Text("Type a message...", color = Color(0xFF8B90A7), fontSize = 13.sp) },
                                 colors = TextFieldDefaults.colors(
                                     focusedContainerColor = Color.Transparent,
                                     unfocusedContainerColor = Color.Transparent,
-                                    focusedTextColor = Color.White,
-                                    unfocusedTextColor = Color.White,
+                                    focusedTextColor = Color(0xFF151726),
+                                    unfocusedTextColor = Color(0xFF151726),
                                     focusedIndicatorColor = Color.Transparent,
                                     unfocusedIndicatorColor = Color.Transparent
                                 ),
@@ -1602,12 +1637,12 @@ fun Advanced1v1ChatScreen(
                             },
                             modifier = Modifier
                                 .size(40.dp)
-                                .background(Color(0xFF261B36), CircleShape)
+                                .background(Color(0xFFF2EEFF), CircleShape)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Mic,
                                 contentDescription = "Record Voice Clip",
-                                tint = Color(0xFFFFD700),
+                                tint = Color(0xFF7C3AED),
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -1622,15 +1657,15 @@ fun Advanced1v1ChatScreen(
                             modifier = Modifier
                                 .size(40.dp)
                                 .background(
-                                    if (hasSendText) Brush.linearGradient(listOf(BrandCoral, Color(0xFFFF4081)))
-                                    else Brush.linearGradient(listOf(Color(0xFF261B36), Color(0xFF261B36))),
+                                    if (hasSendText) Brush.linearGradient(listOf(Color(0xFF7C3AED), Color(0xFFEC4899)))
+                                    else Brush.linearGradient(listOf(Color(0xFFF2EEFF), Color(0xFFF2EEFF))),
                                     CircleShape
                                 )
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.Send,
                                 contentDescription = "Send",
-                                tint = if (hasSendText) Color.White else Color.Gray,
+                                tint = if (hasSendText) Color.White else Color(0xFF94A3B8),
                                 modifier = Modifier.size(19.dp)
                             )
                         }

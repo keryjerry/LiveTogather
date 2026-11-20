@@ -10387,54 +10387,180 @@ fun NotificationsDialog(
 ) {
     val context = LocalContext.current
     val inboxOnlyTypes = remember { setOf("gift_reward", "creator_earning", "gift_received", "level_up", "assistant_reward") }
-    val visibleNotifications = notifications.filter { it.type.lowercase() !in inboxOnlyTypes }
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
+    var notifFilter by remember { mutableStateOf("All") } // "All" or "Unread"
+    val locallySeenIds = remember { mutableStateListOf<String>() }
+
+    // Same recency-first logic as Inbox: newest notification ALWAYS #1 TOP
+    val allVisible = notifications
+        .filter { it.type.lowercase() !in inboxOnlyTypes }
+        .sortedByDescending { it.timestamp }
+    val visibleNotifications = if (notifFilter == "Unread") {
+        allVisible.filter { !it.isRead && it.id !in locallySeenIds }
+    } else {
+        allVisible
+    }
+
+    // Same instant-seen sync logic as Inbox: entering Notifications clears unread state cleanly in Firestore & UI
+    LaunchedEffect(allVisible.size) {
+        val unseen = allVisible.filter { !it.isRead && it.id.isNotBlank() && it.id !in locallySeenIds }
+        if (unseen.isNotEmpty()) {
+            val db = FirebaseFirestore.getInstance()
+            val batch = db.batch()
+            unseen.take(300).forEach { item ->
+                locallySeenIds.add(item.id)
+                onNotificationRead?.invoke(item.id)
+                batch.set(db.collection("notifications").document(item.id), mapOf("isRead" to true), SetOptions.merge())
+                if (currentUserId.isNotBlank()) {
+                    batch.set(
+                        db.collection("users").document(currentUserId)
+                            .collection("notifications").document(item.id),
+                        mapOf("isRead" to true),
+                        SetOptions.merge()
+                    )
+                }
+            }
+            batch.commit()
+        }
+    }
+
+    val timeFormatter = remember { java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault()) }
+    val dateFormatter = remember { java.text.SimpleDateFormat("dd MMM", java.util.Locale.getDefault()) }
+    val todayCal = remember { java.util.Calendar.getInstance() }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.75f),
-            colors = CardDefaults.cardColors(containerColor = BrandCard),
-            shape = RoundedCornerShape(20.dp)
+                .fillMaxSize()
+                .background(Color.White)
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
+            // Bright Lavender-to-White Seamless Top Header (matching ModernInboxScreen)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color(0xFFEDE7FF), Color(0xFFF6F3FF), Color.White)
+                        )
+                    )
+                    .statusBarsPadding()
+                    .padding(horizontal = 10.dp, vertical = 8.dp)
+            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Notifications, contentDescription = null, tint = BrandCoral)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Notifications", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        IconButton(onClick = onDismiss) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = Color(0xFF151726)
+                            )
+                        }
+                        Text(
+                            text = "Notifications",
+                            color = Color(0xFF151726),
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 19.sp
+                        )
                     }
                     TextButton(onClick = onMarkAllRead) {
-                        Text("Wipe All 🗑️", color = BrandCoral, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = "Clear All",
+                            color = Color(0xFF7C3AED),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
-
-                if (visibleNotifications.isEmpty()) {
-                    Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        Text("No notifications yet", color = Color.Gray, fontSize = 13.sp)
+                // Clean Filter Pills (All / Unread)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf("All", "Unread").forEach { tab ->
+                        val isSel = notifFilter == tab
+                        Surface(
+                            color = if (isSel) Color(0xFF7C3AED) else Color(0xFFF2F0FA),
+                            shape = RoundedCornerShape(50),
+                            modifier = Modifier.clickable { notifFilter = tab }
+                        ) {
+                            Text(
+                                text = tab,
+                                color = if (isSel) Color.White else Color(0xFF474C66),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp)
+                            )
+                        }
                     }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(visibleNotifications) { notif ->
-                            Card(
+                }
+            }
+
+            HorizontalDivider(color = Color(0xFFF0F1F7), thickness = 1.dp)
+
+            if (visibleNotifications.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .navigationBarsPadding(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = Icons.Default.Notifications,
+                            contentDescription = null,
+                            tint = Color(0xFF7C3AED).copy(alpha = 0.35f),
+                            modifier = Modifier.size(44.dp)
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text("No notifications yet", color = Color(0xFF151726), fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("New room alerts, visits & updates appear here", color = Color(0xFF8B90A7), fontSize = 12.sp)
+                    }
+                }
+            } else {
+                // Seamless Borderless Notification List (NO heavy boxes — matches Inbox!)
+                LazyColumn(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .navigationBarsPadding(),
+                    contentPadding = PaddingValues(bottom = 24.dp)
+                ) {
+                    items(visibleNotifications, key = { it.id.ifBlank { "${it.timestamp}_${it.title}" } }) { notif ->
+                        val isUnseen = !notif.isRead && notif.id !in locallySeenIds
+                        val timeLabel = remember(notif.timestamp) {
+                            if (notif.timestamp <= 0L) "" else {
+                                val c = java.util.Calendar.getInstance().apply { timeInMillis = notif.timestamp }
+                                if (c.get(java.util.Calendar.YEAR) == todayCal.get(java.util.Calendar.YEAR) &&
+                                    c.get(java.util.Calendar.DAY_OF_YEAR) == todayCal.get(java.util.Calendar.DAY_OF_YEAR)
+                                ) timeFormatter.format(java.util.Date(notif.timestamp))
+                                else dateFormatter.format(java.util.Date(notif.timestamp))
+                            }
+                        }
+
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .background(if (isUnseen) Color(0xFFF7F4FF) else Color.White)
                                     .clickable {
-                                        // Real-time unread decrement across Firestore & local state
                                         if (!notif.isRead && notif.id.isNotBlank()) {
+                                            if (notif.id !in locallySeenIds) locallySeenIds.add(notif.id)
                                             val db = FirebaseFirestore.getInstance()
-                                            db.collection("notifications").document(notif.id).update("isRead", true)
+                                            db.collection("notifications").document(notif.id).set(mapOf("isRead" to true), SetOptions.merge())
                                             if (currentUserId.isNotBlank()) {
                                                 db.collection("users").document(currentUserId)
-                                                    .collection("notifications").document(notif.id).update("isRead", true)
+                                                    .collection("notifications").document(notif.id).set(mapOf("isRead" to true), SetOptions.merge())
                                             }
                                             onNotificationRead?.invoke(notif.id)
                                         }
@@ -10466,64 +10592,78 @@ fun NotificationsDialog(
                                                 onDismiss()
                                             }
                                         }
-                                    },
-                                colors = CardDefaults.cardColors(
-                                    containerColor = if (notif.isRead) BrandDark else BrandCardSubtle
-                                ),
-                                shape = RoundedCornerShape(12.dp)
+                                    }
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(
-                                    modifier = Modifier.padding(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    if (!notif.isRead) {
+                                val giftThumbnailResId = if (notif.giftId.isNotBlank()) {
+                                    giftThumbnailResourceId(notif.giftId)
+                                } else {
+                                    0
+                                }
+                                if (giftThumbnailResId != 0) {
+                                    Image(
+                                        painter = painterResource(id = giftThumbnailResId),
+                                        contentDescription = notif.giftName,
+                                        modifier = Modifier.size(46.dp).clip(RoundedCornerShape(12.dp)),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
+                                    AsyncImage(
+                                        model = notif.senderPhoto.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80" },
+                                        contentDescription = null,
+                                        modifier = Modifier.size(46.dp).clip(CircleShape),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = notif.title.ifBlank { "LiveTogather Alert" },
+                                        color = Color(0xFF151726),
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 14.5.sp,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = notif.message,
+                                        color = Color(0xFF6B7088),
+                                        fontSize = 12.5.sp,
+                                        maxLines = 2,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column(horizontalAlignment = Alignment.End) {
+                                    if (timeLabel.isNotBlank()) {
+                                        Text(
+                                            text = timeLabel,
+                                            color = Color(0xFF8B90A7),
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(5.dp))
+                                    if (isUnseen) {
                                         Box(
                                             modifier = Modifier
-                                                .size(8.dp)
+                                                .size(9.dp)
                                                 .clip(CircleShape)
-                                                .background(Color(0xFFFF2A55))
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                    }
-                                    val giftThumbnailResId = if (notif.giftId.isNotBlank()) {
-                                        giftThumbnailResourceId(notif.giftId)
-                                    } else {
-                                        0
-                                    }
-                                    if (giftThumbnailResId != 0) {
-                                        Image(
-                                            painter = painterResource(id = giftThumbnailResId),
-                                            contentDescription = notif.giftName,
-                                            modifier = Modifier.size(38.dp).clip(RoundedCornerShape(8.dp)),
-                                            contentScale = ContentScale.Crop
+                                                .background(Color(0xFFFF3B5C))
                                         )
                                     } else {
-                                        AsyncImage(
-                                            model = notif.senderPhoto.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80" },
-                                            contentDescription = null,
-                                            modifier = Modifier.size(38.dp).clip(CircleShape),
-                                            contentScale = ContentScale.Crop
-                                        )
+                                        Text("›", color = Color(0xFFB4B8C9), fontSize = 18.sp, fontWeight = FontWeight.Bold)
                                     }
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(notif.title, color = BrandCoral, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                        Text(notif.message, color = Color.White, fontSize = 12.sp)
-                                    }
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("›", color = Color.Gray, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
+                            HorizontalDivider(
+                                color = Color(0xFFF0F1F7),
+                                thickness = 0.8.dp,
+                                modifier = Modifier.padding(start = 74.dp)
+                            )
                         }
                     }
-                }
-
-                Button(
-                    onClick = onDismiss,
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Close")
                 }
             }
         }

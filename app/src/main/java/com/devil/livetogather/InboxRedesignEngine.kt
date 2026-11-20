@@ -214,12 +214,58 @@ fun ModernInboxScreen(
     }
 
     // Real-time Official Assistant Messages (Gift Rewards + Level Ups + Assistant Time-Limited Rewards)
+    val inboxPrefs = remember(context) { context.getSharedPreferences("livetogather_inbox_seen", android.content.Context.MODE_PRIVATE) }
+    val locallySeenNotifIds = remember(currentUserId) {
+        mutableStateListOf<String>().apply {
+            val saved = inboxPrefs.getStringSet("seen_ids_$currentUserId", emptySet()) ?: emptySet()
+            addAll(saved)
+        }
+    }
     val officialInboxTypes = remember {
         setOf("gift_reward", "creator_earning", "gift_received", "level_up", "assistant_reward", "system")
     }
-    val officialMessages = officialSystemMessages.filter { it.type.lowercase() in officialInboxTypes }
-    val officialUnreadCount = officialMessages.count { !it.isRead }
+    val officialMessages = officialSystemMessages
+        .filter { it.type.lowercase() in officialInboxTypes }
+        .sortedByDescending { it.timestamp }
+    val officialUnreadCount = officialMessages.count { msg ->
+        !msg.isRead && msg.id !in locallySeenNotifIds
+    }
     val latestOfficialMsg = officialMessages.firstOrNull()
+
+    val markAllOfficialMessagesSeen = {
+        val unseen = officialMessages.filter { (!it.isRead || it.id !in locallySeenNotifIds) && it.id.isNotBlank() }
+        if (unseen.isNotEmpty()) {
+            val newIds = unseen.map { it.id }
+            newIds.forEach { id -> if (id !in locallySeenNotifIds) locallySeenNotifIds.add(id) }
+            inboxPrefs.edit().putStringSet("seen_ids_$currentUserId", locallySeenNotifIds.toSet()).apply()
+
+            // Immediately update in-memory list so unread badge clears synchronously to 0
+            for (i in officialSystemMessages.indices) {
+                val item = officialSystemMessages[i]
+                if (item.id in newIds && !item.isRead) {
+                    officialSystemMessages[i] = item.copy(isRead = true)
+                }
+            }
+
+            // Persist isRead = true to Firestore via WriteBatch with merge
+            if (currentUserId.isNotBlank()) {
+                val batch = db.batch()
+                unseen.take(400).forEach { msg ->
+                    val docRef = db.collection("users").document(currentUserId)
+                        .collection("notifications").document(msg.id)
+                    batch.set(docRef, mapOf("isRead" to true), SetOptions.merge())
+                }
+                batch.commit()
+            }
+        }
+    }
+
+    // Also auto-mark any newly synced message as seen while Official Assistant thread is open!
+    LaunchedEffect(showOfficialAssistantThread, officialMessages.size) {
+        if (showOfficialAssistantThread) {
+            markAllOfficialMessagesSeen()
+        }
+    }
 
     // Live rooms lookup map (uid -> active RoomItem)
     val liveRooms = remember(roomsList) {
@@ -630,15 +676,30 @@ fun ModernInboxScreen(
                     }
                 }
 
-                // C. SEAMLESS OFFICIAL SYSTEM ROWS (Zero clunky card boxes!)
+                // C. UNIFIED RECENCY-SORTED CHATLIST (Most Recent Message ALWAYS #1 TOP!)
                 val showOfficialRows = queryLower.isBlank() ||
                     "livetogather official".contains(queryLower) ||
                     "event hub".contains(queryLower) ||
                     "vip service".contains(queryLower)
+                val includeOfficialAssistant = showOfficialRows &&
+                    (chatFilter == "All" || chatFilter == "Official" || (chatFilter == "Unread" && officialUnreadCount > 0))
 
-                if (showOfficialRows && (chatFilter == "All" || chatFilter == "Official" || (chatFilter == "Unread" && officialUnreadCount > 0))) {
-                    // 1. LiveTogather Official (Assistant, Time-Limited Rewards, Gift Receipts & Level-Up Alerts)
-                    item(key = "row_official_assistant") {
+                // Merge personal chats + LiveTogather Official strictly sorted by latest message timestamp DESC
+                // so ANY new incoming/outgoing message immediately rises to the #1 TOP position!
+                val timelineItems: List<Pair<String, Long>> = buildList {
+                    if (includeOfficialAssistant) {
+                        add("official_assistant" to (latestOfficialMsg?.timestamp ?: 0L))
+                    }
+                    if (chatFilter != "Official") {
+                        visibleMatches.forEach { match ->
+                            val key = "match_${match.matchId.ifBlank { match.users.joinToString("_") }}"
+                            add(key to match.timestamp)
+                        }
+                    }
+                }.sortedByDescending { it.second }
+
+                items(timelineItems, key = { it.first }) { (entryKey, _) ->
+                    if (entryKey == "official_assistant") {
                         val previewText = when {
                             latestOfficialMsg == null -> "[Official Assistant] Rewards, gifts & level-ups"
                             latestOfficialMsg.rewardItemId.isNotBlank() -> "[Reward] ${latestOfficialMsg.title}"
@@ -676,18 +737,38 @@ fun ModernInboxScreen(
                             onClick = {
                                 officialThreadInitialTab = "all"
                                 showOfficialAssistantThread = true
-                                officialMessages.filter { !it.isRead && it.id.isNotBlank() }.forEach { msg ->
-                                    db.collection("users").document(currentUserId)
-                                        .collection("notifications").document(msg.id)
-                                        .update("isRead", true)
-                                }
+                                markAllOfficialMessagesSeen()
                             }
                         )
+                    } else {
+                        val targetMatch = visibleMatches.firstOrNull { m ->
+                            "match_${m.matchId.ifBlank { m.users.joinToString("_") }}" == entryKey
+                        }
+                        val pId = targetMatch?.users?.firstOrNull { it != currentUserId }
+                        val partner = partnerMap[pId]
+                        if (targetMatch != null && partner != null) {
+                            val isBlocked = currentUser.blockedUserIds.contains(partner.uid)
+                            val isBonded = partner.uid in activeBondPartnerIds
+                            val partnerRoom = roomById[partner.current_room] ?: liveRooms.firstOrNull {
+                                it.hostUid == partner.uid || it.hostId == partner.uid
+                            }
+
+                            SeamlessPersonalChatRow(
+                                partner = partner,
+                                lastMessage = targetMatch.lastMessage.ifBlank { "Say hello 👋" },
+                                timestampText = formatInboxTime(targetMatch.timestamp),
+                                isBlocked = isBlocked,
+                                isBonded = isBonded,
+                                isLiveInRoom = partnerRoom != null,
+                                onClick = { onOpenChat(partner) },
+                                onLongClick = { selectedActionMatch = Pair(targetMatch, partner) }
+                            )
+                        }
                     }
                 }
 
+                // D. OFFICIAL SERVICE SHORTCUTS (Event Hub & VIP Service)
                 if (showOfficialRows && (chatFilter == "All" || chatFilter == "Official")) {
-                    // 2. Event Hub
                     item(key = "row_event_hub") {
                         SeamlessOfficialChatRow(
                             title = "Event Hub",
@@ -717,7 +798,6 @@ fun ModernInboxScreen(
                         )
                     }
 
-                    // 3. VIP Service
                     item(key = "row_vip_service") {
                         SeamlessOfficialChatRow(
                             title = "VIP Service",
@@ -753,53 +833,27 @@ fun ModernInboxScreen(
                     }
                 }
 
-                // D. PERSONAL REAL-TIME CHATS (Seamless borderless rows with 3D Avatar Frames!)
-                if (chatFilter != "Official") {
-                    if (visibleMatches.isEmpty()) {
-                        item(key = "no_chats_placeholder") {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 36.dp, horizontal = 24.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Text(
-                                    text = if (queryLower.isNotBlank()) "No matching chats found" else "No personal chats yet",
-                                    color = InboxTextPrimary,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "Tap the + icon above or join an active room to start chatting!",
-                                    color = InboxTextSecondary,
-                                    fontSize = 12.sp,
-                                    textAlign = TextAlign.Center
-                                )
-                            }
-                        }
-                    } else {
-                        items(visibleMatches, key = { it.matchId.ifBlank { it.users.joinToString("_") } }) { match ->
-                            val pId = match.users.firstOrNull { it != currentUserId }
-                            val partner = partnerMap[pId]
-                            if (partner != null) {
-                                val isBlocked = currentUser.blockedUserIds.contains(partner.uid)
-                                val isBonded = partner.uid in activeBondPartnerIds
-                                val partnerRoom = roomById[partner.current_room] ?: liveRooms.firstOrNull {
-                                    it.hostUid == partner.uid || it.hostId == partner.uid
-                                }
-
-                                SeamlessPersonalChatRow(
-                                    partner = partner,
-                                    lastMessage = match.lastMessage.ifBlank { "Say hello 👋" },
-                                    timestampText = formatInboxTime(match.timestamp),
-                                    isBlocked = isBlocked,
-                                    isBonded = isBonded,
-                                    isLiveInRoom = partnerRoom != null,
-                                    onClick = { onOpenChat(partner) },
-                                    onLongClick = { selectedActionMatch = Pair(match, partner) }
-                                )
-                            }
+                if (chatFilter != "Official" && visibleMatches.isEmpty()) {
+                    item(key = "no_chats_placeholder") {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 36.dp, horizontal = 24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = if (queryLower.isNotBlank()) "No matching chats found" else "No personal chats yet",
+                                color = InboxTextPrimary,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Tap the + icon above or join an active room to start chatting!",
+                                color = InboxTextSecondary,
+                                fontSize = 12.sp,
+                                textAlign = TextAlign.Center
+                            )
                         }
                     }
                 }
