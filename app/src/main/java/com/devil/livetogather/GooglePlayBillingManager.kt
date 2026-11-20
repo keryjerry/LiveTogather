@@ -24,6 +24,19 @@ object GooglePlayBillingManager : PurchasesUpdatedListener, BillingClientStateLi
     private var billingClient: BillingClient? = null
     private val coroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
+    // Candidate SKU aliases for the ₹49 (15,000 Diamonds) Starter Pack so any exact Play Console ID auto-resolves
+    val STARTER_49_SKU_ALIASES = listOf(
+        "pack_49",
+        "pack_45",
+        "starter_pack_49",
+        "pack_starter_49",
+        "starter_49",
+        "diamonds_49",
+        "coins_49",
+        "pkg_49",
+        "pack_15000"
+    )
+
     // Product IDs mapping: CoinPackageItem.id -> Google Play Product ID
     // 7 Consumable Diamond Packs + 1 Host Monetization + 5 VIP Subscriptions (13 active SKUs)
     val INAPP_PRODUCT_IDS = listOf(
@@ -119,8 +132,8 @@ object GooglePlayBillingManager : PurchasesUpdatedListener, BillingClientStateLi
             return
         }
 
-        // 1. In-app Coin Top-ups & Host Monetization (7 Diamond Packs + 1 Monetization SKU)
-        val inAppProductIds = listOf(
+        // 1. In-app Coin Top-ups & Host Monetization (7 Diamond Packs + 1 Monetization SKU + ₹49 starter aliases)
+        val inAppProductIds = (listOf(
             "pack_49",
             "pack_59",
             "pack_149",
@@ -129,7 +142,7 @@ object GooglePlayBillingManager : PurchasesUpdatedListener, BillingClientStateLi
             "pack_999",
             "pack_1999",
             "pkg_host_monetization_599"
-        )
+        ) + STARTER_49_SKU_ALIASES).distinct()
         val inAppProductList = inAppProductIds.map { id ->
             QueryProductDetailsParams.Product.newBuilder()
                 .setProductId(id.trim())
@@ -143,7 +156,12 @@ object GooglePlayBillingManager : PurchasesUpdatedListener, BillingClientStateLi
                 val list = queryProductDetailsResult.productDetailsList ?: emptyList()
                 val unfetched = queryProductDetailsResult.unfetchedProductList ?: emptyList()
                 val current = _productDetailsMap.value.toMutableMap()
-                list.forEach { current[it.productId] = it }
+                list.forEach { details ->
+                    current[details.productId] = details
+                    if (details.productId in STARTER_49_SKU_ALIASES && !current.containsKey("pack_49")) {
+                        current["pack_49"] = details
+                    }
+                }
                 _productDetailsMap.value = current
                 Log.d(TAG, "Loaded ${list.size} INAPP coin products from Google Play: ${list.map { it.productId }}; unfetched=${unfetched.map { "${it.productId}:${it.statusCode}" }}")
             } else {
@@ -252,37 +270,46 @@ object GooglePlayBillingManager : PurchasesUpdatedListener, BillingClientStateLi
             val primaryType = if (isVip) BillingClient.ProductType.SUBS else BillingClient.ProductType.INAPP
             val fallbackType = if (isVip) BillingClient.ProductType.INAPP else BillingClient.ProductType.SUBS
 
-            val singlePrimaryList = listOf(
+            val candidateIds = if (cleanId == "pack_49") STARTER_49_SKU_ALIASES else listOf(cleanId)
+            val singlePrimaryList = candidateIds.map { candidate ->
                 QueryProductDetailsParams.Product.newBuilder()
-                    .setProductId(cleanId)
+                    .setProductId(candidate)
                     .setProductType(primaryType)
                     .build()
-            )
+            }
             client.queryProductDetailsAsync(
                 QueryProductDetailsParams.newBuilder().setProductList(singlePrimaryList).build()
             ) { result, queryProductDetailsResult ->
-                val details = queryProductDetailsResult.productDetailsList?.firstOrNull()
-                val primaryUnfetched = queryProductDetailsResult.unfetchedProductList?.firstOrNull()
+                val details = queryProductDetailsResult.productDetailsList
+                    ?.firstOrNull { it.productId == cleanId }
+                    ?: queryProductDetailsResult.productDetailsList?.firstOrNull()
+                val primaryUnfetched = queryProductDetailsResult.unfetchedProductList
+                    ?.firstOrNull { it.productId == cleanId }
+                    ?: queryProductDetailsResult.unfetchedProductList?.firstOrNull()
                 if (result.responseCode == BillingClient.BillingResponseCode.OK && details != null) {
                     val updated = _productDetailsMap.value.toMutableMap()
                     updated[cleanId] = details
+                    updated[details.productId] = details
                     _productDetailsMap.value = updated
                     launchBillingInternal(targetActivity, details, currentUser)
                 } else {
                     // Fallback attempt with alternate product type
-                    val singleFallbackList = listOf(
+                    val singleFallbackList = candidateIds.map { candidate ->
                         QueryProductDetailsParams.Product.newBuilder()
-                            .setProductId(cleanId)
+                            .setProductId(candidate)
                             .setProductType(fallbackType)
                             .build()
-                    )
+                    }
                     client.queryProductDetailsAsync(
                         QueryProductDetailsParams.newBuilder().setProductList(singleFallbackList).build()
                     ) { fallbackResult, fallbackQueryProductDetailsResult ->
-                        val fallbackDetails = fallbackQueryProductDetailsResult.productDetailsList?.firstOrNull()
+                        val fallbackDetails = fallbackQueryProductDetailsResult.productDetailsList
+                            ?.firstOrNull { it.productId == cleanId }
+                            ?: fallbackQueryProductDetailsResult.productDetailsList?.firstOrNull()
                         if (fallbackResult.responseCode == BillingClient.BillingResponseCode.OK && fallbackDetails != null) {
                             val updated = _productDetailsMap.value.toMutableMap()
                             updated[cleanId] = fallbackDetails
+                            updated[fallbackDetails.productId] = fallbackDetails
                             _productDetailsMap.value = updated
                             launchBillingInternal(targetActivity, fallbackDetails, currentUser)
                         } else {
@@ -294,15 +321,17 @@ object GooglePlayBillingManager : PurchasesUpdatedListener, BillingClientStateLi
                                     UnfetchedProduct.StatusCode.INVALID_PRODUCT_ID_FORMAT -> "INVALID_ID"
                                     else -> unfetchedStatus?.toString() ?: "EMPTY"
                                 }
-                                val errorDetail = when (result.responseCode) {
-                                    BillingClient.BillingResponseCode.ITEM_UNAVAILABLE ->
+                                val errorDetail = when {
+                                    result.responseCode == BillingClient.BillingResponseCode.ITEM_UNAVAILABLE ->
                                         "Product ($cleanId) is unavailable in Google Play Store."
-                                    BillingClient.BillingResponseCode.BILLING_UNAVAILABLE ->
+                                    result.responseCode == BillingClient.BillingResponseCode.BILLING_UNAVAILABLE ->
                                         "Google Play Billing is unavailable. Ensure you are signed into Google Play Store on this device."
-                                    BillingClient.BillingResponseCode.DEVELOPER_ERROR ->
+                                    result.responseCode == BillingClient.BillingResponseCode.DEVELOPER_ERROR ->
                                         "Google Play configuration error (Code 5: DEVELOPER_ERROR for $cleanId)."
+                                    cleanId == "pack_49" && unfetchedStatus == UnfetchedProduct.StatusCode.PRODUCT_NOT_FOUND ->
+                                        "Starter Pack 'pack_49' (₹49) is not created in Google Play Console yet (PRODUCT_NOT_FOUND). Please add & activate Product ID 'pack_49' in Play Console → One-time products."
                                     else ->
-                                        "Product not available in Google Play Store ($cleanId) [Code: ${result.responseCode}, Status: $unfetchedHint]. If testing via APK, upload this version to Play Console Internal/Closed Testing."
+                                        "Product not available in Google Play Store ($cleanId) [Code: ${result.responseCode}, Status: $unfetchedHint]."
                                 }
                                 Log.e(TAG, "Product query failed for $cleanId: primaryCode=${result.responseCode} (${result.debugMessage}), primaryUnfetched=$unfetchedStatus, fallbackCode=${fallbackResult.responseCode}")
                                 onError(errorDetail)
@@ -497,7 +526,7 @@ object GooglePlayBillingManager : PurchasesUpdatedListener, BillingClientStateLi
             }
 
             val diamondsToAdd = packageItem?.coins ?: when {
-                purchase.products.contains("pack_49") -> 15000L
+                purchase.products.any { it in STARTER_49_SKU_ALIASES } -> 15000L
                 purchase.products.contains("pack_59") -> 20000L
                 purchase.products.contains("pack_149") -> 60000L
                 purchase.products.contains("pack_299") -> 135000L
