@@ -2225,7 +2225,7 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                     }
 
                     "moments" -> {
-                        MomentsScreenContent(
+                        InstagramMomentsScreen(
                             moments = moments,
                             currentUserId = currentUserId,
                             onOpenProfile = { userId ->
@@ -10720,17 +10720,25 @@ fun PostMomentDialog(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    val multiMediaPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetMultipleContents()
-    ) { uris: List<Uri> ->
+    val handleSelectedUris: (List<Uri>) -> Unit = { uris ->
         if (uris.isNotEmpty()) {
             isUploading = true
-            uploadStatusText = "Uploading 1/${uris.size}..."
+            uploadStatusText = "Checking media..."
             coroutineScope.launch(Dispatchers.IO) {
                 try {
                     val batch = uris.take(6)
                     val newUrls = mutableListOf<String>()
+                    var rejectedLongVideoSec: Int? = null
                     batch.forEachIndexed { index, uri ->
+                        val mime = context.contentResolver.getType(uri).orEmpty().lowercase()
+                        val isVideoPick = mime.startsWith("video/") || isInstagramMomentVideo(uri.toString())
+                        if (isVideoPick) {
+                            val (isValidDuration, durationSec) = validateReelVideoDuration(context, uri)
+                            if (!isValidDuration) {
+                                rejectedLongVideoSec = durationSec
+                                return@forEachIndexed
+                            }
+                        }
                         withContext(Dispatchers.Main) {
                             uploadStatusText = "Uploading ${index + 1}/${batch.size}..."
                         }
@@ -10740,15 +10748,22 @@ fun PostMomentDialog(
                         }
                     }
                     withContext(Dispatchers.Main) {
+                        if (rejectedLongVideoSec != null) {
+                            Toast.makeText(
+                                context,
+                                "⚠️ Reel video maximum 1.5 minutes (90 sec) allowed! Selected video is ${rejectedLongVideoSec}s.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
                         if (newUrls.isNotEmpty()) {
                             pickedMediaUrls.addAll(newUrls)
                             Toast.makeText(context, "${newUrls.size} media item(s) ready to share!", Toast.LENGTH_SHORT).show()
-                        } else {
-                            Toast.makeText(context, "Media upload failed. Choose an image or video.", Toast.LENGTH_SHORT).show()
+                        } else if (rejectedLongVideoSec == null) {
+                            Toast.makeText(context, "Media upload failed. Choose a photo or ≤1.5 min Reel video.", Toast.LENGTH_SHORT).show()
                         }
                     }
                 } catch (e: Throwable) {
-                    Log.e("Moments", "Image upload failed: ${e.message}", e)
+                    Log.e("Moments", "Media upload failed: ${e.message}", e)
                 } finally {
                     withContext(Dispatchers.Main) {
                         isUploading = false
@@ -10757,6 +10772,18 @@ fun PostMomentDialog(
                 }
             }
         }
+    }
+
+    val multiMediaPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        handleSelectedUris(uris)
+    }
+
+    val singleReelVideoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) handleSelectedUris(listOf(uri))
     }
 
     val isKeyboardOpen = WindowInsets.isImeVisible
@@ -10788,7 +10815,7 @@ fun PostMomentDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .imePadding(),
-            colors = CardDefaults.cardColors(containerColor = BrandCard),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
             shape = RoundedCornerShape(20.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -10797,52 +10824,91 @@ fun PostMomentDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Share a Moment", color = BrandCoral, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("Share Moment or Reel", color = Color(0xFF151726), fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
                     if (pickedMediaUrls.isNotEmpty()) {
-                        Text("${pickedMediaUrls.size} Photo${if (pickedMediaUrls.size > 1) "s" else ""}", color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("${pickedMediaUrls.size} Selected", color = Color(0xFF7C3AED), fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
                     }
                 }
 
                 OutlinedTextField(
                     value = caption,
                     onValueChange = { caption = it },
-                    placeholder = { Text("What's on your mind? (Optional or type message...)", color = Color.Gray, fontSize = 12.sp) },
-                    colors = outlinedFieldColors(),
+                    placeholder = { Text("Write a caption...", color = Color(0xFF8B90A7), fontSize = 13.sp) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color(0xFF151726),
+                        unfocusedTextColor = Color(0xFF151726),
+                        focusedBorderColor = Color(0xFF7C3AED),
+                        unfocusedBorderColor = Color(0xFFE2E0F0),
+                        focusedContainerColor = Color(0xFFF8F7FC),
+                        unfocusedContainerColor = Color(0xFFF8F7FC)
+                    ),
+                    shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
 
                 if (pickedMediaUrls.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(140.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(BrandCardSubtle)
-                            .border(1.dp, BrandBorder, RoundedCornerShape(14.dp))
-                            .clickable(enabled = !isUploading) {
-                                multiMediaPickerLauncher.launch("*/*")
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (isUploading) {
+                    if (isUploading) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(132.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Color(0xFFF6F3FF)),
+                            contentAlignment = Alignment.Center
+                        ) {
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                CircularProgressIndicator(
-                                    color = BrandCoral,
-                                    modifier = Modifier.size(32.dp),
-                                    strokeWidth = 3.dp
-                                )
-                                Text(uploadStatusText.ifEmpty { "Uploading..." }, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                CircularProgressIndicator(color = Color(0xFF7C3AED), modifier = Modifier.size(30.dp), strokeWidth = 3.dp)
+                                Text(uploadStatusText.ifEmpty { "Uploading..." }, color = Color(0xFF151726), fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
                             }
-                        } else {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = BrandCoral, modifier = Modifier.size(36.dp))
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text("Select Photos or Videos (up to 6)", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text("Choose from Gallery / Camera", color = Color.Gray, fontSize = 10.sp)
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            // Photos Picker
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(124.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(Color(0xFFF6F3FF))
+                                    .border(1.dp, Color(0xFFE3DCFA), RoundedCornerShape(14.dp))
+                                    .clickable(enabled = !isUploading) {
+                                        multiMediaPickerLauncher.launch("image/*")
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(8.dp)) {
+                                    Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = Color(0xFF7C3AED), modifier = Modifier.size(30.dp))
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text("Photos", color = Color(0xFF151726), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    Text("Up to 6 images", color = Color(0xFF8B90A7), fontSize = 10.5.sp)
+                                }
+                            }
+
+                            // Reel Video Picker (Strict 1.5 min / 90 sec max!)
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(124.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(Color(0xFFFFF1F5))
+                                    .border(1.dp, Color(0xFFFBCFE8), RoundedCornerShape(14.dp))
+                                    .clickable(enabled = !isUploading) {
+                                        singleReelVideoPickerLauncher.launch("video/*")
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(8.dp)) {
+                                    Text("🎬", fontSize = 26.sp)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("Reel Video", color = Color(0xFF151726), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    Text("Max 1.5 min (90s)", color = Color(0xFFFF2E63), fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold)
+                                }
                             }
                         }
                     }
