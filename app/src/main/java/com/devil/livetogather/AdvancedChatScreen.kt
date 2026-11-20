@@ -494,16 +494,21 @@ fun Advanced1v1ChatScreen(
                         .weight(1f)
                         .clickable { showPartnerProfile = true }
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
                         Text(
                             text = livePartner.name,
                             color = Color(0xFF151726),
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.5.sp,
-                            maxLines = 1
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
                         )
+                        BlueLevelBadgePill(level = livePartner.getEffectiveWealthLevel())
                         if (isBlocked) {
-                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 "[Blocked]",
                                 color = Color(0xFFDC2626),

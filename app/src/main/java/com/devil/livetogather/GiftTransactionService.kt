@@ -94,7 +94,9 @@ object GiftTransactionService {
                 senderFieldUpdates = mapOf<String, Any>(
                     "diamonds" to newSenderDiamonds,
                     "wealthXp" to newWealthXp,
-                    "wealthLevel" to newWealthLevel
+                    "wealthLevel" to newWealthLevel,
+                    "level" to newWealthLevel,
+                    "activeWealthBadgeId" to LevelBadgeSystem.getTierBadgeId(newWealthLevel)
                 )
                 if (newWealthLevel > oldWealthLvl) {
                     val lvlNotifId = UUID.randomUUID().toString()

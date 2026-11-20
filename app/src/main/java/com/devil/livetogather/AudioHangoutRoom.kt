@@ -161,39 +161,36 @@ fun BlueLevelBadgePill(
     level: Int,
     modifier: Modifier = Modifier
 ) {
-    val tierInfo = LevelBadgeSystem.getLevelTierInfo(level)
+    val safeLevel = level.coerceAtLeast(1)
+    val tierInfo = LevelBadgeSystem.getLevelTierInfo(safeLevel)
     Surface(
-        color = Color.Black.copy(alpha = 0.65f),
+        color = Color(0xFF141222).copy(alpha = 0.82f),
         shape = RoundedCornerShape(50),
-        border = BorderStroke(1.dp, Brush.horizontalGradient(tierInfo.gradientColors)),
-        modifier = modifier.height(20.dp)
+        border = BorderStroke(0.9.dp, Brush.horizontalGradient(tierInfo.gradientColors)),
+        modifier = modifier.height(19.dp)
     ) {
         Row(
             modifier = Modifier
                 .background(
-                    Brush.horizontalGradient(tierInfo.gradientColors.map { it.copy(alpha = 0.45f) })
+                    Brush.horizontalGradient(tierInfo.gradientColors.map { it.copy(alpha = 0.32f) })
                 )
-                .padding(horizontal = 6.dp, vertical = 1.dp),
+                .padding(start = 4.dp, end = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(3.dp)
         ) {
-            if (level >= 10) {
-                Image(
-                    painter = painterResource(id = tierInfo.badgeDrawableRes),
-                    contentDescription = tierInfo.tierName,
-                    modifier = Modifier.size(17.dp)
-                )
-            } else {
-                Text(
-                    text = tierInfo.badgeIcon,
-                    fontSize = 10.sp
-                )
-            }
+            Image(
+                painter = painterResource(id = tierInfo.badgeDrawableRes),
+                contentDescription = tierInfo.tierName,
+                modifier = Modifier.size(15.dp),
+                contentScale = ContentScale.Fit
+            )
             Text(
-                text = "Lv.$level",
+                text = "Lv.$safeLevel",
                 color = Color.White,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.ExtraBold
+                fontSize = 9.5.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1,
+                softWrap = false
             )
         }
     }
@@ -295,44 +292,43 @@ fun LevelBadgePill(
     modifier: Modifier = Modifier,
     showTierName: Boolean = false
 ) {
-    val tierInfo = LevelBadgeSystem.getLevelTierInfo(level)
+    val safeLevel = level.coerceAtLeast(1)
+    val tierInfo = LevelBadgeSystem.getLevelTierInfo(safeLevel)
     Surface(
-        color = Color.Black.copy(alpha = 0.65f),
+        color = Color(0xFF141222).copy(alpha = 0.82f),
         shape = RoundedCornerShape(50),
-        border = BorderStroke(0.8.dp, Brush.linearGradient(tierInfo.gradientColors)),
-        modifier = modifier
+        border = BorderStroke(0.9.dp, Brush.linearGradient(tierInfo.gradientColors)),
+        modifier = modifier.height(19.dp)
     ) {
         Row(
             modifier = Modifier
-                .background(Brush.horizontalGradient(tierInfo.gradientColors.map { it.copy(alpha = 0.35f) }))
-                .padding(horizontal = 6.dp, vertical = 2.dp),
+                .background(Brush.horizontalGradient(tierInfo.gradientColors.map { it.copy(alpha = 0.32f) }))
+                .padding(start = 4.dp, end = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(3.dp)
         ) {
-            if (level >= 10) {
-                Image(
-                    painter = painterResource(id = tierInfo.badgeDrawableRes),
-                    contentDescription = tierInfo.tierName,
-                    modifier = Modifier.size(16.dp)
-                )
-            } else {
-                Text(
-                    text = tierInfo.badgeIcon,
-                    fontSize = 9.sp
-                )
-            }
+            Image(
+                painter = painterResource(id = tierInfo.badgeDrawableRes),
+                contentDescription = tierInfo.tierName,
+                modifier = Modifier.size(15.dp),
+                contentScale = ContentScale.Fit
+            )
             Text(
-                text = "Lv.$level",
+                text = "Lv.$safeLevel",
                 color = Color.White,
-                fontSize = 9.sp,
-                fontWeight = FontWeight.ExtraBold
+                fontSize = 9.5.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1,
+                softWrap = false
             )
             if (showTierName) {
                 Text(
                     text = "• ${tierInfo.tierName}",
                     color = BrandGold,
-                    fontSize = 8.sp,
-                    fontWeight = FontWeight.Bold
+                    fontSize = 8.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    softWrap = false
                 )
             }
         }
@@ -8281,7 +8277,8 @@ fun AudioHangoutRoomDialog(
                                                     verticalAlignment = Alignment.CenterVertically,
                                                     modifier = Modifier
                                                         .fillMaxWidth()
-                                                        .padding(vertical = 2.dp)
+                                                        .height(22.dp)
+                                                        .padding(vertical = 1.dp)
                                                 ) {
                                                     item {
                                                         BlueLevelBadgePill(level = commenterLevel)
@@ -8295,7 +8292,7 @@ fun AudioHangoutRoomDialog(
                                                         Image(
                                                             painter = painterResource(id = bRes),
                                                             contentDescription = "Badge",
-                                                            modifier = Modifier.size(24.dp),
+                                                            modifier = Modifier.size(19.dp),
                                                             contentScale = ContentScale.Fit
                                                         )
                                                     }
@@ -10909,7 +10906,7 @@ fun CategorySubRoomCard(
 
                 Spacer(modifier = Modifier.height(3.dp))
 
-                // Real Badges & Host Crown Row (Matching Reference Image 1)
+                // Real Badges & Host Crown Row (Clean zero-overlap alignment)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -10917,19 +10914,19 @@ fun CategorySubRoomCard(
                     Text(
                         text = if (isUserHostOfThisRoom) "👑 You" else "👑 ${room.hostName.ifBlank { "Host" }.take(8)}",
                         color = BrandGold,
-                        fontSize = 9.sp,
+                        fontSize = 9.5.sp,
                         fontWeight = FontWeight.Bold,
-                        maxLines = 1
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
 
-                    val pkLevel = hostUser?.pkLevel ?: 1
-                    SilverSwordsRankBadge(rank = pkLevel, modifier = Modifier.scale(0.72f).offset(x = (-3).dp))
+                    val wealthLvl = hostUser?.getEffectiveWealthLevel() ?: 1
+                    BlueLevelBadgePill(level = wealthLvl)
 
-                    val wealthLvl = hostUser?.wealthLevel ?: 1
-                    BlueLevelBadgePill(level = wealthLvl, modifier = Modifier.scale(0.75f).offset(x = (-6).dp))
-
-                    val charmLvl = hostUser?.charmLevel ?: 1
-                    SapphireCharmBadgePill(level = charmLvl, modifier = Modifier.scale(0.75f).offset(x = (-9).dp))
+                    val charmLvl = hostUser?.getEffectiveCharmLevel() ?: 1
+                    if (charmLvl > 1) {
+                        SapphireCharmBadgePill(level = charmLvl)
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(3.dp))

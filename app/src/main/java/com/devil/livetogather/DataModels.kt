@@ -585,162 +585,168 @@ data class LevelTierInfo(
 )
 
 object LevelBadgeSystem {
-    // 90% Progression Scaling: LiveTogather users reach milestone levels 10% faster (90 days vs 100 days)
-    private fun scale90(baseXp: Long): Long = (baseXp * 90L) / 100L
+    // Exponential Bigo-Style XP Progression Anchors (1 Diamond Gifted = 10 Wealth XP)
+    // Early levels feel rewarding; mid/high tiers scale exponentially to protect platform economy.
+    private val xpAnchors: List<Pair<Int, Long>> = listOf(
+        1 to 0L,
+        2 to 1_000L,
+        5 to 15_000L,
+        10 to 100_000L,
+        15 to 400_000L,
+        20 to 1_200_000L,
+        30 to 5_000_000L,
+        40 to 14_000_000L,
+        50 to 30_000_000L,
+        60 to 65_000_000L,
+        70 to 125_000_000L,
+        85 to 370_000_000L,
+        95 to 900_000_000L,
+        100 to 1_500_000_000L
+    )
+
+    private fun minXpForLevel(level: Int): Long {
+        val safeLvl = level.coerceIn(1, 120)
+        if (safeLvl <= 1) return 0L
+        if (safeLvl > 100) {
+            return 1_500_000_000L + (safeLvl - 100).toLong() * 150_000_000L
+        }
+        for (i in 0 until xpAnchors.lastIndex) {
+            val (l0, xp0) = xpAnchors[i]
+            val (l1, xp1) = xpAnchors[i + 1]
+            if (safeLvl == l0) return xp0
+            if (safeLvl == l1) return xp1
+            if (safeLvl in (l0 + 1) until l1) {
+                val fraction = (safeLvl - l0).toDouble() / (l1 - l0).toDouble()
+                // Smooth convex exponential interpolation within each tier bracket
+                val curved = Math.pow(fraction, 1.35)
+                return xp0 + ((xp1 - xp0) * curved).toLong()
+            }
+        }
+        return 1_500_000_000L
+    }
 
     fun getXpThresholds(level: Int): Pair<Long, Long> {
         val safeLvl = level.coerceIn(1, 120)
-        val rawMinXp = when {
-            safeLvl <= 1 -> 0L
-            safeLvl <= 5 -> (safeLvl - 1) * 250L
-            safeLvl <= 10 -> 1000L + (safeLvl - 5) * 800L
-            safeLvl <= 15 -> 5000L + (safeLvl - 10) * 1400L
-            safeLvl <= 20 -> 12000L + (safeLvl - 15) * 2000L
-            safeLvl <= 30 -> 22000L + (safeLvl - 20) * 2800L
-            safeLvl <= 50 -> 50000L + (safeLvl - 30) * 7500L
-            safeLvl <= 75 -> 200000L + (safeLvl - 50) * 10000L
-            safeLvl <= 99 -> 450000L + (safeLvl - 75) * 45000L
-            else -> 1530000L + (safeLvl - 100) * 100000L
-        }
-        val minXp = if (rawMinXp == 0L) 0L else scale90(rawMinXp)
-
-        val nextLevel = safeLvl + 1
-        val rawNextMinXp = when {
-            nextLevel <= 5 -> (nextLevel - 1) * 250L
-            nextLevel <= 10 -> 1000L + (nextLevel - 5) * 800L
-            nextLevel <= 15 -> 5000L + (nextLevel - 10) * 1400L
-            nextLevel <= 20 -> 12000L + (nextLevel - 15) * 2000L
-            nextLevel <= 30 -> 22000L + (nextLevel - 20) * 2800L
-            nextLevel <= 50 -> 50000L + (nextLevel - 30) * 7500L
-            nextLevel <= 75 -> 200000L + (nextLevel - 50) * 10000L
-            nextLevel <= 99 -> 450000L + (nextLevel - 75) * 45000L
-            else -> 1530000L + (nextLevel - 100) * 100000L
-        }
-        val nextMinXp = scale90(rawNextMinXp)
+        val minXp = minXpForLevel(safeLvl)
+        val nextMinXp = minXpForLevel((safeLvl + 1).coerceAtMost(120))
         return Pair(minXp, nextMinXp)
     }
 
     fun calculateLevelFromXp(xp: Long): Int {
         if (xp <= 0L) return 1
         for (lvl in 100 downTo 1) {
-            val (minXp, _) = getXpThresholds(lvl)
-            if (xp >= minXp) return lvl
+            if (xp >= minXpForLevel(lvl)) return lvl
         }
         return 1
+    }
+
+    fun getTierBadgeId(level: Int): String {
+        val safeLvl = level.coerceAtLeast(1)
+        return when {
+            safeLvl <= 14 -> "tier_bronze"
+            safeLvl <= 29 -> "tier_silver"
+            safeLvl <= 49 -> "tier_gold"
+            safeLvl <= 69 -> "tier_platinum"
+            safeLvl <= 84 -> "tier_diamond"
+            safeLvl <= 94 -> "tier_master"
+            else -> "tier_sovereign"
+        }
     }
 
     fun getLevelTierInfo(level: Int): LevelTierInfo {
         val safeLvl = level.coerceAtLeast(1)
         val (minXp, maxXp) = getXpThresholds(safeLvl)
         return when {
-            safeLvl <= 15 -> LevelTierInfo(
-                tierName = "Bronze Explorer",
+            safeLvl <= 14 -> LevelTierInfo(
+                tierName = "Bronze Vanguard",
                 level = safeLvl,
                 badgeIcon = "🛡️",
-                gradientColors = listOf(Color(0xFF2E7D32), Color(0xFF66BB6A)),
+                gradientColors = listOf(Color(0xFF8D5524), Color(0xFFD49A6A)),
                 crownEmoji = "🥉",
                 minXp = minXp,
                 maxXp = maxXp,
-                badgeDrawableRes = R.drawable.badge_wealth_bronze
+                badgeDrawableRes = R.drawable.badge_hd_tier1_bronze
             )
-            safeLvl <= 30 -> LevelTierInfo(
-                tierName = "Sapphire Knight",
+            safeLvl <= 29 -> LevelTierInfo(
+                tierName = "Silver Sentinel",
                 level = safeLvl,
-                badgeIcon = "⚡",
-                gradientColors = listOf(Color(0xFF1565C0), Color(0xFF00E5FF)),
+                badgeIcon = "⚔️",
+                gradientColors = listOf(Color(0xFF334155), Color(0xFF38BDF8)),
                 crownEmoji = "🥈",
                 minXp = minXp,
                 maxXp = maxXp,
-                badgeDrawableRes = R.drawable.badge_wealth_silver
+                badgeDrawableRes = R.drawable.badge_hd_tier2_silver
             )
-            safeLvl <= 50 -> LevelTierInfo(
-                tierName = "Royal Star VIP",
+            safeLvl <= 49 -> LevelTierInfo(
+                tierName = "Gold Monarch",
                 level = safeLvl,
                 badgeIcon = "👑",
-                gradientColors = listOf(Color(0xFF6A1B9A), Color(0xFFFFD700)),
+                gradientColors = listOf(Color(0xFFB45309), Color(0xFFFACC15)),
                 crownEmoji = "⭐",
                 minXp = minXp,
                 maxXp = maxXp,
-                badgeDrawableRes = R.drawable.badge_wealth_gold
+                badgeDrawableRes = R.drawable.badge_hd_tier3_gold
             )
-            safeLvl <= 75 -> LevelTierInfo(
-                tierName = "Crimson Dragon",
+            safeLvl <= 69 -> LevelTierInfo(
+                tierName = "Platinum Archon",
                 level = safeLvl,
-                badgeIcon = "🐉",
-                gradientColors = listOf(Color(0xFFB71C1C), Color(0xFFFF6D00)),
+                badgeIcon = "💠",
+                gradientColors = listOf(Color(0xFF0F766E), Color(0xFF2DD4BF)),
+                crownEmoji = "✨",
+                minXp = minXp,
+                maxXp = maxXp,
+                badgeDrawableRes = R.drawable.badge_hd_tier4_platinum
+            )
+            safeLvl <= 84 -> LevelTierInfo(
+                tierName = "Diamond Celestial",
+                level = safeLvl,
+                badgeIcon = "💎",
+                gradientColors = listOf(Color(0xFF1D4ED8), Color(0xFF67E8F9)),
+                crownEmoji = "💎",
+                minXp = minXp,
+                maxXp = maxXp,
+                badgeDrawableRes = R.drawable.badge_hd_tier5_diamond
+            )
+            safeLvl <= 94 -> LevelTierInfo(
+                tierName = "Master Phoenix",
+                level = safeLvl,
+                badgeIcon = "🔥",
+                gradientColors = listOf(Color(0xFF991B1B), Color(0xFFF97316)),
                 crownEmoji = "🔥",
                 minXp = minXp,
                 maxXp = maxXp,
-                badgeDrawableRes = R.drawable.badge_wealth_diamond
-            )
-            safeLvl <= 99 -> LevelTierInfo(
-                tierName = "Cyber Diamond",
-                level = safeLvl,
-                badgeIcon = "💎",
-                gradientColors = listOf(Color(0xFF00838F), Color(0xFF80DEEA)),
-                crownEmoji = "💠",
-                minXp = minXp,
-                maxXp = maxXp,
-                badgeDrawableRes = R.drawable.badge_wealth_diamond
+                badgeDrawableRes = R.drawable.badge_hd_tier6_master
             )
             else -> LevelTierInfo(
                 tierName = "Sovereign Emperor",
                 level = safeLvl,
-                badgeIcon = "🔥",
-                gradientColors = listOf(Color(0xFFFF8F00), Color(0xFFFFD700), Color(0xFFFF1744)),
+                badgeIcon = "👑",
+                gradientColors = listOf(Color(0xFF6D28D9), Color(0xFFF59E0B), Color(0xFFEC4899)),
                 crownEmoji = "👑",
                 minXp = minXp,
                 maxXp = maxXp,
-                badgeDrawableRes = R.drawable.badge_cosmic_overlord_100
+                badgeDrawableRes = R.drawable.badge_hd_tier7_sovereign
             )
         }
     }
 
-    fun isSpecialHighTierUser(name: String): Boolean {
-        val lower = name.lowercase()
-        return lower.contains("yasmin") || lower.contains("warsi") || lower.contains("devil")
-    }
+    fun isSpecialHighTierUser(name: String): Boolean = false
 
     fun getEffectiveWealthLevel(user: UserProfile): Int {
-        val rawMax = maxOf(user.level, user.wealthLevel)
-        val lower = user.name.lowercase()
-        return when {
-            rawMax > 1 -> rawMax
-            lower.contains("yasmin") || lower.contains("warsi") -> maxOf(35, rawMax)
-            lower.contains("devil") -> maxOf(70, rawMax)
-            user.wealthXp > 0L -> calculateLevelFromXp(user.wealthXp)
-            else -> 1
-        }
+        // 100% Real-Time Firebase Firestore XP Driven (Zero dummy name overrides!)
+        val calculated = calculateLevelFromXp(user.wealthXp)
+        return if (user.wealthXp > 0L) calculated else user.wealthLevel.coerceAtLeast(1)
     }
 
-    fun getEffectiveWealthXp(user: UserProfile): Long {
-        val lower = user.name.lowercase()
-        return when {
-            lower.contains("yasmin") || lower.contains("warsi") -> maxOf(65000L, user.wealthXp)
-            lower.contains("devil") -> maxOf(380000L, user.wealthXp)
-            else -> user.wealthXp
-        }
-    }
+    fun getEffectiveWealthXp(user: UserProfile): Long = user.wealthXp.coerceAtLeast(0L)
 
     fun getEffectiveCharmLevel(user: UserProfile): Int {
-        val lower = user.name.lowercase()
-        return when {
-            lower.contains("yasmin") || lower.contains("warsi") -> maxOf(32, user.charmLevel)
-            lower.contains("devil") -> maxOf(55, user.charmLevel)
-            user.charmLevel > 1 -> user.charmLevel
-            user.charmXp > 0L -> calculateLevelFromXp(user.charmXp)
-            else -> 1
-        }
+        // 100% Real-Time Firebase Firestore Charm XP Driven
+        val calculated = calculateLevelFromXp(user.charmXp)
+        return if (user.charmXp > 0L) calculated else user.charmLevel.coerceAtLeast(1)
     }
 
-    fun getEffectiveCharmXp(user: UserProfile): Long {
-        val lower = user.name.lowercase()
-        return when {
-            lower.contains("yasmin") || lower.contains("warsi") -> maxOf(52000L, user.charmXp)
-            lower.contains("devil") -> maxOf(240000L, user.charmXp)
-            else -> user.charmXp
-        }
-    }
+    fun getEffectiveCharmXp(user: UserProfile): Long = user.charmXp.coerceAtLeast(0L)
 
     fun getHostCommissionPercent(level: Int): Double {
         return when {

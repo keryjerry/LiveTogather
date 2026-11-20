@@ -1289,7 +1289,10 @@ private fun SeamlessPersonalChatRow(
             Spacer(modifier = Modifier.width(12.dp))
 
             Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
                     Text(
                         text = partner.name.ifBlank { "User" },
                         color = InboxTextPrimary,
@@ -1299,8 +1302,8 @@ private fun SeamlessPersonalChatRow(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false)
                     )
+                    BlueLevelBadgePill(level = partner.getEffectiveWealthLevel())
                     if (isBonded) {
-                        Spacer(modifier = Modifier.width(5.dp))
                         Icon(
                             imageVector = Icons.Default.Favorite,
                             contentDescription = "Intimacy Bond",
@@ -1309,7 +1312,6 @@ private fun SeamlessPersonalChatRow(
                         )
                     }
                     if (isBlocked) {
-                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = "Blocked",
                             color = InboxUnreadRed,

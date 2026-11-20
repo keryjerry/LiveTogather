@@ -32,98 +32,118 @@ object ProgressionAutomationService {
     )
 
     private val milestoneRules: List<MilestoneRewardRule> = listOf(
-        // Wealth Level Milestones
+        // Approved Phase 3 Wealth Level Milestones (Exponential Bigo-Style Progression)
         MilestoneRewardRule(
-            key = "wealth_lv_2",
-            title = "🎉 Wealth Level 2 Reached!",
-            description = "Congratulations! LiveTogather Official Assistant gifted you a free 24-Hour 3D Aurora Lights Frame. Tap Equip Now to wear it instantly!",
+            key = "wealth_lv_10",
+            title = "🛡️ Wealth Level 10 Unlocked!",
+            description = "Congratulations! You reached Wealth Lv.10 (Bronze Vanguard). LiveTogather Official Assistant gifted you a free 24-Hour Aurora Lights 3D Frame!",
             rewardItemId = "frame_aurora_lights",
             rewardItemType = "avatar_frame",
             rewardItemName = "Aurora Lights 3D Frame",
             durationHours = 24,
-            condition = { it.getEffectiveWealthLevel() >= 2 }
+            condition = { it.getEffectiveWealthLevel() >= 10 }
         ),
         MilestoneRewardRule(
-            key = "wealth_lv_5",
-            title = "⚡ Wealth Level 5 Milestone!",
-            description = "Amazing progress! You unlocked a free 24-Hour Golden Amber Aura 3D Mic Effect. Tap Equip Now to shine on stage!",
+            key = "wealth_lv_20",
+            title = "⚔️ Wealth Level 20 Silver Sentinel Milestone!",
+            description = "Amazing milestone! You unlocked a free 3-Day Golden Amber Aura 3D Mic Effect. Tap Equip Now to shine on stage!",
             rewardItemId = "mic_effect_golden_amber_aura",
             rewardItemType = "mic_effect",
             rewardItemName = "Golden Amber Aura Mic Effect",
-            durationHours = 24,
-            condition = { it.getEffectiveWealthLevel() >= 5 }
+            durationHours = 72,
+            condition = { it.getEffectiveWealthLevel() >= 20 }
         ),
         MilestoneRewardRule(
-            key = "wealth_lv_10",
-            title = "🔥 Wealth Level 10 Elite Reward!",
-            description = "Welcome to Elite Rank! LiveTogather Official Assistant awarded you a free 3-Day Phoenix Fire 3D Frame. Equip it immediately!",
+            key = "wealth_lv_30",
+            title = "👑 Wealth Level 30 Gold Monarch Achieved!",
+            description = "Welcome to Gold Monarch! LiveTogather Official Assistant awarded you a free 3-Day Phoenix Fire 3D Frame!",
             rewardItemId = "frame_phoenix_fire",
             rewardItemType = "avatar_frame",
             rewardItemName = "Phoenix Fire 3D Frame",
             durationHours = 72,
-            condition = { it.getEffectiveWealthLevel() >= 10 }
+            condition = { it.getEffectiveWealthLevel() >= 30 }
         ),
         MilestoneRewardRule(
-            key = "wealth_lv_15",
-            title = "💎 Wealth Level 15 Sovereign Reward!",
-            description = "You reached Wealth Lv.15! Claim & equip your free 3-Day Cyber Neon Electric 3D Mic Effect right now!",
+            key = "wealth_lv_50",
+            title = "💠 Wealth Level 50 Platinum Archon Prestige!",
+            description = "Elite Platinum Archon unlocked! Claim & equip your free 3-Day Cyber Neon Electric 3D Mic Effect right now!",
             rewardItemId = "mic_effect_cyber_neon_electric",
             rewardItemType = "mic_effect",
             rewardItemName = "Cyber Neon Electric Mic Effect",
             durationHours = 72,
-            condition = { it.getEffectiveWealthLevel() >= 15 }
+            condition = { it.getEffectiveWealthLevel() >= 50 }
         ),
         MilestoneRewardRule(
-            key = "wealth_lv_20",
-            title = "🐉 Wealth Level 20 Royal Reward!",
-            description = "Legendary achievement! Your free 3-Day Crimson Dragon 3D Profile Frame is ready to equip!",
+            key = "wealth_lv_50_frame",
+            title = "🐉 Wealth Level 50 Bonus 3D Frame!",
+            description = "Platinum Archon Bonus! Your free 3-Day Crimson Dragon 3D Profile Frame is ready to equip!",
             rewardItemId = "frame_crimson_dragon",
             rewardItemType = "avatar_frame",
             rewardItemName = "Crimson Dragon 3D Frame",
             durationHours = 72,
-            condition = { it.getEffectiveWealthLevel() >= 20 }
+            condition = { it.getEffectiveWealthLevel() >= 50 }
+        ),
+        MilestoneRewardRule(
+            key = "wealth_lv_70",
+            title = "💎 Wealth Level 70 Diamond Celestial!",
+            description = "Diamond Celestial tier reached! Claim & equip your free 3-Day Diamond Crystal Vortex 3D Mic Effect!",
+            rewardItemId = "mic_effect_diamond_crystal_vortex",
+            rewardItemType = "mic_effect",
+            rewardItemName = "Diamond Crystal Vortex Mic Effect",
+            durationHours = 72,
+            condition = { it.getEffectiveWealthLevel() >= 70 }
+        ),
+        MilestoneRewardRule(
+            key = "wealth_lv_85",
+            title = "🔥 Wealth Level 85 Master Phoenix!",
+            description = "Mythic Master Phoenix unlocked! Claim & equip your free 3-Day Sovereign Gold Wings 3D Mic Effect!",
+            rewardItemId = "mic_effect_sovereign_gold_wings",
+            rewardItemType = "mic_effect",
+            rewardItemName = "Sovereign Gold Wings Mic Effect",
+            durationHours = 72,
+            condition = { it.getEffectiveWealthLevel() >= 85 }
+        ),
+        MilestoneRewardRule(
+            key = "wealth_lv_100",
+            title = "👑 Wealth Level 100 Sovereign Emperor Legend!",
+            description = "Ultimate platform prestige! Claim & equip your exclusive 7-Day Ruby Emperor 3D Profile Frame!",
+            rewardItemId = "frame_ruby_emperor",
+            rewardItemType = "avatar_frame",
+            rewardItemName = "Ruby Emperor 3D Frame",
+            durationHours = 168,
+            condition = { it.getEffectiveWealthLevel() >= 100 }
         ),
 
         // Charm Level Milestones
         MilestoneRewardRule(
-            key = "charm_lv_2",
-            title = "🌹 Charm Level 2 Unlocked!",
+            key = "charm_lv_10",
+            title = "🌹 Charm Level 10 Star Unlocked!",
             description = "Everyone loves your vibe! LiveTogather Official Assistant sent you a free 24-Hour Rose Seraph 3D Frame!",
             rewardItemId = "frame_rose_seraph",
             rewardItemType = "avatar_frame",
             rewardItemName = "Rose Seraph 3D Frame",
             durationHours = 24,
-            condition = { it.getEffectiveCharmLevel() >= 2 }
+            condition = { it.getEffectiveCharmLevel() >= 10 }
         ),
         MilestoneRewardRule(
-            key = "charm_lv_5",
-            title = "✨ Charm Level 5 Star Reward!",
-            description = "You're glowing! Enjoy a free 24-Hour Solar Particle Ring 3D Mic Effect from LiveTogather Official Assistant!",
+            key = "charm_lv_20",
+            title = "✨ Charm Level 20 Icon Reward!",
+            description = "You're glowing! Enjoy a free 3-Day Solar Particle Ring 3D Mic Effect from LiveTogather Official Assistant!",
             rewardItemId = "mic_effect_solar_particle_ring",
             rewardItemType = "mic_effect",
             rewardItemName = "Solar Particle Ring Mic Effect",
-            durationHours = 24,
-            condition = { it.getEffectiveCharmLevel() >= 5 }
+            durationHours = 72,
+            condition = { it.getEffectiveCharmLevel() >= 20 }
         ),
         MilestoneRewardRule(
-            key = "charm_lv_10",
-            title = "👼 Charm Level 10 Icon Reward!",
+            key = "charm_lv_50",
+            title = "👼 Charm Level 50 Superstar Reward!",
             description = "Superstar milestone reached! Claim & equip your free 3-Day Angel Wings 3D Profile Frame!",
             rewardItemId = "frame_angel_wings",
             rewardItemType = "avatar_frame",
             rewardItemName = "Angel Wings 3D Frame",
             durationHours = 72,
-            condition = { it.getEffectiveCharmLevel() >= 10 }
-        ),
-        MilestoneRewardRule(
-            key = "charm_lv_15",
-            title = "💠 Charm Level 15 Diamond Icon!",
-            description = "Incredible Charm Lv.15! Claim & equip your free 3-Day Diamond Crystal Vortex 3D Mic Effect!",
-            rewardItemId = "mic_effect_diamond_crystal_vortex",
-            rewardItemType = "mic_effect",
-            rewardItemName = "Diamond Crystal Vortex Mic Effect",
-            durationHours = 72,
-            condition = { it.getEffectiveCharmLevel() >= 15 }
+            condition = { it.getEffectiveCharmLevel() >= 50 }
         ),
 
         // Recharge Milestones
@@ -215,6 +235,22 @@ object ProgressionAutomationService {
     ) {
         val uid = user.uid
         if (uid.isBlank()) return
+
+        // Real-time Firestore level & tier badge synchronization whenever XP crosses a threshold
+        val calcWealthLvl = LevelBadgeSystem.calculateLevelFromXp(user.wealthXp)
+        val calcCharmLvl = LevelBadgeSystem.calculateLevelFromXp(user.charmXp)
+        val targetBadgeId = LevelBadgeSystem.getTierBadgeId(calcWealthLvl)
+        if (user.wealthLevel != calcWealthLvl || user.level != calcWealthLvl || user.charmLevel != calcCharmLvl) {
+            db.collection("users").document(uid).set(
+                mapOf(
+                    "wealthLevel" to calcWealthLvl,
+                    "level" to calcWealthLvl,
+                    "charmLevel" to calcCharmLvl,
+                    "activeWealthBadgeId" to targetBadgeId
+                ),
+                SetOptions.merge()
+            )
+        }
 
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val dueRules = milestoneRules.filter { rule ->
