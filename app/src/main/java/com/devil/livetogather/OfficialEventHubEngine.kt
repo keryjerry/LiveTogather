@@ -71,6 +71,7 @@ fun getEventThemeDrawableRes(themeId: String): Int {
     if (themeId.isBlank()) return 0
     OFFICIAL_EVENT_HD_THEMES.firstOrNull { it.id.equals(themeId, ignoreCase = true) }?.let { return it.drawableRes }
     return when (themeId.lowercase()) {
+        "cinema_royal_blue_hd" -> R.drawable.bg_cinema_royal_blue_hd
         "gold", "celestial_gold" -> R.drawable.event_theme_celestial_gold
         "cyan", "cyber_neon" -> R.drawable.event_theme_cyber_neon
         "emerald", "liquid_emerald" -> R.drawable.event_theme_emerald_palace

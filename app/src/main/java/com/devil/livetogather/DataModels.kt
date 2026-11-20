@@ -99,7 +99,14 @@ data class RoomItem(
     @get:PropertyName("isOfficialEvent") @set:PropertyName("isOfficialEvent") var isOfficialEvent: Boolean = false,
     @get:PropertyName("eventThemeStyle") @set:PropertyName("eventThemeStyle") var eventThemeStyle: String = "",
     @get:PropertyName("suspendedUntil") @set:PropertyName("suspendedUntil") var suspendedUntil: Long = 0L,
-    @get:PropertyName("suspensionReason") @set:PropertyName("suspensionReason") var suspensionReason: String = ""
+    @get:PropertyName("suspensionReason") @set:PropertyName("suspensionReason") var suspensionReason: String = "",
+    // Real-Time Royal Blue Cinema Watch Party (YouTube Synced Player - Audio Rooms Only)
+    @get:PropertyName("isWatchPartyActive") @set:PropertyName("isWatchPartyActive") var isWatchPartyActive: Boolean = false,
+    @get:PropertyName("watchPartyVideoId") @set:PropertyName("watchPartyVideoId") var watchPartyVideoId: String = "BddP6PYo2gs",
+    @get:PropertyName("watchPartyVideoTitle") @set:PropertyName("watchPartyVideoTitle") var watchPartyVideoTitle: String = "Non-Stop Bollywood Party Hits",
+    @get:PropertyName("watchPartyIsPlaying") @set:PropertyName("watchPartyIsPlaying") var watchPartyIsPlaying: Boolean = true,
+    @get:PropertyName("watchPartyUpdatedBy") @set:PropertyName("watchPartyUpdatedBy") var watchPartyUpdatedBy: String = "",
+    @get:PropertyName("watchPartyUpdatedAt") @set:PropertyName("watchPartyUpdatedAt") var watchPartyUpdatedAt: Long = 0L
 ) {
     val isVipRoom: Boolean get() = privacy.equals("vip_only", ignoreCase = true)
     val isVideoRoom: Boolean get() = roomType == "video" || roomType == "video_pk"
@@ -195,6 +202,12 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
     val eventThemeStyle = doc.getString("eventThemeStyle") ?: ""
     val suspendedUntil = doc.getLong("suspendedUntil") ?: 0L
     val suspensionReason = doc.getString("suspensionReason") ?: ""
+    val isWatchPartyActive = doc.getBoolean("isWatchPartyActive") ?: (bannerUrl == "cinema_royal_blue_hd" || eventThemeStyle == "cinema_royal_blue_hd")
+    val watchPartyVideoId = doc.getString("watchPartyVideoId") ?: "BddP6PYo2gs"
+    val watchPartyVideoTitle = doc.getString("watchPartyVideoTitle") ?: "Non-Stop Bollywood Party Hits"
+    val watchPartyIsPlaying = doc.getBoolean("watchPartyIsPlaying") ?: true
+    val watchPartyUpdatedBy = doc.getString("watchPartyUpdatedBy") ?: ""
+    val watchPartyUpdatedAt = doc.getLong("watchPartyUpdatedAt") ?: 0L
 
     return RoomItem(
         id = id,
@@ -249,7 +262,13 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
         isOfficialEvent = isOfficialEvent,
         eventThemeStyle = eventThemeStyle,
         suspendedUntil = suspendedUntil,
-        suspensionReason = suspensionReason
+        suspensionReason = suspensionReason,
+        isWatchPartyActive = isWatchPartyActive,
+        watchPartyVideoId = watchPartyVideoId,
+        watchPartyVideoTitle = watchPartyVideoTitle,
+        watchPartyIsPlaying = watchPartyIsPlaying,
+        watchPartyUpdatedBy = watchPartyUpdatedBy,
+        watchPartyUpdatedAt = watchPartyUpdatedAt
     )
 }
 
@@ -2177,6 +2196,7 @@ data class RoomThemePreset(
 )
 
 val ROOM_THEME_PRESETS = listOf(
+    RoomThemePreset("theme_cinema_royal_blue", "🎬 Royal Blue Cinema", "cinema_royal_blue_hd"),
     RoomThemePreset("theme_vip_royal", "👑 VIP Royal Velvet Palace", "vip_royal_stage"),
     RoomThemePreset("theme_dubai_marina", "🏙️ Dubai Marina Night", "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?auto=format&fit=crop&w=1080&q=80"),
     RoomThemePreset("theme_paris_eiffel", "🗼 Paris Eiffel Skyline", "https://images.unsplash.com/photo-1502602898657-3e91760cbb34?auto=format&fit=crop&w=1080&q=80"),

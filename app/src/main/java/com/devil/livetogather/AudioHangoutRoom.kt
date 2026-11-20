@@ -751,7 +751,15 @@ fun CreateRoomDialog(
     var roomTitle by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf(if (initialCategory.isNotBlank()) initialCategory else CATEGORY_LIST.getOrNull(1)?.id ?: "free_tonight") }
     var selectedRoomType by remember { mutableStateOf(if (initialCategory == "video_stream") "video" else "audio") }
-    var selectedTheme by remember { mutableStateOf(ROOM_THEME_PRESETS[0].imageUrl) }
+    var selectedTheme by remember {
+        mutableStateOf(
+            if (WatchPartyCinemaEngine.canUnlockCinemaWatchParty(currentUser, currentUser.getEffectiveWealthLevel())) {
+                WatchPartyCinemaEngine.CINEMA_THEME_ID
+            } else {
+                "vip_royal_stage"
+            }
+        )
+    }
     var showVideoSafetyGuidelinesModal by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
@@ -1005,10 +1013,18 @@ fun CreateRoomDialog(
                 Spacer(modifier = Modifier.height(6.dp))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(ROOM_THEME_PRESETS) { theme ->
+                        val isCinemaPreset = theme.imageUrl == WatchPartyCinemaEngine.CINEMA_THEME_ID
+                        val isCinemaLocked = isCinemaPreset && !WatchPartyCinemaEngine.canUnlockCinemaWatchParty(currentUser, currentUser.getEffectiveWealthLevel())
                         val isSelected = selectedTheme == theme.imageUrl
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.clickable { selectedTheme = theme.imageUrl }
+                            modifier = Modifier.clickable {
+                                if (isCinemaLocked) {
+                                    Toast.makeText(context, "🎬 Royal Blue Cinema Watch Party unlocks at Room Level 5!", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    selectedTheme = theme.imageUrl
+                                }
+                            }
                         ) {
                             Box(
                                 modifier = Modifier
@@ -1021,11 +1037,25 @@ fun CreateRoomDialog(
                                     )
                             ) {
                                 AsyncImage(
-                                    model = if (theme.imageUrl == "vip_royal_stage") R.drawable.vip_royal_stage else theme.imageUrl,
+                                    model = when (theme.imageUrl) {
+                                        WatchPartyCinemaEngine.CINEMA_THEME_ID -> R.drawable.bg_cinema_royal_blue_hd
+                                        "vip_royal_stage" -> R.drawable.vip_royal_stage
+                                        else -> theme.imageUrl
+                                    },
                                     contentDescription = theme.name,
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop
                                 )
+                                if (isCinemaLocked) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(Color.Black.copy(alpha = 0.55f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text("🔒 Lv.5", color = Color(0xFFFFD700), fontSize = 9.sp, fontWeight = FontWeight.Black)
+                                    }
+                                }
                             }
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
@@ -1356,10 +1386,21 @@ fun EditRoomDialog(
                 Spacer(modifier = Modifier.height(6.dp))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(ROOM_THEME_PRESETS) { theme ->
+                        val isCinemaPreset = theme.imageUrl == WatchPartyCinemaEngine.CINEMA_THEME_ID
+                        val canUnlockCinema = currentUser?.let {
+                            WatchPartyCinemaEngine.canUnlockCinemaWatchParty(it, it.getEffectiveWealthLevel())
+                        } ?: false
+                        val isCinemaLocked = isCinemaPreset && !canUnlockCinema
                         val isSelected = selectedTheme == theme.imageUrl
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.clickable { selectedTheme = theme.imageUrl }
+                            modifier = Modifier.clickable {
+                                if (isCinemaLocked) {
+                                    Toast.makeText(context, "🎬 Royal Blue Cinema Watch Party unlocks at Room Level 5!", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    selectedTheme = theme.imageUrl
+                                }
+                            }
                         ) {
                             Box(
                                 modifier = Modifier
@@ -1372,11 +1413,25 @@ fun EditRoomDialog(
                                     )
                             ) {
                                 AsyncImage(
-                                    model = if (theme.imageUrl == "vip_royal_stage") R.drawable.vip_royal_stage else theme.imageUrl,
+                                    model = when (theme.imageUrl) {
+                                        WatchPartyCinemaEngine.CINEMA_THEME_ID -> R.drawable.bg_cinema_royal_blue_hd
+                                        "vip_royal_stage" -> R.drawable.vip_royal_stage
+                                        else -> theme.imageUrl
+                                    },
                                     contentDescription = theme.name,
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop
                                 )
+                                if (isCinemaLocked) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(Color.Black.copy(alpha = 0.55f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text("🔒 Lv.5", color = Color(0xFFFFD700), fontSize = 9.sp, fontWeight = FontWeight.Black)
+                                    }
+                                }
                             }
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
@@ -4565,7 +4620,8 @@ fun RoomSettingsDialog(
     onBanMember: ((RoomMember) -> Unit)? = null,
     onEditRoom: (() -> Unit)? = null,
     onDeleteRoom: (() -> Unit)? = null,
-    onConvertToVideo: ((RoomItem) -> Unit)? = null
+    onConvertToVideo: ((RoomItem) -> Unit)? = null,
+    currentRoomLevel: Int = 1
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -5222,6 +5278,63 @@ fun RoomSettingsDialog(
                                             )
                                         )
                                     }
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    // Royal Blue Cinema Watch Party Mode Toggle (Unrestricted for Founder/CEO, Room Lv.5+ for others)
+                                    var isCinemaModeEnabled by remember(room.id, room.isWatchPartyActive, room.banner_image_url) {
+                                        mutableStateOf(WatchPartyCinemaEngine.isCinemaWatchPartyActive(room))
+                                    }
+                                    val canUseCinemaMode = WatchPartyCinemaEngine.canUnlockCinemaWatchParty(currentUser, currentRoomLevel)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text("🎬 Royal Blue Cinema Watch Party", color = Color(0xFF93C5FD), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                            Text(
+                                                text = when {
+                                                    isCinemaModeEnabled -> "HD Royal Blue Velvet Sofas & Synced YouTube Active 🎬"
+                                                    canUseCinemaMode -> "Unlock YouTube Watch Party + 10 HD Velvet Sofas"
+                                                    else -> "🔒 Unlocks at Room Level 5 (Current: Lv.$currentRoomLevel)"
+                                                },
+                                                color = if (isCinemaModeEnabled) Color(0xFFFFE57F) else Color.Gray,
+                                                fontSize = 10.sp
+                                            )
+                                        }
+                                        Switch(
+                                            checked = isCinemaModeEnabled,
+                                            onCheckedChange = { enableCinema ->
+                                                if (enableCinema && !canUseCinemaMode) {
+                                                    Toast.makeText(context, "🔒 Royal Blue Cinema Watch Party unlocks at Room Level 5!", Toast.LENGTH_LONG).show()
+                                                } else {
+                                                    isCinemaModeEnabled = enableCinema
+                                                    WatchPartyCinemaEngine.updateRoomWatchPartyState(
+                                                        db = db,
+                                                        room = room,
+                                                        isActive = enableCinema,
+                                                        updatedBy = currentUser.name.ifBlank { "Host" }
+                                                    )
+                                                    if (enableCinema) {
+                                                        onUpdateTheme(WatchPartyCinemaEngine.CINEMA_THEME_ID)
+                                                    } else if (room.banner_image_url == WatchPartyCinemaEngine.CINEMA_THEME_ID) {
+                                                        onUpdateTheme("vip_royal_stage")
+                                                        db.collection("rooms").document(room.id).update("banner_image_url", "vip_royal_stage")
+                                                    }
+                                                    Toast.makeText(
+                                                        context,
+                                                        if (enableCinema) "🎬 Royal Blue Cinema Watch Party Enabled!" else "🎙️ Standard Audio Room Restored",
+                                                        Toast.LENGTH_SHORT
+                                                    ).show()
+                                                }
+                                            },
+                                            colors = SwitchDefaults.colors(
+                                                checkedThumbColor = Color(0xFFFFD700),
+                                                checkedTrackColor = Color(0xFF1D4ED8)
+                                            )
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -5309,31 +5422,73 @@ fun RoomSettingsDialog(
                                 Spacer(modifier = Modifier.height(10.dp))
                                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     items(ROOM_THEME_PRESETS) { preset ->
+                                        val isCinemaPreset = preset.imageUrl == WatchPartyCinemaEngine.CINEMA_THEME_ID
+                                        val isCinemaLocked = isCinemaPreset && !WatchPartyCinemaEngine.canUnlockCinemaWatchParty(currentUser, currentRoomLevel)
                                         val isCurrent = room.banner_image_url == preset.imageUrl
                                         Column(
                                             horizontalAlignment = Alignment.CenterHorizontally,
                                             modifier = Modifier.clickable {
+                                                if (isCinemaLocked) {
+                                                    Toast.makeText(context, "🔒 Royal Blue Cinema unlocks at Room Level 5!", Toast.LENGTH_SHORT).show()
+                                                    return@clickable
+                                                }
                                                 onUpdateTheme(preset.imageUrl)
-                                                db.collection("rooms").document(room.id).update("banner_image_url", preset.imageUrl)
-                                                if (room.category.isNotBlank()) {
-                                                    db.collection("intent_categories").document(room.category).collection("rooms").document(room.id).update("banner_image_url", preset.imageUrl)
+                                                if (isCinemaPreset) {
+                                                    WatchPartyCinemaEngine.updateRoomWatchPartyState(
+                                                        db = db,
+                                                        room = room,
+                                                        isActive = true,
+                                                        updatedBy = currentUser.name.ifBlank { "Host" }
+                                                    )
+                                                } else {
+                                                    db.collection("rooms").document(room.id).update(
+                                                        mapOf(
+                                                            "banner_image_url" to preset.imageUrl,
+                                                            "isWatchPartyActive" to false
+                                                        )
+                                                    )
+                                                    if (room.category.isNotBlank()) {
+                                                        db.collection("intent_categories").document(room.category).collection("rooms").document(room.id).update(
+                                                            mapOf(
+                                                                "banner_image_url" to preset.imageUrl,
+                                                                "isWatchPartyActive" to false
+                                                            )
+                                                        )
+                                                    }
                                                 }
                                                 Toast.makeText(context, "Theme set to: ${preset.name}", Toast.LENGTH_SHORT).show()
                                             }
                                         ) {
-                                            AsyncImage(
-                                                model = if (preset.imageUrl == "vip_royal_stage") R.drawable.vip_royal_stage else preset.imageUrl,
-                                                contentDescription = preset.name,
-                                                modifier = Modifier
-                                                    .size(64.dp)
-                                                    .clip(RoundedCornerShape(10.dp))
-                                                    .border(
-                                                        2.dp,
-                                                        if (isCurrent) Color(0xFF8B5CF6) else Color.Transparent,
-                                                        RoundedCornerShape(10.dp)
-                                                    ),
-                                                contentScale = ContentScale.Crop
-                                            )
+                                            Box(modifier = Modifier.size(64.dp)) {
+                                                AsyncImage(
+                                                    model = when (preset.imageUrl) {
+                                                        WatchPartyCinemaEngine.CINEMA_THEME_ID -> R.drawable.bg_cinema_royal_blue_hd
+                                                        "vip_royal_stage" -> R.drawable.vip_royal_stage
+                                                        else -> preset.imageUrl
+                                                    },
+                                                    contentDescription = preset.name,
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .clip(RoundedCornerShape(10.dp))
+                                                        .border(
+                                                            2.dp,
+                                                            if (isCurrent) Color(0xFF8B5CF6) else Color.Transparent,
+                                                            RoundedCornerShape(10.dp)
+                                                        ),
+                                                    contentScale = ContentScale.Crop
+                                                )
+                                                if (isCinemaLocked) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .fillMaxSize()
+                                                            .clip(RoundedCornerShape(10.dp))
+                                                            .background(Color.Black.copy(alpha = 0.55f)),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Text("🔒 Lv.5", color = Color(0xFFFFD700), fontSize = 9.sp, fontWeight = FontWeight.Black)
+                                                    }
+                                                }
+                                            }
                                             Spacer(modifier = Modifier.height(4.dp))
                                             Text(
                                                 text = preset.name.take(10),
@@ -6086,12 +6241,20 @@ fun AudioHangoutRoomDialog(
     var userRechargeCount by remember { mutableStateOf(currentUser.rechargeCount) }
     var userTotalRoomTimeSeconds by remember { mutableStateOf(currentUser.totalRoomTimeSeconds) }
     var currentRoomStaySeconds by remember(room.id) { mutableStateOf(0L) }
+    var currentRoomLevel by remember(room.id) { mutableStateOf(1) }
     var liveUserWealthXp by remember { mutableStateOf(currentUser.wealthXp) }
     var liveUserWealthLevel by remember { mutableStateOf(currentUser.getEffectiveWealthLevel()) }
     var lastObservedWealthLevel by remember(currentUser.uid, room.id) { mutableStateOf(-1) }
     val levelUpEventQueue = remember(room.id) { mutableStateListOf<RoomLevelUpEvent>() }
     val seenLevelUpCommentIds = remember(room.id) { mutableSetOf<String>() }
     val pendingRevealLevelUpIds = remember(room.id) { mutableStateListOf<String>() }
+    val wavedEntryIds = remember(room.id) { mutableStateListOf<String>() }
+    val micInvitedEntryIds = remember(room.id) { mutableStateListOf<String>() }
+    val seenMicInviteIds = remember(room.id) { mutableSetOf<String>() }
+    var incomingMicInvite by remember(room.id) { mutableStateOf<LiveRoomComment?>(null) }
+    var hasWavedInRoom by remember(room.id) { mutableStateOf(false) }
+    var showRoomTaskDialog by remember { mutableStateOf(false) }
+    var showYouTubePickerDialog by remember { mutableStateOf(false) }
     var showGuestLimitExpiredDialog by remember { mutableStateOf(false) }
     var showGiftStoreDialog by remember { mutableStateOf(false) }
     var showLuxuryStoreDialog by remember { mutableStateOf(false) }
@@ -6135,6 +6298,12 @@ fun AudioHangoutRoomDialog(
                         val remoteRoomStay = (stayMap?.get(safeRoomKey) as? Number)?.toLong() ?: 0L
                         if (remoteRoomStay > currentRoomStaySeconds) {
                             currentRoomStaySeconds = remoteRoomStay
+                        }
+                        @Suppress("UNCHECKED_CAST")
+                        val lvlMap = snap.get("roomLevelsMap") as? Map<String, Any>
+                        val remoteRoomLvl = (lvlMap?.get(safeRoomKey) as? Number)?.toInt() ?: 1
+                        if (remoteRoomLvl > currentRoomLevel) {
+                            currentRoomLevel = remoteRoomLvl
                         }
                         val snapWealthXp = snap.getLong("wealthXp") ?: 0L
                         val snapWealthLvl = maxOf(
@@ -6198,9 +6367,10 @@ fun AudioHangoutRoomDialog(
                     roomId = room.id,
                     currentUser = currentUser,
                     newRoomStaySeconds = newRoomStay,
-                    onWealthStatsUpdated = { wXp, wLvl, _ ->
+                    onWealthStatsUpdated = { wXp, wLvl, rLvl ->
                         liveUserWealthXp = wXp
                         liveUserWealthLevel = wLvl
+                        if (rLvl > currentRoomLevel) currentRoomLevel = rLvl
                     }
                 )
             }
@@ -6826,16 +6996,19 @@ fun AudioHangoutRoomDialog(
         }
     }
 
-    // Host Follower Real-Time Listener
+    // Host Follower Real-Time Listener (Runs for BOTH Host & Viewers so Host NEVER sees 0!)
     DisposableEffect(targetHostId, currentUser.uid) {
-        if (targetHostId.isBlank() || targetHostId == currentUser.uid) {
+        if (targetHostId.isBlank()) {
             return@DisposableEffect onDispose {}
         }
-        val followDoc = db.collection("users").document(targetHostId)
-            .collection("followers").document(currentUser.uid)
-            .addSnapshotListener { snapshot, _ ->
-                isFollowingHost = snapshot != null && snapshot.exists()
-            }
+        val followDoc = if (targetHostId != currentUser.uid && currentUser.uid.isNotBlank()) {
+            db.collection("users").document(targetHostId)
+                .collection("followers").document(currentUser.uid)
+                .addSnapshotListener { snapshot, _ ->
+                    isFollowingHost = snapshot != null && snapshot.exists()
+                }
+        } else null
+
         val countListener = db.collection("users").document(targetHostId)
             .collection("followers")
             .addSnapshotListener { snapshot, _ ->
@@ -6843,9 +7016,17 @@ fun AudioHangoutRoomDialog(
                     hostFollowerCount = snapshot.size()
                 }
             }
+        val hostProfileFollowerListener = db.collection("users").document(targetHostId)
+            .addSnapshotListener { docSnap, _ ->
+                val fieldCount = docSnap?.getLong("followerCount")?.toInt() ?: 0
+                if (fieldCount > hostFollowerCount) {
+                    hostFollowerCount = fieldCount
+                }
+            }
         onDispose {
-            followDoc.remove()
+            followDoc?.remove()
             countListener.remove()
+            hostProfileFollowerListener.remove()
         }
     }
 
@@ -6977,6 +7158,17 @@ fun AudioHangoutRoomDialog(
                                         pendingRevealLevelUpIds.add(eventKey)
                                     }
                                     levelUpEventQueue.add(RoomLevelUpEngine.toEvent(c))
+                                }
+                            }
+                        } else if (WatchPartyCinemaEngine.isMicInviteComment(c) &&
+                            c.recipientUid == currentUser.uid &&
+                            c.userId != currentUser.uid
+                        ) {
+                            val invKey = c.id.ifBlank { "${c.userId}_${c.timestamp}" }
+                            if (invKey !in seenMicInviteIds) {
+                                seenMicInviteIds.add(invKey)
+                                if (nowMs - c.timestamp < 25_000L && c.timestamp >= roomSessionStartMs - 5_000L) {
+                                    incomingMicInvite = c
                                 }
                             }
                         }
@@ -7438,64 +7630,70 @@ fun AudioHangoutRoomDialog(
                                                 overflow = TextOverflow.Ellipsis
                                             )
                                         }
-                                        // Only show Follow button for viewers — NO broken "👑 Host" pill inside host box!
+                                        // Circular '+' Follow Icon Button right on Top-Left Host Header Pill
                                         if (!isUserHost) {
                                             Spacer(modifier = Modifier.width(6.dp))
-                                            Surface(
-                                                color = if (isFollowingHost) Color(0x334CAF50) else BrandCoral,
-                                                shape = RoundedCornerShape(8.dp),
-                                                border = if (isFollowingHost) BorderStroke(1.dp, Color(0xFF4CAF50)) else null,
-                                                modifier = Modifier.clickable {
-                                                    val newFollowing = !isFollowingHost
-                                                    isFollowingHost = newFollowing
-                                                    if (newFollowing) {
-                                                        hostFollowerCount += 1
-                                                        if (targetHostId.isNotBlank() && targetHostId != currentUser.uid) {
-                                                            val record = FollowerRecord(
-                                                                uid = currentUser.uid,
-                                                                name = currentUser.name,
-                                                                photo = currentUser.photo,
-                                                                timestamp = System.currentTimeMillis()
-                                                            )
-                                                            db.collection("users").document(targetHostId).collection("followers").document(currentUser.uid).set(record)
-                                                            db.collection("users").document(currentUser.uid).collection("following").document(targetHostId).set(
-                                                                mapOf("hostUid" to targetHostId, "hostName" to hostName, "timestamp" to System.currentTimeMillis())
-                                                            )
-                                                            db.collection("users").document(targetHostId).update("followerCount", FieldValue.increment(1))
-                                                            db.collection("users").document(currentUser.uid).update("followingCount", FieldValue.increment(1))
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(24.dp)
+                                                    .clip(CircleShape)
+                                                    .background(
+                                                        if (isFollowingHost) {
+                                                            Brush.horizontalGradient(listOf(Color(0xFF15803D), Color(0xFF22C55E)))
+                                                        } else {
+                                                            Brush.horizontalGradient(listOf(Color(0xFF7C3AED), Color(0xFF2563EB)))
                                                         }
-                                                        Toast.makeText(context, "🌟 Following $hostName!", Toast.LENGTH_SHORT).show()
-                                                    } else {
-                                                        hostFollowerCount = (hostFollowerCount - 1).coerceAtLeast(0)
-                                                        if (targetHostId.isNotBlank() && targetHostId != currentUser.uid) {
-                                                            db.collection("users").document(targetHostId).collection("followers").document(currentUser.uid).delete()
-                                                            db.collection("users").document(currentUser.uid).collection("following").document(targetHostId).delete()
-                                                            db.collection("users").document(targetHostId).update("followerCount", FieldValue.increment(-1))
-                                                            db.collection("users").document(currentUser.uid).update("followingCount", FieldValue.increment(-1))
+                                                    )
+                                                    .border(
+                                                        width = 1.dp,
+                                                        color = if (isFollowingHost) Color(0xFF86EFAC) else Color.White.copy(alpha = 0.75f),
+                                                        shape = CircleShape
+                                                    )
+                                                    .clickable {
+                                                        val newFollowing = !isFollowingHost
+                                                        isFollowingHost = newFollowing
+                                                        if (newFollowing) {
+                                                            hostFollowerCount += 1
+                                                            if (targetHostId.isNotBlank() && targetHostId != currentUser.uid) {
+                                                                val record = FollowerRecord(
+                                                                    uid = currentUser.uid,
+                                                                    name = currentUser.name,
+                                                                    photo = currentUser.photo,
+                                                                    timestamp = System.currentTimeMillis()
+                                                                )
+                                                                db.collection("users").document(targetHostId).collection("followers").document(currentUser.uid).set(record)
+                                                                db.collection("users").document(currentUser.uid).collection("following").document(targetHostId).set(
+                                                                    mapOf("hostUid" to targetHostId, "hostName" to hostName, "timestamp" to System.currentTimeMillis())
+                                                                )
+                                                                db.collection("users").document(targetHostId).update("followerCount", FieldValue.increment(1))
+                                                                db.collection("users").document(currentUser.uid).update("followingCount", FieldValue.increment(1))
+                                                            }
+                                                            Toast.makeText(context, "🌟 Following $hostName!", Toast.LENGTH_SHORT).show()
+                                                        } else {
+                                                            hostFollowerCount = (hostFollowerCount - 1).coerceAtLeast(0)
+                                                            if (targetHostId.isNotBlank() && targetHostId != currentUser.uid) {
+                                                                db.collection("users").document(targetHostId).collection("followers").document(currentUser.uid).delete()
+                                                                db.collection("users").document(currentUser.uid).collection("following").document(targetHostId).delete()
+                                                                db.collection("users").document(targetHostId).update("followerCount", FieldValue.increment(-1))
+                                                                db.collection("users").document(currentUser.uid).update("followingCount", FieldValue.increment(-1))
+                                                            }
                                                         }
-                                                    }
-                                                }
+                                                    },
+                                                contentAlignment = Alignment.Center
                                             ) {
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
-                                                ) {
-                                                    if (!isFollowingHost) {
-                                                        Icon(
-                                                            imageVector = Icons.Default.Add,
-                                                            contentDescription = null,
-                                                            tint = Color.White,
-                                                            modifier = Modifier.size(10.dp)
-                                                        )
-                                                        Spacer(modifier = Modifier.width(2.dp))
-                                                    }
+                                                if (isFollowingHost) {
                                                     Text(
-                                                        text = if (isFollowingHost) "✓" else "Follow",
-                                                        color = if (isFollowingHost) Color(0xFF81C784) else Color.White,
-                                                        fontSize = 9.5.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        maxLines = 1,
-                                                        softWrap = false
+                                                        text = "✓",
+                                                        color = Color.White,
+                                                        fontSize = 12.sp,
+                                                        fontWeight = FontWeight.Black
+                                                    )
+                                                } else {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Add,
+                                                        contentDescription = "Follow Room",
+                                                        tint = Color.White,
+                                                        modifier = Modifier.size(15.dp)
                                                     )
                                                 }
                                             }
@@ -7972,7 +8170,57 @@ fun AudioHangoutRoomDialog(
 
 
 
-                    if (is15MicRoom) {
+                    val isCinemaWatchParty = WatchPartyCinemaEngine.isCinemaWatchPartyActive(room)
+
+                    if (isCinemaWatchParty) {
+                        // Royal Blue HD Cinema Watch Party (Boxed Synced YouTube Player + Floating 3D Treasure Chest)
+                        CinemaWatchPartyVideoBox(
+                            room = room,
+                            canControlVideo = canStaffModerate,
+                            currentUserName = currentUser.name,
+                            currentRoomStaySeconds = currentRoomStaySeconds,
+                            onTogglePlay = {
+                                val nextPlaying = !room.watchPartyIsPlaying
+                                val updaterName = currentUser.name.ifBlank { "Host" }
+                                room = room.copy(watchPartyIsPlaying = nextPlaying, watchPartyUpdatedBy = updaterName)
+                                WatchPartyCinemaEngine.updateRoomWatchPartyState(
+                                    db = db,
+                                    room = room,
+                                    isActive = true,
+                                    isPlaying = nextPlaying,
+                                    updatedBy = updaterName
+                                )
+                            },
+                            onOpenVideoPicker = { showYouTubePickerDialog = true },
+                            onClaimTreasureChest = {
+                                WatchPartyCinemaEngine.claimRoomTaskReward(
+                                    context = context,
+                                    db = db,
+                                    userId = currentUser.uid,
+                                    roomId = room.id,
+                                    taskKey = "chest_${System.currentTimeMillis() / 180_000L}",
+                                    diamondBonus = 2L,
+                                    roomXpBonus = 50L,
+                                    onClaimed = {}
+                                )
+                            }
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        // 10 Photorealistic HD 3D Royal Blue Velvet Sofa Mic Seats (2 Rows x 5)
+                        RoyalBlueSofaTenMicStage(
+                            seats = stageSeats,
+                            currentUserId = currentUser.uid,
+                            isLocalTalking = isLocalTalking,
+                            allProfiles = allProfiles,
+                            activeEmojiReactions = activeEmojiReactions,
+                            onSeatClick = handleSeatClick
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        // Royal Blue & Gold Room Task Reward Banner
+                        RoomTaskRewardBanner(
+                            onClick = { showRoomTaskDialog = true }
+                        )
+                    } else if (is15MicRoom) {
                         // Part 4: Real-Time Event Gifting Leaderboard & PK Scoreboard Strip
                         OfficialEventLeaderboardStrip(
                             roomId = room.id,
@@ -8144,6 +8392,36 @@ fun AudioHangoutRoomDialog(
                                         )
                                         return@items
                                     }
+                                    if (WatchPartyCinemaEngine.isWelcomeWaveComment(comment)) {
+                                        WelcomeWaveCommentCard(
+                                            comment = comment,
+                                            onClick = {
+                                                selectedMemberForSheet = RoomMember(
+                                                    uid = comment.userId,
+                                                    name = comment.userName,
+                                                    photoUrl = comment.userPhoto,
+                                                    tier = comment.tier
+                                                )
+                                            },
+                                            modifier = Modifier.padding(vertical = 2.dp)
+                                        )
+                                        return@items
+                                    }
+                                    if (WatchPartyCinemaEngine.isMicInviteComment(comment)) {
+                                        MicInviteCommentCard(
+                                            comment = comment,
+                                            onClick = {
+                                                selectedMemberForSheet = RoomMember(
+                                                    uid = comment.userId,
+                                                    name = comment.userName,
+                                                    photoUrl = comment.userPhoto,
+                                                    tier = comment.tier
+                                                )
+                                            },
+                                            modifier = Modifier.padding(vertical = 2.dp)
+                                        )
+                                        return@items
+                                    }
                                     val commenterProfile = (if (comment.userId == currentUser.uid) currentUser else null)
                                         ?: allProfiles.find { it.uid == comment.userId || it.name.equals(comment.userName, true) }
                                     val isCommenterHost = comment.userId == room.hostId || (room.hostName.isNotBlank() && comment.userName.equals(room.hostName, true))
@@ -8200,15 +8478,66 @@ fun AudioHangoutRoomDialog(
                                             }
                                             bList
                                         }
-                                        VipRoomChatBarEntry(
-                                            userName = comment.userName,
-                                            avatarUrl = comment.userPhoto.ifEmpty { commenterProfile?.photo ?: "" },
-                                            vipLevel = commentVipLevel,
-                                            isFounder = isCommentFounder,
-                                            actionText = comment.message,
-                                            badges = entranceBadges,
-                                            modifier = Modifier.padding(vertical = 2.dp)
-                                        )
+                                        val entryKey = comment.id.ifBlank { "${comment.userId}_${comment.timestamp}" }
+                                        val isOtherUserEntry = comment.userId.isNotBlank() && comment.userId != currentUser.uid
+                                        val alreadySeatedOnMic = micSeats.any { it.uid == comment.userId }
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 2.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            VipRoomChatBarEntry(
+                                                userName = comment.userName,
+                                                avatarUrl = comment.userPhoto.ifEmpty { commenterProfile?.photo ?: "" },
+                                                vipLevel = commentVipLevel,
+                                                isFounder = isCommentFounder,
+                                                actionText = comment.message,
+                                                badges = entranceBadges,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            if (isOtherUserEntry) {
+                                                WelcomeWaveActionButton(
+                                                    hasWaved = entryKey in wavedEntryIds,
+                                                    hasInvitedMic = entryKey in micInvitedEntryIds,
+                                                    canInviteToMic = canStaffModerate && !alreadySeatedOnMic,
+                                                    onWaveClick = {
+                                                        if (entryKey !in wavedEntryIds) {
+                                                            wavedEntryIds.add(entryKey)
+                                                            hasWavedInRoom = true
+                                                            WatchPartyCinemaEngine.sendWelcomeWave(
+                                                                db = db,
+                                                                roomId = room.id,
+                                                                sender = currentUser,
+                                                                targetUserName = comment.userName,
+                                                                targetUserId = comment.userId
+                                                            )
+                                                        }
+                                                    },
+                                                    onInviteMicClick = {
+                                                        val openSeat = (1..9).firstOrNull { idx ->
+                                                            val s = micSeats.find { it.seatIndex == idx }
+                                                            s == null || (s.uid.isBlank() && !s.isLocked)
+                                                        }
+                                                        if (openSeat == null) {
+                                                            Toast.makeText(context, "All mic seats are currently full or locked.", Toast.LENGTH_SHORT).show()
+                                                        } else {
+                                                            if (entryKey !in micInvitedEntryIds) micInvitedEntryIds.add(entryKey)
+                                                            WatchPartyCinemaEngine.sendMicInvitation(
+                                                                db = db,
+                                                                roomId = room.id,
+                                                                inviter = currentUser,
+                                                                targetUserId = comment.userId,
+                                                                targetUserName = comment.userName,
+                                                                targetSeatIndex = openSeat
+                                                            )
+                                                            Toast.makeText(context, "🎙️ Mic #${openSeat + 1} invitation sent to ${comment.userName}!", Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    }
+                                                )
+                                            }
+                                        }
                                     } else {
                                         val activeF = commenterProfile?.activeFrame ?: ""
                                         val commenterAvatarFrame = if (activeF.isNotBlank()) activeF else if (isCommentFounder) "frame_livetogather_founder" else ""
@@ -9025,8 +9354,12 @@ fun AudioHangoutRoomDialog(
                 db = db,
                 onDismiss = { showRoomSettingsDialog = false },
                 onUpdateTheme = { newThemeUrl ->
-                    room = room.copy(banner_image_url = newThemeUrl)
+                    room = room.copy(
+                        banner_image_url = newThemeUrl,
+                        isWatchPartyActive = newThemeUrl == WatchPartyCinemaEngine.CINEMA_THEME_ID
+                    )
                 },
+                currentRoomLevel = currentRoomLevel,
                 onKickMember = { kicked ->
                     room = room.copy(kickedUserIds = room.kickedUserIds + kicked.uid)
                 },
@@ -9039,6 +9372,76 @@ fun AudioHangoutRoomDialog(
                     com.devil.livetogather.agora.AgoraVoiceManager.leaveRoom()
                     onConvertToVideo?.invoke(it)
                 }
+            )
+        }
+
+        // 4-WP1. Synced YouTube Watch Party Picker Dialog (Host/Admin)
+        if (showYouTubePickerDialog) {
+            YouTubeVideoPickerDialog(
+                currentVideoTitle = room.watchPartyVideoTitle.ifBlank { WatchPartyCinemaEngine.CURATED_VIDEOS.first().title },
+                onSelectVideo = { vidId, vidTitle ->
+                    val updater = currentUser.name.ifBlank { "Host" }
+                    room = room.copy(
+                        isWatchPartyActive = true,
+                        watchPartyVideoId = vidId,
+                        watchPartyVideoTitle = vidTitle,
+                        watchPartyIsPlaying = true,
+                        watchPartyUpdatedBy = updater
+                    )
+                    WatchPartyCinemaEngine.updateRoomWatchPartyState(
+                        db = db,
+                        room = room,
+                        isActive = true,
+                        videoId = vidId,
+                        videoTitle = vidTitle,
+                        isPlaying = true,
+                        updatedBy = updater
+                    )
+                    Toast.makeText(context, "🎬 Now Playing: $vidTitle", Toast.LENGTH_SHORT).show()
+                },
+                onDismiss = { showYouTubePickerDialog = false }
+            )
+        }
+
+        // 4-WP2. Daily Room Task Rewards Dialog
+        if (showRoomTaskDialog) {
+            RoomTaskRewardsDialog(
+                roomId = room.id,
+                currentUser = currentUser,
+                currentRoomStaySeconds = currentRoomStaySeconds,
+                hasWavedInRoom = hasWavedInRoom,
+                db = db,
+                onDismiss = { showRoomTaskDialog = false }
+            )
+        }
+
+        // 4-WP3. Real-Time Incoming Mic Seat Invitation Popup (Triggered after Wave -> Mic Invite)
+        incomingMicInvite?.let { inv ->
+            val targetIdx = inv.roomLevelValue.coerceIn(1, 9)
+            MicInviteReceivedDialog(
+                inviterName = inv.userName.ifBlank { "Host" },
+                inviterPhoto = inv.userPhoto,
+                seatIndex = targetIdx,
+                onAccept = {
+                    incomingMicInvite = null
+                    val targetSeatObj = micSeats.find { it.seatIndex == targetIdx } ?: MicSeat(
+                        seatIndex = targetIdx,
+                        label = "Mic ${targetIdx + 1}",
+                        role = "speaker"
+                    )
+                    val hasAudioPerm = ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.RECORD_AUDIO
+                    ) == PackageManager.PERMISSION_GRANTED
+                    if (hasAudioPerm) {
+                        joinMicSeat(db, room.id, targetSeatObj.seatIndex, currentUser, micSeats)
+                        Toast.makeText(context, "🎙️ Joined Mic #${targetSeatObj.seatIndex + 1}!", Toast.LENGTH_SHORT).show()
+                    } else {
+                        pendingSeatToJoin = targetSeatObj
+                        recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    }
+                },
+                onDecline = { incomingMicInvite = null }
             )
         }
 
