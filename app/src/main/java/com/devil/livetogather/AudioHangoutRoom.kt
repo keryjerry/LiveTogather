@@ -6085,6 +6085,13 @@ fun AudioHangoutRoomDialog(
     var userHasRecharged by remember { mutableStateOf(currentUser.hasRecharged) }
     var userRechargeCount by remember { mutableStateOf(currentUser.rechargeCount) }
     var userTotalRoomTimeSeconds by remember { mutableStateOf(currentUser.totalRoomTimeSeconds) }
+    var currentRoomStaySeconds by remember(room.id) { mutableStateOf(0L) }
+    var liveUserWealthXp by remember { mutableStateOf(currentUser.wealthXp) }
+    var liveUserWealthLevel by remember { mutableStateOf(currentUser.getEffectiveWealthLevel()) }
+    var lastObservedWealthLevel by remember(currentUser.uid, room.id) { mutableStateOf(-1) }
+    val levelUpEventQueue = remember(room.id) { mutableStateListOf<RoomLevelUpEvent>() }
+    val seenLevelUpCommentIds = remember(room.id) { mutableSetOf<String>() }
+    val pendingRevealLevelUpIds = remember(room.id) { mutableStateListOf<String>() }
     var showGuestLimitExpiredDialog by remember { mutableStateOf(false) }
     var showGiftStoreDialog by remember { mutableStateOf(false) }
     var showLuxuryStoreDialog by remember { mutableStateOf(false) }
@@ -6110,9 +6117,10 @@ fun AudioHangoutRoomDialog(
         onDispose { gameReg.remove() }
     }
 
-    // Real-time listener for current user diamonds and active frame
-    LaunchedEffect(currentUser.uid) {
+    // Real-time listener for current user diamonds, active frame, wealth level & per-room stay seconds
+    LaunchedEffect(currentUser.uid, room.id) {
         if (currentUser.uid.isNotBlank()) {
+            val safeRoomKey = RoomLevelUpEngine.sanitizeRoomKey(room.id)
             db.collection("users").document(currentUser.uid)
                 .addSnapshotListener { snap, _ ->
                     if (snap != null && snap.exists()) {
@@ -6123,6 +6131,34 @@ fun AudioHangoutRoomDialog(
                         userRechargeCount = snap.getLong("rechargeCount")?.toInt() ?: 0
                         userTotalRoomTimeSeconds = snap.getLong("totalRoomTimeSeconds") ?: 0L
                         @Suppress("UNCHECKED_CAST")
+                        val stayMap = snap.get("roomStaySecondsMap") as? Map<String, Any>
+                        val remoteRoomStay = (stayMap?.get(safeRoomKey) as? Number)?.toLong() ?: 0L
+                        if (remoteRoomStay > currentRoomStaySeconds) {
+                            currentRoomStaySeconds = remoteRoomStay
+                        }
+                        val snapWealthXp = snap.getLong("wealthXp") ?: 0L
+                        val snapWealthLvl = maxOf(
+                            (snap.getLong("wealthLevel") ?: 1L).toInt(),
+                            LevelBadgeSystem.calculateLevelFromXp(snapWealthXp)
+                        )
+                        liveUserWealthXp = snapWealthXp
+                        liveUserWealthLevel = snapWealthLvl
+                        if (lastObservedWealthLevel == -1) {
+                            lastObservedWealthLevel = snapWealthLvl
+                        } else if (snapWealthLvl > lastObservedWealthLevel) {
+                            lastObservedWealthLevel = snapWealthLvl
+                            if (room.id.isNotBlank()) {
+                                RoomLevelUpEngine.dispatchRoomLevelUpComment(
+                                    db = db,
+                                    roomId = room.id,
+                                    currentUser = currentUser,
+                                    newLevel = snapWealthLvl,
+                                    isRoomStayLevel = false,
+                                    xpBonus = 0L
+                                )
+                            }
+                        }
+                        @Suppress("UNCHECKED_CAST")
                         userOwnedFrames = (snap.get("ownedFrames") as? List<String>) ?: emptyList()
                         @Suppress("UNCHECKED_CAST")
                         userOwnedMicEffects = (snap.get("ownedMicEffects") as? List<String>) ?: emptyList()
@@ -6131,8 +6167,8 @@ fun AudioHangoutRoomDialog(
         }
     }
 
-    // Live Room Time Tracking & Free 1-Hour Guest Limit for Unrecharged Users
-    LaunchedEffect(currentUser.uid, userHasRecharged, userRechargeCount, userDiamonds, currentUser.diamonds) {
+    // Live Room Time Tracking, Per-Room 5-Minute Level-Up Engine & Free 1-Hour Guest Limit
+    LaunchedEffect(currentUser.uid, room.id, userHasRecharged, userRechargeCount, userDiamonds, currentUser.diamonds) {
         val isFirstTimeFreeGuest = !userHasRecharged && !currentUser.hasRecharged
             && userRechargeCount == 0 && currentUser.rechargeCount == 0
             && userDiamonds <= 0L && currentUser.diamonds <= 0L
@@ -6143,11 +6179,9 @@ fun AudioHangoutRoomDialog(
         while (true) {
             delay(10000L) // every 10 seconds
             val newTime = userTotalRoomTimeSeconds + 10L
+            val newRoomStay = currentRoomStaySeconds + 10L
             userTotalRoomTimeSeconds = newTime
-            try {
-                db.collection("users").document(currentUser.uid)
-                    .update("totalRoomTimeSeconds", FieldValue.increment(10L))
-            } catch (_: Exception) {}
+            currentRoomStaySeconds = newRoomStay
 
             AutomatedRewardManager.checkRoomTimeRewards(
                 context = context,
@@ -6155,34 +6189,20 @@ fun AudioHangoutRoomDialog(
                 db = db,
                 onUpdateProfile = { userDiamonds = it.diamonds }
             )
-            // Real-Time Room Stay XP & Level Up (Every 5 minutes = 300 seconds)
-            if (newTime > 0L && newTime % 300L == 0L && currentUser.uid.isNotBlank()) {
-                val addedXp = 25L
-                val updatedWealthXp = currentUser.wealthXp + addedXp
-                val updatedLvl = LevelBadgeSystem.calculateLevelFromXp(updatedWealthXp)
-                val isLevelUp = updatedLvl > currentUser.wealthLevel
-                
-                val updates = mutableMapOf<String, Any>(
-                    "wealthXp" to updatedWealthXp,
-                    "wealthLevel" to updatedLvl,
-                    "level" to updatedLvl
+
+            // Real-Time Per-Room 5-Minute XP & Room Level-Up (syncs Firestore + broadcasts Popup & System Comment)
+            if (currentUser.uid.isNotBlank() && room.id.isNotBlank()) {
+                RoomLevelUpEngine.recordRoomStayTick(
+                    context = context,
+                    db = db,
+                    roomId = room.id,
+                    currentUser = currentUser,
+                    newRoomStaySeconds = newRoomStay,
+                    onWealthStatsUpdated = { wXp, wLvl, _ ->
+                        liveUserWealthXp = wXp
+                        liveUserWealthLevel = wLvl
+                    }
                 )
-                if (isLevelUp) {
-                    updates["diamonds"] = FieldValue.increment(5L)
-                    val notifId = UUID.randomUUID().toString()
-                    val notifDoc = mapOf(
-                        "id" to notifId,
-                        "type" to "level_up",
-                        "title" to "🎉 लेवल अप बधाई!",
-                        "message" to "बधाई हो! आप लेवल $updatedLvl पर पहुँच गए हैं! 5 मुफ्त डायमंड्स और नए बैजेस अनलॉक हो गए हैं।",
-                        "timestamp" to System.currentTimeMillis(),
-                        "isRead" to false,
-                        "senderName" to "LiveTogather Official"
-                    )
-                    db.collection("users").document(currentUser.uid)
-                        .collection("notifications").document(notifId).set(notifDoc)
-                }
-                db.collection("users").document(currentUser.uid).update(updates)
             }
 
             // STRICTLY apply 1-hour limit ONLY to first-time free guests with 0 coins, 0 recharge, no VIP
@@ -6945,7 +6965,22 @@ fun AudioHangoutRoomDialog(
                 if (snapshot != null) {
                     val list = snapshot.documents.mapNotNull { it.toObject(LiveRoomComment::class.java) }
 
-                        // Show all live comments in the active room
+                    // Trigger luxury 2.8s Room Level-Up Celebration Popup for fresh real-time level-up announcements
+                    val nowMs = System.currentTimeMillis()
+                    list.forEach { c ->
+                        if (RoomLevelUpEngine.isLevelUpSystemComment(c)) {
+                            val eventKey = c.id.ifBlank { "${c.userId}_${c.timestamp}" }
+                            if (eventKey !in seenLevelUpCommentIds) {
+                                seenLevelUpCommentIds.add(eventKey)
+                                if (nowMs - c.timestamp < 15_000L && c.timestamp >= roomSessionStartMs - 5_000L) {
+                                    if (eventKey !in pendingRevealLevelUpIds) {
+                                        pendingRevealLevelUpIds.add(eventKey)
+                                    }
+                                    levelUpEventQueue.add(RoomLevelUpEngine.toEvent(c))
+                                }
+                            }
+                        }
+                    }
 
                     liveComments.clear()
                     liveComments.addAll(list)
@@ -8051,9 +8086,13 @@ fun AudioHangoutRoomDialog(
                     // 4. LIVE TRANSPARENT COMMENTS STREAM (FLOATING OVER WALLPAPER)
                     // ---------------------------------------------------------
                     val chatListState = rememberLazyListState()
-                    LaunchedEffect(liveComments.size) {
-                        if (liveComments.isNotEmpty()) {
-                            chatListState.animateScrollToItem(liveComments.size - 1)
+                    val visibleLiveComments = liveComments.filter { c ->
+                        val key = c.id.ifBlank { "${c.userId}_${c.timestamp}" }
+                        key !in pendingRevealLevelUpIds
+                    }
+                    LaunchedEffect(visibleLiveComments.size) {
+                        if (visibleLiveComments.isNotEmpty()) {
+                            chatListState.animateScrollToItem(visibleLiveComments.size - 1)
                         }
                     }
 
@@ -8084,7 +8123,27 @@ fun AudioHangoutRoomDialog(
                                     .padding(vertical = 4.dp),
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                items(liveComments) { comment ->
+                                items(
+                                    liveComments.filter { c ->
+                                        val key = c.id.ifBlank { "${c.userId}_${c.timestamp}" }
+                                        key !in pendingRevealLevelUpIds
+                                    }
+                                ) { comment ->
+                                    if (RoomLevelUpEngine.isLevelUpSystemComment(comment)) {
+                                        RoomLevelUpSystemCommentCard(
+                                            comment = comment,
+                                            onClick = {
+                                                selectedMemberForSheet = RoomMember(
+                                                    uid = comment.userId,
+                                                    name = comment.userName,
+                                                    photoUrl = comment.userPhoto,
+                                                    tier = comment.tier
+                                                )
+                                            },
+                                            modifier = Modifier.padding(vertical = 2.dp)
+                                        )
+                                        return@items
+                                    }
                                     val commenterProfile = (if (comment.userId == currentUser.uid) currentUser else null)
                                         ?: allProfiles.find { it.uid == comment.userId || it.name.equals(comment.userName, true) }
                                     val isCommenterHost = comment.userId == room.hostId || (room.hostName.isNotBlank() && comment.userName.equals(room.hostName, true))
@@ -8612,6 +8671,23 @@ fun AudioHangoutRoomDialog(
                             )
                         }
                     }
+                }
+
+                // -------------------------------------------------------------
+                // LUXURY 2.8s IN-ROOM LEVEL-UP CELEBRATION POPUP OVERLAY
+                // -------------------------------------------------------------
+                levelUpEventQueue.firstOrNull()?.let { levelUpEvent ->
+                    RoomLevelUpCelebrationPopup(
+                        event = levelUpEvent,
+                        isCurrentUser = levelUpEvent.userId == currentUser.uid,
+                        onFinished = {
+                            pendingRevealLevelUpIds.remove(levelUpEvent.id)
+                            levelUpEventQueue.removeAll { it.id == levelUpEvent.id }
+                        },
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 92.dp)
+                    )
                 }
 
                 // -------------------------------------------------------------

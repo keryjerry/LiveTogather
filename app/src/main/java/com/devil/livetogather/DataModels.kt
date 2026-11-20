@@ -2052,7 +2052,10 @@ data class LiveRoomComment(
     val giftCost: Long = 0L,
     val giftQuantity: Int = 1,
     val recipientName: String = "",
-    val recipientUid: String = ""
+    val recipientUid: String = "",
+    val systemCommentType: String = "",
+    val roomLevelValue: Int = 0,
+    val roomXpBonus: Long = 0L
 )
 
 data class HangoutTrack(

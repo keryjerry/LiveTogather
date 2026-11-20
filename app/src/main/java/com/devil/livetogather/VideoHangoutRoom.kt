@@ -192,6 +192,11 @@ fun VideoHangoutRoomDialog(
     var userHasRecharged by remember { mutableStateOf(currentUser.hasRecharged) }
     var userRechargeCount by remember { mutableStateOf(currentUser.rechargeCount) }
     var userTotalRoomTimeSeconds by remember { mutableStateOf(currentUser.totalRoomTimeSeconds) }
+    var currentRoomStaySeconds by remember(room.id) { mutableStateOf(0L) }
+    var lastObservedWealthLevel by remember(currentUser.uid, room.id) { mutableStateOf(-1) }
+    val levelUpEventQueue = remember(room.id) { mutableStateListOf<RoomLevelUpEvent>() }
+    val seenLevelUpCommentIds = remember(room.id) { mutableSetOf<String>() }
+    val pendingRevealLevelUpIds = remember(room.id) { mutableStateListOf<String>() }
     var showGuestLimitExpiredDialog by remember { mutableStateOf(false) }
 
     // Comments State
@@ -454,11 +459,30 @@ fun VideoHangoutRoomDialog(
                         .filter { comment ->
                             if (isUserHost) comment.timestamp >= roomSessionStartMs else true
                         }
+                    val nowMs = System.currentTimeMillis()
+                    list.forEach { c ->
+                        if (RoomLevelUpEngine.isLevelUpSystemComment(c)) {
+                            val eventKey = c.id.ifBlank { "${c.userId}_${c.timestamp}" }
+                            if (eventKey !in seenLevelUpCommentIds) {
+                                seenLevelUpCommentIds.add(eventKey)
+                                if (nowMs - c.timestamp < 15_000L && c.timestamp >= roomSessionStartMs - 5_000L) {
+                                    if (eventKey !in pendingRevealLevelUpIds) {
+                                        pendingRevealLevelUpIds.add(eventKey)
+                                    }
+                                    levelUpEventQueue.add(RoomLevelUpEngine.toEvent(c))
+                                }
+                            }
+                        }
+                    }
                     liveComments.clear()
                     liveComments.addAll(list)
-                    if (list.isNotEmpty()) {
+                    val visibleCount = list.count { c ->
+                        val k = c.id.ifBlank { "${c.userId}_${c.timestamp}" }
+                        k !in pendingRevealLevelUpIds
+                    }
+                    if (visibleCount > 0) {
                         coroutineScope.launch {
-                            commentsListState.animateScrollToItem(list.size - 1)
+                            commentsListState.animateScrollToItem(visibleCount - 1)
                         }
                     }
                 }
@@ -501,9 +525,10 @@ fun VideoHangoutRoomDialog(
         onDispose { giftsListener.remove() }
     }
 
-    // 6. User Diamonds, Wealth & Swords Real-Time Listener
-    LaunchedEffect(currentUser.uid) {
+    // 6. User Diamonds, Wealth & Per-Room Stay Real-Time Listener
+    LaunchedEffect(currentUser.uid, room.id) {
         if (currentUser.uid.isNotBlank()) {
+            val safeRoomKey = RoomLevelUpEngine.sanitizeRoomKey(room.id)
             db.collection("users").document(currentUser.uid)
                 .addSnapshotListener { snap, _ ->
                     if (snap != null && snap.exists()) {
@@ -513,14 +538,40 @@ fun VideoHangoutRoomDialog(
                         userRechargeCount = snap.getLong("rechargeCount")?.toInt() ?: 0
                         userTotalRoomTimeSeconds = snap.getLong("totalRoomTimeSeconds") ?: 0L
                         @Suppress("UNCHECKED_CAST")
+                        val stayMap = snap.get("roomStaySecondsMap") as? Map<String, Any>
+                        val remoteRoomStay = (stayMap?.get(safeRoomKey) as? Number)?.toLong() ?: 0L
+                        if (remoteRoomStay > currentRoomStaySeconds) {
+                            currentRoomStaySeconds = remoteRoomStay
+                        }
+                        val snapWealthXp = snap.getLong("wealthXp") ?: 0L
+                        val snapWealthLvl = maxOf(
+                            (snap.getLong("wealthLevel") ?: 1L).toInt(),
+                            LevelBadgeSystem.calculateLevelFromXp(snapWealthXp)
+                        )
+                        if (lastObservedWealthLevel == -1) {
+                            lastObservedWealthLevel = snapWealthLvl
+                        } else if (snapWealthLvl > lastObservedWealthLevel) {
+                            lastObservedWealthLevel = snapWealthLvl
+                            if (room.id.isNotBlank()) {
+                                RoomLevelUpEngine.dispatchRoomLevelUpComment(
+                                    db = db,
+                                    roomId = room.id,
+                                    currentUser = currentUser,
+                                    newLevel = snapWealthLvl,
+                                    isRoomStayLevel = false,
+                                    xpBonus = 0L
+                                )
+                            }
+                        }
+                        @Suppress("UNCHECKED_CAST")
                         userOwnedFrames = (snap.get("ownedFrames") as? List<String>) ?: emptyList()
                     }
                 }
         }
     }
 
-    // Live Room Time Tracking & Free 1-Hour Guest Limit for Unrecharged Users
-    LaunchedEffect(currentUser.uid, userHasRecharged, userRechargeCount, userDiamonds, currentUser.diamonds) {
+    // Live Room Time Tracking, Per-Room 5-Minute Level-Up Engine & Free 1-Hour Guest Limit
+    LaunchedEffect(currentUser.uid, room.id, userHasRecharged, userRechargeCount, userDiamonds, currentUser.diamonds) {
         val isFirstTimeFreeGuest = !userHasRecharged && !currentUser.hasRecharged
             && userRechargeCount == 0 && currentUser.rechargeCount == 0
             && userDiamonds <= 0L && currentUser.diamonds <= 0L
@@ -531,11 +582,9 @@ fun VideoHangoutRoomDialog(
         while (true) {
             delay(10000L) // every 10 seconds
             val newTime = userTotalRoomTimeSeconds + 10L
+            val newRoomStay = currentRoomStaySeconds + 10L
             userTotalRoomTimeSeconds = newTime
-            try {
-                db.collection("users").document(currentUser.uid)
-                    .update("totalRoomTimeSeconds", FieldValue.increment(10L))
-            } catch (_: Exception) {}
+            currentRoomStaySeconds = newRoomStay
 
             AutomatedRewardManager.checkRoomTimeRewards(
                 context = context,
@@ -543,6 +592,16 @@ fun VideoHangoutRoomDialog(
                 db = db,
                 onUpdateProfile = { userDiamonds = it.diamonds }
             )
+
+            if (currentUser.uid.isNotBlank() && room.id.isNotBlank()) {
+                RoomLevelUpEngine.recordRoomStayTick(
+                    context = context,
+                    db = db,
+                    roomId = room.id,
+                    currentUser = currentUser,
+                    newRoomStaySeconds = newRoomStay
+                )
+            }
 
             // STRICTLY apply 1-hour limit ONLY to first-time free guests with 0 coins, 0 recharge, no VIP
             if (isFirstTimeFreeGuest && newTime >= 3600L) {
@@ -1214,7 +1273,28 @@ fun VideoHangoutRoomDialog(
                         .fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    items(liveComments) { comment ->
+                    items(
+                        liveComments.filter { c ->
+                            val key = c.id.ifBlank { "${c.userId}_${c.timestamp}" }
+                            key !in pendingRevealLevelUpIds
+                        }
+                    ) { comment ->
+                        if (RoomLevelUpEngine.isLevelUpSystemComment(comment)) {
+                            RoomLevelUpSystemCommentCard(
+                                comment = comment,
+                                onClick = {
+                                    val member = activeMembers.find { it.uid == comment.userId } ?: RoomMember(
+                                        uid = comment.userId,
+                                        name = comment.userName,
+                                        photoUrl = comment.userPhoto,
+                                        tier = comment.tier
+                                    )
+                                    selectedMemberForProfile = member
+                                },
+                                modifier = Modifier.padding(vertical = 2.dp)
+                            )
+                            return@items
+                        }
                         val commenterProfile = (if (comment.userId == currentUser.uid) currentUser else null)
                             ?: allProfiles.find { it.uid == comment.userId || it.name.equals(comment.userName, true) }
                         val isCommenterHost = comment.userId == room.hostId || (room.hostName.isNotBlank() && comment.userName.equals(room.hostName, true))
@@ -1802,6 +1882,31 @@ fun VideoHangoutRoomDialog(
             }
 
             // -------------------------------------------------------------
+            // LAYER 5B: LUXURY 2.8s IN-ROOM LEVEL-UP CELEBRATION POPUP OVERLAY
+            // -------------------------------------------------------------
+            levelUpEventQueue.firstOrNull()?.let { levelUpEvent ->
+                RoomLevelUpCelebrationPopup(
+                    event = levelUpEvent,
+                    isCurrentUser = levelUpEvent.userId == currentUser.uid,
+                    onFinished = {
+                        pendingRevealLevelUpIds.remove(levelUpEvent.id)
+                        levelUpEventQueue.removeAll { it.id == levelUpEvent.id }
+                        val visibleCount = liveComments.count { c ->
+                            val k = c.id.ifBlank { "${c.userId}_${c.timestamp}" }
+                            k !in pendingRevealLevelUpIds
+                        }
+                        if (visibleCount > 0) {
+                            coroutineScope.launch {
+                                commentsListState.animateScrollToItem(visibleCount - 1)
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 92.dp)
+                )
+            }
+
             // LAYER 6: FULL-SCREEN 3D GIFT ANIMATION OVERLAY
             // -------------------------------------------------------------
             activeGiftEvent?.let { giftEvent ->
