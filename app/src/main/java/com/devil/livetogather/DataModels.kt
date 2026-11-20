@@ -1884,11 +1884,14 @@ data class ChatMessage(
     val senderId: String = "",
     val text: String = "",
     val timestamp: Long = System.currentTimeMillis(),
-    val type: String = "text", // "text", "image", "audio", "proposal", "unlock_gift"
+    val type: String = "text", // "text", "image", "audio", "proposal", "unlock_gift", "gift"
     val mediaUrl: String = "",
     val audioUrl: String = "",
     val audioDurationSec: Int = 0,
     val giftAmount: Long = 0L,
+    val giftId: String = "",
+    val giftName: String = "",
+    val giftQuantity: Int = 1,
     val proposalBondType: String = "",
     val proposalStatus: String = "", // "pending", "accepted", "declined"
     val chatFrameId: String = "",
@@ -1959,7 +1962,7 @@ data class NotificationItem(
     val senderId: String = "",
     val senderName: String = "",
     val senderPhoto: String = "",
-    val type: String = "like", // "like", "superstar", "match", "message"
+    val type: String = "like", // "like", "superstar", "match", "message", "gift_reward", "creator_earning", "level_up", "assistant_reward"
     val title: String = "",
     val message: String = "",
     val timestamp: Long = System.currentTimeMillis(),
@@ -1970,7 +1973,12 @@ data class NotificationItem(
     val diamondsReceived: Long = 0L,
     val earningsInr: Double = 0.0,
     val giftEmoji: String = "",
-    val quantity: Int = 1
+    val quantity: Int = 1,
+    val rewardItemId: String = "",
+    val rewardItemType: String = "", // "avatar_frame" or "mic_effect"
+    val rewardItemName: String = "",
+    val rewardDurationHours: Int = 0,
+    val rewardClaimed: Boolean = false
 )
 
 data class RoomMember(

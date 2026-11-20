@@ -1149,8 +1149,8 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
             }
         }
 
-        // 3. Notifications Listener (Real-Time Bell & Status Bar — excludes Gift Rewards & Level Up which live exclusively in Inbox)
-        val inboxOnlyTypes = setOf("gift_reward", "creator_earning", "gift_received", "level_up")
+        // 3. Notifications Listener (Real-Time Bell & Status Bar — excludes Gift Rewards, Assistant Rewards & Level Up which live exclusively in Inbox)
+        val inboxOnlyTypes = setOf("gift_reward", "creator_earning", "gift_received", "level_up", "assistant_reward")
         val isUserAdminOrFounderListener = currentUser.isAdmin || currentUser.isFounder() || currentUser.isOfficialAdmin(auth.currentUser?.email)
         val notifTargets = if (isUserAdminOrFounderListener) listOf(currentUserId, "admin", "founder") else listOf(currentUserId)
         db.collection("notifications")
@@ -1466,12 +1466,31 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
     }
 
     val isProfileScreen = currentScreen == "profile"
+    val isChatsScreen = currentScreen == "chats"
+
+    // Automated Level-Up, Recharge & Activity Milestone Assistant (dispatches free 24h / 3-day 3D rewards to Inbox)
+    LaunchedEffect(
+        currentUser.uid,
+        currentUser.wealthXp,
+        currentUser.charmXp,
+        currentUser.rechargeCount,
+        currentUser.hasRecharged,
+        currentUser.totalRoomTimeSeconds / 1800L
+    ) {
+        if (currentUser.uid.isNotBlank()) {
+            ProgressionAutomationService.evaluateAndDispatchMilestones(
+                context = context,
+                user = currentUser,
+                db = db
+            )
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(BrandDark)) {
         Scaffold(
             containerColor = BrandDark,
             topBar = {
-                if (!isProfileScreen && (activeAudioRoom == null || isAudioRoomMinimized)) {
+                if (!isProfileScreen && !isChatsScreen && (activeAudioRoom == null || isAudioRoomMinimized)) {
                     val isHomeDiscover = currentScreen == "discover"
                     val homeAllUsers = remember(discoverProfiles.toList(), currentUser) {
                         (discoverProfiles + currentUser).distinctBy { it.uid }
@@ -2004,7 +2023,7 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(
-                        if (currentScreen == "discover" || currentScreen == "profile")
+                        if (currentScreen == "discover" || currentScreen == "profile" || currentScreen == "chats")
                             PaddingValues(0.dp)
                         else
                             PaddingValues(top = paddingValues.calculateTopPadding(), bottom = 0.dp)
@@ -2156,12 +2175,33 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                     }
 
                     "chats" -> {
-                        ChatsScreenContent(
+                        ModernInboxScreen(
                             matches = matches,
+                            roomsList = roomsList,
+                            allProfiles = discoverProfiles,
                             currentUserId = currentUserId,
                             currentUser = currentUser,
                             db = db,
                             onOpenChat = { partner -> activeChatPartner = partner },
+                            onJoinRoom = { room ->
+                                val isVideo = room.category == "video_stream" || room.roomType == "video" || room.roomType == "video_pk" || room.isVideoRoom
+                                db.collection("users").document(currentUserId).update("current_room", room.id)
+                                activeAudioRoom = if (isVideo) room.copy(roomType = "video") else room.copy(roomType = "audio")
+                            },
+                            onOpenEventHub = {
+                                activeCategoryHub = CATEGORY_LIST.firstOrNull { it.id == "official_event" }
+                                    ?: IntentCategory(
+                                        id = "official_event",
+                                        label = "🏆 Official Event"
+                                    )
+                            },
+                            onOpenVipService = {
+                                showMainSubscriptionModal = true
+                            },
+                            onUserUpdated = { updated ->
+                                currentUser = updated
+                                saveProfileToPrefs(prefs, updated)
+                            },
                             onToggleBlock = { partner ->
                                 val isBlocked = currentUser.blockedUserIds.contains(partner.uid)
                                 val updatedBlocked = if (isBlocked) {
@@ -10346,7 +10386,7 @@ fun NotificationsDialog(
     onMarkAllRead: () -> Unit
 ) {
     val context = LocalContext.current
-    val inboxOnlyTypes = remember { setOf("gift_reward", "creator_earning", "gift_received", "level_up") }
+    val inboxOnlyTypes = remember { setOf("gift_reward", "creator_earning", "gift_received", "level_up", "assistant_reward") }
     val visibleNotifications = notifications.filter { it.type.lowercase() !in inboxOnlyTypes }
     Dialog(onDismissRequest = onDismiss) {
         Card(

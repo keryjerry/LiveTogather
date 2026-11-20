@@ -980,6 +980,77 @@ fun Advanced1v1ChatScreen(
                     val isMe = msg.senderId == currentUserId
 
                     when (msg.type) {
+                        "gift" -> {
+                            val resolvedThumb = when {
+                                msg.giftId.isNotBlank() && giftThumbnailResourceId(msg.giftId) != 0 -> giftThumbnailResourceId(msg.giftId)
+                                msg.giftId.isNotBlank() && (msg.giftId.contains("ring", true) || msg.giftId.contains("proposal", true)) -> getProposalRingThumbRes(msg.giftId)
+                                msg.giftId.isNotBlank() -> LuxuryStoreCatalog.allItems.firstOrNull { it.id == msg.giftId }?.drawableRes ?: 0
+                                else -> 0
+                            }
+                            val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(msg.timestamp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start
+                            ) {
+                                Surface(
+                                    color = if (isMe) Color(0xFF2B1845) else Color(0xFF1E1B33),
+                                    shape = RoundedCornerShape(16.dp),
+                                    border = BorderStroke(1.2.dp, Color(0xFFFFD700).copy(alpha = 0.75f)),
+                                    modifier = Modifier.widthIn(min = 190.dp, max = 270.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        if (resolvedThumb != 0) {
+                                            Image(
+                                                painter = painterResource(id = resolvedThumb),
+                                                contentDescription = msg.giftName.ifBlank { "Gift" },
+                                                modifier = Modifier
+                                                    .size(50.dp)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .border(1.dp, Color(0xFFFFD700).copy(alpha = 0.6f), RoundedCornerShape(10.dp)),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                        } else {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(46.dp)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(Color(0xFFFFD700).copy(alpha = 0.16f)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text("🎁", fontSize = 24.sp)
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = msg.giftName.ifBlank { msg.text.removePrefix("🎁 Sent ").ifBlank { "Luxury Gift" } },
+                                                color = Color(0xFFFFD700),
+                                                fontWeight = FontWeight.ExtraBold,
+                                                fontSize = 13.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = "${msg.text} • %,d 💎".format(msg.giftAmount),
+                                                color = Color.White.copy(alpha = 0.9f),
+                                                fontSize = 11.sp,
+                                                maxLines = 2
+                                            )
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = timeStr,
+                                                color = Color.White.copy(alpha = 0.55f),
+                                                fontSize = 9.5.sp
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         "unlock_gift" -> {
                             // Luxury Unlock Announcement
                             Row(
@@ -2036,16 +2107,28 @@ fun Advanced1v1ChatScreen(
                                         }
                                         showChatGiftSheet = false
 
-                                        // Deduct from sender
+                                        // Deduct from sender & increment wealth XP
+                                        val nowTs = System.currentTimeMillis()
                                         val newBalance = currentUser.diamonds - totalCost
-                                        onUpdateCurrentUser(currentUser.copy(diamonds = newBalance))
+                                        val updatedSender = currentUser.copy(
+                                            diamonds = newBalance,
+                                            wealthXp = currentUser.wealthXp + (totalCost * 10L)
+                                        )
+                                        onUpdateCurrentUser(updatedSender)
                                         db.collection("users").document(currentUserId)
                                             .update(
-                                                "diamonds", newBalance,
-                                                "wealthXp", FieldValue.increment(totalCost * 10L)
+                                                mapOf(
+                                                    "diamonds" to newBalance,
+                                                    "diamondsSpentCount" to FieldValue.increment(1L),
+                                                    "wealthXp" to FieldValue.increment(totalCost * 10L)
+                                                )
                                             )
 
-                                        // Credit Charm XP to partner & deposit into partner's BACKPACK!
+                                        // Real-time financial settlement for partner:
+                                        // Monetized Host -> 5%-8% level-based INR real-money commission
+                                        // Normal User -> 70% deduction / 30% diamond wallet credit
+                                        val isPartnerMonetized = livePartner.isHostMonetized
+                                        val partnerCharmLevel = livePartner.getEffectiveCharmLevel()
                                         val partnerUpdates = mutableMapOf<String, Any>(
                                             "charmXp" to FieldValue.increment(totalCost * 10L)
                                         )
@@ -2054,29 +2137,121 @@ fun Advanced1v1ChatScreen(
                                         } else {
                                             partnerUpdates["backpack.$selectedGiftId"] = FieldValue.increment(selectedQuantity.toLong())
                                         }
-                                        db.collection("users").document(partner.uid).update(partnerUpdates)
 
-                                        // Post Chat Message
+                                        val notifId = java.util.UUID.randomUUID().toString()
+                                        val inboxNotif = if (isPartnerMonetized) {
+                                            val commPercent = LevelBadgeSystem.getHostCommissionPercent(livePartner.getEffectiveWealthLevel())
+                                            val creatorDiamonds = (totalCost * (commPercent / 100.0)).toLong()
+                                            val giftInr = totalCost * 0.01
+                                            val inrEarned = kotlin.math.round((giftInr * (commPercent / 100.0)) * 100.0) / 100.0
+                                            partnerUpdates["earningsInr"] = FieldValue.increment(inrEarned)
+                                            partnerUpdates["totalEarningsInr"] = FieldValue.increment(inrEarned)
+                                            if (creatorDiamonds > 0L) {
+                                                partnerUpdates["diamonds"] = FieldValue.increment(creatorDiamonds)
+                                            }
+
+                                            val histId = java.util.UUID.randomUUID().toString()
+                                            db.collection("users").document(partner.uid)
+                                                .collection("gift_earnings_history").document(histId)
+                                                .set(
+                                                    mapOf(
+                                                        "id" to histId,
+                                                        "senderUid" to currentUserId,
+                                                        "senderName" to currentUser.name,
+                                                        "giftId" to selectedGiftId,
+                                                        "giftName" to currentSelectedName,
+                                                        "quantity" to selectedQuantity,
+                                                        "grossDiamonds" to totalCost,
+                                                        "commissionPercent" to commPercent,
+                                                        "earningsInr" to inrEarned,
+                                                        "timestamp" to nowTs
+                                                    )
+                                                )
+
+                                            NotificationItem(
+                                                id = notifId,
+                                                targetUserId = partner.uid,
+                                                senderId = currentUserId,
+                                                senderName = currentUser.name,
+                                                senderPhoto = currentUser.photo,
+                                                type = "creator_earning",
+                                                title = "💰 Host Gift Earning!",
+                                                message = "${currentUser.name} sent you ${selectedQuantity}x $currentSelectedName in chat • +₹%.2f credited to your wallet!".format(inrEarned),
+                                                timestamp = nowTs,
+                                                isRead = false,
+                                                giftId = selectedGiftId,
+                                                giftName = currentSelectedName,
+                                                diamondsReceived = 0L,
+                                                earningsInr = inrEarned,
+                                                giftEmoji = "🎁",
+                                                quantity = selectedQuantity
+                                            )
+                                        } else {
+                                            val netDiamonds = (totalCost * 0.30).toLong().coerceAtLeast(1L)
+                                            partnerUpdates["diamonds"] = FieldValue.increment(netDiamonds)
+                                            NotificationItem(
+                                                id = notifId,
+                                                targetUserId = partner.uid,
+                                                senderId = currentUserId,
+                                                senderName = currentUser.name,
+                                                senderPhoto = currentUser.photo,
+                                                type = "gift_reward",
+                                                title = "🎁 Gift Received!",
+                                                message = "${currentUser.name} sent you ${selectedQuantity}x $currentSelectedName • +%,d 💎 added to your wallet!".format(netDiamonds),
+                                                timestamp = nowTs,
+                                                isRead = false,
+                                                giftId = selectedGiftId,
+                                                giftName = currentSelectedName,
+                                                diamondsReceived = netDiamonds,
+                                                earningsInr = 0.0,
+                                                giftEmoji = "🎁",
+                                                quantity = selectedQuantity
+                                            )
+                                        }
+
+                                        db.collection("users").document(partner.uid).update(partnerUpdates)
+                                        db.collection("users").document(partner.uid)
+                                            .collection("notifications").document(notifId)
+                                            .set(inboxNotif)
+                                        db.collection("users").document(partner.uid)
+                                            .collection("received_gifts").document(notifId)
+                                            .set(
+                                                mapOf(
+                                                    "id" to notifId,
+                                                    "giftId" to selectedGiftId,
+                                                    "giftName" to currentSelectedName,
+                                                    "senderId" to currentUserId,
+                                                    "senderName" to currentUser.name,
+                                                    "cost" to totalCost,
+                                                    "quantity" to selectedQuantity,
+                                                    "timestamp" to nowTs
+                                                )
+                                            )
+
+                                        // Post Chat Message with exact giftId & giftName for thumbnail rendering
                                         val giftMessage = ChatMessage(
                                             senderId = currentUserId,
                                             text = "🎁 Sent ${selectedQuantity}x $currentSelectedName",
                                             type = "gift",
                                             giftAmount = totalCost,
-                                                                                        mediaUrl = "🎁",
-                                            timestamp = System.currentTimeMillis()
+                                            giftId = selectedGiftId,
+                                            giftName = currentSelectedName,
+                                            giftQuantity = selectedQuantity,
+                                            mediaUrl = "🎁",
+                                            timestamp = nowTs
                                         )
                                         db.collection("matches").document(matchId).collection("messages").add(giftMessage)
                                         db.collection("matches").document(matchId).set(
                                             mapOf(
                                                 "matchId" to matchId,
                                                 "users" to listOf(currentUserId, partner.uid),
-                                                "lastMessage" to "🎁 Sent $currentSelectedName",
-                                                "timestamp" to System.currentTimeMillis()
+                                                "lastMessage" to "🎁 Sent ${selectedQuantity}x $currentSelectedName",
+                                                "timestamp" to nowTs
                                             ),
                                             SetOptions.merge()
                                         )
 
-                                        Toast.makeText(context, "🎉 Sent $currentSelectedName to ${partner.name}! Added to their Backpack 🎒", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "🎉 Sent ${selectedQuantity}x $currentSelectedName to ${partner.name}!", Toast.LENGTH_SHORT).show()
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
                                     contentPadding = PaddingValues(0.dp),
