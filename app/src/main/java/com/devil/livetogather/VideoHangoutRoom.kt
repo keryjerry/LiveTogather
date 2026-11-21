@@ -145,6 +145,7 @@ fun VideoHangoutRoomDialog(
     var showSafetyWarningDialog by remember { mutableStateOf(isUserHost) }
     var showExitOrKeepDialog by remember { mutableStateOf(false) }
     var showRoomSettingsDialog by remember { mutableStateOf(false) }
+    var showRoomInfoOnlyDialog by remember { mutableStateOf(false) }
     var showShareInviteDialog by remember { mutableStateOf(false) }
     var showCommentInputDialog by remember { mutableStateOf(false) }
     var showInRoomInboxDialog by remember { mutableStateOf(false) }
@@ -1032,15 +1033,7 @@ fun VideoHangoutRoomDialog(
                             modifier = Modifier
                                 .height(38.dp)
                                 .clickable {
-                                    val targetHostUid = room.hostUid.ifBlank { room.hostId }
-                                    val hostMember = activeMembers.find { it.uid == targetHostUid } ?: RoomMember(
-                                        uid = targetHostUid,
-                                        userId = room.hostId,
-                                        name = room.hostName,
-                                        photoUrl = room.hostPhotoUrl,
-                                        role = "host"
-                                    )
-                                    selectedMemberForProfile = hostMember
+                                    showRoomInfoOnlyDialog = true
                                 }
                         ) {
                             Row(
@@ -1091,22 +1084,51 @@ fun VideoHangoutRoomDialog(
                                     }
                                 }
 
-                                if (!isUserHost) {
-                                    Spacer(modifier = Modifier.width(5.dp))
-                                    Surface(
-                                        color = if (isFollowingHost) Color.White.copy(alpha = 0.2f) else BrandCoral,
-                                        shape = RoundedCornerShape(50),
-                                        modifier = Modifier.clickable { toggleFollowHost() }
-                                    ) {
+                                // Circular '+' Follow Icon Button right on Top-Left Host Header Pill (Visible on EVERY Video Room)
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (isFollowingHost && !isUserHost) {
+                                                Brush.horizontalGradient(listOf(Color(0xFF15803D), Color(0xFF22C55E)))
+                                            } else {
+                                                Brush.horizontalGradient(listOf(Color(0xFF7C3AED), Color(0xFF2563EB)))
+                                            }
+                                        )
+                                        .border(
+                                            width = 1.dp,
+                                            color = if (isFollowingHost && !isUserHost) Color(0xFF86EFAC) else Color.White.copy(alpha = 0.75f),
+                                            shape = CircleShape
+                                        )
+                                        .clickable {
+                                            if (isUserHost) {
+                                                Toast.makeText(context, "👑 Your Live Room", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                toggleFollowHost()
+                                            }
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isFollowingHost && !isUserHost) {
                                         Text(
-                                            text = if (isFollowingHost) "✓ Following" else "+ Follow",
+                                            text = "✓",
                                             color = Color.White,
-                                            fontSize = 9.5.sp,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Black
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.Add,
+                                            contentDescription = "Follow Room",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(15.dp)
                                         )
                                     }
-                                } else {
+                                }
+
+                                if (isUserHost) {
                                     Spacer(modifier = Modifier.width(5.dp))
                                     Surface(
                                         color = Color(0xFFFF1744).copy(alpha = 0.25f),
@@ -2613,6 +2635,23 @@ fun VideoHangoutRoomDialog(
                 )
             }
 
+            if (showRoomInfoOnlyDialog) {
+                RoomInfoOnlyDialog(
+                    room = room,
+                    displayRoomId = displayRoomId,
+                    roomPhotoUrl = room.hostPhotoUrl,
+                    currentRoomLevel = 1,
+                    hostFollowerCount = 0,
+                    targetHostId = room.hostUid.ifBlank { room.hostId },
+                    canEditRoom = isUserHost || currentUser.hasRoomModerationAuthority(),
+                    db = db,
+                    onOpenEditRoomSettings = { showRoomSettingsDialog = true },
+                    onDismiss = { showRoomInfoOnlyDialog = false },
+                    currentUser = currentUser,
+                    onRoomUpdated = { updatedRoom -> room = updatedRoom }
+                )
+            }
+
             if (showRoomSettingsDialog) {
                 if (isUserHost) {
                     VideoRoomSettingsSheet(
@@ -4048,9 +4087,9 @@ fun ViewerRoomMenuDialog(
         )
     ) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = BrandCard),
-            shape = RoundedCornerShape(22.dp),
-            border = BorderStroke(1.2.dp, BrandBorder),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF0E0D15)),
+            shape = RoundedCornerShape(24.dp),
+            border = BorderStroke(1.4.dp, Color(0x66F5C451)),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp)
@@ -4066,13 +4105,13 @@ fun ViewerRoomMenuDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "📹 Viewer Options",
-                        color = Color.White,
+                        text = "📹 Viewer Command & Options",
+                        color = Color(0xFFF5C451),
                         fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.ExtraBold
                     )
                     IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color(0xFFF5C451), modifier = Modifier.size(18.dp))
                     }
                 }
 
@@ -4330,21 +4369,114 @@ fun VideoRoomSettingsSheet(
         }
     }
 
+    val obsidianBg = Color(0xFF0E0D15)
+    val cardObsidian = Color(0xFF181624)
+    val rowObsidian = Color(0xFF1E1C2E)
+    val goldPrimary = Color(0xFFF5C451)
+    val goldBorder = Color(0x66F5C451)
+    val subtleBorder = Color(0x26FFFFFF)
+    val mutedText = Color(0xFFA3A0B8)
+
+    var showFullRoomProfileHub by remember { mutableStateOf(false) }
+    var liveKickedIds by remember(room.id) { mutableStateOf(room.kickedUserIds) }
+    var liveBannedIds by remember(room.id) { mutableStateOf(room.bannedUserIds) }
+    var liveRoomXp by remember(room.id) { mutableLongStateOf(0L) }
+    var liveRoomLvl by remember(room.id) { mutableStateOf(1) }
+    var liveFollowerCount by remember(room.hostId) { mutableStateOf(0) }
+    var showBlockedSubView by remember { mutableStateOf(false) }
+    var blockedUserNames by remember(room.id) { mutableStateOf<Map<String, String>>(emptyMap()) }
+
+    DisposableEffect(room.id, room.hostId) {
+        if (room.id.isBlank()) return@DisposableEffect onDispose {}
+        val rReg = db.collection("rooms").document(room.id).addSnapshotListener { snap, _ ->
+            if (snap != null && snap.exists()) {
+                @Suppress("UNCHECKED_CAST")
+                liveKickedIds = (snap.get("kickedUserIds") as? List<String>) ?: emptyList()
+                @Suppress("UNCHECKED_CAST")
+                liveBannedIds = (snap.get("bannedUserIds") as? List<String>) ?: emptyList()
+                val dXp = snap.getLong("roomActivityXp") ?: 0L
+                if (dXp > liveRoomXp) liveRoomXp = dXp
+                val dLvl = (snap.getLong("roomLevel") ?: 1L).toInt()
+                liveRoomLvl = maxOf(liveRoomLvl, dLvl, RoomLevelUpEngine.calculateOfficialRoomPersonalLevel(liveRoomXp))
+            }
+        }
+        val mReg = db.collection("rooms").document(room.id).collection("games").document("room_level_meta")
+            .addSnapshotListener { snap, _ ->
+                if (snap != null && snap.exists()) {
+                    val mXp = snap.getLong("roomActivityXp") ?: 0L
+                    if (mXp > liveRoomXp) liveRoomXp = mXp
+                    val mLvl = (snap.getLong("roomLevel") ?: 1L).toInt()
+                    liveRoomLvl = maxOf(liveRoomLvl, mLvl, RoomLevelUpEngine.calculateOfficialRoomPersonalLevel(liveRoomXp))
+                }
+            }
+        val hId = room.hostUid.ifBlank { room.hostId }
+        val fReg = if (hId.isNotBlank()) {
+            db.collection("users").document(hId).collection("followers").addSnapshotListener { snap, _ ->
+                if (snap != null) liveFollowerCount = snap.size()
+            }
+        } else null
+        onDispose {
+            rReg.remove()
+            mReg.remove()
+            fReg?.remove()
+        }
+    }
+
+    LaunchedEffect(liveKickedIds, liveBannedIds, showBlockedSubView) {
+        val allB = (liveKickedIds + liveBannedIds).distinct()
+        if (showBlockedSubView && allB.isNotEmpty()) {
+            val map = mutableMapOf<String, String>()
+            allB.forEach { uid ->
+                db.collection("users").document(uid).get().addOnSuccessListener { d ->
+                    map[uid] = d?.getString("name")?.takeIf { it.isNotBlank() } ?: "User (${uid.take(6)})"
+                    blockedUserNames = map.toMap()
+                }
+            }
+        }
+    }
+
+    val displayRoomId = remember(room.roomId, room.id) {
+        if (room.roomId.length == 8 && room.roomId.all { it.isDigit() }) room.roomId
+        else (10000000 + kotlin.math.abs(room.id.hashCode()) % 90000000).toString()
+    }
+    val nextTargetXp = RoomLevelUpEngine.getNextRoomLevelThreshold(liveRoomLvl)
+    val startXp = RoomLevelUpEngine.getThresholdForRoomLevel(liveRoomLvl)
+    val lvlProgress = ((liveRoomXp - startXp).coerceAtLeast(0L).toFloat() / (nextTargetXp - startXp).coerceAtLeast(1L).toFloat()).coerceIn(0f, 1f)
+
+    if (showFullRoomProfileHub) {
+        RoomInfoOnlyDialog(
+            room = room,
+            displayRoomId = displayRoomId,
+            roomPhotoUrl = room.hostPhotoUrl,
+            currentRoomLevel = liveRoomLvl,
+            hostFollowerCount = liveFollowerCount,
+            targetHostId = room.hostUid.ifBlank { room.hostId },
+            canEditRoom = isHost || currentUser.hasRoomModerationAuthority(),
+            db = db,
+            onOpenEditRoomSettings = { showFullRoomProfileHub = false },
+            onDismiss = { showFullRoomProfileHub = false },
+            currentUser = currentUser
+        )
+    }
+
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (showBlockedSubView) showBlockedSubView = false else onDismiss()
+        },
         properties = DialogProperties(
+            usePlatformDefaultWidth = false,
             dismissOnBackPress = true,
             dismissOnClickOutside = true
         )
     ) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF141720)),
-            shape = RoundedCornerShape(22.dp),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+            colors = CardDefaults.cardColors(containerColor = obsidianBg),
+            shape = RoundedCornerShape(26.dp),
+            border = BorderStroke(1.4.dp, goldBorder),
             modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.85f)
-                .padding(vertical = 10.dp)
+                .fillMaxWidth(0.94f)
+                .fillMaxHeight(0.88f)
+                .padding(vertical = 8.dp)
         ) {
             Column(
                 modifier = Modifier
@@ -4356,9 +4488,22 @@ fun VideoRoomSettingsSheet(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("⚙️ Video Room Settings", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (showBlockedSubView) {
+                            IconButton(onClick = { showBlockedSubView = false }, modifier = Modifier.size(28.dp)) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = goldPrimary)
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
+                        Text(
+                            text = if (showBlockedSubView) "Blocked list (Kick Out)" else "⚙️ Video Room Command & Settings",
+                            color = goldPrimary,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = goldPrimary)
                     }
                 }
 
@@ -4366,8 +4511,103 @@ fun VideoRoomSettingsSheet(
 
                 LazyColumn(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    // 00-TOP: OBSIDIAN & ROYAL GOLD ROOM PROFILE HEADER + LEVEL BAR + BLOCKED LIST ROW
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Surface(
+                                shape = RoundedCornerShape(18.dp),
+                                color = cardObsidian,
+                                border = BorderStroke(1.2.dp, goldBorder),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { showFullRoomProfileHub = true }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(58.dp)
+                                            .clip(RoundedCornerShape(14.dp))
+                                            .border(1.4.dp, goldPrimary, RoundedCornerShape(14.dp))
+                                    ) {
+                                        AsyncImage(
+                                            model = room.hostPhotoUrl.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                                            contentDescription = room.title,
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = room.title.ifBlank { room.roomName.ifBlank { "Live Video Room" } },
+                                            color = Color.White,
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = "ID: $displayRoomId  •  👥 $liveFollowerCount Followers",
+                                            color = mutedText,
+                                            fontSize = 11.5.sp
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Text("LV.$liveRoomLvl", color = goldPrimary, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .height(6.dp)
+                                                    .clip(RoundedCornerShape(50))
+                                                    .background(Color(0xFF2C283E))
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth(lvlProgress.coerceAtLeast(0.05f))
+                                                        .height(6.dp)
+                                                        .clip(RoundedCornerShape(50))
+                                                        .background(Brush.horizontalGradient(listOf(Color(0xFFFFE082), goldPrimary, Color(0xFF9333EA))))
+                                                )
+                                            }
+                                            Text("LV.${(liveRoomLvl + 1).coerceAtMost(100)}", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+
+                            val blockedCount = (liveKickedIds + liveBannedIds).distinct().size
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = rowObsidian,
+                                border = BorderStroke(1.dp, subtleBorder),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { showFullRoomProfileHub = true }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("🚫 Blocked list (Kick Out) & Full Room Profile", color = Color.White, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        text = "Blocked ($blockedCount) ›",
+                                        color = if (blockedCount > 0) Color(0xFFFF6B6B) else goldPrimary,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
 
                     // 00. ROOM MODE CONVERSION: VIDEO STREAM -> AUDIO LOUNGE (HOST & ADMIN)
                     val canConvertMode = isHost || currentUser.isAdmin || currentUser.isOfficialAdmin(currentUser.uid) || currentUser.uid in room.adminUserIds
@@ -4440,12 +4680,12 @@ fun VideoRoomSettingsSheet(
                                                 onStartPk()
                                                 onDismiss()
                                             },
-                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF331E26)),
-                                            border = BorderStroke(1.dp, Color(0xFF8F384C)),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF232938)),
+                                            border = BorderStroke(1.dp, Color(0xFF334155)),
                                             shape = RoundedCornerShape(10.dp),
                                             modifier = Modifier.fillMaxWidth().height(40.dp)
                                         ) {
-                                            Text("⚔️ Start 5-Minute PK Battle", color = Color(0xFFFF859E), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                            Text("Start 5-Minute PK Battle", color = Color(0xFFF8FAFC), fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                                         }
                                     } else {
                                         Button(
@@ -4453,12 +4693,12 @@ fun VideoRoomSettingsSheet(
                                                 onEndPk()
                                                 onDismiss()
                                             },
-                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF252A36)),
-                                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF232938)),
+                                            border = BorderStroke(1.dp, Color(0xFF334155)),
                                             shape = RoundedCornerShape(10.dp),
                                             modifier = Modifier.fillMaxWidth().height(40.dp)
                                         ) {
-                                            Text("⏹️ Conclude Active PK Battle", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                            Text("Conclude Active PK Battle", color = Color(0xFFF8FAFC), fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                                         }
                                     }
                                 }
@@ -4483,7 +4723,7 @@ fun VideoRoomSettingsSheet(
                                     if (isHost && announcementText.isNotBlank()) {
                                         Text(
                                             text = "Clear",
-                                            color = Color(0xFFFF8A80),
+                                            color = Color(0xFF94A3B8),
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold,
                                             modifier = Modifier.clickable {
@@ -4505,7 +4745,7 @@ fun VideoRoomSettingsSheet(
                                         colors = OutlinedTextFieldDefaults.colors(
                                             focusedTextColor = Color.White,
                                             unfocusedTextColor = Color.White,
-                                            focusedBorderColor = Color(0xFF4A5568),
+                                            focusedBorderColor = Color(0xFF475569),
                                             unfocusedBorderColor = Color.White.copy(alpha = 0.12f),
                                             focusedContainerColor = Color(0xFF12151E),
                                             unfocusedContainerColor = Color(0xFF12151E)
@@ -4531,12 +4771,12 @@ fun VideoRoomSettingsSheet(
                                                 Toast.makeText(context, "Announcement broadcasted! 📢", Toast.LENGTH_SHORT).show()
                                             }
                                         },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A281E)),
-                                        border = BorderStroke(1.dp, Color(0xFF8C7A3E)),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF232938)),
+                                        border = BorderStroke(1.dp, Color(0xFF334155)),
                                         shape = RoundedCornerShape(10.dp),
                                         modifier = Modifier.fillMaxWidth().height(40.dp)
                                     ) {
-                                        Text("Broadcast Announcement 📢", color = Color(0xFFFFD54F), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        Text("Broadcast Announcement", color = Color(0xFFF8FAFC), fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                                     }
                                 } else {
                                     Text(
@@ -4597,13 +4837,13 @@ fun VideoRoomSettingsSheet(
                                                 Toast.makeText(context, "Room is now LIVE! Video publishing enabled.", Toast.LENGTH_SHORT).show()
                                             },
                                             colors = ButtonDefaults.buttonColors(
-                                                containerColor = if (room.isHostLive) Color(0xFF1C3829) else Color(0xFF1F2432)
+                                                containerColor = if (room.isHostLive) Color(0xFF232938) else Color(0xFF1A1E29)
                                             ),
-                                            border = BorderStroke(1.dp, if (room.isHostLive) Color(0xFF2E8551) else Color.White.copy(alpha = 0.1f)),
+                                            border = BorderStroke(1.dp, if (room.isHostLive) Color(0xFF64748B) else Color.White.copy(alpha = 0.1f)),
                                             shape = RoundedCornerShape(10.dp),
                                             modifier = Modifier.weight(1f).height(40.dp)
                                         ) {
-                                            Text("🔴 Go Live", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (room.isHostLive) Color(0xFF69F0AE) else Color.LightGray)
+                                            Text("Go Live", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (room.isHostLive) Color(0xFFF8FAFC) else Color(0xFF94A3B8))
                                         }
 
                                         Button(
@@ -4621,13 +4861,13 @@ fun VideoRoomSettingsSheet(
                                                 Toast.makeText(context, "Stream paused. Room status set to OFFLINE.", Toast.LENGTH_SHORT).show()
                                             },
                                             colors = ButtonDefaults.buttonColors(
-                                                containerColor = if (!room.isHostLive) Color(0xFF332D1C) else Color(0xFF1F2432)
+                                                containerColor = if (!room.isHostLive) Color(0xFF232938) else Color(0xFF1F2432)
                                             ),
-                                            border = BorderStroke(1.dp, if (!room.isHostLive) Color(0xFF8C7838) else Color.White.copy(alpha = 0.1f)),
+                                            border = BorderStroke(1.dp, if (!room.isHostLive) Color(0xFF64748B) else Color.White.copy(alpha = 0.1f)),
                                             shape = RoundedCornerShape(10.dp),
                                             modifier = Modifier.weight(1f).height(40.dp)
                                         ) {
-                                            Text("⏳ Set Offline", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (!room.isHostLive) Color(0xFFFFD54F) else Color.LightGray)
+                                            Text("Set Offline", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (!room.isHostLive) Color(0xFFF8FAFC) else Color(0xFF94A3B8))
                                         }
                                     }
                                 }
@@ -4730,7 +4970,7 @@ fun VideoRoomSettingsSheet(
                                                     db.collection("rooms").document(room.id).update("privacy", key)
                                                 }
                                             },
-                                            colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF8B5CF6))
+                                            colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF94A3B8))
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text(label, color = if (isSelected) Color.White else Color.LightGray, fontSize = 12.sp, fontWeight = FontWeight.Medium)
@@ -4751,8 +4991,8 @@ fun VideoRoomSettingsSheet(
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text("🔒 Lock Room", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                             Text(
-                                                text = if (isRoomLocked) "Room is currently locked 🔒" else "Room is open for everyone",
-                                                color = if (isRoomLocked) Color(0xFFFF8A80) else Color.Gray,
+                                                text = if (isRoomLocked) "Room is currently locked" else "Room is open for everyone",
+                                                color = Color(0xFF94A3B8),
                                                 fontSize = 10.sp
                                             )
                                         }
@@ -4765,7 +5005,7 @@ fun VideoRoomSettingsSheet(
                                             },
                                             colors = SwitchDefaults.colors(
                                                 checkedThumbColor = Color.White,
-                                                checkedTrackColor = Color(0xFF388E3C)
+                                                checkedTrackColor = Color(0xFF475569)
                                             )
                                         )
                                     }
@@ -4781,8 +5021,8 @@ fun VideoRoomSettingsSheet(
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text("⭐ Room Premium (VIP)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                             Text(
-                                                text = if (isRoomVip) "Exclusive VIP room mode enabled ⭐" else "Standard room mode",
-                                                color = if (isRoomVip) Color(0xFFC084FC) else Color.Gray,
+                                                text = if (isRoomVip) "Exclusive VIP room mode enabled" else "Standard room mode",
+                                                color = Color(0xFF94A3B8),
                                                 fontSize = 10.sp
                                             )
                                         }
@@ -4800,7 +5040,7 @@ fun VideoRoomSettingsSheet(
                                             },
                                             colors = SwitchDefaults.colors(
                                                 checkedThumbColor = Color.White,
-                                                checkedTrackColor = Color(0xFF388E3C)
+                                                checkedTrackColor = Color(0xFF475569)
                                             )
                                         )
                                     }

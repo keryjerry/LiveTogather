@@ -756,7 +756,8 @@ fun CreateRoomDialog(
             if (WatchPartyCinemaEngine.canUnlockCinemaWatchParty(currentUser, currentUser.getEffectiveWealthLevel())) {
                 WatchPartyCinemaEngine.CINEMA_THEME_ID
             } else {
-                "vip_royal_stage"
+                ROOM_THEME_PRESETS.firstOrNull { it.imageUrl != WatchPartyCinemaEngine.CINEMA_THEME_ID }?.imageUrl
+                    ?: getCategoryBanner(selectedCategory)
             }
         )
     }
@@ -4621,6 +4622,8 @@ fun RoomSettingsDialog(
     onEditRoom: (() -> Unit)? = null,
     onDeleteRoom: (() -> Unit)? = null,
     onConvertToVideo: ((RoomItem) -> Unit)? = null,
+    onOpenFamilyInviteDialog: (() -> Unit)? = null,
+    onUpdateRoom: ((RoomItem) -> Unit)? = null,
     currentRoomLevel: Int = 1
 ) {
     val context = LocalContext.current
@@ -4628,6 +4631,8 @@ fun RoomSettingsDialog(
     var announcementText by remember { mutableStateOf(room.announcement) }
     var isRoomLocked by remember { mutableStateOf(room.isLocked) }
     var isRoomVip by remember { mutableStateOf(room.privacy == "vip_only" || room.isVipRoom) }
+    var isFamilyRoomEnabled by remember(room.isFamilyRoom) { mutableStateOf(room.isFamilyRoom) }
+    val canUnlockFamilyRoom = WatchPartyCinemaEngine.canUnlockFamilyRoom(currentUser, currentRoomLevel)
     var feedbackText by remember { mutableStateOf("") }
     var isSendingFeedback by remember { mutableStateOf(false) }
     var scheduledTimeText by remember { mutableStateOf(room.scheduledTime) }
@@ -4635,6 +4640,105 @@ fun RoomSettingsDialog(
     var isUploadingTheme by remember { mutableStateOf(false) }
     val isKeyboardOpen = WindowInsets.isImeVisible
     val keyboardController = LocalSoftwareKeyboardController.current
+
+    // Obsidian & Royal Gold Theme Palette (Matches Room Profile Command Hub & Profile Gear Settings)
+    val obsidianBg = Color(0xFF0E0D15)
+    val cardObsidian = Color(0xFF181624)
+    val rowObsidian = Color(0xFF1E1C2E)
+    val goldPrimary = Color(0xFFF5C451)
+    val goldBorder = Color(0x66F5C451)
+    val subtleBorder = Color(0x26FFFFFF)
+    val mutedText = Color(0xFFA3A0B8)
+
+    var showFullRoomProfileHub by remember { mutableStateOf(false) }
+    var liveKickedIds by remember(room.id) { mutableStateOf(room.kickedUserIds) }
+    var liveBannedIds by remember(room.id) { mutableStateOf(room.bannedUserIds) }
+    var liveMaxMics by remember(room.id) { mutableStateOf(10) }
+    var liveMicPerm by remember(room.id) { mutableStateOf("Everyone") }
+    var liveCountry by remember(room.id) { mutableStateOf("India") }
+    var liveRoomXp by remember(room.id) { mutableLongStateOf(0L) }
+    var liveRoomLvl by remember(room.id, currentRoomLevel) { mutableStateOf(currentRoomLevel.coerceAtLeast(1)) }
+    var liveFollowerCount by remember(room.hostId) { mutableStateOf(0) }
+    var showBlockedSubView by remember { mutableStateOf(false) }
+    var blockedUserNames by remember(room.id) { mutableStateOf<Map<String, String>>(emptyMap()) }
+
+    DisposableEffect(room.id, room.hostId) {
+        if (room.id.isBlank()) return@DisposableEffect onDispose {}
+        val rReg = db.collection("rooms").document(room.id).addSnapshotListener { snap, _ ->
+            if (snap != null && snap.exists()) {
+                @Suppress("UNCHECKED_CAST")
+                liveKickedIds = (snap.get("kickedUserIds") as? List<String>) ?: emptyList()
+                @Suppress("UNCHECKED_CAST")
+                liveBannedIds = (snap.get("bannedUserIds") as? List<String>) ?: emptyList()
+                liveMaxMics = (snap.getLong("maxMicSeats") ?: 10L).toInt().coerceIn(8, 15)
+                liveMicPerm = snap.getString("micPermission")?.takeIf { it.isNotBlank() } ?: "Everyone"
+                val c = snap.getString("country")?.takeIf { it.isNotBlank() }
+                if (c != null) liveCountry = c
+                val dXp = snap.getLong("roomActivityXp") ?: 0L
+                if (dXp > liveRoomXp) liveRoomXp = dXp
+                val dLvl = (snap.getLong("roomLevel") ?: 1L).toInt()
+                liveRoomLvl = maxOf(liveRoomLvl, dLvl, RoomLevelUpEngine.calculateOfficialRoomPersonalLevel(liveRoomXp))
+            }
+        }
+        val mReg = db.collection("rooms").document(room.id).collection("games").document("room_level_meta")
+            .addSnapshotListener { snap, _ ->
+                if (snap != null && snap.exists()) {
+                    val mXp = snap.getLong("roomActivityXp") ?: 0L
+                    if (mXp > liveRoomXp) liveRoomXp = mXp
+                    val mLvl = (snap.getLong("roomLevel") ?: 1L).toInt()
+                    liveRoomLvl = maxOf(liveRoomLvl, mLvl, RoomLevelUpEngine.calculateOfficialRoomPersonalLevel(liveRoomXp))
+                }
+            }
+        val hId = room.hostUid.ifBlank { room.hostId }
+        val fReg = if (hId.isNotBlank()) {
+            db.collection("users").document(hId).collection("followers").addSnapshotListener { snap, _ ->
+                if (snap != null) liveFollowerCount = snap.size()
+            }
+        } else null
+        onDispose {
+            rReg.remove()
+            mReg.remove()
+            fReg?.remove()
+        }
+    }
+
+    LaunchedEffect(liveKickedIds, liveBannedIds, showBlockedSubView) {
+        val allB = (liveKickedIds + liveBannedIds).distinct()
+        if (showBlockedSubView && allB.isNotEmpty()) {
+            val map = mutableMapOf<String, String>()
+            allB.forEach { uid ->
+                db.collection("users").document(uid).get().addOnSuccessListener { d ->
+                    map[uid] = d?.getString("name")?.takeIf { it.isNotBlank() } ?: "User (${uid.take(6)})"
+                    blockedUserNames = map.toMap()
+                }
+            }
+        }
+    }
+
+    val displayRoomId = remember(room.roomId, room.id) {
+        if (room.roomId.length == 8 && room.roomId.all { it.isDigit() }) room.roomId
+        else (10000000 + kotlin.math.abs(room.id.hashCode()) % 90000000).toString()
+    }
+    val nextTargetXp = RoomLevelUpEngine.getNextRoomLevelThreshold(liveRoomLvl)
+    val startXp = RoomLevelUpEngine.getThresholdForRoomLevel(liveRoomLvl)
+    val lvlProgress = ((liveRoomXp - startXp).coerceAtLeast(0L).toFloat() / (nextTargetXp - startXp).coerceAtLeast(1L).toFloat()).coerceIn(0f, 1f)
+
+    if (showFullRoomProfileHub) {
+        RoomInfoOnlyDialog(
+            room = room,
+            displayRoomId = displayRoomId,
+            roomPhotoUrl = room.hostPhotoUrl,
+            currentRoomLevel = liveRoomLvl,
+            hostFollowerCount = liveFollowerCount,
+            targetHostId = room.hostUid.ifBlank { room.hostId },
+            canEditRoom = isHost || currentUser.hasRoomModerationAuthority(),
+            db = db,
+            onOpenEditRoomSettings = { showFullRoomProfileHub = false },
+            onDismiss = { showFullRoomProfileHub = false },
+            currentUser = currentUser,
+            onRoomUpdated = onUpdateRoom
+        )
+    }
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -4658,47 +4762,340 @@ fun RoomSettingsDialog(
         onDismissRequest = {
             if (isKeyboardOpen) {
                 keyboardController?.hide()
+            } else if (showBlockedSubView) {
+                showBlockedSubView = false
             } else {
                 onDismiss()
             }
         },
         properties = DialogProperties(
+            usePlatformDefaultWidth = false,
             dismissOnBackPress = true,
             dismissOnClickOutside = true
         )
     ) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF141720)),
-            shape = RoundedCornerShape(22.dp),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+            colors = CardDefaults.cardColors(containerColor = obsidianBg),
+            shape = RoundedCornerShape(26.dp),
+            border = BorderStroke(1.4.dp, goldBorder),
             modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.85f)
-                .padding(vertical = 10.dp)
+                .fillMaxWidth(0.94f)
+                .fillMaxHeight(0.88f)
+                .padding(vertical = 8.dp)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(16.dp)
             ) {
-                // Header
+                // Header (Obsidian & Royal Gold)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("⚙️ Room Settings & Controls", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (showBlockedSubView) {
+                            IconButton(
+                                onClick = { showBlockedSubView = false },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Back",
+                                    tint = goldPrimary
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
+                        Text(
+                            text = if (showBlockedSubView) "Blocked list (Kick Out)" else "⚙️ Room Command & Settings",
+                            color = goldPrimary,
+                            fontSize = 16.5.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = goldPrimary)
                     }
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
 
+                if (showBlockedSubView) {
+                    val allBlockedIds = (liveKickedIds + liveBannedIds).distinct()
+                    if (allBlockedIds.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                text = "No users are currently kicked out or blocked in this room.",
+                                color = mutedText,
+                                fontSize = 13.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(allBlockedIds, key = { it }) { bUid ->
+                                val bName = blockedUserNames[bUid] ?: "User ID: ${bUid.take(8)}"
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = rowObsidian,
+                                    border = BorderStroke(1.dp, subtleBorder),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(bName, color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+                                            Text(
+                                                text = if (liveBannedIds.contains(bUid)) "Banned from Room" else "Kicked Out",
+                                                color = Color(0xFFFF6B6B),
+                                                fontSize = 11.sp
+                                            )
+                                        }
+                                        if (isHost || currentUser.hasRoomModerationAuthority()) {
+                                            Button(
+                                                onClick = {
+                                                    val newK = liveKickedIds - bUid
+                                                    val newB = liveBannedIds - bUid
+                                                    db.collection("rooms").document(room.id).update(
+                                                        mapOf("kickedUserIds" to newK, "bannedUserIds" to newB)
+                                                    )
+                                                    Toast.makeText(context, "Unblocked $bName", Toast.LENGTH_SHORT).show()
+                                                },
+                                                colors = ButtonDefaults.buttonColors(containerColor = goldPrimary, contentColor = Color.Black),
+                                                shape = RoundedCornerShape(10.dp),
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                            ) {
+                                                Text("Unblock", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
                 LazyColumn(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    // 00-TOP: OBSIDIAN & ROYAL GOLD ROOM PROFILE HEADER + LEVEL BAR + QUICK ROWS
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            // Room Header Card
+                            Surface(
+                                shape = RoundedCornerShape(18.dp),
+                                color = cardObsidian,
+                                border = BorderStroke(1.2.dp, goldBorder),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { showFullRoomProfileHub = true }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(60.dp)
+                                            .clip(RoundedCornerShape(14.dp))
+                                            .border(1.4.dp, goldPrimary, RoundedCornerShape(14.dp))
+                                    ) {
+                                        AsyncImage(
+                                            model = room.hostPhotoUrl.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                                            contentDescription = room.title,
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = room.title.ifBlank { room.roomName.ifBlank { "Live Room" } },
+                                            color = Color.White,
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = "ID: $displayRoomId  •  👥 $liveFollowerCount Followers  •  🌍 $liveCountry",
+                                            color = mutedText,
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Surface(
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = Color(0xFF282012),
+                                                border = BorderStroke(1.dp, goldPrimary)
+                                            ) {
+                                                Text(
+                                                    text = "🛡️ Lv.$liveRoomLvl",
+                                                    color = goldPrimary,
+                                                    fontSize = 10.5.sp,
+                                                    fontWeight = FontWeight.ExtraBold,
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                            Surface(
+                                                shape = RoundedCornerShape(50),
+                                                color = rowObsidian,
+                                                border = BorderStroke(1.dp, goldBorder)
+                                            ) {
+                                                Text(
+                                                    text = if (room.isWatchPartyActive) "🎬 YouTube Mode" else "💬 Chat Mode",
+                                                    color = goldPrimary,
+                                                    fontSize = 10.5.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Room Level (-10% XP) Progress Bar Card
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = cardObsidian,
+                                border = BorderStroke(1.dp, goldBorder),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { showFullRoomProfileHub = true }
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("Level (-10% Target)", color = goldPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                                        Text("$liveRoomXp / $nextTargetXp EXP", color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text("LV.$liveRoomLvl", color = goldPrimary, fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold)
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(7.dp)
+                                                .clip(RoundedCornerShape(50))
+                                                .background(Color(0xFF2C283E))
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth(lvlProgress.coerceAtLeast(0.05f))
+                                                    .height(7.dp)
+                                                    .clip(RoundedCornerShape(50))
+                                                    .background(Brush.horizontalGradient(listOf(Color(0xFFFFE082), goldPrimary, Color(0xFF9333EA))))
+                                            )
+                                        }
+                                        Text("LV.${(liveRoomLvl + 1).coerceAtMost(100)}", color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+
+                            // Quick Command Rows: Number of Mics, Mic Permission, Blocked List, Full 15-Item Room Profile
+                            val blockedCount = (liveKickedIds + liveBannedIds).distinct().size
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = rowObsidian,
+                                border = BorderStroke(1.dp, subtleBorder),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { showBlockedSubView = true }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("🚫 Blocked list (Kick Out)", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        text = if (blockedCount > 0) "View Blocked ($blockedCount) ›" else "View Blocked (0) ›",
+                                        color = if (blockedCount > 0) Color(0xFFFF6B6B) else goldPrimary,
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = rowObsidian,
+                                    border = BorderStroke(1.dp, subtleBorder),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable(enabled = isHost) {
+                                            val nextMics = when (liveMaxMics) {
+                                                10 -> 12
+                                                12 -> 15
+                                                else -> 10
+                                            }
+                                            liveMaxMics = nextMics
+                                            db.collection("rooms").document(room.id).update("maxMicSeats", nextMics)
+                                            Toast.makeText(context, "Number of Mics: $nextMics", Toast.LENGTH_SHORT).show()
+                                        }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("🎙️ Mics", color = Color.White, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                                        Text("$liveMaxMics ›", color = goldPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = rowObsidian,
+                                    border = BorderStroke(1.dp, subtleBorder),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable(enabled = isHost) {
+                                            val nextP = if (liveMicPerm == "Everyone") "Family" else "Everyone"
+                                            liveMicPerm = nextP
+                                            db.collection("rooms").document(room.id).update("micPermission", nextP)
+                                            Toast.makeText(context, "Mic Permission: $nextP", Toast.LENGTH_SHORT).show()
+                                        }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("🔒 Mic Perm", color = Color.White, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                                        Text("$liveMicPerm ›", color = goldPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
                     // 00. ROOM MODE CONVERSION: AUDIO LOUNGE -> VIDEO STREAM (HOST & ADMIN)
                     val canConvertMode = isHost || currentUser.isAdmin || currentUser.isOfficialAdmin(currentUser.uid) || currentUser.uid in room.adminUserIds
                     if (canConvertMode) {
@@ -4755,9 +5152,9 @@ fun RoomSettingsDialog(
                     if (currentUser.hasRoomModerationAuthority()) {
                         item {
                             Card(
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFF2D151E)),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1F2C)),
                                 shape = RoundedCornerShape(14.dp),
-                                border = BorderStroke(1.dp, Color(0xFFFF5252).copy(alpha = 0.5f))
+                                border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f))
                             ) {
                                 Column(modifier = Modifier.padding(14.dp)) {
                                     Row(
@@ -4765,14 +5162,15 @@ fun RoomSettingsDialog(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text("🛡️ Official Room Moderation", color = Color(0xFFFF8A80), fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+                                        Text("🛡️ Official Room Moderation", color = Color(0xFFF8FAFC), fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                                         Surface(
-                                            color = if (room.isSuspended) Color(0xFFFF1744).copy(alpha = 0.25f) else Color(0xFF00E676).copy(alpha = 0.2f),
-                                            shape = RoundedCornerShape(4.dp)
+                                            color = Color(0xFF232938),
+                                            shape = RoundedCornerShape(4.dp),
+                                            border = BorderStroke(0.6.dp, Color(0xFF334155))
                                         ) {
                                             Text(
                                                 text = if (room.isSuspended) "SUSPENDED" else "ACTIVE",
-                                                color = if (room.isSuspended) Color(0xFFFF5252) else Color(0xFF69F0AE),
+                                                color = if (room.isSuspended) Color(0xFFF87171) else Color(0xFF94A3B8),
                                                 fontSize = 9.5.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -4780,7 +5178,7 @@ fun RoomSettingsDialog(
                                         }
                                     }
                                     Spacer(modifier = Modifier.height(4.dp))
-                                    Text("Official staff power to suspend this room for community policy violations.", color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp)
+                                    Text("Official staff power to suspend this room for community policy violations.", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
                                     Spacer(modifier = Modifier.height(10.dp))
 
                                     if (room.isSuspended) {
@@ -4808,11 +5206,12 @@ fun RoomSettingsDialog(
                                                 db.collection("rooms").document(room.id).collection("live_comments").document(clearMsg.id).set(clearMsg)
                                                 Toast.makeText(context, "Room suspension revoked! 🛡️", Toast.LENGTH_SHORT).show()
                                             },
-                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B5E20)),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF232938)),
+                                            border = BorderStroke(1.dp, Color(0xFF334155)),
                                             shape = RoundedCornerShape(8.dp),
                                             modifier = Modifier.fillMaxWidth().height(38.dp)
                                         ) {
-                                            Text("✅ Lift Suspension & Reopen Room", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                            Text("Lift Suspension & Reopen Room", color = Color(0xFFF8FAFC), fontWeight = FontWeight.SemiBold, fontSize = 11.5.sp)
                                         }
                                     } else {
                                         Row(
@@ -4847,13 +5246,13 @@ fun RoomSettingsDialog(
                                                         db.collection("rooms").document(room.id).collection("live_comments").document(banMsg.id).set(banMsg)
                                                         Toast.makeText(context, "Room suspended for $label! 🚫", Toast.LENGTH_SHORT).show()
                                                     },
-                                                    colors = ButtonDefaults.outlinedButtonColors(containerColor = Color(0xFF3E1F28)),
-                                                    border = BorderStroke(1.dp, Color(0xFFFF5252).copy(alpha = 0.6f)),
+                                                    colors = ButtonDefaults.outlinedButtonColors(containerColor = Color(0xFF232938)),
+                                                    border = BorderStroke(1.dp, Color(0xFF334155)),
                                                     shape = RoundedCornerShape(8.dp),
                                                     modifier = Modifier.weight(1f).height(36.dp),
                                                     contentPadding = PaddingValues(0.dp)
                                                 ) {
-                                                    Text(label, color = Color(0xFFFF8A80), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                    Text(label, color = Color(0xFFE2E8F0), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                                                 }
                                             }
                                         }
@@ -4880,7 +5279,7 @@ fun RoomSettingsDialog(
                                     if (isHost && announcementText.isNotBlank()) {
                                         Text(
                                             text = "Clear",
-                                            color = Color(0xFFFF5252),
+                                            color = Color(0xFF94A3B8),
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold,
                                             modifier = Modifier.clickable {
@@ -4902,7 +5301,7 @@ fun RoomSettingsDialog(
                                         colors = OutlinedTextFieldDefaults.colors(
                                             focusedTextColor = Color.White,
                                             unfocusedTextColor = Color.White,
-                                            focusedBorderColor = Color(0xFF8B5CF6),
+                                            focusedBorderColor = Color(0xFF475569),
                                             unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
                                             focusedContainerColor = Color(0xFF141720),
                                             unfocusedContainerColor = Color(0xFF141720)
@@ -4928,17 +5327,17 @@ fun RoomSettingsDialog(
                                                 Toast.makeText(context, "Announcement updated & broadcasted! 📢", Toast.LENGTH_SHORT).show()
                                             }
                                         },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF261042)),
-                                        border = BorderStroke(1.dp, Color(0xFFC084FC).copy(alpha = 0.6f)),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF232938)),
+                                        border = BorderStroke(1.dp, Color(0xFF334155)),
                                         shape = RoundedCornerShape(10.dp),
                                         modifier = Modifier.fillMaxWidth().height(38.dp)
                                     ) {
-                                        Text("Broadcast Announcement 📢", color = Color(0xFFE9D5FF), fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                                        Text("Broadcast Announcement", color = Color(0xFFF8FAFC), fontWeight = FontWeight.SemiBold, fontSize = 11.5.sp)
                                     }
                                 } else {
                                     Text(
                                         text = if (room.announcement.isNotBlank()) room.announcement else "No active announcement at this moment.",
-                                        color = if (room.announcement.isNotBlank()) Color(0xFFC084FC) else Color.LightGray,
+                                        color = if (room.announcement.isNotBlank()) Color(0xFFE2E8F0) else Color.LightGray,
                                         fontSize = 12.sp
                                     )
                                 }
@@ -4964,18 +5363,18 @@ fun RoomSettingsDialog(
                                             Image(
                                                 painter = painterResource(id = R.drawable.ic_pk_flame_vs),
                                                 contentDescription = "PK Battle",
-                                                modifier = Modifier.size(22.dp)
+                                                modifier = Modifier.size(20.dp)
                                             )
                                             Spacer(modifier = Modifier.width(6.dp))
                                             Text("⚔️ Live PK Battle Arena", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                                         }
                                         if (room.isPkActive) {
                                             Surface(
-                                                color = Color(0xFFFF1744).copy(alpha = 0.2f),
+                                                color = Color(0xFF232938),
                                                 shape = RoundedCornerShape(50),
-                                                border = BorderStroke(0.8.dp, Color(0xFFFF1744))
+                                                border = BorderStroke(0.8.dp, Color(0xFF334155))
                                             ) {
-                                                Text("ACTIVE 🔥", color = Color(0xFFFF5252), fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                                Text("ACTIVE", color = Color(0xFFE2E8F0), fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
                                             }
                                         }
                                     }
@@ -5013,12 +5412,12 @@ fun RoomSettingsDialog(
                                                 }
                                                 Toast.makeText(context, "⚔️ 5-Minute PK Battle Started! 🔥", Toast.LENGTH_SHORT).show()
                                             },
-                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF331E26)),
-                                            border = BorderStroke(1.dp, Color(0xFF8F384C)),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF232938)),
+                                            border = BorderStroke(1.dp, Color(0xFF334155)),
                                             shape = RoundedCornerShape(10.dp),
                                             modifier = Modifier.fillMaxWidth().height(40.dp)
                                         ) {
-                                            Text("⚔️ Start 5-Minute PK Battle", color = Color(0xFFFF859E), fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                                            Text("Start 5-Minute PK Battle", color = Color(0xFFF8FAFC), fontWeight = FontWeight.SemiBold, fontSize = 11.5.sp)
                                         }
                                     } else {
                                         Button(
@@ -5032,12 +5431,12 @@ fun RoomSettingsDialog(
                                                 )
                                                 Toast.makeText(context, "🛑 PK Battle Ended", Toast.LENGTH_SHORT).show()
                                             },
-                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF252A36)),
-                                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF232938)),
+                                            border = BorderStroke(1.dp, Color(0xFF334155)),
                                             shape = RoundedCornerShape(10.dp),
                                             modifier = Modifier.fillMaxWidth().height(40.dp)
                                         ) {
-                                            Text("🛑 End PK Battle", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                                            Text("End PK Battle", color = Color(0xFFF8FAFC), fontWeight = FontWeight.SemiBold, fontSize = 11.5.sp)
                                         }
                                     }
                                 }
@@ -5082,13 +5481,13 @@ fun RoomSettingsDialog(
                                             Toast.makeText(context, "Room is now LIVE! Followers notified.", Toast.LENGTH_SHORT).show()
                                         },
                                         colors = ButtonDefaults.buttonColors(
-                                            containerColor = if (room.isHostLive) Color(0xFF1C3829) else Color(0xFF202433)
+                                            containerColor = if (room.isHostLive) Color(0xFF232938) else Color(0xFF1A1E29)
                                         ),
-                                        border = BorderStroke(1.dp, if (room.isHostLive) Color(0xFF34D399) else Color.White.copy(alpha = 0.1f)),
+                                        border = BorderStroke(1.dp, if (room.isHostLive) Color(0xFF64748B) else Color.White.copy(alpha = 0.1f)),
                                         shape = RoundedCornerShape(10.dp),
                                         modifier = Modifier.weight(1f).height(40.dp)
                                     ) {
-                                        Text("🔴 Go Live", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (room.isHostLive) Color(0xFF34D399) else Color.LightGray)
+                                        Text("Go Live", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (room.isHostLive) Color(0xFFF8FAFC) else Color(0xFF94A3B8))
                                     }
 
                                     Button(
@@ -5107,13 +5506,13 @@ fun RoomSettingsDialog(
                                             Toast.makeText(context, "Room set offline. Host remains inside, listeners exited.", Toast.LENGTH_SHORT).show()
                                         },
                                         colors = ButtonDefaults.buttonColors(
-                                            containerColor = if (!room.isHostLive) Color(0xFF2A281E) else Color(0xFF202433)
+                                            containerColor = if (!room.isHostLive) Color(0xFF232938) else Color(0xFF1A1E29)
                                         ),
-                                        border = BorderStroke(1.dp, if (!room.isHostLive) Color(0xFF8B5CF6) else Color.White.copy(alpha = 0.1f)),
+                                        border = BorderStroke(1.dp, if (!room.isHostLive) Color(0xFF64748B) else Color.White.copy(alpha = 0.1f)),
                                         shape = RoundedCornerShape(10.dp),
                                         modifier = Modifier.weight(1f).height(40.dp)
                                     ) {
-                                        Text("⏳ Set Offline", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (!room.isHostLive) Color(0xFFC084FC) else Color.LightGray)
+                                        Text("Set Offline", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (!room.isHostLive) Color(0xFFF8FAFC) else Color(0xFF94A3B8))
                                     }
                                 }
                             }
@@ -5143,7 +5542,7 @@ fun RoomSettingsDialog(
                                         colors = OutlinedTextFieldDefaults.colors(
                                             focusedTextColor = Color.White,
                                             unfocusedTextColor = Color.White,
-                                            focusedBorderColor = Color(0xFF8B5CF6),
+                                            focusedBorderColor = Color(0xFF475569),
                                             unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
                                             focusedContainerColor = Color(0xFF141720),
                                             unfocusedContainerColor = Color(0xFF141720)
@@ -5157,12 +5556,12 @@ fun RoomSettingsDialog(
                                             db.collection("rooms").document(room.id).update("scheduledTime", scheduledTimeText.trim())
                                             Toast.makeText(context, "Schedule timing saved!", Toast.LENGTH_SHORT).show()
                                         },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF262C3E)),
-                                        border = BorderStroke(1.dp, Color(0xFF3F4B6B)),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF232938)),
+                                        border = BorderStroke(1.dp, Color(0xFF334155)),
                                         shape = RoundedCornerShape(10.dp),
                                         modifier = Modifier.height(48.dp)
                                     ) {
-                                        Text("Save", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        Text("Save", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                                     }
                                 }
                             }
@@ -5189,7 +5588,7 @@ fun RoomSettingsDialog(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clip(RoundedCornerShape(8.dp))
-                                            .background(if (isSelected) Color(0xFF262C3E) else Color.Transparent)
+                                            .background(if (isSelected) Color(0xFF232938) else Color.Transparent)
                                             .clickable {
                                                 selectedPrivacy = key
                                                 db.collection("rooms").document(room.id).update("privacy", key)
@@ -5204,7 +5603,7 @@ fun RoomSettingsDialog(
                                                 selectedPrivacy = key
                                                 db.collection("rooms").document(room.id).update("privacy", key)
                                             },
-                                            colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF8B5CF6))
+                                            colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF94A3B8))
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text(label, color = if (isSelected) Color.White else Color.LightGray, fontSize = 12.sp, fontWeight = FontWeight.Medium)
@@ -5225,8 +5624,8 @@ fun RoomSettingsDialog(
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text("🔒 Lock Room", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                             Text(
-                                                text = if (isRoomLocked) "Room is currently locked 🔒" else "Room is open for everyone",
-                                                color = if (isRoomLocked) Color(0xFFFF8A80) else Color.Gray,
+                                                text = if (isRoomLocked) "Room is currently locked" else "Room is open for everyone",
+                                                color = Color(0xFF94A3B8),
                                                 fontSize = 10.sp
                                             )
                                         }
@@ -5239,7 +5638,7 @@ fun RoomSettingsDialog(
                                             },
                                             colors = SwitchDefaults.colors(
                                                 checkedThumbColor = Color.White,
-                                                checkedTrackColor = Color(0xFFE53935)
+                                                checkedTrackColor = Color(0xFF475569)
                                             )
                                         )
                                     }
@@ -5255,8 +5654,8 @@ fun RoomSettingsDialog(
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text("⭐ Room Premium (VIP)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                             Text(
-                                                text = if (isRoomVip) "Exclusive VIP room mode enabled ⭐" else "Standard room mode",
-                                                color = if (isRoomVip) Color(0xFFC084FC) else Color.Gray,
+                                                text = if (isRoomVip) "Exclusive VIP room mode enabled" else "Standard room mode",
+                                                color = Color(0xFF94A3B8),
                                                 fontSize = 10.sp
                                             )
                                         }
@@ -5273,68 +5672,122 @@ fun RoomSettingsDialog(
                                                 Toast.makeText(context, if (vip) "Room set to Premium VIP ⭐" else "Room set to Standard Mode", Toast.LENGTH_SHORT).show()
                                             },
                                             colors = SwitchDefaults.colors(
-                                                checkedThumbColor = Color.Black,
-                                                checkedTrackColor = Color(0xFF8B5CF6)
+                                                checkedThumbColor = Color.White,
+                                                checkedTrackColor = Color(0xFF475569)
                                             )
                                         )
                                     }
 
-                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+                                    Spacer(modifier = Modifier.height(10.dp))
 
-                                    // Royal Blue Cinema Watch Party Mode Toggle (Unrestricted for Founder/CEO, Room Lv.5+ for others)
-                                    var isCinemaModeEnabled by remember(room.id, room.isWatchPartyActive, room.banner_image_url) {
-                                        mutableStateOf(WatchPartyCinemaEngine.isCinemaWatchPartyActive(room))
-                                    }
-                                    val canUseCinemaMode = WatchPartyCinemaEngine.canUnlockCinemaWatchParty(currentUser, currentRoomLevel)
+                                    // Family Room Access Lock (Unlocks at Room Level 10+)
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Column(modifier = Modifier.weight(1f)) {
-                                            Text("🎬 Royal Blue Cinema Watch Party", color = Color(0xFF93C5FD), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Text("👨‍👩‍👧‍👦 Family Room Mode", color = Color(0xFFFDE68A), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = Color(0x33F59E0B),
+                                                    border = BorderStroke(0.6.dp, Color(0xFFFBBF24))
+                                                ) {
+                                                    Text(
+                                                        text = "Lv.10+",
+                                                        color = Color(0xFFFDE047),
+                                                        fontSize = 8.5.sp,
+                                                        fontWeight = FontWeight.ExtraBold,
+                                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                                    )
+                                                }
+                                            }
                                             Text(
-                                                text = when {
-                                                    isCinemaModeEnabled -> "HD Royal Blue Velvet Sofas & Synced YouTube Active 🎬"
-                                                    canUseCinemaMode -> "Unlock YouTube Watch Party + 10 HD Velvet Sofas"
-                                                    else -> "🔒 Unlocks at Room Level 5 (Current: Lv.$currentRoomLevel)"
-                                                },
-                                                color = if (isCinemaModeEnabled) Color(0xFFFFE57F) else Color.Gray,
+                                                text = if (isFamilyRoomEnabled) "ON: Only invited Family Members (${room.familyMemberIds.size}) can enter"
+                                                else if (canUnlockFamilyRoom) "OFF: Everyone can enter • Tap switch to restrict to Family"
+                                                else "🔒 Reach Room Level 10 to convert to Family Room (Current: Lv.$currentRoomLevel)",
+                                                color = if (isFamilyRoomEnabled) Color(0xFFFBBF24) else Color(0xFF94A3B8),
                                                 fontSize = 10.sp
                                             )
                                         }
                                         Switch(
-                                            checked = isCinemaModeEnabled,
-                                            onCheckedChange = { enableCinema ->
-                                                if (enableCinema && !canUseCinemaMode) {
-                                                    Toast.makeText(context, "🔒 Royal Blue Cinema Watch Party unlocks at Room Level 5!", Toast.LENGTH_LONG).show()
-                                                } else {
-                                                    isCinemaModeEnabled = enableCinema
-                                                    WatchPartyCinemaEngine.updateRoomWatchPartyState(
-                                                        db = db,
-                                                        room = room,
-                                                        isActive = enableCinema,
-                                                        updatedBy = currentUser.name.ifBlank { "Host" }
-                                                    )
-                                                    if (enableCinema) {
-                                                        onUpdateTheme(WatchPartyCinemaEngine.CINEMA_THEME_ID)
-                                                    } else if (room.banner_image_url == WatchPartyCinemaEngine.CINEMA_THEME_ID) {
-                                                        onUpdateTheme("vip_royal_stage")
-                                                        db.collection("rooms").document(room.id).update("banner_image_url", "vip_royal_stage")
-                                                    }
+                                            checked = isFamilyRoomEnabled,
+                                            onCheckedChange = { enableFamily ->
+                                                if (!canUnlockFamilyRoom) {
                                                     Toast.makeText(
                                                         context,
-                                                        if (enableCinema) "🎬 Royal Blue Cinema Watch Party Enabled!" else "🎙️ Standard Audio Room Restored",
+                                                        "🔒 Family Room requires Room Level 10! (Current: Lv.$currentRoomLevel)",
+                                                        Toast.LENGTH_LONG
+                                                    ).show()
+                                                } else {
+                                                    isFamilyRoomEnabled = enableFamily
+                                                    WatchPartyCinemaEngine.updateFamilyRoomState(
+                                                        db = db,
+                                                        room = room,
+                                                        isFamilyActive = enableFamily,
+                                                        familyMemberIds = room.familyMemberIds
+                                                    )
+                                                    onUpdateRoom?.invoke(
+                                                        room.copy(
+                                                            isFamilyRoom = enableFamily,
+                                                            privacy = if (enableFamily) "family_only" else "public"
+                                                        )
+                                                    )
+                                                    Toast.makeText(
+                                                        context,
+                                                        if (enableFamily) "👨‍👩‍👧‍👦 Family Room Mode Enabled (Invite-Only)!" else "🌐 Family Room turned OFF • Everyone can enter",
                                                         Toast.LENGTH_SHORT
                                                     ).show()
                                                 }
                                             },
                                             colors = SwitchDefaults.colors(
-                                                checkedThumbColor = Color(0xFFFFD700),
-                                                checkedTrackColor = Color(0xFF1D4ED8)
+                                                checkedThumbColor = Color(0xFFFDE047),
+                                                checkedTrackColor = Color(0xFFB45309)
                                             )
                                         )
                                     }
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "Invited Family Members: ${room.familyMemberIds.size}",
+                                            color = Color(0xFFE2E8F0),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Button(
+                                            onClick = {
+                                                if (!canUnlockFamilyRoom) {
+                                                    Toast.makeText(
+                                                        context,
+                                                        "🔒 Reach Room Level 10 to manage Family Room Members!",
+                                                        Toast.LENGTH_SHORT
+                                                    ).show()
+                                                } else {
+                                                    onDismiss()
+                                                    onOpenFamilyInviteDialog?.invoke()
+                                                }
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF262C3E)),
+                                            border = BorderStroke(1.dp, Color(0xFFFBBF24)),
+                                            shape = RoundedCornerShape(50),
+                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                            modifier = Modifier.height(30.dp)
+                                        ) {
+                                            Text("+ Invite Family Members", color = Color(0xFFFDE047), fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+                                        }
+                                    }
+
                                 }
                             }
                         }
@@ -5562,11 +6015,11 @@ fun RoomSettingsDialog(
                                                                 Toast.makeText(context, "${member.name} kicked out.", Toast.LENGTH_SHORT).show()
                                                             }
                                                         },
-                                                        border = BorderStroke(1.dp, Color(0xFFFFB74D).copy(alpha = 0.6f)),
+                                                        border = BorderStroke(1.dp, Color(0xFF475569)),
                                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                                                         modifier = Modifier.height(26.dp)
                                                     ) {
-                                                        Text("Kick", color = Color(0xFFFFB74D), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                                        Text("Kick", color = Color(0xFFE2E8F0), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
                                                     }
 
                                                     // Ban Button
@@ -5586,12 +6039,12 @@ fun RoomSettingsDialog(
                                                                 Toast.makeText(context, "${member.name} permanently banned.", Toast.LENGTH_SHORT).show()
                                                             }
                                                         },
-                                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B1820)),
-                                                        border = BorderStroke(1.dp, Color(0xFFE53935).copy(alpha = 0.8f)),
+                                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF232938)),
+                                                        border = BorderStroke(1.dp, Color(0xFF475569)),
                                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                                                         modifier = Modifier.height(26.dp)
                                                     ) {
-                                                        Text("Ban", color = Color(0xFFFF859E), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                                        Text("Ban", color = Color(0xFFF87171), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
                                                     }
                                                 }
                                             }
@@ -5630,14 +6083,14 @@ fun RoomSettingsDialog(
                                                     }
                                                 }
                                         },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B1820)),
-                                        border = BorderStroke(1.dp, Color(0xFFE53935).copy(alpha = 0.6f)),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF232938)),
+                                        border = BorderStroke(1.dp, Color(0xFF334155)),
                                         shape = RoundedCornerShape(10.dp),
                                         modifier = Modifier.fillMaxWidth().height(38.dp)
                                     ) {
-                                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFFF859E), modifier = Modifier.size(16.dp))
+                                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Clear All Messages", color = Color(0xFFFF859E), fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                        Text("Clear All Messages", color = Color(0xFFF8FAFC), fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
                                     }
                                 }
                             }
@@ -5662,14 +6115,14 @@ fun RoomSettingsDialog(
                                             onDismiss()
                                             onEditRoom()
                                         },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF262C3E)),
-                                        border = BorderStroke(1.dp, Color(0xFF3F4B6B)),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF232938)),
+                                        border = BorderStroke(1.dp, Color(0xFF334155)),
                                         shape = RoundedCornerShape(10.dp),
                                         modifier = Modifier.fillMaxWidth().height(38.dp)
                                     ) {
                                         Icon(Icons.Default.Edit, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Edit Room Details", color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                        Text("Edit Room Details", color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
                                     }
                                 }
                             }
@@ -5680,12 +6133,12 @@ fun RoomSettingsDialog(
                     if (isHost && onDeleteRoom != null) {
                         item {
                             Card(
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFF251318)),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1F2C)),
                                 shape = RoundedCornerShape(14.dp),
-                                border = BorderStroke(1.dp, Color(0xFFE53935).copy(alpha = 0.4f))
+                                border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.08f))
                             ) {
                                 Column(modifier = Modifier.padding(14.dp)) {
-                                    Text("🚨 Danger Zone: Delete Room", color = Color(0xFFFF5252), fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+                                    Text("🗑️ Delete Room", color = Color(0xFFF8FAFC), fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text("Permanently delete this room from Firestore. All live members will be disconnected.", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
                                     Spacer(modifier = Modifier.height(10.dp))
@@ -5694,14 +6147,14 @@ fun RoomSettingsDialog(
                                             onDismiss()
                                             onDeleteRoom()
                                         },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4A151D)),
-                                        border = BorderStroke(1.dp, Color(0xFFE53935)),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF232938)),
+                                        border = BorderStroke(1.dp, Color(0xFF475569)),
                                         shape = RoundedCornerShape(10.dp),
                                         modifier = Modifier.fillMaxWidth().height(38.dp)
                                     ) {
-                                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFFF859E), modifier = Modifier.size(16.dp))
+                                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFF87171), modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Delete Room Permanently 🗑️", color = Color(0xFFFF859E), fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                        Text("Delete Room Permanently", color = Color(0xFFF87171), fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
                                     }
                                 }
                             }
@@ -5761,14 +6214,14 @@ fun RoomSettingsDialog(
                                         }
                                     },
                                     enabled = feedbackText.isNotBlank() && !isSendingFeedback,
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF262C3E)),
-                                    border = BorderStroke(1.dp, Color(0xFF3F4B6B)),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF282012)),
+                                    border = BorderStroke(1.dp, goldPrimary),
                                     shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.fillMaxWidth().height(38.dp)
                                 ) {
                                     Text(
                                         text = if (isSendingFeedback) "Submitting..." else "Submit Feedback 📨",
-                                        color = Color.White,
+                                        color = goldPrimary,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 11.5.sp
                                     )
@@ -5776,6 +6229,7 @@ fun RoomSettingsDialog(
                             }
                         }
                     }
+                }
                 }
             }
         }
@@ -6242,6 +6696,7 @@ fun AudioHangoutRoomDialog(
     var userTotalRoomTimeSeconds by remember { mutableStateOf(currentUser.totalRoomTimeSeconds) }
     var currentRoomStaySeconds by remember(room.id) { mutableStateOf(0L) }
     var currentRoomLevel by remember(room.id) { mutableStateOf(1) }
+    var userRoomStayLevel by remember(room.id) { mutableStateOf(1) }
     var liveUserWealthXp by remember { mutableStateOf(currentUser.wealthXp) }
     var liveUserWealthLevel by remember { mutableStateOf(currentUser.getEffectiveWealthLevel()) }
     var lastObservedWealthLevel by remember(currentUser.uid, room.id) { mutableStateOf(-1) }
@@ -6255,6 +6710,10 @@ fun AudioHangoutRoomDialog(
     var hasWavedInRoom by remember(room.id) { mutableStateOf(false) }
     var showRoomTaskDialog by remember { mutableStateOf(false) }
     var showYouTubePickerDialog by remember { mutableStateOf(false) }
+    var showRoomInfoOnlyDialog by remember { mutableStateOf(false) }
+    var showYouTubeLevelLockedDialog by remember { mutableStateOf(false) }
+    var showRoomConversionHubDialog by remember { mutableStateOf(false) }
+    var showFamilyInviteDialog by remember { mutableStateOf(false) }
     var showGuestLimitExpiredDialog by remember { mutableStateOf(false) }
     var showGiftStoreDialog by remember { mutableStateOf(false) }
     var showLuxuryStoreDialog by remember { mutableStateOf(false) }
@@ -6265,10 +6724,11 @@ fun AudioHangoutRoomDialog(
     var activeInRoomGame by remember { mutableStateOf<InRoomGameState?>(null) }
 
     // Real-time Firestore listener for In-Room Club Games (Ludo, Carrom, Truth & Dare, Lucky 7)
+    // Uses rooms/{roomId}/games/active (permitted by Firestore security rules)
     DisposableEffect(room.id) {
         if (room.id.isBlank()) return@DisposableEffect onDispose {}
         val gameReg = db.collection("rooms").document(room.id)
-            .collection("inRoomGame").document("active")
+            .collection("games").document("active")
             .addSnapshotListener { snap, _ ->
                 if (snap != null && snap.exists()) {
                     val state = snap.toObject(InRoomGameState::class.java)
@@ -6277,7 +6737,33 @@ fun AudioHangoutRoomDialog(
                     activeInRoomGame = null
                 }
             }
-        onDispose { gameReg.remove() }
+        // Also listen to rooms/{roomId}/games/room_level_meta so Host and all Viewers always see the exact same Room Personal Level!
+        val roomLevelMetaReg = db.collection("rooms").document(room.id)
+            .collection("games").document("room_level_meta")
+            .addSnapshotListener { snap, _ ->
+                if (snap != null && snap.exists()) {
+                    val metaXp = snap.getLong("roomActivityXp") ?: 0L
+                    val metaLvl = maxOf(
+                        (snap.getLong("roomLevel") ?: 1L).toInt(),
+                        RoomLevelUpEngine.calculateOfficialRoomPersonalLevel(metaXp)
+                    )
+                    if (metaLvl > currentRoomLevel) {
+                        currentRoomLevel = metaLvl
+                    }
+                    if (currentUser.uid.isNotBlank() && currentUser.uid == room.hostUid.ifBlank { room.hostId }) {
+                        db.collection("rooms").document(room.id).update(
+                            mapOf(
+                                "roomActivityXp" to metaXp,
+                                "roomLevel" to currentRoomLevel
+                            )
+                        )
+                    }
+                }
+            }
+        onDispose {
+            gameReg.remove()
+            roomLevelMetaReg.remove()
+        }
     }
 
     // Real-time listener for current user diamonds, active frame, wealth level & per-room stay seconds
@@ -6302,8 +6788,8 @@ fun AudioHangoutRoomDialog(
                         @Suppress("UNCHECKED_CAST")
                         val lvlMap = snap.get("roomLevelsMap") as? Map<String, Any>
                         val remoteRoomLvl = (lvlMap?.get(safeRoomKey) as? Number)?.toInt() ?: 1
-                        if (remoteRoomLvl > currentRoomLevel) {
-                            currentRoomLevel = remoteRoomLvl
+                        if (remoteRoomLvl > userRoomStayLevel) {
+                            userRoomStayLevel = remoteRoomLvl
                         }
                         val snapWealthXp = snap.getLong("wealthXp") ?: 0L
                         val snapWealthLvl = maxOf(
@@ -6370,7 +6856,7 @@ fun AudioHangoutRoomDialog(
                     onWealthStatsUpdated = { wXp, wLvl, rLvl ->
                         liveUserWealthXp = wXp
                         liveUserWealthLevel = wLvl
-                        if (rLvl > currentRoomLevel) currentRoomLevel = rLvl
+                        if (rLvl > userRoomStayLevel) userRoomStayLevel = rLvl
                     }
                 )
             }
@@ -6634,6 +7120,16 @@ fun AudioHangoutRoomDialog(
     ) { isGranted ->
         if (isGranted) {
             pendingSeatToJoin?.let { seat ->
+                val updatedSeat = seat.copy(
+                    uid = currentUser.uid,
+                    name = currentUser.name,
+                    photo = currentUser.photo,
+                    isMuted = false,
+                    isLocked = false,
+                    role = "speaker"
+                )
+                val idx = micSeats.indexOfFirst { it.seatIndex == seat.seatIndex }
+                if (idx != -1) micSeats[idx] = updatedSeat else micSeats.add(updatedSeat)
                 joinMicSeat(db, room.id, seat.seatIndex, currentUser, micSeats)
                 Toast.makeText(context, "You are now on Mic ${seat.seatIndex + 1}! 🎙️", Toast.LENGTH_SHORT).show()
                 pendingSeatToJoin = null
@@ -6890,8 +7386,8 @@ fun AudioHangoutRoomDialog(
             .set(welcomeDoc)
     }
 
-    // Kick & Ban & Room Suspension Auto-Dismissal Enforcement (Real-time Firestore sync)
-    LaunchedEffect(room.bannedUserIds, room.kickedUserIds, room.isSuspended, room.suspendedUntil) {
+    // Kick & Ban & Room Suspension & Family Room Access Lock Auto-Dismissal Enforcement (Real-time Firestore sync)
+    LaunchedEffect(room.bannedUserIds, room.kickedUserIds, room.isSuspended, room.suspendedUntil, room.isFamilyRoom, room.familyMemberIds, room.privacy) {
         if (room.isSuspended && !currentUser.hasRoomModerationAuthority()) {
             val reason = if (room.suspensionReason.isNotBlank()) room.suspensionReason else "Room temporarily suspended by official moderation."
             Toast.makeText(context, "🚫 $reason", Toast.LENGTH_LONG).show()
@@ -6899,9 +7395,15 @@ fun AudioHangoutRoomDialog(
             onDismiss()
         } else if (room.bannedUserIds.contains(currentUser.uid) && !currentUser.hasSovereignImmunity()) {
             Toast.makeText(context, "You have been banned from this room by the host or admin.", Toast.LENGTH_LONG).show()
+            AudioPlayerManager.pause()
             onDismiss()
         } else if (room.kickedUserIds.contains(currentUser.uid) && !currentUser.hasSovereignImmunity()) {
             Toast.makeText(context, "You have been kicked out of this room.", Toast.LENGTH_LONG).show()
+            AudioPlayerManager.pause()
+            onDismiss()
+        } else if (!room.canEnterFamilyRoom(currentUser.uid, currentUser.hasRoomModerationAuthority() || WatchPartyCinemaEngine.isUnrestrictedFounderOrCeo(currentUser))) {
+            Toast.makeText(context, "🛡️ Family Room: Only invited Family Members can enter this room!", Toast.LENGTH_LONG).show()
+            AudioPlayerManager.pause()
             onDismiss()
         }
     }
@@ -7061,8 +7563,23 @@ fun AudioHangoutRoomDialog(
                     }
                     room = updated
 
-                    // Audio Sync: If room has track and is playing
-                    if (updated.isPlaying && updated.nowPlayingUrl.isNotBlank()) {
+                    // Sync Official Room Personal Level strictly from Gifting / PK Battle / Game XP on the room document
+                    val rawRoomActivityXp = snapshot.getLong("roomActivityXp") ?: 0L
+                    val pkBattleTotal = ((snapshot.getLong("pkHost1Score") ?: 0L) + (snapshot.getLong("pkHost2Score") ?: 0L)).coerceAtLeast(0L)
+                    val effectiveRoomXp = maxOf(rawRoomActivityXp, pkBattleTotal)
+                    val computedOfficialRoomLvl = maxOf(
+                        (snapshot.getLong("roomLevel") ?: 1L).toInt(),
+                        RoomLevelUpEngine.calculateOfficialRoomPersonalLevel(effectiveRoomXp)
+                    )
+                    currentRoomLevel = maxOf(currentRoomLevel, computedOfficialRoomLvl)
+
+                    // Audio Sync: Never auto-play unless Host/Admin explicitly started music; always pause background music in YouTube Cinema Room
+                    val isCinemaNow = WatchPartyCinemaEngine.isCinemaWatchPartyActive(updated)
+                    if (isCinemaNow) {
+                        if (AudioPlayerManager.isPlayingState.value) {
+                            AudioPlayerManager.pause()
+                        }
+                    } else if (updated.isPlaying && updated.nowPlayingUrl.isNotBlank()) {
                         val trackStartedAt = snapshot.getLong("trackStartedAt") ?: updated.trackStartedAt
                         val elapsedMs = if (trackStartedAt > 0L) {
                             (System.currentTimeMillis() - trackStartedAt).toInt().coerceAtLeast(0)
@@ -7076,7 +7593,7 @@ fun AudioHangoutRoomDialog(
                             val currentLocalPos = AudioPlayerManager.currentPositionMsState.value
                             val dur = AudioPlayerManager.durationMsState.value
                             val targetPos = if (dur > 0) (elapsedMs % dur) else elapsedMs
-                            if (kotlin.math.abs(currentLocalPos - targetPos) > 4000) {
+                            if (kotlin.math.abs(currentLocalPos - targetPos) > 2500) {
                                 AudioPlayerManager.seekTo(targetPos)
                             }
                         }
@@ -7199,17 +7716,18 @@ fun AudioHangoutRoomDialog(
     DisposableEffect(room.id) {
         if (room.id.isBlank()) return@DisposableEffect onDispose {}
         val micSeatsRef = db.collection("rooms").document(room.id).collection("mic_seats")
-        val micListener = micSeatsRef.orderBy("seatIndex", Query.Direction.ASCENDING)
+        val micListener = micSeatsRef
             .addSnapshotListener { snapshot, error ->
                 if (error != null) return@addSnapshotListener
                 if (snapshot != null) {
                     val seats = snapshot.documents.mapNotNull { doc ->
                         val s = doc.toObject(MicSeat::class.java)
                         if (s != null) {
+                            val resolvedIdx = doc.getLong("seatIndex")?.toInt() ?: doc.id.toIntOrNull() ?: s.seatIndex
                             val rawMuted = doc.getBoolean("isMuted") ?: doc.getBoolean("muted") ?: s.isMuted
                             val rawLocked = doc.getBoolean("isLocked") ?: doc.getBoolean("locked") ?: s.isLocked
                             val rawTalking = doc.getBoolean("isTalking") ?: doc.getBoolean("talking") ?: s.isTalking
-                            s.copy(isMuted = rawMuted, isLocked = rawLocked, isTalking = rawTalking)
+                            s.copy(seatIndex = resolvedIdx, isMuted = rawMuted, isLocked = rawLocked, isTalking = rawTalking)
                         } else null
                     }
 
@@ -7224,20 +7742,12 @@ fun AudioHangoutRoomDialog(
                         )
                     }
 
-                    // Real-time seat validation: instant cleanup for departed, offline, or dummy users
+                    // Real-time seat validation: instant cleanup ONLY for legacy dummy companions (never auto-vacate real seated users on transient presence refreshes!)
                     val seenUids = mutableSetOf<String>()
                     val cleanedList = fullList.map { seat ->
                         val isDummy = seat.uid.startsWith("companion_") || seat.uid == "companion_maya_vip" || seat.name.contains("Maya (Bestie", true)
-                        val isOccupantActive = seat.uid.isBlank() || (!isDummy && (
-                            seat.uid == targetHostId ||
-                            seat.uid == currentUser.uid ||
-                            activeMembers.any { it.uid == seat.uid }
-                        ))
-                        if (seat.uid.isNotBlank() && (!isOccupantActive || isDummy)) {
-                            // Seat occupant is offline, departed, or dummy -> immediately clear and free mic seat
-                            if (isUserHost || isUserAdmin || seat.uid == currentUser.uid || isDummy) {
-                                vacateMicSeat(db, room.id, seat.seatIndex, seat.isLocked)
-                            }
+                        if (seat.uid.isNotBlank() && isDummy) {
+                            vacateMicSeat(db, room.id, seat.seatIndex, seat.isLocked)
                             seat.copy(uid = "", name = "", photo = "", isTalking = false, isMuted = false)
                         } else if (seat.uid.isNotBlank()) {
                             if (seenUids.contains(seat.uid)) {
@@ -7557,12 +8067,13 @@ fun AudioHangoutRoomDialog(
                                         Color(0xFFFFD700)  // Gold loop
                                     )
                                 )
-                                Surface(
-                                    color = Color.Black.copy(alpha = 0.35f),
-                                    shape = RoundedCornerShape(14.dp),
-                                    border = BorderStroke(1.4.dp, luxurySweepBorder),
-                                    modifier = Modifier.clickable { selectedMemberForSheet = hostMemberObj }
-                                ) {
+                                Column(horizontalAlignment = Alignment.Start) {
+                                    Surface(
+                                        color = Color.Black.copy(alpha = 0.35f),
+                                        shape = RoundedCornerShape(14.dp),
+                                        border = BorderStroke(1.4.dp, luxurySweepBorder),
+                                        modifier = Modifier.clickable { showRoomInfoOnlyDialog = true }
+                                    ) {
                                     Row(
                                         modifier = Modifier.padding(start = 3.dp, top = 3.dp, bottom = 3.dp, end = 8.dp),
                                         verticalAlignment = Alignment.CenterVertically
@@ -7630,26 +8141,28 @@ fun AudioHangoutRoomDialog(
                                                 overflow = TextOverflow.Ellipsis
                                             )
                                         }
-                                        // Circular '+' Follow Icon Button right on Top-Left Host Header Pill
-                                        if (!isUserHost) {
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(24.dp)
-                                                    .clip(CircleShape)
-                                                    .background(
-                                                        if (isFollowingHost) {
-                                                            Brush.horizontalGradient(listOf(Color(0xFF15803D), Color(0xFF22C55E)))
-                                                        } else {
-                                                            Brush.horizontalGradient(listOf(Color(0xFF7C3AED), Color(0xFF2563EB)))
-                                                        }
-                                                    )
-                                                    .border(
-                                                        width = 1.dp,
-                                                        color = if (isFollowingHost) Color(0xFF86EFAC) else Color.White.copy(alpha = 0.75f),
-                                                        shape = CircleShape
-                                                    )
-                                                    .clickable {
+                                        // Circular '+' Follow Icon Button right on Top-Left Host Header Pill (Visible on EVERY Room)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Box(
+                                            modifier = Modifier
+                                                .size(24.dp)
+                                                .clip(CircleShape)
+                                                .background(
+                                                    if (isFollowingHost && !isUserHost) {
+                                                        Brush.horizontalGradient(listOf(Color(0xFF15803D), Color(0xFF22C55E)))
+                                                    } else {
+                                                        Brush.horizontalGradient(listOf(Color(0xFF7C3AED), Color(0xFF2563EB)))
+                                                    }
+                                                )
+                                                .border(
+                                                    width = 1.dp,
+                                                    color = if (isFollowingHost && !isUserHost) Color(0xFF86EFAC) else Color.White.copy(alpha = 0.75f),
+                                                    shape = CircleShape
+                                                )
+                                                .clickable {
+                                                    if (isUserHost) {
+                                                        Toast.makeText(context, "👑 Your Room • 👥 $hostFollowerCount Followers", Toast.LENGTH_SHORT).show()
+                                                    } else {
                                                         val newFollowing = !isFollowingHost
                                                         isFollowingHost = newFollowing
                                                         if (newFollowing) {
@@ -7678,27 +8191,34 @@ fun AudioHangoutRoomDialog(
                                                                 db.collection("users").document(currentUser.uid).update("followingCount", FieldValue.increment(-1))
                                                             }
                                                         }
-                                                    },
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                if (isFollowingHost) {
-                                                    Text(
-                                                        text = "✓",
-                                                        color = Color.White,
-                                                        fontSize = 12.sp,
-                                                        fontWeight = FontWeight.Black
-                                                    )
-                                                } else {
-                                                    Icon(
-                                                        imageVector = Icons.Default.Add,
-                                                        contentDescription = "Follow Room",
-                                                        tint = Color.White,
-                                                        modifier = Modifier.size(15.dp)
-                                                    )
-                                                }
+                                                    }
+                                                },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (isFollowingHost && !isUserHost) {
+                                                Text(
+                                                    text = "✓",
+                                                    color = Color.White,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Black
+                                                )
+                                            } else {
+                                                Icon(
+                                                    imageVector = Icons.Default.Add,
+                                                    contentDescription = "Follow Room",
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(15.dp)
+                                                )
                                             }
                                         }
                                     }
+                                    }
+                                    Spacer(modifier = Modifier.height(3.dp))
+                                    // Dynamic Auto-Evolving Room Level Badge right below Top-Left Room Header Box
+                                    DynamicRoomLevelBadge(
+                                        roomLevel = currentRoomLevel,
+                                        onClick = { showRoomInfoOnlyDialog = true }
+                                    )
                                 }
 
                                 Spacer(modifier = Modifier.width(6.dp))
@@ -8099,7 +8619,7 @@ fun AudioHangoutRoomDialog(
                     }
 
                     // ---------------------------------------------------------
-                    // 2.5 STAGE SECTION (15-MIC GALA, VIP ROYAL, OR 10-MIC STAGE)
+                    // 2.5 STAGE SECTION (15-MIC GALA, VIP ROYAL, OR 12-MIC STAGE)
                     // ---------------------------------------------------------
                     val is15MicRoom = room.category.equals("official_event", ignoreCase = true) ||
                         room.category.equals("mega_star_gala", ignoreCase = true) ||
@@ -8116,7 +8636,7 @@ fun AudioHangoutRoomDialog(
                                 else MicSeat(seatIndex = idx, label = "Mic $idx", uid = "", name = "", photo = "", role = "speaker")
                             }
                         } else micSeats
-                    } else (0 until (if (is15MicRoom) 17 else 10)).map { idx ->
+                    } else (0 until (if (is15MicRoom) 17 else 12)).map { idx ->
                         if (idx == 0) MicSeat(seatIndex = 0, label = "Host 👑", uid = targetHostId, name = hostName, photo = hostPhoto, role = "host")
                         else MicSeat(seatIndex = idx, label = if (is15MicRoom) "Mic $idx" else "Mic ${idx + 1}", uid = "", name = "", photo = "", role = "speaker")
                     }
@@ -8128,23 +8648,29 @@ fun AudioHangoutRoomDialog(
                             selectedOwnSeatForControl = seat
                         } else if (seat.uid.isEmpty()) {
                             // Vacant mic seat!
-                            if (seat.isLocked && !canStaffModerate) {
+                            if (canStaffModerate) {
+                                // Host/Admin/Staff (whether seated or not) -> ALWAYS open options: Take This Mic, Lock/Unlock This Mic, Invite
+                                selectedSeatForAdmin = seat
+                            } else if (seat.isLocked) {
                                 Toast.makeText(context, "This microphone is locked by the host 🔒", Toast.LENGTH_SHORT).show()
                             } else if (currentSeat != null) {
-                                // User (Host or Speaker) is ALREADY seated -> 1-TAP INSTANT MOVE TO THIS MIC!
-                                if (seat.isLocked && !canStaffModerate) {
-                                    Toast.makeText(context, "This microphone is locked by the host 🔒", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    joinMicSeat(db, room.id, seat.seatIndex, currentUser, micSeats)
-                                    Toast.makeText(context, "Moved to Mic ${seat.seatIndex + 1}! 🎙️", Toast.LENGTH_SHORT).show()
-                                }
-                            } else if (canStaffModerate) {
-                                // Host/Admin/Staff not yet seated -> open admin options (Take mic, lock, invite)
-                                selectedSeatForAdmin = seat
+                                // Regular speaker already seated -> 1-tap instant move to unlocked empty mic
+                                joinMicSeat(db, room.id, seat.seatIndex, currentUser, micSeats)
+                                Toast.makeText(context, "Moved to Mic ${seat.seatIndex + 1}! 🎙️", Toast.LENGTH_SHORT).show()
                             } else {
-                                // Audience member tapping empty mic -> take mic
+                                // Audience member tapping unlocked empty mic -> take mic
                                 val hasPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
                                 if (hasPerm) {
+                                    val newSeat = seat.copy(
+                                        uid = currentUser.uid,
+                                        name = currentUser.name,
+                                        photo = currentUser.photo,
+                                        isMuted = false,
+                                        isLocked = false,
+                                        role = "speaker"
+                                    )
+                                    val idx = micSeats.indexOfFirst { it.seatIndex == seat.seatIndex }
+                                    if (idx != -1) micSeats[idx] = newSeat else micSeats.add(newSeat)
                                     joinMicSeat(db, room.id, seat.seatIndex, currentUser, micSeats)
                                     Toast.makeText(context, "You are now live on Mic ${seat.seatIndex + 1}! 🎙️", Toast.LENGTH_SHORT).show()
                                 } else {
@@ -8213,6 +8739,8 @@ fun AudioHangoutRoomDialog(
                             isLocalTalking = isLocalTalking,
                             allProfiles = allProfiles,
                             activeEmojiReactions = activeEmojiReactions,
+                            userActiveFrame = activeUserFrame,
+                            userActiveMicEffect = userActiveMicEffect,
                             onSeatClick = handleSeatClick
                         )
                         Spacer(modifier = Modifier.height(4.dp))
@@ -8484,9 +9012,9 @@ fun AudioHangoutRoomDialog(
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .padding(vertical = 2.dp),
+                                                .padding(start = 2.dp, end = 60.dp, top = 2.dp, bottom = 2.dp),
                                             verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            horizontalArrangement = Arrangement.spacedBy(5.dp)
                                         ) {
                                             VipRoomChatBarEntry(
                                                 userName = comment.userName,
@@ -8495,7 +9023,9 @@ fun AudioHangoutRoomDialog(
                                                 isFounder = isCommentFounder,
                                                 actionText = comment.message,
                                                 badges = entranceBadges,
-                                                modifier = Modifier.weight(1f)
+                                                modifier = Modifier
+                                                    .weight(1f, fill = false)
+                                                    .widthIn(max = 225.dp)
                                             )
                                             if (isOtherUserEntry) {
                                                 WelcomeWaveActionButton(
@@ -8524,6 +9054,22 @@ fun AudioHangoutRoomDialog(
                                                             Toast.makeText(context, "All mic seats are currently full or locked.", Toast.LENGTH_SHORT).show()
                                                         } else {
                                                             if (entryKey !in micInvitedEntryIds) micInvitedEntryIds.add(entryKey)
+                                                            val invitedSeat = MicSeat(
+                                                                seatIndex = openSeat,
+                                                                label = "Mic ${openSeat + 1}",
+                                                                uid = comment.userId,
+                                                                name = comment.userName,
+                                                                photo = comment.userPhoto.ifEmpty { commenterProfile?.photo ?: "" },
+                                                                isMuted = false,
+                                                                isLocked = false,
+                                                                isTalking = false,
+                                                                role = "speaker"
+                                                            )
+                                                            val idx = micSeats.indexOfFirst { it.seatIndex == openSeat }
+                                                            if (idx != -1) micSeats[idx] = invitedSeat else micSeats.add(invitedSeat)
+                                                            db.collection("rooms").document(room.id)
+                                                                .collection("mic_seats").document(openSeat.toString())
+                                                                .set(invitedSeat)
                                                             WatchPartyCinemaEngine.sendMicInvitation(
                                                                 db = db,
                                                                 roomId = room.id,
@@ -8532,7 +9078,7 @@ fun AudioHangoutRoomDialog(
                                                                 targetUserName = comment.userName,
                                                                 targetSeatIndex = openSeat
                                                             )
-                                                            Toast.makeText(context, "🎙️ Mic #${openSeat + 1} invitation sent to ${comment.userName}!", Toast.LENGTH_SHORT).show()
+                                                            Toast.makeText(context, "🎙️ Placed ${comment.userName} on Mic #${openSeat + 1}!", Toast.LENGTH_SHORT).show()
                                                         }
                                                     }
                                                 )
@@ -8724,14 +9270,16 @@ fun AudioHangoutRoomDialog(
 
                 // -------------------------------------------------------------
                 // IN-ROOM DRAGGABLE FLOATING PIP MUSIC EQUALIZER PLAYER
+                // (Strictly hidden in YouTube Cinema Watch Party Room!)
                 // -------------------------------------------------------------
+                val isYouTubeCinemaRoomActive = WatchPartyCinemaEngine.isCinemaWatchPartyActive(room)
                 val isMusicPlayingFloating = AudioPlayerManager.isPlayingState.value || room.isPlaying
                 val floatingTrackUrl = AudioPlayerManager.currentTrackUrlState.value.ifEmpty { room.nowPlayingUrl }
                 val floatingTrackTitle = AudioPlayerManager.currentTrackTitleState.value.ifEmpty { room.nowPlayingTitle }
                 val floatingTrackArtist = room.nowPlayingArtist
                 val floatingArtwork = AudioPlayerManager.currentTrackArtworkUrlState.value.ifEmpty { room.nowPlayingArtworkUrl }
 
-                if (isVipRoom && (isMusicPlayingFloating || floatingTrackUrl.isNotBlank())) {
+                if (!isYouTubeCinemaRoomActive && isVipRoom && (isMusicPlayingFloating || floatingTrackUrl.isNotBlank())) {
                     FloatingMusicEqualizerPlayer(
                         room = room,
                         isPlaying = isMusicPlayingFloating,
@@ -8813,8 +9361,8 @@ fun AudioHangoutRoomDialog(
                     )
                 }
 
-                // Non-VIP Rooms Floating Draggable PIP Music Player (Movable anywhere on screen)
-                if (!isVipRoom) {
+                // Non-VIP Rooms Floating Draggable PIP Music Player (Movable anywhere on screen — Hidden in YouTube Cinema Room)
+                if (!isVipRoom && !isYouTubeCinemaRoomActive) {
                     val currentArtwork = room.nowPlayingArtworkUrl.ifEmpty { AudioPlayerManager.currentTrackArtworkUrlState.value }
                     val isPlayingNow = AudioPlayerManager.isPlayingState.value
                     val isBuffering by AudioPlayerManager.isBufferingState
@@ -9071,54 +9619,126 @@ fun AudioHangoutRoomDialog(
                     }
                 }
 
-                // RIGHT-SIDE FLOATING 3-BUTTON STACK (Store Bag, 3D Game Club, Gift Box) — Well-spaced above bottom bar
+                // RIGHT-SIDE FLOATING 4-BUTTON STACK (YouTube Player, Store Bag, 3D Game Club, Gift Box) — Scrollable & Collapsible Up/Down via Arrow Toggle
                 if (activeInRoomGame == null) {
+                    var isRightActionDockCollapsed by remember { mutableStateOf(false) }
+                    val rightDockScrollState = rememberScrollState()
+
                     Column(
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
                             .padding(end = 10.dp, bottom = 12.dp)
                             .zIndex(25f),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        // 1. LUXURY STORE / BAG BUTTON
-                        Box(
-                            modifier = Modifier
-                                .size(42.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFF7E22CE).copy(alpha = 0.88f))
-                                .border(1.2.dp, BrandGold, CircleShape)
-                                .clickable { showLuxuryStoreDialog = true },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("🛍️", fontSize = 18.sp)
+                        if (!isRightActionDockCollapsed) {
+                            // Top Down-Arrow Pill: Tap to slide/collapse the 4 buttons downwards out of sight
+                            Surface(
+                                shape = CircleShape,
+                                color = Color(0xD9111827),
+                                border = BorderStroke(1.dp, Color(0x9994A3B8)),
+                                shadowElevation = 4.dp,
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .clickable { isRightActionDockCollapsed = true }
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.KeyboardArrowDown,
+                                        contentDescription = "Hide Action Buttons",
+                                        tint = Color(0xFFE2E8F0),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
                         }
 
-                        // 2. IN-ROOM 3D GAME CLUB LAUNCHER BUTTON
-                        Animated3DGameLauncherButton(
-                            onClick = { showInRoomGameLauncher = true }
-                        )
-
-                        // 3. GIFT STORE BUTTON
-                        Box(
-                            modifier = Modifier
-                                .size(42.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    Brush.sweepGradient(
-                                        listOf(
-                                            Color(0xFFFF1744),
-                                            Color(0xFFFFB300),
-                                            Color(0xFFFF4081),
-                                            Color(0xFFFF1744)
-                                        )
-                                    )
-                                )
-                                .border(1.2.dp, BrandGold, CircleShape)
-                                .clickable { showGiftStoreDialog = true },
-                            contentAlignment = Alignment.Center
+                        AnimatedVisibility(
+                            visible = !isRightActionDockCollapsed,
+                            enter = slideInVertically(initialOffsetY = { it }) + expandVertically(expandFrom = Alignment.Bottom) + fadeIn(),
+                            exit = slideOutVertically(targetOffsetY = { it }) + shrinkVertically(shrinkTowards = Alignment.Bottom) + fadeOut()
                         ) {
-                            Text("🎁", fontSize = 19.sp)
+                            Column(
+                                modifier = Modifier
+                                    .heightIn(max = 228.dp)
+                                    .verticalScroll(rightDockScrollState),
+                                verticalArrangement = Arrangement.spacedBy(9.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                // 0. FLOATING 4-SQUARE ANIMATED ROOM CONVERSION HUB BUTTON (Replaces separate YouTube button)
+                                val isYouTubeRoomActive = WatchPartyCinemaEngine.isCinemaWatchPartyActive(room)
+                                FloatingFourSquareRoomHubButton(
+                                    isCinemaActive = isYouTubeRoomActive,
+                                    isFamilyRoomActive = room.isFamilyRoom,
+                                    isVideoRoomActive = room.isVideoRoom,
+                                    onClick = {
+                                        showRoomConversionHubDialog = true
+                                    }
+                                )
+
+                                // 1. LUXURY STORE / BAG BUTTON
+                                Box(
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF7E22CE).copy(alpha = 0.88f))
+                                        .border(1.2.dp, BrandGold, CircleShape)
+                                        .clickable { showLuxuryStoreDialog = true },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("🛍️", fontSize = 18.sp)
+                                }
+
+                                // 2. IN-ROOM 3D GAME CLUB LAUNCHER BUTTON
+                                Animated3DGameLauncherButton(
+                                    onClick = { showInRoomGameLauncher = true }
+                                )
+
+                                // 3. GIFT STORE BUTTON
+                                Box(
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            Brush.sweepGradient(
+                                                listOf(
+                                                    Color(0xFFFF1744),
+                                                    Color(0xFFFFB300),
+                                                    Color(0xFFFF4081),
+                                                    Color(0xFFFF1744)
+                                                )
+                                            )
+                                        )
+                                        .border(1.2.dp, BrandGold, CircleShape)
+                                        .clickable { showGiftStoreDialog = true },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("🎁", fontSize = 19.sp)
+                                }
+                            }
+                        }
+
+                        if (isRightActionDockCollapsed) {
+                            // Bottom Up-Arrow Pill: Displayed when dock is hidden downwards; tap to pop all 4 buttons back up!
+                            Surface(
+                                shape = CircleShape,
+                                color = Color(0xE6111827),
+                                border = BorderStroke(1.2.dp, BrandGold.copy(alpha = 0.8f)),
+                                shadowElevation = 6.dp,
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clickable { isRightActionDockCollapsed = false }
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.KeyboardArrowUp,
+                                        contentDescription = "Show Action Buttons",
+                                        tint = BrandGold,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -9371,7 +9991,131 @@ fun AudioHangoutRoomDialog(
                 onConvertToVideo = {
                     com.devil.livetogather.agora.AgoraVoiceManager.leaveRoom()
                     onConvertToVideo?.invoke(it)
+                },
+                onOpenFamilyInviteDialog = {
+                    showFamilyInviteDialog = true
+                },
+                onUpdateRoom = { updatedRoom ->
+                    room = updatedRoom
                 }
+            )
+        }
+
+        // 4-WP0. Compact 2x2 Square Room Conversion Hub Dialog (4-Square Animated Icon Menu)
+        if (showRoomConversionHubDialog) {
+            val canModRoom = isUserHost || isUserAdmin || WatchPartyCinemaEngine.isUnrestrictedFounderOrCeo(currentUser)
+            val isCinemaAct = WatchPartyCinemaEngine.isCinemaWatchPartyActive(room)
+            val canUnlockYt = WatchPartyCinemaEngine.canUnlockCinemaWatchParty(currentUser, currentRoomLevel)
+            RoomConversionHubDialog(
+                room = room,
+                currentUser = currentUser,
+                currentRoomLevel = currentRoomLevel,
+                canModerateRoom = canModRoom,
+                isCinemaActive = isCinemaAct,
+                onSwitchToStandardAudio = {
+                    val updaterName = currentUser.name.ifBlank { "Host" }
+                    val fallbackBanner = getCategoryBanner(room.category).ifBlank {
+                        "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?auto=format&fit=crop&w=1080&q=80"
+                    }
+                    room = room.copy(
+                        isWatchPartyActive = false,
+                        isFamilyRoom = false,
+                        privacy = if (room.category == "vip_room") "vip_only" else "public",
+                        banner_image_url = fallbackBanner,
+                        eventThemeStyle = "",
+                        watchPartyUpdatedBy = updaterName
+                    )
+                    WatchPartyCinemaEngine.updateRoomWatchPartyState(
+                        db = db,
+                        room = room,
+                        isActive = false,
+                        updatedBy = updaterName
+                    )
+                    if (room.isFamilyRoom) {
+                        WatchPartyCinemaEngine.updateFamilyRoomState(
+                            db = db,
+                            room = room,
+                            isFamilyActive = false
+                        )
+                    }
+                    Toast.makeText(context, "🎙️ Switched to Standard 12-Mic Audio Room!", Toast.LENGTH_SHORT).show()
+                },
+                onSwitchToYouTubeCinema = {
+                    if (!isCinemaAct && !canUnlockYt) {
+                        showYouTubeLevelLockedDialog = true
+                    } else {
+                        val updaterName = currentUser.name.ifBlank { "Host" }
+                        AudioPlayerManager.pause()
+                        room = room.copy(
+                            isWatchPartyActive = true,
+                            isPlaying = false,
+                            banner_image_url = WatchPartyCinemaEngine.CINEMA_THEME_ID,
+                            eventThemeStyle = WatchPartyCinemaEngine.CINEMA_THEME_ID,
+                            watchPartyUpdatedBy = updaterName
+                        )
+                        WatchPartyCinemaEngine.updateRoomWatchPartyState(
+                            db = db,
+                            room = room,
+                            isActive = true,
+                            updatedBy = updaterName
+                        )
+                        Toast.makeText(context, "🎬 Switched to YouTube Cinema Watch Party Room!", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onToggleFamilyRoom = { enableFamily ->
+                    WatchPartyCinemaEngine.updateFamilyRoomState(
+                        db = db,
+                        room = room,
+                        isFamilyActive = enableFamily,
+                        familyMemberIds = room.familyMemberIds
+                    )
+                    room = room.copy(
+                        isFamilyRoom = enableFamily,
+                        privacy = if (enableFamily) "family_only" else (if (room.category == "vip_room") "vip_only" else "public")
+                    )
+                    Toast.makeText(
+                        context,
+                        if (enableFamily) "👨‍👩‍👧‍👦 Family Room Activated (Invite-Only)!" else "🌐 Family Room turned OFF • Open to everyone",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                },
+                onOpenFamilyInviteDialog = {
+                    showFamilyInviteDialog = true
+                },
+                onSwitchToVideoStream = {
+                    val finalTitle = room.title.ifBlank { "${room.hostName}'s Video Stream" }
+                    val updates = mapOf<String, Any>(
+                        "roomType" to "video",
+                        "isVideoRoom" to true,
+                        "title" to finalTitle
+                    )
+                    db.collection("rooms").document(room.id).update(updates)
+                    if (room.category.isNotBlank()) {
+                        db.collection("intent_categories").document(room.category)
+                            .collection("rooms").document(room.id).update(updates)
+                    }
+                    AudioPlayerManager.pause()
+                    com.devil.livetogather.agora.AgoraVoiceManager.leaveRoom()
+                    Toast.makeText(context, "📹 Switching to Live Video Stream...", Toast.LENGTH_SHORT).show()
+                    onConvertToVideo?.invoke(room.copy(roomType = "video", title = finalTitle))
+                },
+                onDismiss = { showRoomConversionHubDialog = false }
+            )
+        }
+
+        // 4-WP0B. Family Room Member Invite & Access Control Dialog (Room Level 10+)
+        if (showFamilyInviteDialog) {
+            FamilyRoomMembersInviteDialog(
+                room = room,
+                currentUser = currentUser,
+                currentRoomLevel = currentRoomLevel,
+                activeMembers = activeMembers,
+                allProfiles = allProfiles,
+                db = db,
+                onUpdateRoom = { updatedRoom ->
+                    room = updatedRoom
+                },
+                onDismiss = { showFamilyInviteDialog = false }
             )
         }
 
@@ -9400,6 +10144,38 @@ fun AudioHangoutRoomDialog(
                     Toast.makeText(context, "🎬 Now Playing: $vidTitle", Toast.LENGTH_SHORT).show()
                 },
                 onDismiss = { showYouTubePickerDialog = false }
+            )
+        }
+
+        // 4-WP2. Room-ONLY Information Dialog (Opened from Top-Left Room Header Box — Zero Host Personal Profile)
+        if (showRoomInfoOnlyDialog) {
+            RoomInfoOnlyDialog(
+                room = room,
+                displayRoomId = displayRoomId,
+                roomPhotoUrl = room.hostPhotoUrl.ifBlank { hostPhoto },
+                currentRoomLevel = currentRoomLevel,
+                hostFollowerCount = hostFollowerCount,
+                targetHostId = targetHostId,
+                canEditRoom = isUserHost || isUserAdmin || WatchPartyCinemaEngine.isUnrestrictedFounderOrCeo(currentUser),
+                db = db,
+                onOpenEditRoomSettings = { showRoomSettingsDialog = true },
+                onDismiss = { showRoomInfoOnlyDialog = false },
+                currentUser = currentUser.copy(
+                    ownedFrames = userOwnedFrames,
+                    ownedMicEffects = userOwnedMicEffects
+                ),
+                onPickRoomPhoto = { roomIconPickerLauncher.launch("image/*") },
+                onOpenRoomBonus = { showRoomTaskDialog = true },
+                onOpenRoomGames = { showInRoomGameLauncher = true },
+                onRoomUpdated = { updatedRoom -> room = updatedRoom }
+            )
+        }
+
+        // 4-WP3. YouTube Player Minimum Room Level 5 Lock Popup
+        if (showYouTubeLevelLockedDialog) {
+            YouTubeLevelRequiredDialog(
+                currentRoomLevel = currentRoomLevel,
+                onDismiss = { showYouTubeLevelLockedDialog = false }
             )
         }
 
@@ -9434,6 +10210,16 @@ fun AudioHangoutRoomDialog(
                         Manifest.permission.RECORD_AUDIO
                     ) == PackageManager.PERMISSION_GRANTED
                     if (hasAudioPerm) {
+                        val updatedSeat = targetSeatObj.copy(
+                            uid = currentUser.uid,
+                            name = currentUser.name,
+                            photo = currentUser.photo,
+                            isMuted = false,
+                            isLocked = false,
+                            role = "speaker"
+                        )
+                        val idx = micSeats.indexOfFirst { it.seatIndex == targetIdx }
+                        if (idx != -1) micSeats[idx] = updatedSeat else micSeats.add(updatedSeat)
                         joinMicSeat(db, room.id, targetSeatObj.seatIndex, currentUser, micSeats)
                         Toast.makeText(context, "🎙️ Joined Mic #${targetSeatObj.seatIndex + 1}!", Toast.LENGTH_SHORT).show()
                     } else {
@@ -9595,26 +10381,77 @@ fun AudioHangoutRoomDialog(
                 isTargetFounder = isTargetFounder,
                 onDismiss = { selectedSeatForAdmin = null },
                 onToggleMute = {
-                    if (isTargetImmune && !isCurrentFounder) {
+                    if (seat.uid.isNotBlank() && isTargetImmune && !isCurrentFounder) {
                         val immuneTitle = if (isTargetFounder) "LiveTogather Founder 👑" else "VIP $targetVip Member 🛡️"
                         Toast.makeText(context, "🛡️ $immuneTitle cannot be muted! Sovereign Immunity active.", Toast.LENGTH_SHORT).show()
                     } else {
+                        val nextMuted = !seat.isMuted
+                        val idx = micSeats.indexOfFirst { it.seatIndex == seat.seatIndex }
+                        if (idx != -1) {
+                            micSeats[idx] = micSeats[idx].copy(isMuted = nextMuted)
+                        } else {
+                            micSeats.add(seat.copy(isMuted = nextMuted))
+                        }
                         toggleMuteMicSeat(db, room.id, seat.seatIndex, seat.isMuted)
+                        Toast.makeText(
+                            context,
+                            if (nextMuted) "Mic ${seat.seatIndex + 1} Muted 🔇" else "Mic ${seat.seatIndex + 1} Unmuted 🎙️",
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
                     selectedSeatForAdmin = null
                 },
                 onToggleLock = {
+                    val nextLocked = !seat.isLocked
+                    val idx = micSeats.indexOfFirst { it.seatIndex == seat.seatIndex }
+                    if (idx != -1) {
+                        micSeats[idx] = micSeats[idx].copy(isLocked = nextLocked)
+                    } else {
+                        micSeats.add(seat.copy(isLocked = nextLocked))
+                    }
                     toggleLockMicSeat(db, room.id, seat.seatIndex, seat.isLocked)
                     val lockMsg = if (seat.isLocked) "Mic ${seat.seatIndex + 1} unlocked 🔓" else "Mic ${seat.seatIndex + 1} locked 🔒"
                     Toast.makeText(context, lockMsg, Toast.LENGTH_SHORT).show()
                     selectedSeatForAdmin = null
                 },
                 onMoveSpeakerToSeat = { targetSeatIndex ->
+                    val destSeat = MicSeat(
+                        seatIndex = targetSeatIndex,
+                        label = if (targetSeatIndex == 0) "Host 👑" else "Mic ${targetSeatIndex + 1}",
+                        uid = seat.uid,
+                        name = seat.name,
+                        photo = seat.photo,
+                        isMuted = seat.isMuted,
+                        isLocked = false,
+                        isTalking = false,
+                        role = if (targetSeatIndex == 0 || seat.role == "host") "host" else "speaker"
+                    )
+                    val srcEmpty = seat.copy(uid = "", name = "", photo = "", isMuted = false, isTalking = false)
+                    val sIdx = micSeats.indexOfFirst { it.seatIndex == seat.seatIndex }
+                    if (sIdx != -1) micSeats[sIdx] = srcEmpty
+                    val dIdx = micSeats.indexOfFirst { it.seatIndex == targetSeatIndex }
+                    if (dIdx != -1) micSeats[dIdx] = destSeat else micSeats.add(destSeat)
                     relocateSpeakerSeat(db, room.id, seat, targetSeatIndex)
                     Toast.makeText(context, "Moved ${seat.name.ifBlank { "Speaker" }} to Mic ${targetSeatIndex + 1}! 🎙️", Toast.LENGTH_SHORT).show()
                     selectedSeatForAdmin = null
                 },
                 onTakeMic = {
+                    val myTakenSeat = seat.copy(
+                        uid = currentUser.uid,
+                        name = currentUser.name,
+                        photo = currentUser.photo,
+                        isMuted = false,
+                        isLocked = false,
+                        isTalking = false,
+                        role = if (seat.seatIndex == 0 || isUserHost) "host" else "speaker"
+                    )
+                    micSeats.forEachIndexed { i, prev ->
+                        if (prev.uid == currentUser.uid && prev.seatIndex != seat.seatIndex) {
+                            micSeats[i] = prev.copy(uid = "", name = "", photo = "", isMuted = false, isTalking = false)
+                        }
+                    }
+                    val idx = micSeats.indexOfFirst { it.seatIndex == seat.seatIndex }
+                    if (idx != -1) micSeats[idx] = myTakenSeat else micSeats.add(myTakenSeat)
                     joinMicSeat(db, room.id, seat.seatIndex, currentUser, micSeats)
                     Toast.makeText(context, "You are now on Mic ${seat.seatIndex + 1}! 🎙️", Toast.LENGTH_SHORT).show()
                     selectedSeatForAdmin = null
@@ -9624,6 +10461,10 @@ fun AudioHangoutRoomDialog(
                         val immuneTitle = if (isTargetFounder) "LiveTogather Founder 👑" else "VIP $targetVip Member 🛡️"
                         Toast.makeText(context, "🛡️ $immuneTitle has Sovereign Immunity. Cannot remove from mic!", Toast.LENGTH_SHORT).show()
                     } else {
+                        val idx = micSeats.indexOfFirst { it.seatIndex == seat.seatIndex }
+                        if (idx != -1) {
+                            micSeats[idx] = micSeats[idx].copy(uid = "", name = "", photo = "", isMuted = false, isTalking = false)
+                        }
                         vacateMicSeat(db, room.id, seat.seatIndex, seat.isLocked)
                         Toast.makeText(context, "Removed ${seat.name} from stage", Toast.LENGTH_SHORT).show()
                     }
@@ -9679,20 +10520,29 @@ fun AudioHangoutRoomDialog(
                 availableAudience = displayAudience.filter { aud -> micSeats.none { it.uid == aud.uid } },
                 onDismiss = { showInviteListenersDialog = null },
                 onSelectMember = { member ->
+                    val invitedSeat = MicSeat(
+                        seatIndex = seat.seatIndex,
+                        label = if (seat.seatIndex == 0) "Host 👑" else "Mic ${seat.seatIndex + 1}",
+                        uid = member.uid,
+                        name = member.name,
+                        photo = member.photoUrl,
+                        isMuted = false,
+                        isLocked = false,
+                        isTalking = false,
+                        role = "speaker"
+                    )
+                    val idx = micSeats.indexOfFirst { it.seatIndex == seat.seatIndex }
+                    if (idx != -1) micSeats[idx] = invitedSeat else micSeats.add(invitedSeat)
                     db.collection("rooms").document(room.id).collection("mic_seats").document(seat.seatIndex.toString())
-                        .set(
-                            MicSeat(
-                                seatIndex = seat.seatIndex,
-                                label = if (seat.seatIndex == 0) "Host 👑" else "Mic ${seat.seatIndex + 1}",
-                                uid = member.uid,
-                                name = member.name,
-                                photo = member.photoUrl,
-                                isMuted = false,
-                                isLocked = false,
-                                isTalking = false,
-                                role = "speaker"
-                            )
-                        )
+                        .set(invitedSeat)
+                    WatchPartyCinemaEngine.sendMicInvitation(
+                        db = db,
+                        roomId = room.id,
+                        inviter = currentUser,
+                        targetUserId = member.uid,
+                        targetUserName = member.name,
+                        targetSeatIndex = seat.seatIndex
+                    )
                     Toast.makeText(context, "Invited ${member.name} to Mic ${seat.seatIndex + 1}! 🎙️", Toast.LENGTH_SHORT).show()
                     showInviteListenersDialog = null
                 }
@@ -10063,7 +10913,13 @@ fun AudioHangoutRoomDialog(
                 onDismiss = { showInRoomGameLauncher = false },
                 onGameSelected = { gameType ->
                     showInRoomGameLauncher = false
-                    launchInRoomGame(
+                    RoomLevelUpEngine.addRoomActivityXp(
+                        db = db,
+                        roomId = room.id,
+                        category = room.category,
+                        xpDelta = 50L
+                    )
+                    activeInRoomGame = launchInRoomGame(
                         roomId = room.id,
                         gameType = gameType,
                         currentUser = currentUser,
@@ -10073,7 +10929,13 @@ fun AudioHangoutRoomDialog(
                 },
                 onCarromSelected = { maxPlayers, betDiamonds ->
                     showInRoomGameLauncher = false
-                    launchInRoomGame(
+                    RoomLevelUpEngine.addRoomActivityXp(
+                        db = db,
+                        roomId = room.id,
+                        category = room.category,
+                        xpDelta = (betDiamonds.toLong().coerceAtLeast(10L) * 2L)
+                    )
+                    activeInRoomGame = launchInRoomGame(
                         roomId = room.id,
                         gameType = "carrom",
                         currentUser = currentUser,
@@ -10275,8 +11137,14 @@ fun AudioHangoutRoomDialog(
                                         Toast.makeText(context, "Gift sent, but intimacy request failed.", Toast.LENGTH_LONG).show()
                                     }
                             }
-                            // Real-Time Event Gifting Leaderboard Sync (Part 4 - 100% Firestore)
+                            // Real-Time Event Gifting Leaderboard Sync (Part 4 - 100% Firestore) + Official Room Personal Level XP
                             if (currentUser.uid.isNotBlank() && giftItem.cost > 0L) {
+                                RoomLevelUpEngine.addRoomActivityXp(
+                                    db = db,
+                                    roomId = room.id,
+                                    category = room.category,
+                                    xpDelta = giftItem.cost
+                                )
                                 db.collection("rooms").document(room.id)
                                     .collection("event_leaderboard").document(currentUser.uid)
                                     .set(
@@ -10355,8 +11223,14 @@ fun AudioHangoutRoomDialog(
                                     targetUserName = targetUserName
                                 )
                             }
-                            // Real-Time Event Gifting Leaderboard Sync (Part 4 - 100% Firestore)
+                            // Real-Time Event Gifting Leaderboard Sync (Part 4 - 100% Firestore) + Official Room Personal Level XP
                             if (currentUser.uid.isNotBlank() && giftItem.cost > 0L) {
+                                RoomLevelUpEngine.addRoomActivityXp(
+                                    db = db,
+                                    roomId = room.id,
+                                    category = room.category,
+                                    xpDelta = giftItem.cost
+                                )
                                 db.collection("rooms").document(room.id)
                                     .collection("event_leaderboard").document(currentUser.uid)
                                     .set(
@@ -12014,6 +12888,7 @@ fun toggleMuteMicSeat(
     db.collection("rooms").document(roomId).collection("mic_seats").document(seatIndex.toString())
         .set(
             mapOf(
+                "seatIndex" to seatIndex,
                 "isMuted" to newMute,
                 "muted" to newMute
             ),
@@ -12031,6 +12906,7 @@ fun toggleLockMicSeat(
     db.collection("rooms").document(roomId).collection("mic_seats").document(seatIndex.toString())
         .set(
             mapOf(
+                "seatIndex" to seatIndex,
                 "isLocked" to newLock,
                 "locked" to newLock
             ),
@@ -12723,15 +13599,32 @@ fun MicSeatView(
                     modifier = Modifier
                         .size(38.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFF2C1014).copy(alpha = 0.65f))
-                        .border(1.dp, Color(0xFFFF5252).copy(alpha = 0.35f), CircleShape),
+                        .background(Color(0xFF450A0A).copy(alpha = 0.85f))
+                        .border(1.3.dp, Color(0xFFFF5252), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         Icons.Default.Lock,
                         contentDescription = "Locked",
-                        tint = Color(0xFFFF8A80),
-                        modifier = Modifier.size(16.dp)
+                        tint = Color(0xFFFFD700),
+                        modifier = Modifier.size(17.dp)
+                    )
+                }
+            } else if (seat.isMuted) {
+                // Muted Empty Seat (Red circle with Red/White Crossed-Out MicOff icon)
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFB71C1C).copy(alpha = 0.85f))
+                        .border(1.3.dp, Color(0xFFFF5252), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.MicOff,
+                        contentDescription = "Muted Mic",
+                        tint = Color.White,
+                        modifier = Modifier.size(17.dp)
                     )
                 }
             } else {
@@ -13016,6 +13909,47 @@ fun IntimacyGiftingAcceptanceDialog(
 }
 
 @Composable
+private fun ProfessionalMicOptionRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    isDestructive: Boolean = false,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = if (isDestructive) Color(0xFFF87171) else Color(0xFF94A3B8),
+                modifier = Modifier.size(18.dp)
+            )
+            Text(
+                text = label,
+                color = if (isDestructive) Color(0xFFF87171) else Color(0xFFF8FAFC),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+        Icon(
+            imageVector = Icons.Default.ChevronRight,
+            contentDescription = null,
+            tint = Color(0xFF475569),
+            modifier = Modifier.size(16.dp)
+        )
+    }
+}
+
+@Composable
 fun HostSeatAdminDialog(
     seat: MicSeat,
     allSeats: List<MicSeat> = emptyList(),
@@ -13037,166 +13971,141 @@ fun HostSeatAdminDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(dismissOnBackPress = true, dismissOnClickOutside = true)
     ) {
-        Card(
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF161214)),
-            shape = RoundedCornerShape(20.dp),
-            border = BorderStroke(1.dp, BrandBorder),
-            modifier = Modifier.fillMaxWidth().padding(16.dp)
+        Surface(
+            color = Color(0xFF141821),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, Color(0xFF262D3D)),
+            shadowElevation = 12.dp,
+            modifier = Modifier
+                .fillMaxWidth(0.88f)
+                .padding(vertical = 8.dp)
         ) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(18.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                // Header
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "🎙️ Mic ${seat.seatIndex + 1} Admin Controls",
-                        color = BrandGold,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Primary Quick Lock / Unlock Action (Only for guest seats 1..9, seat 0 is host seat)
-                if (seat.seatIndex != 0) {
-                    Button(
-                        onClick = onToggleLock,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (seat.isLocked) Color(0xFF1B5E20) else Color(0xFFB71C1C)
-                        ),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth().height(42.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (seat.isLocked) Icons.Default.LockOpen else Icons.Default.Lock,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
+                    Column {
                         Text(
-                            text = if (seat.isLocked) "🔓 Unlock Mic (Allow Anyone)" else "🔒 Lock Mic (Prevent Users)",
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
+                            text = if (seat.seatIndex == 0) "Host Mic" else "Mic ${seat.seatIndex + 1}",
+                            color = Color(0xFFF8FAFC),
+                            fontSize = 14.5.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = when {
+                                seat.uid.isNotEmpty() -> "${seat.name.ifBlank { "Speaker" }} • ${if (seat.isMuted) "Muted" else "Live"}"
+                                seat.isLocked -> "Locked Seat"
+                                seat.isMuted -> "Empty • Muted"
+                                else -> "Empty Seat"
+                            },
+                            color = Color(0xFF94A3B8),
+                            fontSize = 11.sp
                         )
                     }
-                    Spacer(modifier = Modifier.height(10.dp))
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(26.dp)) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = Color(0xFF94A3B8),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
+
+                HorizontalDivider(color = Color(0xFF222836), thickness = 0.8.dp)
 
                 if (seat.uid.isNotEmpty()) {
+                    // Compact Occupant Summary Bar
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(Color.White.copy(alpha = 0.05f))
-                            .padding(10.dp)
+                            .background(Color(0xFF1A1F2B))
+                            .padding(horizontal = 16.dp, vertical = 10.dp)
                     ) {
                         AsyncImage(
                             model = seat.photo.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
                             contentDescription = seat.name,
-                            modifier = Modifier.size(44.dp).clip(CircleShape),
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .border(1.dp, Color(0xFF334155), CircleShape),
                             contentScale = ContentScale.Crop
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = seat.name,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp
+                                text = seat.name.ifBlank { "Speaker" },
+                                color = Color(0xFFF8FAFC),
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp,
+                                maxLines = 1
                             )
                             Text(
-                                text = if (seat.seatIndex == 0) "Room Host 👑" else "Speaker (Mic ${seat.seatIndex + 1})",
-                                color = if (seat.seatIndex == 0) BrandGold else BrandCoral,
+                                text = if (seat.isMuted) "Microphone Muted" else "Microphone Active",
+                                color = if (seat.isMuted) Color(0xFFF87171) else Color(0xFF94A3B8),
                                 fontSize = 11.sp
                             )
-                            Text(
-                                text = if (seat.isMuted) "Status: Muted 🔇" else "Status: Live 🎙️",
-                                color = if (seat.isMuted) Color.Red else BrandGreen,
-                                fontSize = 10.sp
-                            )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    HorizontalDivider(color = Color(0xFF222836), thickness = 0.8.dp)
 
-                    // Mute / Unmute Button
-                    Button(
-                        onClick = onToggleMute,
-                        colors = ButtonDefaults.buttonColors(containerColor = if (seat.isMuted) BrandGreen else Color(0xFF424242)),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth().height(40.dp)
-                    ) {
-                        Text(
-                            text = if (seat.isMuted) "🎙️ Unmute Speaker" else "🔇 Mute Speaker",
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                    // 1. Mute / Unmute Speaker
+                    ProfessionalMicOptionRow(
+                        icon = if (seat.isMuted) Icons.Default.Mic else Icons.Default.MicOff,
+                        label = if (seat.isMuted) "Unmute Microphone" else "Mute Microphone",
+                        onClick = onToggleMute
+                    )
+                    HorizontalDivider(color = Color(0xFF222836), thickness = 0.6.dp)
 
-                    // Move Speaker to Another Mic (Host & Admin can change any speaker's mic position)
+                    // 2. Lock / Unlock Seat
+                    ProfessionalMicOptionRow(
+                        icon = if (seat.isLocked) Icons.Default.LockOpen else Icons.Default.Lock,
+                        label = if (seat.isLocked) "Unlock This Mic" else "Lock This Mic",
+                        onClick = onToggleLock
+                    )
+
+                    // 3. Move Speaker Position
                     val availableEmptySeats = allSeats.filter { it.seatIndex != seat.seatIndex && it.uid.isEmpty() && !it.isLocked }
                     if (onMoveSpeakerToSeat != null && availableEmptySeats.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(8.dp))
                         var isMovePickerOpen by remember { mutableStateOf(false) }
-
-                        Button(
-                            onClick = { isMovePickerOpen = !isMovePickerOpen },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6A1B9A)),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth().height(38.dp)
-                        ) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = if (isMovePickerOpen) "▲ Cancel Mic Move" else "🔄 Move to Another Mic",
-                                color = Color.White,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                        HorizontalDivider(color = Color(0xFF222836), thickness = 0.6.dp)
+                        ProfessionalMicOptionRow(
+                            icon = Icons.Default.Refresh,
+                            label = if (isMovePickerOpen) "Cancel Position Change" else "Change Mic Position",
+                            onClick = { isMovePickerOpen = !isMovePickerOpen }
+                        )
 
                         if (isMovePickerOpen) {
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = "Select Destination Mic for ${seat.name.ifBlank { "Speaker" }}:",
-                                color = BrandGold,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    .background(Color(0xFF1A1F2B))
+                                    .horizontalScroll(rememberScrollState())
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 availableEmptySeats.forEach { emptySeat ->
-                                    Button(
-                                        onClick = {
-                                            onMoveSpeakerToSeat(emptySeat.seatIndex)
-                                        },
-                                        colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
+                                    Surface(
+                                        color = Color(0xFF252C3B),
                                         shape = RoundedCornerShape(8.dp),
-                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                        modifier = Modifier.height(34.dp)
+                                        border = BorderStroke(0.8.dp, Color(0xFF334155)),
+                                        modifier = Modifier.clickable {
+                                            onMoveSpeakerToSeat(emptySeat.seatIndex)
+                                        }
                                     ) {
                                         Text(
-                                            text = if (emptySeat.seatIndex == 0) "👑 Host" else "Mic ${emptySeat.seatIndex + 1}",
-                                            color = Color.Black,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold
+                                            text = if (emptySeat.seatIndex == 0) "Host" else "Mic ${emptySeat.seatIndex + 1}",
+                                            color = Color(0xFFF8FAFC),
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                                         )
                                     }
                                 }
@@ -13204,112 +14113,86 @@ fun HostSeatAdminDialog(
                         }
                     }
 
-                    // Moderation on other speakers
-                    if (isTargetFounder) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Surface(
-                            color = Color(0xFF3E1200),
-                            shape = RoundedCornerShape(10.dp),
-                            border = BorderStroke(1.dp, Color(0xFFFFD700)),
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                Text("👑 LiveTogather Founder - Supreme Immunity Active", color = Color(0xFFFFD700), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    } else if ((seat.seatIndex != 0 || isModeratorApexOrStaff) && seat.uid != currentUserId) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Button(
-                            onClick = onKickToAudience,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F)),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth().height(38.dp)
-                        ) {
-                            Text(
-                                text = if (seat.seatIndex == 0) "🚫 Move Host to Audience" else "🚫 Move Speaker to Audience",
-                                color = Color.White,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
+                    // 4. View Profile
+                    HorizontalDivider(color = Color(0xFF222836), thickness = 0.6.dp)
+                    ProfessionalMicOptionRow(
+                        icon = Icons.Default.Person,
+                        label = "View Profile",
+                        onClick = onViewProfile
+                    )
+
+                    // 5. Leave / Kick / Ban options
+                    if (!isTargetFounder && (seat.seatIndex != 0 || isModeratorApexOrStaff)) {
+                        HorizontalDivider(color = Color(0xFF222836), thickness = 0.6.dp)
+                        ProfessionalMicOptionRow(
+                            icon = Icons.Default.ExitToApp,
+                            label = if (seat.uid == currentUserId) "Leave This Mic" else "Remove from Mic",
+                            onClick = onKickToAudience
+                        )
+
+                        if (seat.uid != currentUserId) {
+                            HorizontalDivider(color = Color(0xFF222836), thickness = 0.6.dp)
+                            ProfessionalMicOptionRow(
+                                icon = Icons.Default.Close,
+                                label = "Kick Out of Room",
+                                isDestructive = true,
+                                onClick = onKickOutOfRoom
                             )
-                        }
-
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Button(
-                                onClick = onKickOutOfRoom,
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828)),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.weight(1f).height(36.dp)
-                            ) {
-                                Text("👢 Kick Room", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-
-                            Button(
-                                onClick = onBanFromRoom,
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF210000)),
-                                border = BorderStroke(1.dp, Color.Red),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.weight(1f).height(36.dp)
-                            ) {
-                                Text("🔨 Ban User", color = Color.Red, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(6.dp))
-                        OutlinedButton(
-                            onClick = onViewProfile,
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, BrandBorder),
-                            modifier = Modifier.fillMaxWidth().height(36.dp)
-                        ) {
-                            Text("👤 View Profile & Admin Controls", color = Color.White, fontSize = 11.sp)
+                            HorizontalDivider(color = Color(0xFF222836), thickness = 0.6.dp)
+                            ProfessionalMicOptionRow(
+                                icon = Icons.Default.Block,
+                                label = "Ban User",
+                                isDestructive = true,
+                                onClick = onBanFromRoom
+                            )
                         }
                     }
                 } else {
-                    // Empty seat controls
-                    Text(
-                        text = if (seat.isLocked) "🔒 This microphone is currently LOCKED." else "This microphone seat is currently empty.",
-                        color = if (seat.isLocked) Color(0xFFFF8A80) else Color.LightGray,
-                        fontSize = 12.sp,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(modifier = Modifier.height(14.dp))
-
+                    // Empty Seat Clean Menu List
                     if (onTakeMic != null) {
-                        Button(
-                            onClick = onTakeMic,
-                            colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth().height(40.dp)
-                        ) {
-                            Text("🎙️ Take this Mic (Sit Here)", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
+                        ProfessionalMicOptionRow(
+                            icon = Icons.Default.Mic,
+                            label = "Take This Mic",
+                            onClick = onTakeMic
+                        )
+                        HorizontalDivider(color = Color(0xFF222836), thickness = 0.6.dp)
                     }
 
-                    Button(
-                        onClick = onInviteListener,
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth().height(40.dp)
-                    ) {
-                        Text("📨 Invite Listener to this Mic", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
+                    ProfessionalMicOptionRow(
+                        icon = if (seat.isLocked) Icons.Default.LockOpen else Icons.Default.Lock,
+                        label = if (seat.isLocked) "Unlock This Mic" else "Lock This Mic",
+                        onClick = onToggleLock
+                    )
+                    HorizontalDivider(color = Color(0xFF222836), thickness = 0.6.dp)
+
+                    ProfessionalMicOptionRow(
+                        icon = if (seat.isMuted) Icons.Default.Mic else Icons.Default.MicOff,
+                        label = if (seat.isMuted) "Unmute This Mic" else "Mute This Mic",
+                        onClick = onToggleMute
+                    )
+                    HorizontalDivider(color = Color(0xFF222836), thickness = 0.6.dp)
+
+                    ProfessionalMicOptionRow(
+                        icon = Icons.Default.PersonAdd,
+                        label = "Invite Listener",
+                        onClick = onInviteListener
+                    )
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
-                TextButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth()
+                HorizontalDivider(color = Color(0xFF222836), thickness = 0.8.dp)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onDismiss() }
+                        .padding(vertical = 11.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text("Close", color = Color.Gray, fontSize = 12.sp)
+                    Text(
+                        text = "Cancel",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
             }
         }
@@ -13327,93 +14210,119 @@ fun InviteListenerDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(dismissOnBackPress = true, dismissOnClickOutside = true)
     ) {
-        Card(
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF161214)),
-            shape = RoundedCornerShape(20.dp),
-            border = BorderStroke(1.dp, BrandBorder),
-            modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp).padding(16.dp)
+        Surface(
+            color = Color(0xFF141821),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, Color(0xFF262D3D)),
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .heightIn(max = 420.dp)
         ) {
-            Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-                Text(
-                    text = "📨 Invite Audience to Mic ${seat.seatIndex + 1}",
-                    color = BrandCoral,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Select a listener to invite to this microphone seat:",
-                    color = Color.LightGray,
-                    fontSize = 11.sp
-                )
-                Spacer(modifier = Modifier.height(12.dp))
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Invite to Mic ${seat.seatIndex + 1}",
+                            color = Color(0xFFF8FAFC),
+                            fontSize = 14.5.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "Select a listener from the room",
+                            color = Color(0xFF94A3B8),
+                            fontSize = 11.sp
+                        )
+                    }
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(26.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color(0xFF94A3B8), modifier = Modifier.size(18.dp))
+                    }
+                }
+                HorizontalDivider(color = Color(0xFF222836), thickness = 0.8.dp)
 
                 if (availableAudience.isEmpty()) {
                     Box(
-                        modifier = Modifier.fillMaxWidth().weight(1f, fill = false).padding(20.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = "No listeners available in audience right now.",
-                            color = Color.Gray,
+                            color = Color(0xFF94A3B8),
                             fontSize = 12.sp,
                             textAlign = TextAlign.Center
                         )
                     }
                 } else {
                     LazyColumn(
-                        modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false)
                     ) {
                         items(availableAudience, key = { it.uid }) { member ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(Color.White.copy(alpha = 0.05f))
                                     .clickable { onSelectMember(member) }
-                                    .padding(8.dp),
+                                    .padding(horizontal = 16.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 AsyncImage(
                                     model = member.photoUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
                                     contentDescription = member.name,
-                                    modifier = Modifier.size(38.dp).clip(CircleShape),
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .clip(CircleShape)
+                                        .border(0.8.dp, Color(0xFF334155), CircleShape),
                                     contentScale = ContentScale.Crop
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = member.name,
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp
+                                        color = Color(0xFFF8FAFC),
+                                        fontWeight = FontWeight.Medium,
+                                        fontSize = 12.5.sp
                                     )
                                     Text(
                                         text = member.tier,
-                                        color = if (member.tier.contains("VIP", true)) BrandGold else Color.Gray,
-                                        fontSize = 10.sp
+                                        color = Color(0xFF94A3B8),
+                                        fontSize = 10.5.sp
                                     )
                                 }
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(50))
-                                        .background(BrandCoral)
-                                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = Color(0xFF1F2633),
+                                    border = BorderStroke(0.8.dp, Color(0xFF334155))
                                 ) {
-                                    Text("Invite 🎙️", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        text = "Invite",
+                                        color = Color(0xFFE2E8F0),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                    )
                                 }
                             }
+                            HorizontalDivider(color = Color(0xFF222836), thickness = 0.6.dp)
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
-                TextButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth()
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onDismiss() }
+                        .padding(vertical = 11.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text("Cancel", color = Color.Gray, fontSize = 12.sp)
+                    Text("Cancel", color = Color(0xFF94A3B8), fontSize = 12.5.sp, fontWeight = FontWeight.Medium)
                 }
             }
         }
@@ -13434,97 +14343,83 @@ fun SpeakerSeatControlDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(dismissOnBackPress = true, dismissOnClickOutside = true)
     ) {
-        Card(
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF161214)),
-            shape = RoundedCornerShape(20.dp),
-            border = BorderStroke(1.dp, BrandBorder),
-            modifier = Modifier.fillMaxWidth().padding(16.dp)
+        Surface(
+            color = Color(0xFF141821),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, Color(0xFF262D3D)),
+            shadowElevation = 12.dp,
+            modifier = Modifier
+                .fillMaxWidth(0.88f)
+                .padding(vertical = 8.dp)
         ) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(18.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "🎙️ Your Microphone (${if (seat.seatIndex == 0) "Host Mic" else "Mic " + (seat.seatIndex + 1)})",
-                    color = BrandCoral,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = if (seat.isMuted) "Your microphone is currently MUTED 🔇" else if (isTalking) "You are currently SPEAKING 🟢" else "Your microphone is LIVE 🎙️",
-                    color = if (seat.isMuted) Color(0xFFFF8A80) else BrandGreen,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Button(
-                    onClick = onToggleMute,
-                    colors = ButtonDefaults.buttonColors(containerColor = if (seat.isMuted) BrandGreen else Color(0xFF424242)),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth().height(42.dp)
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = if (seat.isMuted) "🎙️ Unmute Microphone" else "🔇 Mute Microphone",
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                // Change Mic Position (Move to another empty mic)
-                val availableEmptySeats = allSeats.filter { it.seatIndex != seat.seatIndex && it.uid.isEmpty() && !it.isLocked }
-                if (onMoveToSeat != null && availableEmptySeats.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    var isMovePickerOpen by remember { mutableStateOf(false) }
-
-                    Button(
-                        onClick = { isMovePickerOpen = !isMovePickerOpen },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6A1B9A)),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth().height(40.dp)
-                    ) {
-                        Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
+                    Column {
                         Text(
-                            text = if (isMovePickerOpen) "▲ Cancel Move" else "🔄 Change Mic Position",
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
-                    if (isMovePickerOpen) {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "Select New Mic Position:",
-                            color = BrandGold,
-                            fontSize = 11.sp,
+                            text = if (seat.seatIndex == 0) "Host Mic" else "Mic ${seat.seatIndex + 1}",
+                            color = Color(0xFFF8FAFC),
+                            fontSize = 14.5.sp,
                             fontWeight = FontWeight.SemiBold
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = if (seat.isMuted) "Microphone Muted" else if (isTalking) "Speaking Live" else "Microphone Active",
+                            color = Color(0xFF94A3B8),
+                            fontSize = 11.sp
+                        )
+                    }
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(26.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color(0xFF94A3B8), modifier = Modifier.size(18.dp))
+                    }
+                }
+
+                HorizontalDivider(color = Color(0xFF222836), thickness = 0.8.dp)
+
+                ProfessionalMicOptionRow(
+                    icon = if (seat.isMuted) Icons.Default.Mic else Icons.Default.MicOff,
+                    label = if (seat.isMuted) "Unmute Microphone" else "Mute Microphone",
+                    onClick = onToggleMute
+                )
+
+                val availableEmptySeats = allSeats.filter { it.seatIndex != seat.seatIndex && it.uid.isEmpty() && !it.isLocked }
+                if (onMoveToSeat != null && availableEmptySeats.isNotEmpty()) {
+                    var isMovePickerOpen by remember { mutableStateOf(false) }
+                    HorizontalDivider(color = Color(0xFF222836), thickness = 0.6.dp)
+                    ProfessionalMicOptionRow(
+                        icon = Icons.Default.Refresh,
+                        label = if (isMovePickerOpen) "Cancel Position Change" else "Change Mic Position",
+                        onClick = { isMovePickerOpen = !isMovePickerOpen }
+                    )
+
+                    if (isMovePickerOpen) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                .background(Color(0xFF1A1F2B))
+                                .horizontalScroll(rememberScrollState())
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             availableEmptySeats.forEach { emptySeat ->
-                                Button(
-                                    onClick = {
-                                        onMoveToSeat(emptySeat.seatIndex)
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = BrandGold),
+                                Surface(
+                                    color = Color(0xFF252C3B),
                                     shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                    modifier = Modifier.height(34.dp)
+                                    border = BorderStroke(0.8.dp, Color(0xFF334155)),
+                                    modifier = Modifier.clickable {
+                                        onMoveToSeat(emptySeat.seatIndex)
+                                    }
                                 ) {
                                     Text(
-                                        text = if (emptySeat.seatIndex == 0) "👑 Host" else "Mic ${emptySeat.seatIndex + 1}",
-                                        color = Color.Black,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold
+                                        text = if (emptySeat.seatIndex == 0) "Host" else "Mic ${emptySeat.seatIndex + 1}",
+                                        color = Color(0xFFF8FAFC),
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                                     )
                                 }
                             }
@@ -13533,28 +14428,24 @@ fun SpeakerSeatControlDialog(
                 }
 
                 if (seat.seatIndex != 0) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Button(
-                        onClick = onLeaveStage,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F)),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth().height(42.dp)
-                    ) {
-                        Text(
-                            text = "🚪 Step Down / Leave Stage",
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                    HorizontalDivider(color = Color(0xFF222836), thickness = 0.6.dp)
+                    ProfessionalMicOptionRow(
+                        icon = Icons.Default.ExitToApp,
+                        label = "Leave This Mic",
+                        isDestructive = true,
+                        onClick = onLeaveStage
+                    )
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
-                TextButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth()
+                HorizontalDivider(color = Color(0xFF222836), thickness = 0.8.dp)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onDismiss() }
+                        .padding(vertical = 11.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text("Close", color = Color.Gray, fontSize = 12.sp)
+                    Text("Cancel", color = Color(0xFF94A3B8), fontSize = 12.5.sp, fontWeight = FontWeight.Medium)
                 }
             }
         }

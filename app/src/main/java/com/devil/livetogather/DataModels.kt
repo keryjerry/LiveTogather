@@ -106,11 +106,22 @@ data class RoomItem(
     @get:PropertyName("watchPartyVideoTitle") @set:PropertyName("watchPartyVideoTitle") var watchPartyVideoTitle: String = "Non-Stop Bollywood Party Hits",
     @get:PropertyName("watchPartyIsPlaying") @set:PropertyName("watchPartyIsPlaying") var watchPartyIsPlaying: Boolean = true,
     @get:PropertyName("watchPartyUpdatedBy") @set:PropertyName("watchPartyUpdatedBy") var watchPartyUpdatedBy: String = "",
-    @get:PropertyName("watchPartyUpdatedAt") @set:PropertyName("watchPartyUpdatedAt") var watchPartyUpdatedAt: Long = 0L
+    @get:PropertyName("watchPartyUpdatedAt") @set:PropertyName("watchPartyUpdatedAt") var watchPartyUpdatedAt: Long = 0L,
+    // Family Room System (Invite-Only Family Member Access)
+    @get:PropertyName("isFamilyRoom") @set:PropertyName("isFamilyRoom") var isFamilyRoom: Boolean = false,
+    @get:PropertyName("familyMemberIds") @set:PropertyName("familyMemberIds") var familyMemberIds: List<String> = emptyList(),
+    @get:PropertyName("familyName") @set:PropertyName("familyName") var familyName: String = ""
 ) {
     val isVipRoom: Boolean get() = privacy.equals("vip_only", ignoreCase = true)
     val isVideoRoom: Boolean get() = roomType == "video" || roomType == "video_pk"
     val isSuspended: Boolean get() = statusMessage.equals("SUSPENDED", ignoreCase = true) && (suspendedUntil == 0L || suspendedUntil > System.currentTimeMillis())
+
+    fun canEnterFamilyRoom(userUid: String, isAdminOrStaff: Boolean = false): Boolean {
+        if (!isFamilyRoom && !privacy.equals("family_only", ignoreCase = true)) return true
+        if (userUid.isBlank()) return false
+        val hId = hostUid.ifBlank { hostId }
+        return userUid == hId || userUid in adminUserIds || userUid in familyMemberIds || isAdminOrStaff
+    }
 }
 
 data class LiveEmojiReaction(
@@ -208,6 +219,10 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
     val watchPartyIsPlaying = doc.getBoolean("watchPartyIsPlaying") ?: true
     val watchPartyUpdatedBy = doc.getString("watchPartyUpdatedBy") ?: ""
     val watchPartyUpdatedAt = doc.getLong("watchPartyUpdatedAt") ?: 0L
+    val isFamilyRoom = doc.getBoolean("isFamilyRoom") ?: (privacy.equals("family_only", ignoreCase = true))
+    @Suppress("UNCHECKED_CAST")
+    val familyMemberIds = (doc.get("familyMemberIds") as? List<String>) ?: emptyList()
+    val familyName = doc.getString("familyName") ?: ""
 
     return RoomItem(
         id = id,
@@ -268,7 +283,10 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
         watchPartyVideoTitle = watchPartyVideoTitle,
         watchPartyIsPlaying = watchPartyIsPlaying,
         watchPartyUpdatedBy = watchPartyUpdatedBy,
-        watchPartyUpdatedAt = watchPartyUpdatedAt
+        watchPartyUpdatedAt = watchPartyUpdatedAt,
+        isFamilyRoom = isFamilyRoom,
+        familyMemberIds = familyMemberIds,
+        familyName = familyName
     )
 }
 
@@ -2197,7 +2215,6 @@ data class RoomThemePreset(
 
 val ROOM_THEME_PRESETS = listOf(
     RoomThemePreset("theme_cinema_royal_blue", "🎬 Royal Blue Cinema", "cinema_royal_blue_hd"),
-    RoomThemePreset("theme_vip_royal", "👑 VIP Royal Velvet Palace", "vip_royal_stage"),
     RoomThemePreset("theme_dubai_marina", "🏙️ Dubai Marina Night", "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?auto=format&fit=crop&w=1080&q=80"),
     RoomThemePreset("theme_paris_eiffel", "🗼 Paris Eiffel Skyline", "https://images.unsplash.com/photo-1502602898657-3e91760cbb34?auto=format&fit=crop&w=1080&q=80"),
     RoomThemePreset("theme_las_vegas", "🎰 Las Vegas Neon Club", "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1080&q=80"),

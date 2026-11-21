@@ -29,8 +29,19 @@ object AudioPlayerManager {
     fun play(context: Context, urlOrUri: String, title: String, artworkUrl: String = "", initialSeekMs: Int = 0, onCompletion: () -> Unit = {}) {
         if (urlOrUri.isBlank()) return
 
-        // If already playing this track, don't restart
+        // If already playing this track, sync seek position if needed and don't restart from 00:00
         if (currentTrackUrlState.value == urlOrUri && isPlayingState.value && isPrepared && mediaPlayer?.isPlaying == true) {
+            if (initialSeekMs > 0) {
+                try {
+                    val dur = mediaPlayer?.duration ?: 0
+                    val targetPos = if (dur > 0) (initialSeekMs % dur) else initialSeekMs
+                    val curPos = mediaPlayer?.currentPosition ?: 0
+                    if (kotlin.math.abs(curPos - targetPos) > 2500) {
+                        mediaPlayer?.seekTo(targetPos)
+                        currentPositionMsState.value = targetPos
+                    }
+                } catch (_: Exception) {}
+            }
             return
         }
 
@@ -62,18 +73,28 @@ object AudioPlayerManager {
                     isPrepared = true
                     isBufferingState.value = false
                     try {
-                        val vol = if (isMutedState.value) 0f else 1f
+                        val vol = if (isMutedState.value) 0f else volumeLevelState.value
                         mp.setVolume(vol, vol)
-                        if (initialSeekMs > 0 && mp.duration > 0) {
-                            val seekPos = if (mp.isLooping && mp.duration > 0) (initialSeekMs % mp.duration) else initialSeekMs.coerceAtMost(mp.duration)
+                        val dur = mp.duration
+                        durationMsState.value = dur
+                        val seekPos = if (initialSeekMs > 0) {
+                            if (dur > 0) (initialSeekMs % dur) else initialSeekMs
+                        } else 0
+                        if (seekPos > 0) {
                             mp.seekTo(seekPos)
                             currentPositionMsState.value = seekPos
                         }
                         mp.start()
+                        if (seekPos > 0) {
+                            try {
+                                if (kotlin.math.abs(mp.currentPosition - seekPos) > 1500) {
+                                    mp.seekTo(seekPos)
+                                }
+                            } catch (_: Exception) {}
+                        }
                         isPlayingState.value = true
-                        durationMsState.value = mp.duration
                         startTicker()
-                        Log.d(TAG, "Playback started successfully: $title, duration=${mp.duration}ms, seek=$initialSeekMs")
+                        Log.d(TAG, "Playback started successfully: $title, duration=${dur}ms, seek=$seekPos")
                     } catch (e: Exception) {
                         Log.e(TAG, "Error starting playback: ${e.message}")
                         isPlayingState.value = false

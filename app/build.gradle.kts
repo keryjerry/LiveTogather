@@ -12,8 +12,8 @@ android {
         applicationId = "com.devil.livetogather"
         minSdk = 26
         targetSdk = 36
-        versionCode = 80
-        versionName = "1.0.79"
+        versionCode = 84
+        versionName = "1.0.83"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -31,6 +31,7 @@ android {
 
     buildTypes {
         debug {
+            signingConfig = signingConfigs.getByName("release")
             enableAndroidTestCoverage = false
             enableUnitTestCoverage = false
         }

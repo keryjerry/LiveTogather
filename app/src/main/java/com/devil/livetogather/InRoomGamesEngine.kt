@@ -158,7 +158,7 @@ fun InRoomGameArenaOverlay(
                     val nextIdx = (gameState.currentTurnIndex + 1) % participants.size
                     val nextUid = participants.getOrNull(nextIdx) ?: participants.first()
                     db.collection("rooms").document(roomId)
-                        .collection("inRoomGame").document("active")
+                        .collection("games").document("active")
                         .update(
                             mapOf(
                                 "currentTurnIndex" to nextIdx,
@@ -291,7 +291,7 @@ fun InRoomGameArenaOverlay(
                                     canJoin = canJoinMatch,
                                     onClick = {
                                         db.collection("rooms").document(roomId)
-                                            .collection("inRoomGame").document("active")
+                                            .collection("games").document("active")
                                             .update("participants", FieldValue.arrayUnion(currentUser.uid))
                                         Toast.makeText(context, "🎯 Joined Team White (Slot 3)!", Toast.LENGTH_SHORT).show()
                                     }
@@ -333,7 +333,7 @@ fun InRoomGameArenaOverlay(
                                     canJoin = canJoinMatch,
                                     onClick = {
                                         db.collection("rooms").document(roomId)
-                                            .collection("inRoomGame").document("active")
+                                            .collection("games").document("active")
                                             .update("participants", FieldValue.arrayUnion(currentUser.uid))
                                         Toast.makeText(context, "🎯 Joined Team Black (Slot 2)!", Toast.LENGTH_SHORT).show()
                                     }
@@ -354,7 +354,7 @@ fun InRoomGameArenaOverlay(
                                     canJoin = canJoinMatch,
                                     onClick = {
                                         db.collection("rooms").document(roomId)
-                                            .collection("inRoomGame").document("active")
+                                            .collection("games").document("active")
                                             .update("participants", FieldValue.arrayUnion(currentUser.uid))
                                         Toast.makeText(context, "🎯 Joined Team Black (Slot 4)!", Toast.LENGTH_SHORT).show()
                                     }
@@ -414,7 +414,7 @@ fun InRoomGameArenaOverlay(
                                 onClick = {
                                     if (canJoinMatch) {
                                         db.collection("rooms").document(roomId)
-                                            .collection("inRoomGame").document("active")
+                                            .collection("games").document("active")
                                             .update("participants", FieldValue.arrayUnion(currentUser.uid))
                                         Toast.makeText(context, "🎯 Joined Carrom match as Player 2!", Toast.LENGTH_SHORT).show()
                                     }
@@ -504,7 +504,7 @@ fun InRoomGameArenaOverlay(
                                                     val updatedScores = gameState.playerScores.toMutableMap()
                                                     updatedScores["betDiamonds"] = amt.toInt()
                                                     db.collection("rooms").document(roomId)
-                                                        .collection("inRoomGame").document("active")
+                                                        .collection("games").document("active")
                                                         .update("playerScores", updatedScores)
                                                 }
                                             ) {
@@ -531,7 +531,7 @@ fun InRoomGameArenaOverlay(
                                                 return@Button
                                             }
                                             db.collection("rooms").document(roomId)
-                                                .collection("inRoomGame").document("active")
+                                                .collection("games").document("active")
                                                 .update("participants", FieldValue.arrayUnion(currentUser.uid))
                                             Toast.makeText(context, "🎯 You joined the Carrom match!", Toast.LENGTH_SHORT).show()
                                         },
@@ -559,7 +559,7 @@ fun InRoomGameArenaOverlay(
                                                     }
                                                 }
                                                 db.collection("rooms").document(roomId)
-                                                    .collection("inRoomGame").document("active")
+                                                    .collection("games").document("active")
                                                     .update(
                                                         mapOf(
                                                             "status" to "ACTIVE",
@@ -820,7 +820,7 @@ fun InRoomGameArenaOverlay(
                             onClick = {
                                 showEndGameConfirm = false
                                 db.collection("rooms").document(roomId)
-                                    .collection("inRoomGame").document("active")
+                                    .collection("games").document("active")
                                     .update(mapOf("status" to "ENDED"))
                                 db.collection("rooms").document(roomId)
                                     .update(mapOf("activeGameType" to ""))
@@ -880,6 +880,7 @@ fun LudoGameArena(
         arr.toString()
     }
 
+    val currentLudoState by rememberUpdatedState(gameState)
     val myColorIdx = participants.indexOf(currentUser.uid)
     val activeColorIdx = if (participants.isNotEmpty()) (gameState.currentTurnIndex % participants.size) else 0
     val activeTurnUid = participants.getOrNull(activeColorIdx) ?: gameState.startedBy
@@ -901,7 +902,7 @@ fun LudoGameArena(
                 val nextIdx = (activeColorIdx + 1) % participants.size
                 val nextUid = participants.getOrNull(nextIdx) ?: participants.first()
                 db.collection("rooms").document(roomId)
-                    .collection("inRoomGame").document("active")
+                    .collection("games").document("active")
                     .update(
                         mapOf(
                             "currentTurnIndex" to nextIdx,
@@ -1004,7 +1005,7 @@ fun LudoGameArena(
                                 val updatedScores = gameState.playerScores.toMutableMap()
                                 updatedScores["betDiamonds"] = amt.toInt()
                                 db.collection("rooms").document(roomId)
-                                    .collection("inRoomGame").document("active")
+                                    .collection("games").document("active")
                                     .update("playerScores", updatedScores)
                             }
                         ) {
@@ -1031,7 +1032,7 @@ fun LudoGameArena(
                             return@Button
                         }
                         db.collection("rooms").document(roomId)
-                            .collection("inRoomGame").document("active")
+                            .collection("games").document("active")
                             .update("participants", FieldValue.arrayUnion(currentUser.uid))
                         Toast.makeText(context, "🎲 Joined Ludo Match!", Toast.LENGTH_SHORT).show()
                     },
@@ -1059,7 +1060,7 @@ fun LudoGameArena(
                                 }
                             }
                             db.collection("rooms").document(roomId)
-                                .collection("inRoomGame").document("active")
+                                .collection("games").document("active")
                                 .update(
                                     mapOf(
                                         "status" to "ACTIVE",
@@ -1118,11 +1119,17 @@ fun LudoGameArena(
                             @android.webkit.JavascriptInterface
                             fun onMoveCompleted(stateJson: String, rolledDice: Int, switchTurn: Boolean) {
                                 (context as? android.app.Activity)?.runOnUiThread {
-                                    if (participants.isEmpty()) return@runOnUiThread
-                                    val nextIdx = if (switchTurn) (activeColorIdx + 1) % participants.size else activeColorIdx
-                                    val nextUid = participants.getOrNull(nextIdx) ?: participants.first()
+                                    val liveState = currentLudoState
+                                    val liveParticipants = liveState.participants
+                                    if (liveParticipants.isEmpty()) return@runOnUiThread
+                                    val curTurnIdx = liveState.currentTurnIndex % liveParticipants.size
+                                    val curTurnUid = liveParticipants.getOrNull(curTurnIdx) ?: liveState.startedBy
+                                    if (curTurnUid != currentUser.uid) return@runOnUiThread
+
+                                    val nextIdx = if (switchTurn) (curTurnIdx + 1) % liveParticipants.size else curTurnIdx
+                                    val nextUid = liveParticipants.getOrNull(nextIdx) ?: liveParticipants.first()
                                     db.collection("rooms").document(roomId)
-                                        .collection("inRoomGame").document("active")
+                                        .collection("games").document("active")
                                         .update(
                                             mapOf(
                                                 "coinsStateJson" to stateJson,
@@ -1268,6 +1275,8 @@ fun CarromGameArena(
     var gameCommentInputText by remember { mutableStateOf("") }
     var activeWebView by remember { mutableStateOf<WebView?>(null) }
 
+    val currentGameState by rememberUpdatedState(gameState)
+
     // Listen for remote shots from other players!
     var lastHandledShotTime by remember { mutableLongStateOf(0L) }
     LaunchedEffect(gameState.lastShotTimestamp, gameState.lastShotJson) {
@@ -1294,11 +1303,13 @@ fun CarromGameArena(
     }
 
     // Sync coins state from the authoritative shot finish
-    LaunchedEffect(gameState.coinsStateJson) {
+    LaunchedEffect(gameState.coinsStateJson, gameState.currentTurnIndex, gameState.currentTurnUserId) {
         if (gameState.coinsStateJson.isNotBlank()) {
             try {
+                val safeCoins = JSONObject.quote(gameState.coinsStateJson)
+                val turnName = if (gameState.currentTurnIndex % 2 == 0) "p1" else "p2"
                 activeWebView?.evaluateJavascript(
-                    "window.syncCoinsState('${gameState.coinsStateJson}');",
+                    "window.syncCoinsState($safeCoins, '$turnName');",
                     null
                 )
             } catch (e: Exception) {
@@ -1365,7 +1376,7 @@ fun CarromGameArena(
                                     }.toString()
 
                                     db.collection("rooms").document(roomId)
-                                        .collection("inRoomGame").document("active")
+                                        .collection("games").document("active")
                                         .update(
                                             mapOf(
                                                 "lastShotJson" to shotData,
@@ -1385,33 +1396,39 @@ fun CarromGameArena(
                             @android.webkit.JavascriptInterface
                             fun onTurnFinished(turn: String, p1: Int, p2: Int, action: String, coinsJson: String? = null) {
                                 (context as? android.app.Activity)?.runOnUiThread {
-                                    val activeShooterUid = gameState.currentTurnUserId.ifBlank { gameState.participants.firstOrNull() ?: "" }
-                                    // CRITICAL: ONLY the player whose turn it was can advance the turn in Firestore!
+                                    val liveState = currentGameState
+                                    val participants = liveState.participants
+                                    val activeShooterUid = liveState.currentTurnUserId.ifBlank {
+                                        participants.getOrNull(liveState.currentTurnIndex) ?: participants.firstOrNull() ?: ""
+                                    }
+                                    // CRITICAL: ONLY the player whose turn it currently is can advance or repeat the turn in Firestore!
                                     if (activeShooterUid != currentUser.uid) {
                                         return@runOnUiThread
                                     }
 
-                                    val participants = gameState.participants
                                     if (participants.isNotEmpty()) {
-                                        val totalSlots = if (gameState.maxPlayers == 4) 4 else 2
                                         val nextTurnIndex = if (action == "switch") {
-                                            (gameState.currentTurnIndex + 1) % participants.size
+                                            (liveState.currentTurnIndex + 1) % participants.size
                                         } else {
-                                            gameState.currentTurnIndex
+                                            liveState.currentTurnIndex
                                         }
                                         val nextTurnUserId = participants.getOrNull(nextTurnIndex) ?: participants.first()
+                                        val betVal = liveState.playerScores["betDiamonds"] ?: 0
 
                                         val updateMap = mutableMapOf<String, Any>(
                                             "currentTurnIndex" to nextTurnIndex,
                                             "currentTurnUserId" to nextTurnUserId,
-                                            "playerScores" to mapOf("p1" to p1, "p2" to p2)
+                                            "timerRemaining" to 40,
+                                            "lastShotTimestamp" to System.currentTimeMillis(),
+                                            "lastShotJson" to "",
+                                            "playerScores" to mapOf("p1" to p1, "p2" to p2, "betDiamonds" to betVal)
                                         )
                                         if (!coinsJson.isNullOrBlank()) {
                                             updateMap["coinsStateJson"] = coinsJson
                                         }
 
                                         db.collection("rooms").document(roomId)
-                                            .collection("inRoomGame").document("active")
+                                            .collection("games").document("active")
                                             .update(updateMap)
                                     }
                                 }
@@ -1899,7 +1916,7 @@ fun TruthDareGameArena(
                             val target = bottleAngle + spinDelta
                             bottleAngle = target
                             db.collection("rooms").document(roomId)
-                                .collection("inRoomGame").document("active")
+                                .collection("games").document("active")
                                 .update(mapOf("bottleAngle" to target, "timerRemaining" to 30))
                             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                                 isSpinning = false
@@ -2119,7 +2136,7 @@ fun LuckySevenGameArena(
                         isRolling = false
                         resultText = if (sum == 7) "⭐ LUCKY 7 WINS! (5X)" else if (sum > 7) "🔺 7 UP WINS! (2X)" else "🔻 7 DOWN WINS! (2X)"
                         db.collection("rooms").document(roomId)
-                            .collection("inRoomGame").document("active")
+                            .collection("games").document("active")
                             .update(mapOf("diceValue" to sum, "timerRemaining" to 30))
                     }, 650)
                 }
@@ -2469,7 +2486,7 @@ fun launchInRoomGame(
     maxPlayers: Int = 2,
     betDiamonds: Long = 0L,
     allProfiles: List<UserProfile> = emptyList()
-) {
+): InRoomGameState {
     // STRICT REAL-TIME POLICY: Zero dummy/fake opponents! Only the host/starter joins initially;
     // real players must tap Join Match, and the game stays in WAITING until >= 2 real players join & Start is tapped.
     val initialParticipants = listOf(currentUser.uid)
@@ -2499,10 +2516,9 @@ fun launchInRoomGame(
         participants = initialParticipants
     )
     db.collection("rooms").document(roomId)
-        .collection("inRoomGame").document("active")
+        .collection("games").document("active")
         .set(initialGameState)
-    db.collection("rooms").document(roomId)
-        .update("activeGameType", gameType)
+    return initialGameState
 }
 
 // -------------------------------------------------------------

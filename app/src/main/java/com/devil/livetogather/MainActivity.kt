@@ -1861,6 +1861,8 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                                                             .clickable {
                                                                 if ((room.category == "vip_room" || room.isVipRoom) && (!currentUser.isVipOrPlatinum() && currentUser.getVipLevel() < 1)) {
                                                                     Toast.makeText(context, "👑 VIP Access Only: This room is reserved for VIP Level 1+ members!", Toast.LENGTH_LONG).show()
+                                                                } else if (!room.canEnterFamilyRoom(currentUserId, currentUser.hasRoomModerationAuthority() || WatchPartyCinemaEngine.isUnrestrictedFounderOrCeo(currentUser))) {
+                                                                    Toast.makeText(context, "🛡️ Family Room: Only invited Family Members can enter this room!", Toast.LENGTH_LONG).show()
                                                                 } else {
                                                                     isSearchExpanded = false
                                                                     activeAudioRoom = room
@@ -1898,6 +1900,8 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                                                             onClick = {
                                                                 if ((room.category == "vip_room" || room.isVipRoom) && (!currentUser.isVipOrPlatinum() && currentUser.getVipLevel() < 1)) {
                                                                     Toast.makeText(context, "👑 VIP Access Only: This room is reserved for VIP Level 1+ members!", Toast.LENGTH_LONG).show()
+                                                                } else if (!room.canEnterFamilyRoom(currentUserId, currentUser.hasRoomModerationAuthority() || WatchPartyCinemaEngine.isUnrestrictedFounderOrCeo(currentUser))) {
+                                                                    Toast.makeText(context, "🛡️ Family Room: Only invited Family Members can enter this room!", Toast.LENGTH_LONG).show()
                                                                 } else {
                                                                     isSearchExpanded = false
                                                                     activeAudioRoom = room
@@ -2047,6 +2051,10 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                                     Toast.makeText(context, "👑 VIP Access Only: This room is reserved for VIP Level 1+ members!", Toast.LENGTH_LONG).show()
                                     return@LiveTogetherHomeScreen
                                 }
+                                if (!room.canEnterFamilyRoom(currentUserId, currentUser.hasRoomModerationAuthority() || WatchPartyCinemaEngine.isUnrestrictedFounderOrCeo(currentUser))) {
+                                    Toast.makeText(context, "🛡️ Family Room: Only invited Family Members can enter this room!", Toast.LENGTH_LONG).show()
+                                    return@LiveTogetherHomeScreen
+                                }
                                 val canActuallyHost = !isHostCandidate || currentUser.canHostRoom()
 
                                 if (!isHostCandidate && (!room.isHostLive || room.statusMessage.equals("OFFLINE", ignoreCase = true) || room.statusMessage.equals("CLOSED", ignoreCase = true))) {
@@ -2107,12 +2115,11 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                                 activeAudioRoom = if (isVideo) room.copy(roomType = "video") else room.copy(roomType = "audio")
                             },
                             onCreateRoom = {
-                                val myExistingVoiceRooms = roomsList.filter {
+                                val myExistingRooms = roomsList.filter {
                                     ((it.hostUid.isNotBlank() && it.hostUid == currentUserId) || (it.hostId.isNotBlank() && it.hostId == currentUserId)) &&
-                                    !it.statusMessage.equals("DELETED", ignoreCase = true) &&
-                                    it.category != "video_stream" && it.roomType != "video" && it.roomType != "video_pk" && !it.isVideoRoom
+                                    !it.statusMessage.equals("DELETED", ignoreCase = true)
                                 }
-                                if (myExistingVoiceRooms.isNotEmpty()) {
+                                if (myExistingRooms.isNotEmpty()) {
                                     showGoLiveMyRoomsDialog = true
                                 } else {
                                     createRoomInitialCategory = "party_rooms"
@@ -2186,9 +2193,13 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                             db = db,
                             onOpenChat = { partner -> activeChatPartner = partner },
                             onJoinRoom = { room ->
-                                val isVideo = room.category == "video_stream" || room.roomType == "video" || room.roomType == "video_pk" || room.isVideoRoom
-                                db.collection("users").document(currentUserId).update("current_room", room.id)
-                                activeAudioRoom = if (isVideo) room.copy(roomType = "video") else room.copy(roomType = "audio")
+                                if (!room.canEnterFamilyRoom(currentUserId, currentUser.hasRoomModerationAuthority() || WatchPartyCinemaEngine.isUnrestrictedFounderOrCeo(currentUser))) {
+                                    Toast.makeText(context, "🛡️ Family Room: Only invited Family Members can enter this room!", Toast.LENGTH_LONG).show()
+                                } else {
+                                    val isVideo = room.category == "video_stream" || room.roomType == "video" || room.roomType == "video_pk" || room.isVideoRoom
+                                    db.collection("users").document(currentUserId).update("current_room", room.id)
+                                    activeAudioRoom = if (isVideo) room.copy(roomType = "video") else room.copy(roomType = "audio")
+                                }
                             },
                             onOpenEventHub = {
                                 activeCategoryHub = CATEGORY_LIST.firstOrNull { it.id == "official_event" }
@@ -2511,14 +2522,14 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                 onDismiss = { activeCategoryHub = null },
                 onCreateRoom = {
                     val isVideoCat = cat.id == "video_stream"
-                    val existingRoom = roomsList.firstOrNull { 
+                    val existingRoom = roomsList.firstOrNull {
                         ((it.hostUid.isNotBlank() && it.hostUid == currentUserId) || (it.hostId.isNotBlank() && it.hostId == currentUserId)) &&
-                        (if (isVideoCat) (it.category == "video_stream" || it.roomType == "video" || it.isVideoRoom) 
-                         else (it.category != "video_stream" && it.roomType != "video" && !it.isVideoRoom))
+                        !it.statusMessage.equals("DELETED", ignoreCase = true)
                     }
                     if (existingRoom != null) {
                         activeCategoryHub = null
-                        activeAudioRoom = if (isVideoCat) existingRoom.copy(roomType = "video") else existingRoom.copy(roomType = "audio")
+                        Toast.makeText(context, "You already have a room! Opening your room...", Toast.LENGTH_SHORT).show()
+                        activeAudioRoom = if (isVideoCat || existingRoom.isVideoRoom) existingRoom.copy(roomType = "video") else existingRoom.copy(roomType = "audio")
                     } else {
                         val isVipCat = cat.id == "vip_room"
                         val isUserVip = currentUser.isVipOrPlatinum() || currentUser.getVipLevel() >= 1
@@ -2536,6 +2547,10 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                     val isUserVip = currentUser.isVipOrPlatinum() || currentUser.getVipLevel() >= 1
                     if (isVipRoomCategory && !isUserVip) {
                         Toast.makeText(context, "👑 VIP Access Only: This room is reserved for VIP Level 1+ members!", Toast.LENGTH_LONG).show()
+                        return@CategoryHubLobbyDialog
+                    }
+                    if (!room.canEnterFamilyRoom(currentUserId, currentUser.hasRoomModerationAuthority() || WatchPartyCinemaEngine.isUnrestrictedFounderOrCeo(currentUser))) {
+                        Toast.makeText(context, "🛡️ Family Room: Only invited Family Members can enter this room!", Toast.LENGTH_LONG).show()
                         return@CategoryHubLobbyDialog
                     }
                     val targetHost = room.hostUid.ifBlank { room.hostId }
@@ -2865,13 +2880,19 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                     }
                     val existingHostRoom = roomsList.firstOrNull { r ->
                         val rHost = r.hostUid.ifBlank { r.hostId }
-                        rHost == currentUserId && (r.category == categoryId || (categoryId == "video_stream" && (r.category == "video_stream" || r.roomType == "video" || r.isVideoRoom)))
+                        rHost == currentUserId && !r.statusMessage.equals("DELETED", ignoreCase = true)
+                    }
+                    if (existingHostRoom != null) {
+                        Toast.makeText(context, "You can only create 1 room per account! Opening your existing room.", Toast.LENGTH_LONG).show()
+                        showCreateRoomDialog = false
+                        activeAudioRoom = existingHostRoom
+                        return@CreateRoomDialog
                     }
                     val generatedRoomCode = (10000000..99999999).random().toString()
-                    val roomId = existingHostRoom?.id?.ifBlank { null } ?: generatedRoomCode
+                    val roomId = generatedRoomCode
                     val actualRoomType = if (categoryId == "video_stream") "video" else roomType
                     val catEmoji = if (actualRoomType == "video_pk") "⚔️" else if (actualRoomType == "video") "📹" else (CATEGORY_LIST.find { it.id == categoryId }?.label?.take(2)?.trim() ?: "🎙️")
-                    val finalBanner = if (themeUrl.isNotBlank()) themeUrl else getCategoryBanner(categoryId)
+                    val finalBanner = if (themeUrl.isNotBlank() && themeUrl != "vip_royal_stage") themeUrl else getCategoryBanner(categoryId)
                     val newRoom = RoomItem(
                         id = roomId,
                         roomId = roomId,
@@ -2892,14 +2913,14 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                         nowPlayingArtworkUrl = CURATED_HANGOUT_TRACKS[0].artworkUrl,
                         currentPlayingTrack = CURATED_HANGOUT_TRACKS[0].title,
                         playbackPosition = 0L,
-                        isPlaying = true,
+                        isPlaying = false,
                         isCustom = true,
                         isHostLive = true,
                         isLive = true,
                         statusMessage = "LIVE NOW",
                         privacy = if (categoryId == "vip_room") "vip_only" else "public",
                         createdAt = System.currentTimeMillis(),
-                        trackStartedAt = System.currentTimeMillis()
+                        trackStartedAt = 0L
                     )
                     // Save to Firestore rooms/{roomId}
                     db.collection("rooms").document(roomId).set(newRoom)
@@ -9765,6 +9786,10 @@ fun SettingsDialog(
     onOpenLocationSetup: () -> Unit = {},
     onOpenPrivacyPolicy: () -> Unit = {}
 ) {
+    val context = LocalContext.current
+    val db = remember { FirebaseFirestore.getInstance() }
+
+    // Existing settings state (100% preserved)
     var hasBio by remember { mutableStateOf(user.hasBio) }
     var locationName by remember { mutableStateOf(user.locationName) }
     var maxDistanceKm by remember { mutableFloatStateOf(user.maxDistanceKm.toFloat()) }
@@ -9793,15 +9818,186 @@ fun SettingsDialog(
     var smoking by remember { mutableStateOf(user.smoking) }
     var workout by remember { mutableStateOf(user.workout) }
     var socialMedia by remember { mutableStateOf(user.socialMedia) }
+
+    // Real-Time Firestore Bound Profile Command Hub states (Zero Dummy Data)
+    var activeSubScreen by remember { mutableStateOf("main") } // "main", "blocked_list", "backpack", "followers", "level_details", "badge_rules"
+    var liveBlockedUserIds by remember(user.uid) { mutableStateOf(user.blockedUserIds) }
+    var blockedProfilesList by remember(user.uid) { mutableStateOf<List<UserProfile>>(emptyList()) }
+    var isLoadingBlocked by remember { mutableStateOf(false) }
+
+    var liveFollowerCount by remember(user.uid) { mutableStateOf(user.followerCount) }
+    var liveFollowingCount by remember(user.uid) { mutableStateOf(user.followingCount) }
+    var liveFollowersRecords by remember(user.uid) { mutableStateOf<List<FollowerRecord>>(emptyList()) }
+    var liveWealthXp by remember(user.uid) { mutableLongStateOf(user.wealthXp) }
+    var liveWealthLevel by remember(user.uid) { mutableStateOf(user.getEffectiveWealthLevel()) }
+    var liveCharmLevel by remember(user.uid) { mutableStateOf(user.charmLevel.coerceAtLeast(1)) }
+    var livePkLevel by remember(user.uid) { mutableStateOf(user.pkLevel.coerceAtLeast(1)) }
+    var liveDiamonds by remember(user.uid) { mutableLongStateOf(user.diamonds) }
+    var liveCoins by remember(user.uid) { mutableLongStateOf(user.coins) }
+    var liveCountry by remember(user.uid) { mutableStateOf("India") }
+    var liveOnlinePermission by remember(user.uid) { mutableStateOf("Everyone") }
+    var liveRoomInvitePermission by remember(user.uid) { mutableStateOf("Everyone") }
+    var liveOwnedFrames by remember(user.uid) { mutableStateOf(user.ownedFrames) }
+    var liveOwnedMicEffects by remember(user.uid) { mutableStateOf(user.ownedMicEffects) }
+    var liveOwnedChatFrames by remember(user.uid) { mutableStateOf(user.ownedChatFrames) }
+    var liveActiveFrame by remember(user.uid) { mutableStateOf(user.activeFrame) }
+    var showCountryEditModal by remember { mutableStateOf(false) }
+
+    // 1. Real-Time Firestore Listener on users/{user.uid}
+    DisposableEffect(user.uid) {
+        if (user.uid.isBlank()) return@DisposableEffect onDispose {}
+        val userReg = db.collection("users").document(user.uid)
+            .addSnapshotListener { snap, _ ->
+                if (snap != null && snap.exists()) {
+                    @Suppress("UNCHECKED_CAST")
+                    liveBlockedUserIds = (snap.get("blockedUserIds") as? List<String>) ?: emptyList()
+                    liveWealthXp = snap.getLong("wealthXp") ?: user.wealthXp
+                    liveWealthLevel = maxOf(
+                        (snap.getLong("wealthLevel") ?: 1L).toInt(),
+                        LevelBadgeSystem.calculateLevelFromXp(liveWealthXp)
+                    )
+                    liveCharmLevel = (snap.getLong("charmLevel") ?: 1L).toInt().coerceAtLeast(1)
+                    livePkLevel = (snap.getLong("pkLevel") ?: 1L).toInt().coerceAtLeast(1)
+                    liveDiamonds = snap.getLong("diamonds") ?: 0L
+                    liveCoins = snap.getLong("coins") ?: 0L
+                    val c = snap.getString("country")?.takeIf { it.isNotBlank() }
+                        ?: java.util.Locale.getDefault().displayCountry.ifBlank { "India" }
+                    liveCountry = c
+                    liveOnlinePermission = snap.getString("onlineStatusPermission")?.takeIf { it.isNotBlank() } ?: "Everyone"
+                    liveRoomInvitePermission = snap.getString("roomInvitePermission")?.takeIf { it.isNotBlank() } ?: "Everyone"
+                    @Suppress("UNCHECKED_CAST")
+                    liveOwnedFrames = (snap.get("ownedFrames") as? List<String>) ?: emptyList()
+                    @Suppress("UNCHECKED_CAST")
+                    liveOwnedMicEffects = (snap.get("ownedMicEffects") as? List<String>) ?: emptyList()
+                    @Suppress("UNCHECKED_CAST")
+                    liveOwnedChatFrames = (snap.get("ownedChatFrames") as? List<String>) ?: emptyList()
+                    liveActiveFrame = snap.getString("activeFrame") ?: ""
+                }
+            }
+        val folReg = db.collection("users").document(user.uid).collection("followers")
+            .addSnapshotListener { snap, _ ->
+                if (snap != null) {
+                    liveFollowerCount = snap.size()
+                    liveFollowersRecords = snap.documents.mapNotNull { doc ->
+                        try {
+                            doc.toObject(FollowerRecord::class.java)
+                        } catch (_: Exception) {
+                            null
+                        }
+                    }
+                }
+            }
+        val followingReg = db.collection("users").document(user.uid).collection("following")
+            .addSnapshotListener { snap, _ ->
+                if (snap != null) {
+                    liveFollowingCount = snap.size()
+                }
+            }
+        onDispose {
+            userReg.remove()
+            folReg.remove()
+            followingReg.remove()
+        }
+    }
+
+    // 2. Real-Time Resolution of Blocked User Profiles from Firestore
+    LaunchedEffect(liveBlockedUserIds, activeSubScreen) {
+        val distinctIds = liveBlockedUserIds.filter { it.isNotBlank() }.distinct()
+        if (distinctIds.isEmpty()) {
+            blockedProfilesList = emptyList()
+            isLoadingBlocked = false
+        } else if (activeSubScreen == "blocked_list") {
+            isLoadingBlocked = true
+            val loaded = mutableListOf<UserProfile>()
+            distinctIds.forEach { bUid ->
+                db.collection("users").document(bUid).get()
+                    .addOnSuccessListener { doc ->
+                        val prof = try {
+                            doc.toObject(UserProfile::class.java)?.copy(uid = doc.id)
+                        } catch (_: Exception) {
+                            null
+                        } ?: UserProfile(
+                            uid = bUid,
+                            userId = bUid.take(8),
+                            name = doc.getString("name")?.takeIf { it.isNotBlank() } ?: "User (${bUid.take(6)})",
+                            photo = doc.getString("photo") ?: ""
+                        )
+                        loaded.add(prof)
+                        blockedProfilesList = loaded.distinctBy { it.uid }
+                        isLoadingBlocked = false
+                    }
+                    .addOnFailureListener {
+                        isLoadingBlocked = false
+                    }
+            }
+        }
+    }
+
     val isKeyboardOpen = WindowInsets.isImeVisible
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
+
+    // Obsidian & Royal Gold Theme Palette (Exact Match with Room Profile Command Hub)
+    val obsidianBg = Color(0xFF0E0D15)
+    val cardObsidian = Color(0xFF181624)
+    val rowObsidian = Color(0xFF1E1C2E)
+    val goldPrimary = Color(0xFFF5C451)
+    val goldBorder = Color(0x66F5C451)
+    val subtleBorder = Color(0x26FFFFFF)
+    val mutedText = Color(0xFFA3A0B8)
+
+    val displayUserId = remember(user.userId, user.uid) {
+        user.userId.ifBlank {
+            if (user.uid.length >= 8) user.uid.take(8).uppercase() else user.uid.ifBlank { "USER" }
+        }
+    }
+    val (currLevelStartXp, nextLevelReqXp) = remember(liveWealthLevel) {
+        LevelBadgeSystem.getXpThresholds(liveWealthLevel)
+    }
+    val xpSpan = (nextLevelReqXp - currLevelStartXp).coerceAtLeast(1L)
+    val xpProgress = ((liveWealthXp - currLevelStartXp).coerceAtLeast(0L).toFloat() / xpSpan.toFloat()).coerceIn(0f, 1f)
+
+    fun saveAllSettingsAndClose() {
+        val updated = user.copy(
+            hasBio = hasBio,
+            locationName = locationName,
+            maxDistanceKm = maxDistanceKm.toInt(),
+            showFurtherAway = showFurtherAway,
+            interestedIn = interestedIn,
+            minAge = ageRangeStart.toInt(),
+            maxAge = ageRangeEnd.toInt(),
+            showOutsideAge = showOutsideAge,
+            visibilityMode = visibilityMode,
+            enableDiscovery = enableDiscovery,
+            myMove = myMove,
+            photoVerifiedChat = photoVerifiedChat,
+            interests = interests,
+            lookingFor = lookingFor,
+            openTo = openTo,
+            languages = languages,
+            zodiac = zodiac,
+            education = education,
+            familyPlans = familyPlans,
+            communicationStyle = communicationStyle,
+            loveStyle = loveStyle,
+            pets = pets,
+            drinking = drinking,
+            smoking = smoking,
+            workout = workout,
+            socialMedia = socialMedia,
+            locationPrivacy = locationPrivacy,
+            blockedUserIds = liveBlockedUserIds
+        )
+        onSave(updated)
+    }
 
     Dialog(
         onDismissRequest = {
             if (isKeyboardOpen) {
                 keyboardController?.hide()
                 focusManager.clearFocus()
+            } else if (activeSubScreen != "main") {
+                activeSubScreen = "main"
             } else {
                 onDismiss()
             }
@@ -9814,7 +10010,7 @@ fun SettingsDialog(
         )
     ) {
         Scaffold(
-            containerColor = Color(0xFF0B061A),
+            containerColor = obsidianBg,
             modifier = Modifier
                 .fillMaxSize()
                 .imePadding()
@@ -9827,421 +10023,1253 @@ fun SettingsDialog(
                     focusManager.clearFocus()
                 },
             topBar = {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Surface(
+                    color = cardObsidian,
+                    border = BorderStroke(0.8.dp, goldBorder),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color(0xFFC084FC))
-                    }
-                    Text(
-                        "Settings",
-                        color = Color.White,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    IconButton(
-                        onClick = {
-                            val updated = user.copy(
-                                hasBio = hasBio,
-                                locationName = locationName,
-                                maxDistanceKm = maxDistanceKm.toInt(),
-                                showFurtherAway = showFurtherAway,
-                                interestedIn = interestedIn,
-                                minAge = ageRangeStart.toInt(),
-                                maxAge = ageRangeEnd.toInt(),
-                                showOutsideAge = showOutsideAge,
-                                visibilityMode = visibilityMode,
-                                enableDiscovery = enableDiscovery,
-                                myMove = myMove,
-                                photoVerifiedChat = photoVerifiedChat,
-                                interests = interests,
-                                lookingFor = lookingFor,
-                                openTo = openTo,
-                                languages = languages,
-                                zodiac = zodiac,
-                                education = education,
-                                familyPlans = familyPlans,
-                                communicationStyle = communicationStyle,
-                                loveStyle = loveStyle,
-                                pets = pets,
-                                drinking = drinking,
-                                smoking = smoking,
-                                workout = workout,
-                                socialMedia = socialMedia,
-                                locationPrivacy = locationPrivacy
-                            )
-                            onSave(updated)
-                        },
+                    Row(
                         modifier = Modifier
-                            .size(32.dp)
-                            .background(Color(0xFF7C3AED), CircleShape)
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.Check, contentDescription = "Save", tint = Color.White, modifier = Modifier.size(18.dp))
+                        if (activeSubScreen != "main") {
+                            IconButton(
+                                onClick = { activeSubScreen = "main" },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Back",
+                                    tint = goldPrimary
+                                )
+                            }
+                        } else {
+                            IconButton(
+                                onClick = onDismiss,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Close",
+                                    tint = goldPrimary
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = when (activeSubScreen) {
+                                "blocked_list" -> "Blocked list"
+                                "backpack" -> "My Backpack & Frames"
+                                "followers" -> "Followers ($liveFollowerCount)"
+                                "level_details" -> "Personal Level & XP"
+                                "badge_rules" -> "Personal Badge Rules"
+                                else -> "Profile Command & Settings"
+                            },
+                            color = goldPrimary,
+                            fontSize = 16.5.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+
+                        IconButton(
+                            onClick = { saveAllSettingsAndClose() },
+                            modifier = Modifier
+                                .size(34.dp)
+                                .background(
+                                    Brush.linearGradient(listOf(Color(0xFFFFE082), goldPrimary, Color(0xFFB47B12))),
+                                    CircleShape
+                                )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Save",
+                                tint = Color(0xFF140F04),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
             }
         ) { paddingValues ->
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                item {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF160A29)),
+            // =========================================================================
+            // SUB-SCREEN 1: REAL-TIME BLOCKED LIST (MANAGE & UNBLOCK USERS IN FIRESTORE)
+            // =========================================================================
+            if (activeSubScreen == "blocked_list") {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Surface(
                         shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.dp, Color(0xFF3B1D66).copy(alpha = 0.6f))
+                        color = cardObsidian,
+                        border = BorderStroke(1.dp, goldBorder),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Has a Bio", color = Color.Gray, fontSize = 15.sp)
-                                Switch(checked = hasBio, onCheckedChange = { hasBio = it })
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "🚫 Real-Time Blocked Users (${liveBlockedUserIds.distinct().size})",
+                                    color = goldPrimary,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                                Spacer(modifier = Modifier.height(3.dp))
+                                Text(
+                                    text = "Blocked users cannot send you messages, call you, or see you in Discovery.",
+                                    color = mutedText,
+                                    fontSize = 11.5.sp
+                                )
                             }
+                        }
+                    }
 
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = Color(0xFFEEEEEE))
-
-                            SettingsAttributeRow("Interests", interests, SETTINGS_TOPIC_OPTIONS["Interests"] ?: emptyList()) { interests = it }
-                            SettingsAttributeRow("Looking for", lookingFor, SETTINGS_TOPIC_OPTIONS["Looking for"] ?: emptyList()) { lookingFor = it }
-                            SettingsAttributeRow("Open to...", openTo, SETTINGS_TOPIC_OPTIONS["Open to..."] ?: emptyList()) { openTo = it }
-                            SettingsAttributeRow("Add languages", languages, SETTINGS_TOPIC_OPTIONS["Add languages"] ?: emptyList()) { languages = it }
-                            SettingsAttributeRow("Zodiac", zodiac, SETTINGS_TOPIC_OPTIONS["Zodiac"] ?: emptyList()) { zodiac = it }
-                            SettingsAttributeRow("Education", education, SETTINGS_TOPIC_OPTIONS["Education"] ?: emptyList()) { education = it }
-                            SettingsAttributeRow("Family Plans", familyPlans, SETTINGS_TOPIC_OPTIONS["Family Plans"] ?: emptyList()) { familyPlans = it }
-                            SettingsAttributeRow("Communication Style", communicationStyle, SETTINGS_TOPIC_OPTIONS["Communication Style"] ?: emptyList()) { communicationStyle = it }
-                            SettingsAttributeRow("Love Style", loveStyle, SETTINGS_TOPIC_OPTIONS["Love Style"] ?: emptyList()) { loveStyle = it }
-                            SettingsAttributeRow("Pets", pets, SETTINGS_TOPIC_OPTIONS["Pets"] ?: emptyList()) { pets = it }
-                            SettingsAttributeRow("Drinking", drinking, SETTINGS_TOPIC_OPTIONS["Drinking"] ?: emptyList()) { drinking = it }
-                            SettingsAttributeRow("Smoking", smoking, SETTINGS_TOPIC_OPTIONS["Smoking"] ?: emptyList()) { smoking = it }
-                            SettingsAttributeRow("Workout", workout, SETTINGS_TOPIC_OPTIONS["Workout"] ?: emptyList()) { workout = it }
-                            SettingsAttributeRow("Social Media", socialMedia, SETTINGS_TOPIC_OPTIONS["Social Media"] ?: emptyList()) { socialMedia = it }
+                    val distinctBlocked = liveBlockedUserIds.filter { it.isNotBlank() }.distinct()
+                    if (isLoadingBlocked) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("Loading real-time blocked list...", color = mutedText, fontSize = 13.sp)
+                        }
+                    } else if (distinctBlocked.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("🛡️", fontSize = 36.sp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "Your Blocked List is empty",
+                                    color = Color.White,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Any user you block from Chats, Profiles, or Rooms will appear here in real time.",
+                                    color = mutedText,
+                                    fontSize = 12.sp,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(distinctBlocked, key = { it }) { bUid ->
+                                val resolvedProfile = blockedProfilesList.find { it.uid == bUid }
+                                val bName = resolvedProfile?.name?.takeIf { it.isNotBlank() } ?: "User (${bUid.take(6)})"
+                                val bPhoto = resolvedProfile?.photo.orEmpty()
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = rowObsidian,
+                                    border = BorderStroke(1.dp, subtleBorder),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            AsyncImage(
+                                                model = bPhoto.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                                                contentDescription = bName,
+                                                modifier = Modifier
+                                                    .size(38.dp)
+                                                    .clip(CircleShape)
+                                                    .border(1.dp, goldPrimary, CircleShape),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                            Column {
+                                                Text(
+                                                    text = bName,
+                                                    color = Color.White,
+                                                    fontSize = 13.5.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Text(
+                                                    text = "Blocked • ID: ${bUid.take(8).uppercase()}",
+                                                    color = Color(0xFFFF6B6B),
+                                                    fontSize = 11.sp
+                                                )
+                                            }
+                                        }
+                                        Button(
+                                            onClick = {
+                                                val updatedList = liveBlockedUserIds.filter { it != bUid }
+                                                liveBlockedUserIds = updatedList
+                                                if (user.uid.isNotBlank()) {
+                                                    db.collection("users").document(user.uid)
+                                                        .update("blockedUserIds", updatedList)
+                                                }
+                                                Toast.makeText(context, "✅ Unblocked $bName", Toast.LENGTH_SHORT).show()
+                                            },
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = goldPrimary,
+                                                contentColor = Color.Black
+                                            ),
+                                            shape = RoundedCornerShape(10.dp),
+                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                        ) {
+                                            Text("Unblock", fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
-
-                item {
-                    Text("Discovery", color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF160A29)),
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.dp, Color(0xFF3B1D66).copy(alpha = 0.6f))
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onOpenLocationSetup() },
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("Location & Area", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                    Text("Tap to change real GPS location & area.", color = Color.Gray, fontSize = 11.sp)
+            }
+            // =========================================================================
+            // SUB-SCREEN 2: MY BACKPACK & OWNED FRAMES (100% REAL-TIME FIRESTORE)
+            // =========================================================================
+            else if (activeSubScreen == "backpack") {
+                val allItems = liveOwnedFrames.map { Triple("frame", it, "Avatar Frame: $it") } +
+                    liveOwnedMicEffects.map { Triple("mic", it, "Mic Wave Effect: $it") } +
+                    liveOwnedChatFrames.map { Triple("chat", it, "VIP Chat Frame: $it") }
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (allItems.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                text = "Your Backpack is currently empty.\nAny Avatar Frames, Chat Frames, or Mic Effects you unlock in real time will appear here.",
+                                color = mutedText,
+                                fontSize = 13.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(allItems) { (type, itemId, label) ->
+                                val isEquipped = (type == "frame" && liveActiveFrame == itemId)
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = rowObsidian,
+                                    border = BorderStroke(1.dp, if (isEquipped) goldPrimary else goldBorder),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(14.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "🎒 $label",
+                                            color = Color.White,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        if (type == "frame") {
+                                            Button(
+                                                onClick = {
+                                                    val nextFrame = if (isEquipped) "" else itemId
+                                                    liveActiveFrame = nextFrame
+                                                    if (user.uid.isNotBlank()) {
+                                                        db.collection("users").document(user.uid)
+                                                            .update("activeFrame", nextFrame)
+                                                    }
+                                                    Toast.makeText(
+                                                        context,
+                                                        if (nextFrame.isBlank()) "Frame unequipped" else "Equipped $itemId!",
+                                                        Toast.LENGTH_SHORT
+                                                    ).show()
+                                                },
+                                                colors = ButtonDefaults.buttonColors(
+                                                    containerColor = if (isEquipped) Color(0xFF282012) else goldPrimary,
+                                                    contentColor = if (isEquipped) goldPrimary else Color.Black
+                                                ),
+                                                shape = RoundedCornerShape(10.dp),
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                            ) {
+                                                Text(
+                                                    text = if (isEquipped) "Equipped ✓" else "Wear",
+                                                    fontSize = 11.5.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
-                                Text("📍 $locationName ✏️", color = BrandCoral, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                             }
-
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            // Location Privacy Controls (Public / Friends / Only Me)
+                        }
+                    }
+                }
+            }
+            // =========================================================================
+            // SUB-SCREEN 3: REAL-TIME FOLLOWERS LIST
+            // =========================================================================
+            else if (activeSubScreen == "followers") {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .padding(16.dp)
+                ) {
+                    if (liveFollowersRecords.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("No followers yet.", color = mutedText, fontSize = 13.5.sp)
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(liveFollowersRecords) { fol ->
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = rowObsidian,
+                                    border = BorderStroke(1.dp, subtleBorder),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        AsyncImage(
+                                            model = fol.photo.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                                            contentDescription = fol.name,
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .clip(CircleShape)
+                                                .border(1.dp, goldPrimary, CircleShape),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                        Text(
+                                            text = fol.name.ifBlank { "Member" },
+                                            color = Color.White,
+                                            fontSize = 13.5.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // =========================================================================
+            // SUB-SCREEN 4: PERSONAL LEVEL & XP PROGRESSION (REAL-TIME FIRESTORE)
+            // =========================================================================
+            else if (activeSubScreen == "level_details") {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(18.dp),
+                            color = cardObsidian,
+                            border = BorderStroke(1.2.dp, goldBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(
+                                    text = "🛡️ Personal Wealth Level: Lv.$liveWealthLevel",
+                                    color = goldPrimary,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                                Text(
+                                    text = "Current XP: $liveWealthXp / $nextLevelReqXp EXP ➔ Next: Lv.${(liveWealthLevel + 1).coerceAtMost(100)}",
+                                    color = Color.White,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(8.dp)
+                                        .clip(RoundedCornerShape(50))
+                                        .background(Color(0xFF2C283E))
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth(xpProgress.coerceAtLeast(0.04f))
+                                            .height(8.dp)
+                                            .clip(RoundedCornerShape(50))
+                                            .background(
+                                                Brush.horizontalGradient(
+                                                    listOf(Color(0xFFFFE082), goldPrimary, Color(0xFF9333EA))
+                                                )
+                                            )
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("• Broadcaster Charm Level: Lv.$liveCharmLevel", color = Color.White, fontSize = 12.5.sp)
+                                Text("• PK Battle Swords Level: Lv.$livePkLevel", color = Color.White, fontSize = 12.5.sp)
+                                Text("• Live Wallet: $liveDiamonds 💎 Diamonds • $liveCoins 🪙 Coins", color = goldPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+            // =========================================================================
+            // SUB-SCREEN 5: PERSONAL BADGE RULES
+            // =========================================================================
+            else if (activeSubScreen == "badge_rules") {
+                val badgeRules = listOf(
+                    "1. What is Personal Badge?" to "Your Personal Badge represents your real-time Wealth Level (Lv.$liveWealthLevel), Broadcaster Charm Level (Lv.$liveCharmLevel), and PK Battle Level (Lv.$livePkLevel) across LiveTogather.",
+                    "2. How do I level up my badge?" to "Send gifts in rooms, stay active on mics, win PK battles, and complete daily room tasks to automatically upgrade your badge tier in real time.",
+                    "3. Where is my badge displayed?" to "Your active badge is displayed on your Profile card, in Audio & Video room comment streams, on mic seats, and on leaderboards."
+                )
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(badgeRules) { (t, b) ->
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = cardObsidian,
+                            border = BorderStroke(1.dp, goldBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Text(t, color = goldPrimary, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(b, color = Color.White.copy(alpha = 0.9f), fontSize = 12.5.sp, lineHeight = 17.sp)
+                            }
+                        }
+                    }
+                }
+            }
+            // =========================================================================
+            // MAIN PROFILE SETTINGS SCREEN (OBSIDIAN & ROYAL GOLD COMMAND HUB + ALL EXISTING SETTINGS)
+            // =========================================================================
+            else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // 1. TOP PROFILE COMMAND HEADER CARD (Matches Room Profile Header Card!)
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(18.dp),
+                            color = cardObsidian,
+                            border = BorderStroke(1.2.dp, goldBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                    .padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("Location Privacy", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                                    Text("Who can see your location", color = Color.Gray, fontSize = 10.sp)
+                                Box(
+                                    modifier = Modifier
+                                        .size(66.dp)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .border(1.5.dp, goldPrimary, RoundedCornerShape(16.dp))
+                                ) {
+                                    AsyncImage(
+                                        model = user.photo.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                                        contentDescription = user.name,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
                                 }
-                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    listOf(
-                                        "public" to "🌐 Public",
-                                        "friends" to "👥 Friends",
-                                        "only_me" to "🔒 Only Me"
-                                    ).forEach { (key, lbl) ->
-                                        val isSel = locationPrivacy == key
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = user.name.ifBlank { "LiveTogather Member" },
+                                        color = Color.White,
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(modifier = Modifier.height(3.dp))
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        modifier = Modifier.clickable {
+                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                                            clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("User ID", displayUserId))
+                                            Toast.makeText(context, "Copied ID: $displayUserId", Toast.LENGTH_SHORT).show()
+                                        }
+                                    ) {
+                                        Text(
+                                            text = "ID: $displayUserId",
+                                            color = mutedText,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Text(text = "📋", fontSize = 11.sp)
+                                    }
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                         Surface(
-                                            color = if (isSel) Color(0xFF7E22CE) else Color(0xFFF3F4F6),
                                             shape = RoundedCornerShape(8.dp),
-                                            modifier = Modifier.clickable { locationPrivacy = key }
+                                            color = Color(0xFF282012),
+                                            border = BorderStroke(1.dp, goldPrimary),
+                                            modifier = Modifier.clickable { activeSubScreen = "badge_rules" }
                                         ) {
                                             Text(
-                                                text = lbl,
-                                                color = if (isSel) Color.White else Color(0xFF4B5563),
-                                                fontSize = 10.sp,
-                                                fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
-                                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp)
+                                                text = "🛡️ Lv.$liveWealthLevel",
+                                                color = goldPrimary,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                            )
+                                        }
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = rowObsidian,
+                                            border = BorderStroke(1.dp, subtleBorder)
+                                        ) {
+                                            Text(
+                                                text = "💎 $liveDiamonds",
+                                                color = Color.White,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                             )
                                         }
                                     }
                                 }
                             }
-
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color(0xFFEEEEEE))
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text("Maximum Distance", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                Text("${maxDistanceKm.toInt()} km", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            }
-                            Slider(
-                                value = maxDistanceKm,
-                                onValueChange = { maxDistanceKm = it },
-                                valueRange = 10f..120f,
-                                colors = SliderDefaults.colors(
-                                    thumbColor = Color.White,
-                                    activeTrackColor = Color.Red,
-                                    inactiveTrackColor = Color.LightGray
-                                )
-                            )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Show people further away if I run out of profiles to see.", color = Color.Gray, fontSize = 11.sp, modifier = Modifier.weight(1f))
-                                Switch(checked = showFurtherAway, onCheckedChange = { showFurtherAway = it })
-                            }
-
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color(0xFFEEEEEE))
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Interested In", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                Row {
-                                    listOf("Women", "Men", "Everyone").forEach { opt ->
-                                        Text(
-                                            text = opt,
-                                            color = if (interestedIn == opt) Color.Red else Color.Gray,
-                                            fontWeight = if (interestedIn == opt) FontWeight.Bold else FontWeight.Normal,
-                                            fontSize = 13.sp,
-                                            modifier = Modifier
-                                                .clickable { interestedIn = opt }
-                                                .padding(horizontal = 6.dp)
-                                        )
-                                    }
-                                }
-                            }
-
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color(0xFFEEEEEE))
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text("Age Range", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                Text("${ageRangeStart.toInt()} - ${ageRangeEnd.toInt()}", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            }
-                            Slider(
-                                value = ageRangeEnd,
-                                onValueChange = { ageRangeEnd = it },
-                                valueRange = 21f..50f,
-                                colors = SliderDefaults.colors(
-                                    thumbColor = Color.White,
-                                    activeTrackColor = Color.Red,
-                                    inactiveTrackColor = Color.LightGray
-                                )
-                            )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Show people slightly out of my preferred range if I run out of profiles to see", color = Color.Gray, fontSize = 11.sp, modifier = Modifier.weight(1f))
-                                Switch(checked = showOutsideAge, onCheckedChange = { showOutsideAge = it })
-                            }
-                        }
-                    }
-                }
-
-                item {
-                    Text("Control my visibility", color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF160A29)),
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.dp, Color(0xFF3B1D66).copy(alpha = 0.6f))
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { visibilityMode = "Standard" },
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("Standard", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                    Text("You will be discoverable in the card stack.", color = Color.Gray, fontSize = 11.sp)
-                                }
-                                if (visibilityMode == "Standard") {
-                                    Icon(Icons.Default.Check, contentDescription = null, tint = Color.Red)
-                                }
-                            }
-
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color(0xFFEEEEEE))
-
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { visibilityMode = "Incognito" },
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text("Incognito", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("PLUS", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.background(Color.Red, RoundedCornerShape(4.dp)).padding(horizontal = 4.dp, vertical = 1.dp))
-                                    }
-                                    Text("You will be discoverable only by people you Like.", color = Color.Gray, fontSize = 11.sp)
-                                }
-                                if (visibilityMode == "Incognito") {
-                                    Icon(Icons.Default.Check, contentDescription = null, tint = Color.Red)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                item {
-                    Text("Enable Discovery", color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF160A29)),
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.dp, Color(0xFF3B1D66).copy(alpha = 0.6f))
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Enable Discovery", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                Switch(checked = enableDiscovery, onCheckedChange = { enableDiscovery = it })
-                            }
-                            Text(
-                                "When turned off, your profile will be hidden from the card stack and Discovery will be disabled. People you have already Liked may still see and match with you.",
-                                color = Color.Gray,
-                                fontSize = 11.sp
-                            )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Text("Control who messages you", color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF160A29)),
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.dp, Color(0xFF3B1D66).copy(alpha = 0.6f))
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("My Move", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                    Text("Message your matches first to initiate conversation. They won't be able to message you until you do.", color = Color.Gray, fontSize = 11.sp)
-                                }
-                                Switch(checked = myMove, onCheckedChange = { myMove = it })
-                            }
-
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color(0xFFEEEEEE))
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("Photo Verified Chat", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                    Text("Photo Verified members can enable this to only receive messages from other Photo Verified profiles.", color = Color.Gray, fontSize = 11.sp)
-                                }
-                                Switch(checked = photoVerifiedChat, onCheckedChange = { photoVerifiedChat = it })
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Text("Legal & Policies", color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF160A29)),
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.dp, Color(0xFF3B1D66).copy(alpha = 0.6f))
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        onDismiss()
-                                        onOpenPrivacyPolicy()
-                                    },
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.Security,
-                                        contentDescription = null,
-                                        tint = BrandCoral,
-                                        modifier = Modifier.size(20.dp)
+                    // 2. PERSONAL LEVEL PROGRESS BAR CARD (Matches Room Level Progress Bar Card!)
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = cardObsidian,
+                            border = BorderStroke(1.dp, goldBorder),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { activeSubScreen = "level_details" }
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Level",
+                                        color = goldPrimary,
+                                        fontSize = 13.5.sp,
+                                        fontWeight = FontWeight.Bold
                                     )
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Column {
-                                        Text(
-                                            text = "Privacy Policy",
-                                            color = Color.Black,
-                                            fontWeight = FontWeight.SemiBold,
-                                            fontSize = 14.sp
-                                        )
-                                        Text(
-                                            text = "How AYAD Creations protects your data",
-                                            color = Color.Gray,
-                                            fontSize = 11.sp
-                                        )
+                                    Box(
+                                        modifier = Modifier
+                                            .size(22.dp)
+                                            .clip(CircleShape)
+                                            .border(1.dp, mutedText, CircleShape)
+                                            .clickable { activeSubScreen = "level_details" },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text("?", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
-
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-                                    contentDescription = null,
-                                    tint = Color.Gray,
-                                    modifier = Modifier.size(14.dp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text("LV.$liveWealthLevel", color = goldPrimary, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(8.dp)
+                                            .clip(RoundedCornerShape(50))
+                                            .background(Color(0xFF2C283E))
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth(xpProgress.coerceAtLeast(0.05f))
+                                                .height(8.dp)
+                                                .clip(RoundedCornerShape(50))
+                                                .background(
+                                                    Brush.horizontalGradient(
+                                                        listOf(Color(0xFFFFE082), goldPrimary, Color(0xFF9333EA))
+                                                    )
+                                                )
+                                        )
+                                    }
+                                    Text("LV.${(liveWealthLevel + 1).coerceAtMost(100)}", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                                Spacer(modifier = Modifier.height(5.dp))
+                                Text(
+                                    text = "$liveWealthXp / $nextLevelReqXp EXP",
+                                    color = Color.White.copy(alpha = 0.88f),
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth()
                                 )
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(30.dp))
+                    // 3. REAL-TIME ACCOUNT & PRIVACY COMMAND HUB ROWS (Matches Room Profile Settings Rows!)
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            // Row A: Blocked list (Real-Time Firestore)
+                            val blockedCount = liveBlockedUserIds.filter { it.isNotBlank() }.distinct().size
+                            ProfileCommandSettingRow(
+                                label = "Blocked list",
+                                valueText = if (blockedCount > 0) "View Blocked ($blockedCount)" else "View Blocked (0)",
+                                valueColor = if (blockedCount > 0) Color(0xFFFF6B6B) else Color.White.copy(alpha = 0.88f),
+                                onClick = { activeSubScreen = "blocked_list" }
+                            )
+
+                            // Row B: My backpack & frames (Real-Time Firestore)
+                            val totalBackpackCount = liveOwnedFrames.size + liveOwnedMicEffects.size + liveOwnedChatFrames.size
+                            ProfileCommandSettingRow(
+                                label = "My backpack",
+                                valueText = "$totalBackpackCount items",
+                                onClick = { activeSubScreen = "backpack" }
+                            )
+
+                            // Row C: Follower & Following (Real-Time Firestore)
+                            ProfileCommandSettingRow(
+                                label = "Follower",
+                                valueText = "$liveFollowerCount Followers • $liveFollowingCount Following",
+                                onClick = { activeSubScreen = "followers" }
+                            )
+
+                            // Row D: Country (Real-Time Firestore)
+                            val countryFlag = when {
+                                liveCountry.equals("India", true) -> "🇮🇳"
+                                liveCountry.equals("USA", true) || liveCountry.equals("United States", true) -> "🇺🇸"
+                                liveCountry.equals("UK", true) || liveCountry.equals("United Kingdom", true) -> "🇬🇧"
+                                else -> "🌍"
+                            }
+                            ProfileCommandSettingRow(
+                                label = "Country",
+                                valueText = "$countryFlag $liveCountry",
+                                onClick = { showCountryEditModal = true }
+                            )
+
+                            // Row E: Personal badge & rules
+                            ProfileCommandSettingRow(
+                                label = "Personal badge",
+                                valueText = "🛡️ Lv.$liveWealthLevel",
+                                valueColor = goldPrimary,
+                                onClick = { activeSubScreen = "badge_rules" }
+                            )
+
+                            // Row F: Online status permission (Everyone / Friends / Hidden)
+                            ProfileCommandSettingRow(
+                                label = "Online status permission",
+                                valueText = liveOnlinePermission,
+                                onClick = {
+                                    val next = when (liveOnlinePermission) {
+                                        "Everyone" -> "Friends"
+                                        "Friends" -> "Hidden"
+                                        else -> "Everyone"
+                                    }
+                                    liveOnlinePermission = next
+                                    if (user.uid.isNotBlank()) {
+                                        db.collection("users").document(user.uid)
+                                            .update("onlineStatusPermission", next)
+                                    }
+                                    Toast.makeText(context, "Online status permission: $next", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+
+                            // Row G: Room & Mic invite permission (Everyone / Friends / No One)
+                            ProfileCommandSettingRow(
+                                label = "Room invite permission",
+                                valueText = liveRoomInvitePermission,
+                                onClick = {
+                                    val next = when (liveRoomInvitePermission) {
+                                        "Everyone" -> "Friends"
+                                        "Friends" -> "No One"
+                                        else -> "Everyone"
+                                    }
+                                    liveRoomInvitePermission = next
+                                    if (user.uid.isNotBlank()) {
+                                        db.collection("users").document(user.uid)
+                                            .update("roomInvitePermission", next)
+                                    }
+                                    Toast.makeText(context, "Room invite permission: $next", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        }
+                    }
+
+                    // 4. EXISTING PROFILE ATTRIBUTES SECTION (100% Preserved, Restyled in Obsidian & Royal Gold)
+                    item {
+                        Text(
+                            text = "Profile Attributes & Lifestyle",
+                            color = goldPrimary,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier.padding(top = 6.dp, bottom = 4.dp)
+                        )
+                        Surface(
+                            color = cardObsidian,
+                            shape = RoundedCornerShape(18.dp),
+                            border = BorderStroke(1.dp, goldBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Has a Bio", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    Switch(
+                                        checked = hasBio,
+                                        onCheckedChange = { hasBio = it },
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = Color.Black,
+                                            checkedTrackColor = goldPrimary
+                                        )
+                                    )
+                                }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = subtleBorder)
+
+                                SettingsAttributeRow("Interests", interests, SETTINGS_TOPIC_OPTIONS["Interests"] ?: emptyList()) { interests = it }
+                                SettingsAttributeRow("Looking for", lookingFor, SETTINGS_TOPIC_OPTIONS["Looking for"] ?: emptyList()) { lookingFor = it }
+                                SettingsAttributeRow("Open to...", openTo, SETTINGS_TOPIC_OPTIONS["Open to..."] ?: emptyList()) { openTo = it }
+                                SettingsAttributeRow("Add languages", languages, SETTINGS_TOPIC_OPTIONS["Add languages"] ?: emptyList()) { languages = it }
+                                SettingsAttributeRow("Zodiac", zodiac, SETTINGS_TOPIC_OPTIONS["Zodiac"] ?: emptyList()) { zodiac = it }
+                                SettingsAttributeRow("Education", education, SETTINGS_TOPIC_OPTIONS["Education"] ?: emptyList()) { education = it }
+                                SettingsAttributeRow("Family Plans", familyPlans, SETTINGS_TOPIC_OPTIONS["Family Plans"] ?: emptyList()) { familyPlans = it }
+                                SettingsAttributeRow("Communication Style", communicationStyle, SETTINGS_TOPIC_OPTIONS["Communication Style"] ?: emptyList()) { communicationStyle = it }
+                                SettingsAttributeRow("Love Style", loveStyle, SETTINGS_TOPIC_OPTIONS["Love Style"] ?: emptyList()) { loveStyle = it }
+                                SettingsAttributeRow("Pets", pets, SETTINGS_TOPIC_OPTIONS["Pets"] ?: emptyList()) { pets = it }
+                                SettingsAttributeRow("Drinking", drinking, SETTINGS_TOPIC_OPTIONS["Drinking"] ?: emptyList()) { drinking = it }
+                                SettingsAttributeRow("Smoking", smoking, SETTINGS_TOPIC_OPTIONS["Smoking"] ?: emptyList()) { smoking = it }
+                                SettingsAttributeRow("Workout", workout, SETTINGS_TOPIC_OPTIONS["Workout"] ?: emptyList()) { workout = it }
+                                SettingsAttributeRow("Social Media", socialMedia, SETTINGS_TOPIC_OPTIONS["Social Media"] ?: emptyList()) { socialMedia = it }
+                            }
+                        }
+                    }
+
+                    // 5. EXISTING DISCOVERY SECTION (100% Preserved, Restyled in Obsidian & Royal Gold)
+                    item {
+                        Text(
+                            text = "Discovery & Location",
+                            color = goldPrimary,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier.padding(top = 6.dp, bottom = 4.dp)
+                        )
+                        Surface(
+                            color = cardObsidian,
+                            shape = RoundedCornerShape(18.dp),
+                            border = BorderStroke(1.dp, goldBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onOpenLocationSetup() },
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("Location & Area", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                        Text("Tap to change real GPS location & area.", color = mutedText, fontSize = 11.sp)
+                                    }
+                                    Text("📍 $locationName ✏️", color = goldPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                // Location Privacy Controls (Public / Friends / Only Me)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("Location Privacy", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp)
+                                        Text("Who can see your location", color = mutedText, fontSize = 10.5.sp)
+                                    }
+                                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                        listOf(
+                                            "public" to "🌐 Public",
+                                            "friends" to "👥 Friends",
+                                            "only_me" to "🔒 Only Me"
+                                        ).forEach { (key, lbl) ->
+                                            val isSel = locationPrivacy == key
+                                            Surface(
+                                                color = if (isSel) Color(0xFF282012) else rowObsidian,
+                                                border = BorderStroke(1.dp, if (isSel) goldPrimary else subtleBorder),
+                                                shape = RoundedCornerShape(8.dp),
+                                                modifier = Modifier.clickable { locationPrivacy = key }
+                                            ) {
+                                                Text(
+                                                    text = lbl,
+                                                    color = if (isSel) goldPrimary else Color.White.copy(alpha = 0.8f),
+                                                    fontSize = 10.sp,
+                                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = subtleBorder)
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("Maximum Distance", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    Text("${maxDistanceKm.toInt()} km", color = goldPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                }
+                                Slider(
+                                    value = maxDistanceKm,
+                                    onValueChange = { maxDistanceKm = it },
+                                    valueRange = 10f..120f,
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = goldPrimary,
+                                        activeTrackColor = goldPrimary,
+                                        inactiveTrackColor = Color(0xFF2C283E)
+                                    )
+                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Show people further away if I run out of profiles to see.", color = mutedText, fontSize = 11.5.sp, modifier = Modifier.weight(1f))
+                                    Switch(
+                                        checked = showFurtherAway,
+                                        onCheckedChange = { showFurtherAway = it },
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = Color.Black,
+                                            checkedTrackColor = goldPrimary
+                                        )
+                                    )
+                                }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = subtleBorder)
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Interested In", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        listOf("Women", "Men", "Everyone").forEach { opt ->
+                                            val isSel = interestedIn == opt
+                                            Surface(
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = if (isSel) Color(0xFF282012) else rowObsidian,
+                                                border = BorderStroke(1.dp, if (isSel) goldPrimary else subtleBorder),
+                                                modifier = Modifier.clickable { interestedIn = opt }
+                                            ) {
+                                                Text(
+                                                    text = opt,
+                                                    color = if (isSel) goldPrimary else Color.White.copy(alpha = 0.8f),
+                                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                                    fontSize = 12.sp,
+                                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = subtleBorder)
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("Age Range", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    Text("${ageRangeStart.toInt()} - ${ageRangeEnd.toInt()}", color = goldPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                }
+                                Slider(
+                                    value = ageRangeEnd,
+                                    onValueChange = { ageRangeEnd = it },
+                                    valueRange = 21f..50f,
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = goldPrimary,
+                                        activeTrackColor = goldPrimary,
+                                        inactiveTrackColor = Color(0xFF2C283E)
+                                    )
+                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Show people slightly out of my preferred range if I run out of profiles to see", color = mutedText, fontSize = 11.5.sp, modifier = Modifier.weight(1f))
+                                    Switch(
+                                        checked = showOutsideAge,
+                                        onCheckedChange = { showOutsideAge = it },
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = Color.Black,
+                                            checkedTrackColor = goldPrimary
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // 6. EXISTING VISIBILITY SECTION (100% Preserved, Restyled in Obsidian & Royal Gold)
+                    item {
+                        Text(
+                            text = "Control my visibility",
+                            color = goldPrimary,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier.padding(top = 6.dp, bottom = 4.dp)
+                        )
+                        Surface(
+                            color = cardObsidian,
+                            shape = RoundedCornerShape(18.dp),
+                            border = BorderStroke(1.dp, goldBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { visibilityMode = "Standard" },
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("Standard", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                        Text("You will be discoverable in the card stack.", color = mutedText, fontSize = 11.5.sp)
+                                    }
+                                    if (visibilityMode == "Standard") {
+                                        Icon(Icons.Default.Check, contentDescription = null, tint = goldPrimary)
+                                    }
+                                }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = subtleBorder)
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { visibilityMode = "Incognito" },
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text("Incognito", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                "PLUS",
+                                                color = Color.Black,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                modifier = Modifier
+                                                    .background(goldPrimary, RoundedCornerShape(4.dp))
+                                                    .padding(horizontal = 5.dp, vertical = 1.dp)
+                                            )
+                                        }
+                                        Text("You will be discoverable only by people you Like.", color = mutedText, fontSize = 11.5.sp)
+                                    }
+                                    if (visibilityMode == "Incognito") {
+                                        Icon(Icons.Default.Check, contentDescription = null, tint = goldPrimary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 7. EXISTING ENABLE DISCOVERY & MESSAGE CONTROLS + PRIVACY POLICY (100% Preserved, Restyled in Obsidian & Royal Gold)
+                    item {
+                        Text(
+                            text = "Enable Discovery",
+                            color = goldPrimary,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier.padding(top = 6.dp, bottom = 4.dp)
+                        )
+                        Surface(
+                            color = cardObsidian,
+                            shape = RoundedCornerShape(18.dp),
+                            border = BorderStroke(1.dp, goldBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Enable Discovery", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    Switch(
+                                        checked = enableDiscovery,
+                                        onCheckedChange = { enableDiscovery = it },
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = Color.Black,
+                                            checkedTrackColor = goldPrimary
+                                        )
+                                    )
+                                }
+                                Text(
+                                    "When turned off, your profile will be hidden from the card stack and Discovery will be disabled. People you have already Liked may still see and match with you.",
+                                    color = mutedText,
+                                    fontSize = 11.5.sp
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text(
+                            text = "Control who messages you",
+                            color = goldPrimary,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Surface(
+                            color = cardObsidian,
+                            shape = RoundedCornerShape(18.dp),
+                            border = BorderStroke(1.dp, goldBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("My Move", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                        Text("Message your matches first to initiate conversation. They won't be able to message you until you do.", color = mutedText, fontSize = 11.5.sp)
+                                    }
+                                    Switch(
+                                        checked = myMove,
+                                        onCheckedChange = { myMove = it },
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = Color.Black,
+                                            checkedTrackColor = goldPrimary
+                                        )
+                                    )
+                                }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = subtleBorder)
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("Photo Verified Chat", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                        Text("Photo Verified members can enable this to only receive messages from other Photo Verified profiles.", color = mutedText, fontSize = 11.5.sp)
+                                    }
+                                    Switch(
+                                        checked = photoVerifiedChat,
+                                        onCheckedChange = { photoVerifiedChat = it },
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = Color.Black,
+                                            checkedTrackColor = goldPrimary
+                                        )
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text(
+                            text = "Legal & Policies",
+                            color = goldPrimary,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Surface(
+                            color = cardObsidian,
+                            shape = RoundedCornerShape(18.dp),
+                            border = BorderStroke(1.dp, goldBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            onDismiss()
+                                            onOpenPrivacyPolicy()
+                                        },
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.Security,
+                                            contentDescription = null,
+                                            tint = goldPrimary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Column {
+                                            Text(
+                                                text = "Privacy Policy",
+                                                color = Color.White,
+                                                fontWeight = FontWeight.SemiBold,
+                                                fontSize = 14.sp
+                                            )
+                                            Text(
+                                                text = "How AYAD Creations protects your data",
+                                                color = mutedText,
+                                                fontSize = 11.5.sp
+                                            )
+                                        }
+                                    }
+
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                        contentDescription = null,
+                                        tint = goldPrimary,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(30.dp))
+                    }
                 }
+            }
+        }
+    }
+
+    if (showCountryEditModal) {
+        var countryInput by remember { mutableStateOf(liveCountry) }
+        Dialog(onDismissRequest = { showCountryEditModal = false }) {
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = cardObsidian,
+                border = BorderStroke(1.2.dp, goldPrimary)
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Set Your Country", color = goldPrimary, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                    OutlinedTextField(
+                        value = countryInput,
+                        onValueChange = { countryInput = it },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = goldPrimary,
+                            unfocusedBorderColor = subtleBorder
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        Button(
+                            onClick = {
+                                val clean = countryInput.trim().ifBlank { "India" }
+                                liveCountry = clean
+                                if (user.uid.isNotBlank()) {
+                                    db.collection("users").document(user.uid).update("country", clean)
+                                }
+                                Toast.makeText(context, "Country updated to $clean", Toast.LENGTH_SHORT).show()
+                                showCountryEditModal = false
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = goldPrimary, contentColor = Color.Black)
+                        ) {
+                            Text("Save", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfileCommandSettingRow(
+    label: String,
+    valueText: String = "",
+    valueColor: Color = Color.White.copy(alpha = 0.88f),
+    onClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = Color(0xFF1E1C2E),
+        border = BorderStroke(1.dp, Color(0x26FFFFFF)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = label,
+                color = Color.White,
+                fontSize = 13.5.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                if (valueText.isNotBlank()) {
+                    Text(
+                        text = valueText,
+                        color = valueColor,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                Icon(
+                    imageVector = Icons.Default.ChevronRight,
+                    contentDescription = null,
+                    tint = Color(0xFFA3A0B8),
+                    modifier = Modifier.size(18.dp)
+                )
             }
         }
     }

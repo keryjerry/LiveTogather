@@ -80,10 +80,23 @@ data class RoomLevelUpEvent(
 )
 
 object RoomLevelUpEngine {
-    const val ROOM_STAY_LEVEL_INTERVAL_SECONDS = 300L // Every 5 minutes in a room
+    const val ROOM_STAY_LEVEL_INTERVAL_SECONDS = 540L // Every 9 minutes (-10% faster than 10 mins)
     const val ROOM_STAY_XP_PER_5_MIN = 100L
     const val GLOBAL_WEALTH_XP_PER_5_MIN = 25L
     const val POPUP_DISPLAY_DURATION_MS = 2800L // Auto-dismiss cleanly in ~2.8 seconds
+
+    // -10% Reduced Daily Room Level-Up Caps (Real-Time Firestore Bound)
+    const val DAILY_UPPER_LIMIT_EXP = 10800L
+    const val DAILY_DIAMOND_CAP_EXP = 4050L
+    const val DAILY_GOLD_CAP_EXP = 900L
+    const val DAILY_MIC_CAP_EXP = 4050L
+    const val DAILY_NEW_USER_MIC_CAP_EXP = 1800L
+    const val MIC_9_MIN_EXP_REWARD = 40L
+
+    fun getTodayDateKey(): String {
+        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+        return sdf.format(java.util.Date())
+    }
 
     fun sanitizeRoomKey(roomId: String): String {
         return roomId.replace(Regex("[^A-Za-z0-9_-]"), "_").ifBlank { "default_room" }
@@ -91,6 +104,156 @@ object RoomLevelUpEngine {
 
     fun calculateRoomLevelFromXp(roomXp: Long): Int {
         return ((roomXp.coerceAtLeast(0L) / ROOM_STAY_XP_PER_5_MIN).toInt() + 1).coerceIn(1, 100)
+    }
+
+    private val ROOM_LEVEL_THRESHOLDS_MINUS_10 = longArrayOf(
+        0L,       // Lv.1
+        270L,     // Lv.2 (-10% of 300)
+        810L,     // Lv.3 (-10% of 900)
+        1800L,    // Lv.4 (-10% of 2,000)
+        3600L,    // Lv.5 (-10% of 4,000 — Unlocks YouTube Cinema Room)
+        6750L,    // Lv.6 (-10% of 7,500 — Unlocks Room Crest Badge)
+        11250L,   // Lv.7 (-10% of 12,500)
+        18000L,   // Lv.8 (-10% of 20,000)
+        22500L,   // Lv.9
+        27000L,   // Lv.10 (-10% of 30,000 — Unlocks Family Room)
+        40500L,   // Lv.11 (-10% of 45,000)
+        63000L,   // Lv.12
+        85500L,   // Lv.13
+        113400L   // Lv.14 (-10% of 126,000)
+    )
+
+    fun getThresholdForRoomLevel(level: Int): Long {
+        val safeLvl = level.coerceIn(1, 100)
+        if (safeLvl <= ROOM_LEVEL_THRESHOLDS_MINUS_10.size) {
+            return ROOM_LEVEL_THRESHOLDS_MINUS_10[safeLvl - 1]
+        }
+        return 113400L + 2250L * (safeLvl - 14).toLong() * (safeLvl - 13).toLong()
+    }
+
+    fun getNextRoomLevelThreshold(currentLevel: Int): Long {
+        return getThresholdForRoomLevel((currentLevel + 1).coerceAtMost(100))
+    }
+
+    /**
+     * Official Room Personal Level curve (-10% Easier & Faster Target System)
+     * Driven strictly by real-time Gifting (Diamonds & Golds), Mic Activity, PK Battles, and In-Room Games.
+     */
+    fun calculateOfficialRoomPersonalLevel(roomActivityXp: Long): Int {
+        val xp = roomActivityXp.coerceAtLeast(0L)
+        for (lvl in 100 downTo 1) {
+            if (xp >= getThresholdForRoomLevel(lvl)) {
+                return lvl
+            }
+        }
+        return 1
+    }
+
+    /**
+     * Adds real-time Room Activity XP (from Gifting, Mic Take, New User Mic, PK Battles, or In-Room Games)
+     * directly to BOTH `rooms/{roomId}` and `rooms/{roomId}/games/room_level_meta`.
+     * Tracks daily caps (-10% system: 10,800 total daily cap; 4,050 diamond; 900 gold; 4,050 mic; 1,800 new user mic).
+     */
+    fun addRoomActivityXp(
+        db: FirebaseFirestore,
+        roomId: String,
+        category: String = "",
+        xpDelta: Long,
+        sourceType: String = "diamond"
+    ) {
+        if (roomId.isBlank() || xpDelta <= 0L) return
+        val roomRef = db.collection("rooms").document(roomId)
+        val metaRef = roomRef.collection("games").document("room_level_meta")
+        val todayKey = getTodayDateKey()
+
+        metaRef.get().addOnSuccessListener { metaSnap ->
+            roomRef.get().addOnSuccessListener { roomSnap ->
+                val metaXp = metaSnap?.getLong("roomActivityXp") ?: 0L
+                val docXp = roomSnap?.getLong("roomActivityXp") ?: 0L
+                val prevXp = maxOf(metaXp, docXp)
+                val prevLvl = maxOf(
+                    (metaSnap?.getLong("roomLevel") ?: 1L).toInt(),
+                    maxOf(
+                        (roomSnap?.getLong("roomLevel") ?: 1L).toInt(),
+                        calculateOfficialRoomPersonalLevel(prevXp)
+                    )
+                )
+
+                val savedDate = metaSnap?.getString("dailyDateKey") ?: ""
+                val isSameDay = savedDate == todayKey
+                val curDiamondExp = if (isSameDay) (metaSnap?.getLong("dailyDiamondExp") ?: 0L) else 0L
+                val curGoldExp = if (isSameDay) (metaSnap?.getLong("dailyGoldExp") ?: 0L) else 0L
+                val curMicExp = if (isSameDay) (metaSnap?.getLong("dailyMicExp") ?: 0L) else 0L
+                val curNewMicExp = if (isSameDay) (metaSnap?.getLong("dailyNewUserMicExp") ?: 0L) else 0L
+                val curTotalDaily = curDiamondExp + curGoldExp + curMicExp + curNewMicExp
+
+                val remainingDailyTotal = (DAILY_UPPER_LIMIT_EXP - curTotalDaily).coerceAtLeast(0L)
+                val effectiveDelta = when (sourceType) {
+                    "diamond" -> minOf(xpDelta, (DAILY_DIAMOND_CAP_EXP - curDiamondExp).coerceAtLeast(0L), remainingDailyTotal)
+                    "gold" -> minOf(xpDelta, (DAILY_GOLD_CAP_EXP - curGoldExp).coerceAtLeast(0L), remainingDailyTotal)
+                    "mic" -> minOf(xpDelta, (DAILY_MIC_CAP_EXP - curMicExp).coerceAtLeast(0L), remainingDailyTotal)
+                    "new_user_mic" -> minOf(xpDelta, (DAILY_NEW_USER_MIC_CAP_EXP - curNewMicExp).coerceAtLeast(0L), remainingDailyTotal)
+                    else -> minOf(xpDelta, remainingDailyTotal)
+                }
+
+                val newDiamondExp = if (sourceType == "diamond") curDiamondExp + effectiveDelta else curDiamondExp
+                val newGoldExp = if (sourceType == "gold") curGoldExp + effectiveDelta else curGoldExp
+                val newMicExp = if (sourceType == "mic") curMicExp + effectiveDelta else curMicExp
+                val newNewMicExp = if (sourceType == "new_user_mic") curNewMicExp + effectiveDelta else curNewMicExp
+
+                val newXp = prevXp + effectiveDelta
+                val newLvl = maxOf(prevLvl, calculateOfficialRoomPersonalLevel(newXp))
+                val updates = mapOf<String, Any>(
+                    "roomActivityXp" to newXp,
+                    "roomLevel" to newLvl,
+                    "dailyDateKey" to todayKey,
+                    "dailyDiamondExp" to newDiamondExp,
+                    "dailyGoldExp" to newGoldExp,
+                    "dailyMicExp" to newMicExp,
+                    "dailyNewUserMicExp" to newNewMicExp,
+                    "updatedAt" to System.currentTimeMillis()
+                )
+                metaRef.set(updates, com.google.firebase.firestore.SetOptions.merge())
+                roomRef.update(
+                    mapOf(
+                        "roomActivityXp" to newXp,
+                        "roomLevel" to newLvl
+                    )
+                )
+                if (category.isNotBlank()) {
+                    db.collection("intent_categories").document(category)
+                        .collection("rooms").document(roomId)
+                        .update(
+                            mapOf(
+                                "roomActivityXp" to newXp,
+                                "roomLevel" to newLvl
+                            )
+                        )
+                }
+                if (newLvl > prevLvl) {
+                    val senderUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+                        ?: (roomSnap?.getString("hostId") ?: "")
+                    if (senderUid.isNotBlank()) {
+                        val commentId = "roomlvl_${roomId}_${newLvl}_${System.currentTimeMillis()}"
+                        val comment = LiveRoomComment(
+                            id = commentId,
+                            roomId = roomId,
+                            userId = senderUid,
+                            userName = roomSnap?.getString("title")?.takeIf { it.isNotBlank() } ?: "Room",
+                            userPhoto = roomSnap?.getString("hostPhotoUrl") ?: "",
+                            tier = "Room Lv.$newLvl",
+                            message = "🏆 Room Personal Level upgraded to Lv.$newLvl via Gifting & Room Activity!",
+                            timestamp = System.currentTimeMillis(),
+                            level = newLvl,
+                            systemCommentType = "room_level_up",
+                            roomLevelValue = newLvl,
+                            roomXpBonus = effectiveDelta
+                        )
+                        roomRef.collection("live_comments").document(commentId).set(comment)
+                    }
+                }
+            }
+        }
     }
 
     fun isLevelUpSystemComment(comment: LiveRoomComment): Boolean {
@@ -130,12 +293,8 @@ object RoomLevelUpEngine {
         val commentId = "lvlup_${currentUser.uid}_${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(6)}"
         val safeName = currentUser.name.ifBlank { "Member" }
         val tierInfo = LevelBadgeSystem.getLevelTierInfo(newLevel)
-        val systemType = if (isRoomStayLevel) "room_level_up" else "wealth_level_up"
-        val msg = if (isRoomStayLevel) {
-            "$safeName has been leveled up to Room Lv.$newLevel in the room!"
-        } else {
-            "$safeName has been leveled up to Lv.$newLevel in the room!"
-        }
+        val systemType = "wealth_level_up"
+        val msg = "$safeName has been leveled up to Lv.$newLevel in the room!"
 
         val comment = LiveRoomComment(
             id = commentId,
@@ -248,18 +407,23 @@ object RoomLevelUpEngine {
                 userRef.update(updates).addOnSuccessListener {
                     onWealthStatsUpdated(updatedWealthXp, updatedWealthLvl, updatedRoomLevel)
 
-                    if (isRoomLevelUp) {
+                    // Every 9-minute room/mic presence milestone contributes +40 Exp (-10% faster system) to the Room's Personal Level
+                    addRoomActivityXp(
+                        db = db,
+                        roomId = roomId,
+                        xpDelta = MIC_9_MIN_EXP_REWARD,
+                        sourceType = if (updatedWealthLvl <= 2) "new_user_mic" else "mic"
+                    )
+
+                    if (isGlobalLevelUp) {
                         dispatchRoomLevelUpComment(
                             db = db,
                             roomId = roomId,
                             currentUser = currentUser,
-                            newLevel = updatedRoomLevel,
-                            isRoomStayLevel = true,
-                            xpBonus = ROOM_STAY_XP_PER_5_MIN
+                            newLevel = updatedWealthLvl,
+                            isRoomStayLevel = false,
+                            xpBonus = GLOBAL_WEALTH_XP_PER_5_MIN
                         )
-                    }
-
-                    if (isGlobalLevelUp) {
                         val updatedProfile = currentUser.copy(
                             wealthXp = updatedWealthXp,
                             wealthLevel = updatedWealthLvl

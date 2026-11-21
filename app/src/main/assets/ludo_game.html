@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>HD 3D Ludo Club Master</title>
+  <title>HD 3D Royal Ludo Club</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body {
@@ -22,67 +22,100 @@
     }
     #ludoWrapper {
       width: 100%;
+      height: 100%;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       position: relative;
+      padding: 4px;
+    }
+    #boardContainer {
+      position: relative;
+      width: 100%;
+      max-width: 96vw;
+      aspect-ratio: 1 / 1;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 2.5px solid #FACC15;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.75);
     }
     #ludoCanvas {
-      width: 100vw;
-      max-width: 100vw;
-      aspect-ratio: 1 / 1;
+      width: 100%;
+      height: 100%;
       display: block;
-      border-radius: 14px;
-      box-shadow: 0 8px 26px rgba(0, 0, 0, 0.65);
       touch-action: none;
+      cursor: pointer;
     }
     #diceBar {
-      width: 96%;
+      width: 98%;
       display: flex;
       align-items: center;
       justify-content: space-between;
       padding: 6px 10px;
       margin-top: 6px;
       border-radius: 16px;
-      background: rgba(15, 18, 36, 0.88);
-      border: 1px solid rgba(255, 215, 0, 0.45);
-      backdrop-filter: blur(8px);
+      background: rgba(15, 23, 42, 0.94);
+      border: 1.5px solid rgba(250, 204, 21, 0.55);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55);
+    }
+    #turnInfoWrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      flex: 1;
+    }
+    #turnColorBar {
+      width: 10px;
+      height: 32px;
+      border-radius: 99px;
+      background: #EF4444;
+      border: 1.5px solid rgba(255,255,255,0.85);
+      flex-shrink: 0;
     }
     #turnInfo {
       display: flex;
       flex-direction: column;
-      gap: 2px;
+      gap: 1.5px;
+      min-width: 0;
     }
     #turnTitle {
-      color: #FFD700;
+      color: #FDE047;
       font-size: 12px;
-      font-weight: 800;
+      font-weight: 900;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     #turnHint {
       color: #CBD5E1;
       font-size: 10px;
       font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     #diceBtn {
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 6px 14px;
+      padding: 5px 12px;
       border-radius: 14px;
-      border: 1.5px solid #FFD700;
-      background: linear-gradient(135deg, #f59e0b, #d97706);
-      color: #000;
+      border: 2px solid #FEF08A;
+      background: linear-gradient(135deg, #FACC15, #F59E0B, #EA580C);
+      color: #0F172A;
       font-weight: 900;
       font-size: 12px;
       cursor: pointer;
-      box-shadow: 0 4px 12px rgba(245, 158, 11, 0.45);
-      transition: transform 0.12s ease;
+      box-shadow: 0 4px 14px rgba(245, 158, 11, 0.5);
+      transition: transform 0.12s ease, opacity 0.2s ease;
+      flex-shrink: 0;
     }
     #diceBtn:active { transform: scale(0.94); }
     #diceBtn.disabled {
-      opacity: 0.45;
-      filter: grayscale(0.5);
+      opacity: 0.42;
+      filter: grayscale(0.55);
       pointer-events: none;
     }
     #dice3D {
@@ -91,41 +124,110 @@
       border-radius: 7px;
       background: linear-gradient(145deg, #ffffff 0%, #f1f5f9 60%, #cbd5e1 100%);
       border: 1.5px solid #94a3b8;
-      box-shadow: inset 0 2px 3px #fff, inset 0 -2px 4px rgba(0,0,0,0.22), 0 3px 6px rgba(0,0,0,0.35);
+      box-shadow: inset 0 2px 3px #fff, inset 0 -2px 4px rgba(0,0,0,0.25), 0 3px 6px rgba(0,0,0,0.35);
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       grid-template-rows: repeat(3, 1fr);
-      padding: 4px;
+      padding: 3.5px;
       gap: 1.5px;
-      transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
     }
     #dice3D.rolling {
-      animation: diceSpin 0.45s ease-in-out infinite;
+      animation: diceSpin 0.34s ease-in-out infinite;
     }
     @keyframes diceSpin {
       0% { transform: rotate(0deg) scale(1); }
-      50% { transform: rotate(180deg) scale(1.18); }
+      40% { transform: rotate(160deg) scale(1.22); }
+      75% { transform: rotate(295deg) scale(0.92); }
       100% { transform: rotate(360deg) scale(1); }
     }
     .pip {
       width: 5px;
       height: 5px;
       border-radius: 50%;
-      background: radial-gradient(circle at 35% 35%, #334155, #0f172a);
+      background: radial-gradient(circle at 35% 35%, #1e293b, #020617);
       margin: auto;
       opacity: 0;
     }
     .pip.on { opacity: 1; }
     .pip.red { background: radial-gradient(circle at 35% 35%, #ef4444, #991b1b); }
+
+    /* Celebratory Victory Overlay */
+    #winOverlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(6, 9, 19, 0.88);
+      backdrop-filter: blur(6px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 40;
+    }
+    #winOverlay.show { display: flex; }
+    .win-card {
+      width: 100%;
+      max-width: 280px;
+      border-radius: 22px;
+      padding: 18px 16px;
+      border: 2px solid #FACC15;
+      background: linear-gradient(180deg, #1e1b4b 0%, #0f172a 100%);
+      box-shadow: 0 12px 35px rgba(0,0,0,0.85), 0 0 24px rgba(250, 204, 21, 0.35);
+      text-align: center;
+      animation: popWin 0.38s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+    @keyframes popWin {
+      0% { transform: scale(0.7); opacity: 0; }
+      70% { transform: scale(1.05); opacity: 1; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    .win-trophy { font-size: 38px; margin-bottom: 6px; }
+    .win-badge {
+      display: inline-block;
+      padding: 2px 12px;
+      border-radius: 99px;
+      background: rgba(250, 204, 21, 0.18);
+      border: 1px solid #FDE047;
+      color: #FDE047;
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: 0.8px;
+      margin-bottom: 6px;
+    }
+    .win-title {
+      color: #FFFFFF;
+      font-size: 16px;
+      font-weight: 900;
+      margin-bottom: 4px;
+    }
+    .win-sub {
+      color: #CBD5E1;
+      font-size: 11px;
+      line-height: 1.35;
+      margin-bottom: 12px;
+    }
   </style>
 </head>
 <body>
   <div id="ludoWrapper">
-    <canvas id="ludoCanvas" width="750" height="750"></canvas>
+    <div id="boardContainer">
+      <canvas id="ludoCanvas" width="750" height="750"></canvas>
+      <div id="winOverlay">
+        <div class="win-card">
+          <div class="win-trophy">🏆🎉👑</div>
+          <div class="win-badge">CONGRATULATIONS!</div>
+          <div class="win-title" id="winPlayerTitle">Winner!</div>
+          <div class="win-sub">All 4 3D Gotis safely reached the Royal Home Triangle!</div>
+        </div>
+      </div>
+    </div>
+
     <div id="diceBar">
-      <div id="turnInfo">
-        <div id="turnTitle">🎲 HD Ludo Club</div>
-        <div id="turnHint">Waiting for roll...</div>
+      <div id="turnInfoWrap">
+        <div id="turnColorBar"></div>
+        <div id="turnInfo">
+          <div id="turnTitle">🎲 HD 3D Royal Ludo</div>
+          <div id="turnHint">Waiting for roll...</div>
+        </div>
       </div>
       <button id="diceBtn" onclick="handleRollClick()">
         <div id="dice3D">
@@ -146,74 +248,61 @@
 
     // Standard 52-tile clockwise outer track (col, row) on 15x15 Ludo grid
     const MAIN_TRACK = [
-      // Red arm going right (0..4)
       [1,6],[2,6],[3,6],[4,6],[5,6],
-      // Going up into Green arm (5..10)
       [6,5],[6,4],[6,3],[6,2],[6,1],[6,0],
-      // Top middle (11) & Green top-right (12)
       [7,0],[8,0],
-      // Going down Green arm (13..17) -> 13 is Green start
       [8,1],[8,2],[8,3],[8,4],[8,5],
-      // Going right into Yellow arm (18..23)
       [9,6],[10,6],[11,6],[12,6],[13,6],[14,6],
-      // Right middle (24) & bottom-right (25)
       [14,7],[14,8],
-      // Going left Yellow arm (26..30) -> 26 is Yellow start
       [13,8],[12,8],[11,8],[10,8],[9,8],
-      // Going down into Blue arm (31..36)
       [8,9],[8,10],[8,11],[8,12],[8,13],[8,14],
-      // Bottom middle (37) & bottom-left (38)
       [7,14],[6,14],
-      // Going up Blue arm (39..43) -> 39 is Blue start
       [6,13],[6,12],[6,11],[6,10],[6,9],
-      // Going left into Red arm (44..49)
       [5,8],[4,8],[3,8],[2,8],[1,8],[0,8],
-      // Left middle (50) & top-left (51)
       [0,7],[0,6]
     ];
 
     // Home stretch columns (steps 51..55, step 56 = HOME triangle)
     const HOME_PATHS = {
-      0: [[1,7],[2,7],[3,7],[4,7],[5,7],[6.35,7.0]],    // Red
-      1: [[7,1],[7,2],[7,3],[7,4],[7,5],[7.0,6.35]],    // Green
-      2: [[13,7],[12,7],[11,7],[10,7],[9,7],[7.65,7.0]], // Yellow
-      3: [[7,13],[7,12],[7,11],[7,10],[7,9],[7.0,7.65]]  // Blue
+      0: [[1,7],[2,7],[3,7],[4,7],[5,7],[6.38,7.0]],    // Red
+      1: [[7,1],[7,2],[7,3],[7,4],[7,5],[7.0,6.38]],    // Green
+      2: [[13,7],[12,7],[11,7],[10,7],[9,7],[7.62,7.0]], // Yellow
+      3: [[7,13],[7,12],[7,11],[7,10],[7,9],[7.0,7.62]]  // Blue
     };
 
-    // Start index on MAIN_TRACK for each player color
     const START_OFFSET = [0, 13, 26, 39];
-    // 8 Official Safe Star / Start Tiles on MAIN_TRACK
     const SAFE_INDICES = new Set([0, 8, 13, 21, 26, 34, 39, 47]);
 
-    // 4 Token yard positions (col, row) inside each 6x6 corner box (leaves center open for player avatar!)
+    // 4 Corner Token Pedestals inside each 6x6 box — leaving the exact center for the Player's Profile Icon & Rotating Timer Ring!
     const YARD_SLOTS = {
-      0: [[1.15,1.15],[4.85,1.15],[1.15,4.85],[4.85,4.85]],       // Red (TL)
-      1: [[10.15,1.15],[13.85,1.15],[10.15,4.85],[13.85,4.85]],   // Green (TR)
-      2: [[10.15,10.15],[13.85,10.15],[10.15,13.85],[13.85,13.85]], // Yellow (BR)
-      3: [[1.15,10.15],[4.85,10.15],[1.15,13.85],[4.85,13.85]]    // Blue (BL)
+      0: [[1.22,1.22],[4.78,1.22],[1.22,4.78],[4.78,4.78]],
+      1: [[10.22,1.22],[13.78,1.22],[10.22,4.78],[13.78,4.78]],
+      2: [[10.22,10.22],[13.78,10.22],[10.22,13.78],[13.78,13.78]],
+      3: [[1.22,10.22],[4.78,10.22],[1.22,13.78],[4.78,13.78]]
     };
 
-    // Center of each 6x6 corner box for player circular profile avatar + 30s timer
+    // Exact center of each 6x6 colored box for the Player's Profile Avatar & Rotating Countdown Timer
     const YARD_CENTERS = [
-      [3.0, 3.0],   // Red (TL)
-      [12.0, 3.0],  // Green (TR)
-      [12.0, 12.0], // Yellow (BR)
-      [3.0, 12.0]   // Blue (BL)
+      [3.0, 3.0],   // Red (Top-Left)
+      [12.0, 3.0],  // Green (Top-Right)
+      [12.0, 12.0], // Yellow (Bottom-Right)
+      [3.0, 12.0]   // Blue (Bottom-Left)
     ];
 
     const COLORS = [
-      { name: 'Red',    main: '#DC2626', light: '#FCA5A5', dark: '#7F1D1D', bg: '#FEE2E2' },
-      { name: 'Green',  main: '#16A34A', light: '#86EFAC', dark: '#14532D', bg: '#DCFCE7' },
-      { name: 'Yellow', main: '#EAB308', light: '#FEF08A', dark: '#854D0E', bg: '#FEF9C3' },
-      { name: 'Blue',   main: '#2563EB', light: '#93C5FD', dark: '#1E3A8A', bg: '#DBEAFE' }
+      { name: 'Red',    main: '#EF4444', mid: '#DC2626', dark: '#7F1D1D', light: '#FCA5A5', glow: '#FEE2E2' },
+      { name: 'Green',  main: '#22C55E', mid: '#16A34A', dark: '#14532D', light: '#86EFAC', glow: '#DCFCE7' },
+      { name: 'Yellow', main: '#EAB308', mid: '#CA8A04', dark: '#713F12', light: '#FEF08A', glow: '#FEF9C3' },
+      { name: 'Blue',   main: '#3B82F6', mid: '#2563EB', dark: '#1E3A8A', light: '#93C5FD', glow: '#DBEAFE' }
     ];
 
-    // Game State
+    // Live State
     let players = []; // [{uid, name, photo, colorIdx}]
     let myColorIdx = -1;
     let activeColorIdx = 0;
+    let lastKnownTurnIdx = -1;
     let tokens = {
-      0: [-1, -1, -1, -1], // -1 = in yard, 0..50 = outer track steps, 51..55 = home col, 56 = HOME!
+      0: [-1, -1, -1, -1],
       1: [-1, -1, -1, -1],
       2: [-1, -1, -1, -1],
       3: [-1, -1, -1, -1]
@@ -225,17 +314,17 @@
     let turnTimerSec = 30;
     let soundEnabled = true;
 
-    // Smooth step-by-step hop animation
+    // Smooth step-by-step hop / capture fall-back animation
     let animToken = null; // { colorIdx, tokenIdx, fromPos, toPos, startTime, duration }
     const avatarImages = {};
 
-    // Web Audio Synthesizer for crisp realistic dice rattle, wooden hop, capture & victory!
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     let audioCtx = null;
     function playTone(freq, dur, type = 'sine', gainVal = 0.14) {
       if (!soundEnabled) return;
       try {
         if (!audioCtx) audioCtx = new AudioCtx();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
         const osc = audioCtx.createOscillator();
         const g = audioCtx.createGain();
         osc.type = type;
@@ -294,13 +383,13 @@
       return list;
     }
 
-    // Offscreen cached board for buttery 60 FPS
+    // Offscreen luxury board cache
     const boardCache = document.createElement('canvas');
     boardCache.width = BOARD_PX;
     boardCache.height = BOARD_PX;
     const bctx = boardCache.getContext('2d');
 
-    function drawStar(c, cx, cy, r, fill) {
+    function drawStar(c, cx, cy, r, fill, stroke) {
       c.save();
       c.beginPath();
       for (let i = 0; i < 5; i++) {
@@ -313,148 +402,188 @@
       c.closePath();
       c.fillStyle = fill;
       c.fill();
+      if (stroke) {
+        c.strokeStyle = stroke;
+        c.lineWidth = 1.5;
+        c.stroke();
+      }
       c.restore();
     }
 
     function buildBoardCache() {
-      // Rich mahogany luxury outer frame
-      const frameGrad = bctx.createLinearGradient(0, 0, BOARD_PX, BOARD_PX);
-      frameGrad.addColorStop(0, '#5c2d12');
-      frameGrad.addColorStop(0.5, '#3b1a08');
-      frameGrad.addColorStop(1, '#261005');
-      bctx.fillStyle = frameGrad;
+      bctx.fillStyle = '#FEFCE8';
       bctx.fillRect(0, 0, BOARD_PX, BOARD_PX);
 
-      // Crisp ivory playing surface
-      bctx.fillStyle = '#FDFBF7';
-      bctx.fillRect(4, 4, BOARD_PX - 8, BOARD_PX - 8);
-
-      // Draw 15x15 track tiles
+      // 15x15 Tiles with 3D Beveled Gradients
       for (let r = 0; r < 15; r++) {
         for (let c = 0; c < 15; c++) {
           const inYard = (r < 6 && c < 6) || (r < 6 && c > 8) || (r > 8 && c < 6) || (r > 8 && c > 8);
           const inHome = (r >= 6 && r <= 8 && c >= 6 && c <= 8);
           if (inYard || inHome) continue;
 
-          let fill = '#FAF8F5';
-          // Colored home stretches
-          if (r === 7 && c >= 1 && c <= 5) fill = COLORS[0].main;
-          if (c === 7 && r >= 1 && r <= 5) fill = COLORS[1].main;
-          if (r === 7 && c >= 9 && c <= 13) fill = COLORS[2].main;
-          if (c === 7 && r >= 9 && r <= 13) fill = COLORS[3].main;
+          const x = c * CELL, y = r * CELL;
+          let colObj = null;
+          if ((r === 7 && c >= 1 && c <= 5) || (c === 1 && r === 6)) colObj = COLORS[0];
+          else if ((c === 7 && r >= 1 && r <= 5) || (c === 8 && r === 1)) colObj = COLORS[1];
+          else if ((r === 7 && c >= 9 && c <= 13) || (c === 13 && r === 8)) colObj = COLORS[2];
+          else if ((c === 7 && r >= 9 && r <= 13) || (c === 6 && r === 13)) colObj = COLORS[3];
 
-          // Colored start tiles
-          if (c === 1 && r === 6) fill = COLORS[0].main;
-          if (c === 8 && r === 1) fill = COLORS[1].main;
-          if (c === 13 && r === 8) fill = COLORS[2].main;
-          if (c === 6 && r === 13) fill = COLORS[3].main;
-
-          bctx.fillStyle = fill;
-          bctx.fillRect(c * CELL, r * CELL, CELL, CELL);
-          bctx.strokeStyle = '#CBD5E1';
-          bctx.lineWidth = 1.2;
-          bctx.strokeRect(c * CELL, r * CELL, CELL, CELL);
+          if (colObj) {
+            const tg = bctx.createLinearGradient(x, y, x + CELL, y + CELL);
+            tg.addColorStop(0, colObj.main);
+            tg.addColorStop(1, colObj.mid);
+            bctx.fillStyle = tg;
+          } else {
+            const wg = bctx.createLinearGradient(x, y, x, y + CELL);
+            wg.addColorStop(0, '#FFFFFF');
+            wg.addColorStop(1, '#F1F5F9');
+            bctx.fillStyle = wg;
+          }
+          bctx.fillRect(x, y, CELL, CELL);
+          bctx.strokeStyle = '#94A3B8';
+          bctx.lineWidth = 1.3;
+          bctx.strokeRect(x, y, CELL, CELL);
         }
       }
 
-      // Draw 8 Safe Stars
+      // 8 Official Safe Stars
       SAFE_INDICES.forEach(idx => {
         const [c, r] = MAIN_TRACK[idx];
+        const cx = (c + 0.5) * CELL, cy = (r + 0.5) * CELL;
         const isStart = START_OFFSET.includes(idx);
-        drawStar(bctx, (c + 0.5) * CELL, (r + 0.5) * CELL, CELL * 0.34, isStart ? 'rgba(255,255,255,0.92)' : '#F59E0B');
+        bctx.beginPath();
+        bctx.arc(cx, cy, CELL * 0.38, 0, Math.PI * 2);
+        bctx.fillStyle = isStart ? 'rgba(255,255,255,0.24)' : 'rgba(245, 158, 11, 0.16)';
+        bctx.fill();
+        drawStar(bctx, cx, cy, CELL * 0.33, isStart ? '#FFFFFF' : '#F59E0B', isStart ? '#78350F' : '#B45309');
       });
 
-      // Draw 4 Corner 6x6 Luxury Home Yards
+      // 4 Corner Royal 3D Jewel Home Yards
       const yardRects = [[0,0], [9,0], [9,9], [0,9]];
       yardRects.forEach(([xc, yr], ci) => {
-        const x = xc * CELL, y = yr * CELL, s = 6 * CELL;
-        const g = bctx.createLinearGradient(x, y, x + s, y + s);
-        g.addColorStop(0, COLORS[ci].main);
-        g.addColorStop(1, COLORS[ci].dark);
-        bctx.fillStyle = g;
-        bctx.fillRect(x, y, s, s);
-        bctx.strokeStyle = '#FFD700';
-        bctx.lineWidth = 2.5;
-        bctx.strokeRect(x + 1, y + 1, s - 2, s - 2);
+        const x = xc * CELL, y = yr * CELL, sz = 6 * CELL;
+        const col = COLORS[ci];
 
-        // Inner frosted white luxury plate
-        const pad = CELL * 0.55;
-        bctx.fillStyle = 'rgba(255,255,255,0.94)';
+        const yg = bctx.createLinearGradient(x, y, x + sz, y + sz);
+        yg.addColorStop(0, col.main);
+        yg.addColorStop(0.5, col.mid);
+        yg.addColorStop(1, col.dark);
+        bctx.fillStyle = yg;
+        bctx.fillRect(x, y, sz, sz);
+
+        bctx.strokeStyle = '#FACC15';
+        bctx.lineWidth = 3.5;
+        bctx.strokeRect(x + 3, y + 3, sz - 6, sz - 6);
+
+        // Cream Velvet Inner Cushion Box
+        const pad = CELL * 0.52;
+        bctx.save();
+        bctx.shadowColor = 'rgba(0,0,0,0.45)';
+        bctx.shadowBlur = 12;
+        bctx.fillStyle = '#FFFDF9';
         bctx.beginPath();
-        bctx.roundRect(x + pad, y + pad, s - pad * 2, s - pad * 2, 18);
+        bctx.roundRect(x + pad, y + pad, sz - pad * 2, sz - pad * 2, 24);
         bctx.fill();
+        bctx.restore();
 
-        // 4 circular token wells in the 4 corners of the yard
+        bctx.strokeStyle = col.main;
+        bctx.lineWidth = 2.8;
+        bctx.beginPath();
+        bctx.roundRect(x + pad, y + pad, sz - pad * 2, sz - pad * 2, 24);
+        bctx.stroke();
+
+        // 4 Recessed 3D Token Pedestals in the 4 corners of the box
         YARD_SLOTS[ci].forEach(([sc, sr]) => {
+          const px = sc * CELL, py = sr * CELL;
+          const pg = bctx.createRadialGradient(px - 3, py - 3, 2, px, py, CELL * 0.46);
+          pg.addColorStop(0, col.glow);
+          pg.addColorStop(0.7, col.light);
+          pg.addColorStop(1, col.main);
           bctx.beginPath();
-          bctx.arc(sc * CELL, sr * CELL, CELL * 0.44, 0, Math.PI * 2);
-          bctx.fillStyle = COLORS[ci].bg;
+          bctx.arc(px, py, CELL * 0.45, 0, Math.PI * 2);
+          bctx.fillStyle = pg;
           bctx.fill();
-          bctx.strokeStyle = COLORS[ci].main;
-          bctx.lineWidth = 2.5;
+          bctx.strokeStyle = '#FACC15';
+          bctx.lineWidth = 2.2;
           bctx.stroke();
         });
       });
 
-      // Center 3x3 Home Triangles
+      // Center 3x3 3D Home Triangles
       const cx = 7.5 * CELL, cy = 7.5 * CELL;
       const x0 = 6 * CELL, y0 = 6 * CELL, x1 = 9 * CELL, y1 = 9 * CELL;
       const tris = [
-        [COLORS[0].main, [x0,y0], [x0,y1], [cx,cy]], // Red Left
-        [COLORS[1].main, [x0,y0], [x1,y0], [cx,cy]], // Green Top
-        [COLORS[2].main, [x1,y0], [x1,y1], [cx,cy]], // Yellow Right
-        [COLORS[3].main, [x0,y1], [x1,y1], [cx,cy]]  // Blue Bottom
+        [COLORS[0], [x0,y0], [x0,y1], [cx,cy]],
+        [COLORS[1], [x0,y0], [x1,y0], [cx,cy]],
+        [COLORS[2], [x1,y0], [x1,y1], [cx,cy]],
+        [COLORS[3], [x0,y1], [x1,y1], [cx,cy]]
       ];
       tris.forEach(([col, p1, p2, p3]) => {
+        const tg = bctx.createLinearGradient(p1[0], p1[1], cx, cy);
+        tg.addColorStop(0, col.main);
+        tg.addColorStop(1, col.dark);
         bctx.beginPath();
         bctx.moveTo(p1[0], p1[1]);
         bctx.lineTo(p2[0], p2[1]);
         bctx.lineTo(p3[0], p3[1]);
         bctx.closePath();
-        bctx.fillStyle = col;
+        bctx.fillStyle = tg;
         bctx.fill();
-        bctx.strokeStyle = '#FFFFFF';
-        bctx.lineWidth = 2;
+        bctx.strokeStyle = '#FACC15';
+        bctx.lineWidth = 2.5;
         bctx.stroke();
       });
-      // Center Gold Crown Medallion
+
+      // Center Royal Trophy Medallion
       bctx.beginPath();
-      bctx.arc(cx, cy, 24, 0, Math.PI * 2);
+      bctx.arc(cx, cy, 26, 0, Math.PI * 2);
       bctx.fillStyle = '#0F172A';
       bctx.fill();
-      bctx.strokeStyle = '#FFD700';
-      bctx.lineWidth = 3;
+      bctx.strokeStyle = '#FACC15';
+      bctx.lineWidth = 3.5;
       bctx.stroke();
-      bctx.fillStyle = '#FFD700';
-      bctx.font = 'bold 20px sans-serif';
+      bctx.font = 'bold 22px sans-serif';
       bctx.textAlign = 'center';
       bctx.textBaseline = 'middle';
-      bctx.fillText('👑', cx, cy + 1);
+      bctx.fillText('🏆', cx, cy + 1);
     }
 
-    function drawCornerAvatars() {
+    // Draw Player Circular Profile Icon + Live Rotating Countdown Timer RIGHT IN THE CENTER of each of the 4 Colored Corner Boxes!
+    function drawCornerAvatars(now) {
       YARD_CENTERS.forEach(([cc, cr], ci) => {
         const cx = cc * CELL;
         const cy = cr * CELL;
-        const r = CELL * 0.88;
+        const r = CELL * 0.90;
         const player = players.find(p => p.colorIdx === ci);
+        const col = COLORS[ci];
         const isActive = (activeColorIdx === ci && player != null);
 
         ctx.save();
-        // Outer 30-second countdown circular progress ring for active turn player
-        if (isActive) {
-          const frac = Math.max(0, Math.min(1, turnTimerSec / 30));
-          const ringColor = turnTimerSec <= 8 ? '#EF4444' : (turnTimerSec <= 15 ? '#F59E0B' : '#10B981');
-          ctx.beginPath();
-          ctx.arc(cx, cy, r + 6, 0, Math.PI * 2);
-          ctx.strokeStyle = 'rgba(15, 23, 42, 0.25)';
-          ctx.lineWidth = 6;
-          ctx.stroke();
 
+        // Outer glowing halo when it is this player's turn
+        if (isActive) {
+          const pulse = r + 10 + Math.sin(now * 0.009) * 3;
+          ctx.beginPath();
+          ctx.arc(cx, cy, pulse, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(250, 204, 21, 0.22)';
+          ctx.fill();
+        }
+
+        // Background timer track ring
+        ctx.beginPath();
+        ctx.arc(cx, cy, r + 6, 0, Math.PI * 2);
+        ctx.strokeStyle = isActive ? 'rgba(15, 23, 42, 0.35)' : 'rgba(148, 163, 184, 0.28)';
+        ctx.lineWidth = 6.5;
+        ctx.stroke();
+
+        // Live Rotating Circular 30-Second Countdown Ring on Active Player's Profile Icon
+        if (isActive) {
+          const frac = Math.max(0.03, Math.min(1, turnTimerSec / 30));
+          const ringColor = turnTimerSec <= 8 ? '#EF4444' : (turnTimerSec <= 15 ? '#F59E0B' : '#10B981');
           ctx.beginPath();
           ctx.arc(cx, cy, r + 6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac);
           ctx.strokeStyle = ringColor;
-          ctx.lineWidth = 6;
+          ctx.lineWidth = 6.5;
           ctx.lineCap = 'round';
           ctx.stroke();
         }
@@ -462,9 +591,9 @@
         // Circular avatar container
         ctx.beginPath();
         ctx.arc(cx, cy, r, 0, Math.PI * 2);
-        ctx.fillStyle = player ? '#0F172A' : 'rgba(148, 163, 184, 0.22)';
+        ctx.fillStyle = player ? '#0F172A' : 'rgba(241, 245, 249, 0.75)';
         ctx.fill();
-        ctx.strokeStyle = isActive ? '#FFD700' : COLORS[ci].main;
+        ctx.strokeStyle = isActive ? '#FACC15' : col.main;
         ctx.lineWidth = isActive ? 3.5 : 2.5;
         ctx.stroke();
 
@@ -478,78 +607,125 @@
             ctx.drawImage(img, cx - r, cy - r, r * 2, r * 2);
             ctx.restore();
           } else {
+            const pGrad = ctx.createLinearGradient(cx - r, cy - r, cx + r, cy + r);
+            pGrad.addColorStop(0, col.main);
+            pGrad.addColorStop(1, col.dark);
+            ctx.beginPath();
+            ctx.arc(cx, cy, r - 2, 0, Math.PI * 2);
+            ctx.fillStyle = pGrad;
+            ctx.fill();
+
             ctx.fillStyle = '#FFFFFF';
-            ctx.font = 'bold 24px sans-serif';
+            ctx.font = '900 25px sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText((player.name || 'P').charAt(0).toUpperCase(), cx, cy);
+            ctx.fillText((player.name || 'P').charAt(0).toUpperCase(), cx, cy - 1);
           }
-          // Name pill below avatar
-          const pillW = 108, pillH = 22;
-          ctx.fillStyle = isActive ? COLORS[ci].main : 'rgba(15, 23, 42, 0.85)';
+
+          // Name & Live Seconds Pill attached to bottom of Profile Icon inside the Box
+          const pillW = 114, pillH = 22;
+          ctx.fillStyle = isActive ? col.main : 'rgba(15, 23, 42, 0.90)';
           ctx.beginPath();
-          ctx.roundRect(cx - pillW / 2, cy + r - 6, pillW, pillH, 11);
+          ctx.roundRect(cx - pillW / 2, cy + r - 8, pillW, pillH, 11);
           ctx.fill();
+          ctx.strokeStyle = isActive ? '#FACC15' : 'rgba(255,255,255,0.45)';
+          ctx.lineWidth = 1.4;
+          ctx.stroke();
+
           ctx.fillStyle = '#FFFFFF';
-          ctx.font = 'bold 12px sans-serif';
+          ctx.font = 'bold 11.5px sans-serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          const lbl = isActive ? `${(player.name || 'Player').slice(0, 7)} • ${turnTimerSec}s` : (player.name || 'Player').slice(0, 10);
-          ctx.fillText(lbl, cx, cy + r + 5);
+          const lbl = isActive
+            ? `${(player.name || 'Player').slice(0, 7)} • ${turnTimerSec}s`
+            : (player.name || 'Player').slice(0, 10);
+          ctx.fillText(lbl, cx, cy + r + 3);
         } else {
-          ctx.fillStyle = COLORS[ci].dark;
+          ctx.fillStyle = col.dark;
           ctx.font = 'bold 13px sans-serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText(COLORS[ci].name, cx, cy - 6);
+          ctx.fillText(col.name, cx, cy - 5);
           ctx.fillStyle = '#64748B';
-          ctx.font = '600 11px sans-serif';
-          ctx.fillText('Open', cx, cy + 10);
+          ctx.font = '600 10.5px sans-serif';
+          ctx.fillText('Empty', cx, cy + 10);
         }
         ctx.restore();
       });
     }
 
-    function draw3DToken(x, y, colorIdx, isMovable, pulsePhase) {
+    // Realistic 3D Standing Chess-Pawn Ludo Goti (with Base Pedestal, Tapered Neck & Glossy Spherical Head!)
+    function drawRealistic3DPawn(x, y, colorIdx, isMovable, pulsePhase) {
       const col = COLORS[colorIdx];
-      const r = CELL * 0.34;
       ctx.save();
 
-      // Golden pulsing ring for movable tokens
       if (isMovable) {
-        const glowR = r + 5 + Math.sin(pulsePhase * 0.01) * 3.5;
+        const rPulse = 22 + Math.sin(pulsePhase * 0.012) * 4;
         ctx.beginPath();
-        ctx.arc(x, y, glowR, 0, Math.PI * 2);
-        ctx.strokeStyle = '#FFD700';
-        ctx.lineWidth = 3.5;
+        ctx.arc(x, y + 2, rPulse, 0, Math.PI * 2);
+        ctx.strokeStyle = '#FACC15';
+        ctx.lineWidth = 4;
         ctx.stroke();
       }
 
-      // Realistic 3D ground drop shadow
+      // 1. Ground Drop Shadow
       ctx.beginPath();
-      ctx.ellipse(x, y + 6, r * 0.95, r * 0.65, 0, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.38)';
+      ctx.ellipse(x, y + 10, 15, 7.5, 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
       ctx.fill();
 
-      // 3D Glossy Pawn Body (Teardrop/Chess Pawn)
-      const grad = ctx.createRadialGradient(x - r * 0.3, y - r * 0.4, r * 0.1, x, y, r * 1.15);
-      grad.addColorStop(0, '#FFFFFF');
-      grad.addColorStop(0.22, col.light);
-      grad.addColorStop(0.65, col.main);
-      grad.addColorStop(1, col.dark);
-
+      // 2. Gold Pedestal Base
       ctx.beginPath();
-      ctx.arc(x, y - 3, r, 0, Math.PI * 2);
-      ctx.fillStyle = grad;
+      ctx.ellipse(x, y + 7, 13.5, 6.5, 0, 0, Math.PI * 2);
+      ctx.fillStyle = col.dark;
       ctx.fill();
-      ctx.strokeStyle = '#FFFFFF';
-      ctx.lineWidth = 2.2;
+      ctx.strokeStyle = '#FEF08A';
+      ctx.lineWidth = 2;
       ctx.stroke();
 
-      // Inner metallic cap highlight
+      // 3. 3D Tapered Pawn Cone Body
+      const bodyGrad = ctx.createLinearGradient(x - 11, y - 13, x + 11, y + 7);
+      bodyGrad.addColorStop(0, col.light);
+      bodyGrad.addColorStop(0.35, col.main);
+      bodyGrad.addColorStop(1, col.dark);
+
       ctx.beginPath();
-      ctx.arc(x, y - 5, r * 0.45, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255,255,255,0.45)';
+      ctx.moveTo(x - 12, y + 6);
+      ctx.quadraticCurveTo(x - 7, y - 5, x - 5.5, y - 12);
+      ctx.lineTo(x + 5.5, y - 12);
+      ctx.quadraticCurveTo(x + 7, y - 5, x + 12, y + 6);
+      ctx.closePath();
+      ctx.fillStyle = bodyGrad;
+      ctx.fill();
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // 4. Golden Collar Ring
+      ctx.beginPath();
+      ctx.ellipse(x, y - 11, 7, 2.8, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#FACC15';
+      ctx.fill();
+
+      // 5. 3D Glossy Spherical Pawn Top Head
+      const headGrad = ctx.createRadialGradient(x - 3, y - 20, 1.5, x, y - 17, 9.5);
+      headGrad.addColorStop(0, '#FFFFFF');
+      headGrad.addColorStop(0.28, col.light);
+      headGrad.addColorStop(0.7, col.main);
+      headGrad.addColorStop(1, col.dark);
+
+      ctx.beginPath();
+      ctx.arc(x, y - 17, 8.8, 0, Math.PI * 2);
+      ctx.fillStyle = headGrad;
+      ctx.fill();
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+
+      // Specular Glass Highlight Dot
+      ctx.beginPath();
+      ctx.arc(x - 2.8, y - 20, 2.2, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.88)';
       ctx.fill();
 
       ctx.restore();
@@ -558,7 +734,7 @@
     function renderLoop(now) {
       ctx.clearRect(0, 0, BOARD_PX, BOARD_PX);
       ctx.drawImage(boardCache, 0, 0);
-      drawCornerAvatars();
+      drawCornerAvatars(now);
 
       const validMoves = (awaitingMove && activeColorIdx === myColorIdx) ? getValidMoves(myColorIdx, diceValue) : [];
 
@@ -581,18 +757,18 @@
           let y = item.gr * CELL;
           if (group.length > 1) {
             const angle = (idx * 2 * Math.PI) / group.length;
-            x += Math.cos(angle) * 7;
-            y += Math.sin(angle) * 7;
+            x += Math.cos(angle) * 7.5;
+            y += Math.sin(angle) * 7.5;
           }
           if (animToken && animToken.colorIdx === item.ci && animToken.tokenIdx === item.ti) {
             const t = Math.min(1, (now - animToken.startTime) / animToken.duration);
-            const hopY = Math.sin(t * Math.PI) * 18;
+            const hopY = Math.sin(t * Math.PI) * 24;
             x = (animToken.fromPos[0] + (animToken.toPos[0] - animToken.fromPos[0]) * t) * CELL;
             y = (animToken.fromPos[1] + (animToken.toPos[1] - animToken.fromPos[1]) * t) * CELL - hopY;
             if (t >= 1) animToken = null;
           }
           const isMovable = (item.ci === myColorIdx && validMoves.includes(item.ti));
-          draw3DToken(x, y, item.ci, isMovable, now);
+          drawRealistic3DPawn(x, y, item.ci, isMovable, now);
         });
       });
 
@@ -603,15 +779,18 @@
       const btn = document.getElementById('diceBtn');
       const title = document.getElementById('turnTitle');
       const hint = document.getElementById('turnHint');
+      const colorBar = document.getElementById('turnColorBar');
       const activeP = players.find(p => p.colorIdx === activeColorIdx);
       const isMyTurn = (activeColorIdx === myColorIdx);
+      const col = COLORS[activeColorIdx] || COLORS[0];
 
+      if (colorBar) colorBar.style.background = col.main;
       title.textContent = isMyTurn
-        ? `👉 Your Turn (${COLORS[activeColorIdx].name})`
-        : `⏳ ${activeP ? activeP.name : COLORS[activeColorIdx].name}'s Turn`;
+        ? `👉 Your Turn (${col.name} • ${turnTimerSec}s)`
+        : `⏳ ${activeP ? activeP.name : col.name}'s Turn (${turnTimerSec}s)`;
       hint.textContent = isMyTurn
-        ? (awaitingMove ? `Rolled ${diceValue}! Tap glowing token` : `Tap ROLL to throw 3D dice (${turnTimerSec}s)`)
-        : `Waiting for ${activeP ? activeP.name : 'opponent'}... (${turnTimerSec}s)`;
+        ? (awaitingMove ? `Rolled ${diceValue}! Tap glowing 3D Goti` : `Tap ROLL to throw 3D dice`)
+        : `Waiting for ${activeP ? activeP.name : 'player'} to play...`;
 
       if (isMyTurn && !awaitingMove && !isRolling) {
         btn.classList.remove('disabled');
@@ -639,7 +818,7 @@
         if (rolled === 6) consecutiveSixes++;
         else consecutiveSixes = 0;
 
-        // Three consecutive 6s rule -> forfeit turn
+        // Three consecutive 6s rule -> forfeit turn immediately
         if (consecutiveSixes >= 3) {
           consecutiveSixes = 0;
           awaitingMove = false;
@@ -649,16 +828,18 @@
 
         const valid = getValidMoves(myColorIdx, rolled);
         if (valid.length === 0) {
+          // No move possible -> immediately end timer and switch turn to next player!
           awaitingMove = false;
           emitStateToNative(true, 'No valid move');
         } else if (valid.length === 1) {
-          // Auto-move when only 1 token can move!
+          // SINGLE GOTI RULE: Automatically move immediately when only 1 token can move!
           executeTokenMove(myColorIdx, valid[0], rolled);
         } else {
+          // MULTIPLE GOTIS RULE: Requires manual user tap on glowing 3D Goti
           awaitingMove = true;
           updateControlsUI();
         }
-      }, 420);
+      }, 280);
     }
 
     function executeTokenMove(colorIdx, tokenIdx, steps) {
@@ -681,8 +862,11 @@
           const oppArr = tokens[p.colorIdx];
           for (let j = 0; j < 4; j++) {
             if (getGlobalTrackIndex(p.colorIdx, oppArr[j]) === landedGlobal) {
-              // Capture! Opponent falls back to home yard!
+              // Capture! Opponent Goti flies back to its corner box!
+              const cutFrom = getTokenGridPos(p.colorIdx, j, oppArr[j]);
+              const cutTo = YARD_SLOTS[p.colorIdx][j];
               oppArr[j] = -1;
+              animToken = { colorIdx: p.colorIdx, tokenIdx: j, fromPos: cutFrom, toPos: cutTo, startTime: performance.now(), duration: 420 };
               capturedOpponent = true;
               playTone(220, 0.25, 'sawtooth', 0.18);
             }
@@ -693,18 +877,27 @@
       const reachedHome = (newStep === 56);
       if (reachedHome) playTone(880, 0.28, 'triangle', 0.18);
 
-      // Check victory (all 4 tokens at step 56)
+      // Check victory (all 4 tokens at step 56) -> show Congratulations overlay!
       const allHome = arr.every(s => s === 56);
       if (allHome) {
+        const winP = players.find(p => p.colorIdx === colorIdx);
+        showVictoryCelebration(winP ? winP.name : COLORS[colorIdx].name, COLORS[colorIdx].name);
         emitStateToNative(false, 'WIN:' + colorIdx);
         if (window.LudoBridge) window.LudoBridge.onGameOver(colorIdx);
         return;
       }
 
-      // Bonus turn on 6, capture, or reaching home!
+      // Bonus turn on 6, capture, or reaching home; otherwise IMMEDIATELY end timer and switch to next player!
       const grantBonus = (steps === 6 || capturedOpponent || reachedHome);
       if (!grantBonus) consecutiveSixes = 0;
       emitStateToNative(!grantBonus, capturedOpponent ? 'CAPTURE' : (reachedHome ? 'HOME' : 'MOVE'));
+    }
+
+    function showVictoryCelebration(winnerName, colorName) {
+      const overlay = document.getElementById('winOverlay');
+      const title = document.getElementById('winPlayerTitle');
+      if (title) title.textContent = `${winnerName} (${colorName}) Wins!`;
+      if (overlay) overlay.classList.add('show');
     }
 
     function emitStateToNative(switchTurn, eventTag) {
@@ -721,14 +914,14 @@
       updateControlsUI();
     }
 
-    // Tap on canvas to select glowing movable token
+    // Tap on canvas to manually select glowing movable 3D Goti when multiple gotis are available
     canvas.addEventListener('pointerdown', (e) => {
       if (!awaitingMove || activeColorIdx !== myColorIdx) return;
       const rect = canvas.getBoundingClientRect();
       const tx = ((e.clientX - rect.left) / rect.width) * BOARD_PX;
       const ty = ((e.clientY - rect.top) / rect.height) * BOARD_PX;
       const valid = getValidMoves(myColorIdx, diceValue);
-      let bestIdx = -1, bestDist = 48;
+      let bestIdx = -1, bestDist = 52;
       valid.forEach(ti => {
         const [gc, gr] = getTokenGridPos(myColorIdx, ti, tokens[myColorIdx][ti]);
         const d = Math.hypot(tx - gc * CELL, ty - gr * CELL);
@@ -756,7 +949,18 @@
         try {
           const parsed = JSON.parse(stateJson);
           if (parsed.tokens) tokens = parsed.tokens;
+          if (parsed.event && parsed.event.startsWith('WIN:')) {
+            const winIdx = parseInt(parsed.event.split(':')[1] || '0', 10);
+            const winP = players.find(p => p.colorIdx === winIdx);
+            showVictoryCelebration(winP ? winP.name : COLORS[winIdx].name, COLORS[winIdx].name);
+          }
         } catch(e) {}
+      }
+      if (activeIdx !== lastKnownTurnIdx) {
+        lastKnownTurnIdx = activeIdx;
+        awaitingMove = false;
+        isRolling = false;
+        consecutiveSixes = 0;
       }
       activeColorIdx = activeIdx;
       myColorIdx = myIdx;
