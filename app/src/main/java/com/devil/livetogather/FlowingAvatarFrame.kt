@@ -287,7 +287,7 @@ fun FlowingAvatarFrame(
         if (isVipSuiteFrame) targetAvatarSize / vipApertureRatio
         else avatarSize * minScale
     } else if (micEffectId.isNotBlank() && isSpeaking) {
-        avatarSize + 34.dp
+        avatarSize + 30.dp
     } else {
         avatarSize
     }
@@ -332,7 +332,7 @@ fun FlowingAvatarFrame(
                 VideoMicMagicEffectOverlay(
                     videoRes = activeVideoRes,
                     avatarSize = targetAvatarSize,
-                    effectSize = targetAvatarSize + 34.dp
+                    effectSize = targetAvatarSize + 30.dp
                 )
             }
 
@@ -368,13 +368,13 @@ fun FlowingAvatarFrame(
                 )
             }
 
-            // BASE LAYER: Uncropped, Clear Profile Picture (Fits snugly into frame hole without double border)
+            // BASE LAYER: Uncropped, Clear Profile Picture (Fits snugly into frame hole without double border or blue border when mic effect is active)
             Box(
                 modifier = Modifier
                     .size(targetAvatarSize)
                     .clip(CircleShape)
                     .then(
-                        if (!isVipSuiteFrame) {
+                        if (!isVipSuiteFrame && activeVideoRes == 0) {
                             Modifier.border(
                                 width = 1.5.dp,
                                 color = if (isSpeaking) {
@@ -920,11 +920,11 @@ fun VideoMicMagicEffectOverlay(
                 )
                 .drawWithContent {
                     drawContent()
-                    // Broad solid radial band (0.0f..0.86f solid) within the exact circle size
+                    // Broad solid radial band (0.0f..0.88f solid) within the exact circle size
                     drawRect(
                         brush = Brush.radialGradient(
                             0.0f to Color.Black,
-                            0.86f to Color.Black,
+                            0.88f to Color.Black,
                             1.0f to Color.Transparent,
                             radius = size.minDimension / 2f
                         ),
@@ -933,7 +933,7 @@ fun VideoMicMagicEffectOverlay(
                     // Exact circular aperture matching the profile photo circle with zero gap
                     drawCircle(
                         color = Color.Transparent,
-                        radius = (avatarSize.toPx() / 2f),
+                        radius = (avatarSize.toPx() / 2f) - 1.dp.toPx(),
                         blendMode = BlendMode.Clear
                     )
                 }

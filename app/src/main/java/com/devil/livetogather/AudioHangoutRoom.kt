@@ -7590,6 +7590,9 @@ fun AudioHangoutRoomDialog(
     }
 
     // 1. Real-Time Room Metadata Listener (Rooms/{roomId})
+    var userManuallyPausedMusic by remember(room.id) { mutableStateOf(false) }
+    var lastPausedTrackStartedAt by remember(room.id) { mutableStateOf(0L) }
+
     DisposableEffect(room.id) {
         if (room.id.isBlank()) return@DisposableEffect onDispose {}
         val roomListener = db.collection("rooms").document(room.id)
@@ -7653,20 +7656,28 @@ fun AudioHangoutRoomDialog(
                         }
                     } else if (updated.isPlaying && updated.nowPlayingUrl.isNotBlank()) {
                         val trackStartedAt = snapshot.getLong("trackStartedAt") ?: updated.trackStartedAt
-                        val elapsedMs = if (trackStartedAt > 0L) {
-                            (System.currentTimeMillis() - trackStartedAt).toInt().coerceAtLeast(0)
+                        // If the user just manually paused this exact track instance, do NOT auto-restart playback from a stale/heartbeat snapshot!
+                        if (userManuallyPausedMusic && (trackStartedAt <= 0L || trackStartedAt <= lastPausedTrackStartedAt)) {
+                            if (AudioPlayerManager.isPlayingState.value) {
+                                AudioPlayerManager.pause()
+                            }
                         } else {
-                            updated.playbackPosition.toInt().coerceAtLeast(0)
-                        }
+                            userManuallyPausedMusic = false
+                            val elapsedMs = if (trackStartedAt > 0L) {
+                                (System.currentTimeMillis() - trackStartedAt).toInt().coerceAtLeast(0)
+                            } else {
+                                updated.playbackPosition.toInt().coerceAtLeast(0)
+                            }
 
-                        if (AudioPlayerManager.currentTrackUrlState.value != updated.nowPlayingUrl || !AudioPlayerManager.isPlayingState.value) {
-                            AudioPlayerManager.play(context, updated.nowPlayingUrl, updated.nowPlayingTitle, updated.nowPlayingArtworkUrl, initialSeekMs = elapsedMs)
-                        } else {
-                            val currentLocalPos = AudioPlayerManager.currentPositionMsState.value
-                            val dur = AudioPlayerManager.durationMsState.value
-                            val targetPos = if (dur > 0) (elapsedMs % dur) else elapsedMs
-                            if (kotlin.math.abs(currentLocalPos - targetPos) > 2500) {
-                                AudioPlayerManager.seekTo(targetPos)
+                            if (AudioPlayerManager.currentTrackUrlState.value != updated.nowPlayingUrl || !AudioPlayerManager.isPlayingState.value) {
+                                AudioPlayerManager.play(context, updated.nowPlayingUrl, updated.nowPlayingTitle, updated.nowPlayingArtworkUrl, initialSeekMs = elapsedMs)
+                            } else {
+                                val currentLocalPos = AudioPlayerManager.currentPositionMsState.value
+                                val dur = AudioPlayerManager.durationMsState.value
+                                val targetPos = if (dur > 0) (elapsedMs % dur) else elapsedMs
+                                if (kotlin.math.abs(currentLocalPos - targetPos) > 2500) {
+                                    AudioPlayerManager.seekTo(targetPos)
+                                }
                             }
                         }
                     } else if (!updated.isPlaying && AudioPlayerManager.isPlayingState.value) {
@@ -9525,6 +9536,7 @@ fun AudioHangoutRoomDialog(
                                                 val curPos = AudioPlayerManager.currentPositionMsState.value
                                                 val trackStarted = if (willPlay) (now - curPos) else 0L
                                                 if (willPlay) {
+                                                    userManuallyPausedMusic = false
                                                     if (AudioPlayerManager.currentTrackUrlState.value.isNotBlank()) {
                                                         AudioPlayerManager.resume(context)
                                                     } else {
@@ -9534,7 +9546,24 @@ fun AudioHangoutRoomDialog(
                                                         AudioPlayerManager.play(context, defaultUrl, defaultTitle, defaultArt, initialSeekMs = curPos)
                                                     }
                                                 } else {
+                                                    userManuallyPausedMusic = true
+                                                    lastPausedTrackStartedAt = maxOf(room.trackStartedAt, now)
                                                     AudioPlayerManager.pause()
+                                                }
+                                                room = room.copy(isPlaying = willPlay, trackStartedAt = trackStarted, playbackPosition = curPos.toLong())
+                                                val musicUpdates = mapOf(
+                                                    "isPlaying" to willPlay,
+                                                    "trackStartedAt" to trackStarted,
+                                                    "playbackPosition" to curPos.toLong(),
+                                                    "nowPlayingTitle" to AudioPlayerManager.currentTrackTitleState.value.ifEmpty { room.nowPlayingTitle },
+                                                    "nowPlayingArtist" to room.nowPlayingArtist,
+                                                    "nowPlayingUrl" to AudioPlayerManager.currentTrackUrlState.value.ifEmpty { room.nowPlayingUrl },
+                                                    "nowPlayingArtworkUrl" to AudioPlayerManager.currentTrackArtworkUrlState.value.ifEmpty { room.nowPlayingArtworkUrl }
+                                                )
+                                                db.collection("rooms").document(room.id).set(musicUpdates, SetOptions.merge())
+                                                if (room.category.isNotBlank()) {
+                                                    db.collection("intent_categories").document(room.category)
+                                                        .collection("rooms").document(room.id).set(musicUpdates, SetOptions.merge())
                                                 }
                                             }
                                         },
@@ -9582,6 +9611,7 @@ fun AudioHangoutRoomDialog(
                                     val curPos = AudioPlayerManager.currentPositionMsState.value
                                     val trackStarted = if (willPlay) (now - curPos) else 0L
                                     if (willPlay) {
+                                        userManuallyPausedMusic = false
                                         if (AudioPlayerManager.currentTrackUrlState.value.isNotBlank()) {
                                             AudioPlayerManager.resume(context)
                                         } else {
@@ -9591,21 +9621,28 @@ fun AudioHangoutRoomDialog(
                                             AudioPlayerManager.play(context, defaultUrl, defaultTitle, defaultArt, initialSeekMs = curPos)
                                         }
                                     } else {
+                                        userManuallyPausedMusic = true
+                                        lastPausedTrackStartedAt = maxOf(room.trackStartedAt, now)
                                         AudioPlayerManager.pause()
                                     }
                                     room = room.copy(isPlaying = willPlay, trackStartedAt = trackStarted, playbackPosition = curPos.toLong())
+                                    val musicUpdates = mapOf(
+                                        "isPlaying" to willPlay,
+                                        "trackStartedAt" to trackStarted,
+                                        "playbackPosition" to curPos.toLong(),
+                                        "nowPlayingTitle" to AudioPlayerManager.currentTrackTitleState.value.ifEmpty { room.nowPlayingTitle },
+                                        "nowPlayingArtist" to room.nowPlayingArtist,
+                                        "nowPlayingUrl" to AudioPlayerManager.currentTrackUrlState.value.ifEmpty { room.nowPlayingUrl },
+                                        "nowPlayingArtworkUrl" to AudioPlayerManager.currentTrackArtworkUrlState.value.ifEmpty { room.nowPlayingArtworkUrl }
+                                    )
                                     db.collection("rooms").document(room.id).set(
-                                        mapOf(
-                                            "isPlaying" to willPlay,
-                                            "trackStartedAt" to trackStarted,
-                                            "playbackPosition" to curPos.toLong(),
-                                            "nowPlayingTitle" to AudioPlayerManager.currentTrackTitleState.value.ifEmpty { room.nowPlayingTitle },
-                                            "nowPlayingArtist" to room.nowPlayingArtist,
-                                            "nowPlayingUrl" to AudioPlayerManager.currentTrackUrlState.value.ifEmpty { room.nowPlayingUrl },
-                                            "nowPlayingArtworkUrl" to AudioPlayerManager.currentTrackArtworkUrlState.value.ifEmpty { room.nowPlayingArtworkUrl }
-                                        ),
+                                        musicUpdates,
                                         SetOptions.merge()
                                     )
+                                    if (room.category.isNotBlank()) {
+                                        db.collection("intent_categories").document(room.category)
+                                            .collection("rooms").document(room.id).set(musicUpdates, SetOptions.merge())
+                                    }
                                 },
                                 onSelectTrack = {
                                     if (!isUserAdmin) {
@@ -9851,6 +9888,7 @@ fun AudioHangoutRoomDialog(
                 onDismiss = { showTrackSelector = false },
                 onSelectTrack = { title, artist, category, url, artworkUrl ->
                     val now = System.currentTimeMillis()
+                    userManuallyPausedMusic = false
                     db.collection("rooms").document(room.id).set(
                         mapOf(
                             "currentPlayingTrack" to title,
