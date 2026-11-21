@@ -1025,39 +1025,10 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                 Log.d("Firestore", "Loaded ${fetchedRooms.size} real-time rooms from Firestore")
             }
         }
-
-        // Deep scrub of dummy rooms and dummy profiles across Firestore
-        db.collection("rooms").get().addOnSuccessListener { rSnaps ->
-            if (rSnaps != null) {
-                for (rDoc in rSnaps.documents) {
-                    val rId = rDoc.id
-                    val hostUid = rDoc.getString("hostUid") ?: rDoc.getString("hostId") ?: ""
-                    val title = rDoc.getString("title") ?: ""
-                    val isDummy = rId.startsWith("dummy") || hostUid.startsWith("dummy") || hostUid.isBlank() || title.contains("dummy", ignoreCase = true)
-                    if (isDummy) {
-                        rDoc.reference.delete()
-                    }
-                }
-            }
-        }
-        db.collection("users").get().addOnSuccessListener { uSnaps ->
-            if (uSnaps != null) {
-                for (uDoc in uSnaps.documents) {
-                    val uid = uDoc.id
-                    val docUid = uDoc.getString("uid") ?: ""
-                    val name = uDoc.getString("name") ?: ""
-                    val isDummy = uid.startsWith("dummy") || docUid.startsWith("dummy") || uid.startsWith("seed_") || docUid.startsWith("seed_") || name.contains("dummy", ignoreCase = true)
-                    if (isDummy && uid != currentUserId && docUid != currentUserId) {
-                        uDoc.reference.delete()
-                    }
-                }
-            }
-        }
     }
 
     // --- Real-Time Firestore Listeners ---
-    val isUserAdminOrFounder = currentUser.isAdmin || currentUser.isFounder() || currentUser.isOfficialAdmin(auth.currentUser?.email)
-    LaunchedEffect(currentUserId, isUserAdminOrFounder) {
+    LaunchedEffect(currentUserId) {
         // 1. Sync Current User Profile
         val userDoc = db.collection("users").document(currentUserId)
         userDoc.addSnapshotListener { snapshot, error ->
@@ -1506,20 +1477,10 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                             !it.statusMessage.equals("DELETED", ignoreCase = true)
                         }
                     }
-                    val homeOnlineUsersCount = remember(homeAllUsers.map { "${it.uid}_${it.isUserOnline()}" }, homeActiveRoomsCount) {
-                        val onlineCount = homeAllUsers.count { it.isUserOnline() }
-                        if (onlineCount > 0) onlineCount else if (homeActiveRoomsCount > 0) 1 else 0
+                    val onlineCount = remember(homeAllUsers.size, homeActiveRoomsCount) {
+                        val c = homeAllUsers.count { it.isUserOnline() }
+                        if (c > 0) c else if (homeActiveRoomsCount > 0) 1 else 0
                     }
-                    val liveDotAnim = rememberInfiniteTransition(label = "homeLiveDot")
-                    val liveDotAlpha by liveDotAnim.animateFloat(
-                        initialValue = 0.35f,
-                        targetValue = 1.0f,
-                        animationSpec = infiniteRepeatable(
-                            animation = tween(750, easing = FastOutSlowInEasing),
-                            repeatMode = RepeatMode.Reverse
-                        ),
-                        label = "homeLiveDotAlpha"
-                    )
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1559,10 +1520,10 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                                         modifier = Modifier
                                             .size(6.5.dp)
                                             .clip(CircleShape)
-                                            .background(Color(0xFF10B981).copy(alpha = liveDotAlpha))
+                                            .background(Color(0xFF10B981))
                                     )
                                     Text(
-                                        text = "$homeOnlineUsersCount Online • $homeActiveRoomsCount Active Rooms",
+                                        text = "$onlineCount Online • $homeActiveRoomsCount Active Rooms",
                                         color = Color.White.copy(alpha = 0.88f),
                                         fontSize = 10.5.sp,
                                         fontWeight = FontWeight.SemiBold
@@ -1573,16 +1534,15 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             val topBarIconTint = if (isProfileScreen) Color(0xFF1B1433) else Color.White
-                            // Real-Time Cloud Firestore Server Refresh Action
-                            val infiniteTransition = rememberInfiniteTransition(label = "refreshAnim")
-                            val rotation by infiniteTransition.animateFloat(
-                                initialValue = 0f,
-                                targetValue = 360f,
-                                animationSpec = infiniteRepeatable(
-                                    animation = tween(1000, easing = LinearEasing)
-                                ),
-                                label = "refreshRotation"
-                            )
+                            val rotation = if (refreshEngine.isRefreshing) {
+                                val infiniteTransition = rememberInfiniteTransition(label = "refreshAnim")
+                                infiniteTransition.animateFloat(
+                                    initialValue = 0f,
+                                    targetValue = 360f,
+                                    animationSpec = infiniteRepeatable(animation = tween(1000, easing = LinearEasing)),
+                                    label = "refreshRotation"
+                                ).value
+                            } else 0f
                             IconButton(
                                 onClick = triggerRefresh,
                                 enabled = !refreshEngine.isRefreshing
@@ -1590,59 +1550,39 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                                 Icon(
                                     imageVector = Icons.Default.Refresh,
                                     contentDescription = "Refresh Cloud Firestore",
-                                    modifier = Modifier.rotate(if (refreshEngine.isRefreshing) rotation else 0f),
+                                    modifier = Modifier.rotate(rotation),
                                     tint = if (refreshEngine.isRefreshing) BrandCoral else topBarIconTint
                                 )
                             }
 
-                            // Google-Style Search Animation & Bell Ringing Animation
-                            val googleSearchAnimTop = rememberInfiniteTransition(label = "googleSearchBlinkTop")
-                            val searchPulseScaleTop by googleSearchAnimTop.animateFloat(
-                                initialValue = 0.96f,
-                                targetValue = 1.12f,
-                                animationSpec = infiniteRepeatable(
-                                    animation = tween(1000, easing = FastOutSlowInEasing),
-                                    repeatMode = RepeatMode.Reverse
-                                ),
-                                label = "searchPulseTop"
-                            )
-                            val searchBlinkColorTop by googleSearchAnimTop.animateColor(
-                                initialValue = Color(0xFF4285F4),
-                                targetValue = Color(0xFF34A853),
-                                animationSpec = infiniteRepeatable(
-                                    animation = tween(1800, easing = LinearEasing),
-                                    repeatMode = RepeatMode.Reverse
-                                ),
-                                label = "searchColorTop"
-                            )
-                            val bellAnimTop = rememberInfiniteTransition(label = "bellNotificationAnimTop")
-                            val bellRotationTop by bellAnimTop.animateFloat(
-                                initialValue = if (unreadNotificationsCount > 0) -15f else 0f,
-                                targetValue = if (unreadNotificationsCount > 0) 15f else 0f,
-                                animationSpec = infiniteRepeatable(
-                                    animation = tween(150, easing = LinearEasing),
-                                    repeatMode = RepeatMode.Reverse
-                                ),
-                                label = "bellRotationTop"
-                            )
-                            val badgePulseScaleTop by bellAnimTop.animateFloat(
-                                initialValue = 0.88f,
-                                targetValue = 1.18f,
-                                animationSpec = infiniteRepeatable(
-                                    animation = tween(550, easing = FastOutSlowInEasing),
-                                    repeatMode = RepeatMode.Reverse
-                                ),
-                                label = "badgePulseTop"
-                            )
-                            val badgeAlphaTop by bellAnimTop.animateFloat(
-                                initialValue = 0.65f,
-                                targetValue = 1.0f,
-                                animationSpec = infiniteRepeatable(
-                                    animation = tween(550, easing = FastOutSlowInEasing),
-                                    repeatMode = RepeatMode.Reverse
-                                ),
-                                label = "badgeAlphaTop"
-                            )
+                            val bellRotationTop: Float
+                            val badgePulseScaleTop: Float
+                            val badgeAlphaTop: Float
+                            if (unreadNotificationsCount > 0) {
+                                val bellAnimTop = rememberInfiniteTransition(label = "bellNotificationAnimTop")
+                                bellRotationTop = bellAnimTop.animateFloat(
+                                    initialValue = -15f,
+                                    targetValue = 15f,
+                                    animationSpec = infiniteRepeatable(animation = tween(150, easing = LinearEasing), repeatMode = RepeatMode.Reverse),
+                                    label = "bellRotationTop"
+                                ).value
+                                badgePulseScaleTop = bellAnimTop.animateFloat(
+                                    initialValue = 0.88f,
+                                    targetValue = 1.18f,
+                                    animationSpec = infiniteRepeatable(animation = tween(550, easing = FastOutSlowInEasing), repeatMode = RepeatMode.Reverse),
+                                    label = "badgePulseTop"
+                                ).value
+                                badgeAlphaTop = bellAnimTop.animateFloat(
+                                    initialValue = 0.65f,
+                                    targetValue = 1.0f,
+                                    animationSpec = infiniteRepeatable(animation = tween(550, easing = FastOutSlowInEasing), repeatMode = RepeatMode.Reverse),
+                                    label = "badgeAlphaTop"
+                                ).value
+                            } else {
+                                bellRotationTop = 0f
+                                badgePulseScaleTop = 1f
+                                badgeAlphaTop = 1f
+                            }
 
                             // Sleek Dual-Mode Search Button
                             IconButton(

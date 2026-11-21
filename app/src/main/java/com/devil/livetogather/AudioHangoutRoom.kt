@@ -9549,9 +9549,6 @@ fun AudioHangoutRoomDialog(
                     val currentArtwork = room.nowPlayingArtworkUrl.ifEmpty { AudioPlayerManager.currentTrackArtworkUrlState.value }
                     val isPlayingNow = AudioPlayerManager.isPlayingState.value
                     val isBuffering by AudioPlayerManager.isBufferingState
-                    val formattedTime by AudioPlayerManager.formattedTimeState
-                    val currentPosMs by AudioPlayerManager.currentPositionMsState
-                    val totalDurationMs by AudioPlayerManager.durationMsState
 
                     Box(
                         modifier = Modifier
@@ -9666,7 +9663,10 @@ fun AudioHangoutRoomDialog(
                                 }
                             }
                         } else {
-                            // Expanded Floating Draggable Console Card
+                            // Expanded Floating Draggable Console Card (reads position ticker only when expanded!)
+                            val formattedTime by AudioPlayerManager.formattedTimeState
+                            val currentPosMs by AudioPlayerManager.currentPositionMsState
+                            val totalDurationMs by AudioPlayerManager.durationMsState
                             CategoryThemedPlayerConsole(
                                 room = room,
                                 isPlayingNow = isPlayingNow,

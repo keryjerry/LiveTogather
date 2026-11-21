@@ -492,6 +492,71 @@ private fun buildCleanWatchCssAndJs(shouldPlay: Boolean): String {
     """.trimIndent()
 }
 
+@Composable
+private fun IsolatedCinemaChestBadge(
+    roomId: String,
+    onClaimTreasureChest: () -> Unit
+) {
+    var chestCooldownSec by remember(roomId) { mutableLongStateOf(180L) }
+    LaunchedEffect(roomId) {
+        while (true) {
+            delay(1000L)
+            if (chestCooldownSec > 0L) chestCooldownSec -= 1L
+        }
+    }
+    val isReady = chestCooldownSec == 0L
+    val glowAlpha = if (isReady) {
+        val infiniteTransition = rememberInfiniteTransition(label = "chest_pulse")
+        infiniteTransition.animateFloat(
+            initialValue = 0.45f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(900, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "chest_glow"
+        ).value
+    } else 0f
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(
+                if (isReady) Color(0xFFFFD700).copy(alpha = 0.22f + 0.18f * glowAlpha)
+                else Color(0x990A1942)
+            )
+            .border(
+                width = 0.8.dp,
+                color = if (isReady) Color(0xFFFFD700) else Color(0x66FFD700),
+                shape = RoundedCornerShape(50)
+            )
+            .clickable {
+                if (isReady) {
+                    chestCooldownSec = 180L
+                    onClaimTreasureChest()
+                }
+            }
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+    ) {
+        Image(
+            painter = painterResource(id = R.drawable.ic_room_treasure_chest_hd),
+            contentDescription = "Treasure Chest",
+            modifier = Modifier.size(20.dp),
+            contentScale = ContentScale.Fit
+        )
+        val mins = chestCooldownSec / 60
+        val secs = chestCooldownSec % 60
+        Text(
+            text = if (isReady) "CLAIM!" else String.format(Locale.US, "%02d:%02d", mins, secs),
+            color = Color(0xFFFFE57F),
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Black
+        )
+    }
+}
+
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 private fun CleanYouTubeIFrameWebView(
@@ -512,11 +577,15 @@ private fun CleanYouTubeIFrameWebView(
                     ViewGroup.LayoutParams.MATCH_PARENT
                 )
                 setBackgroundColor(android.graphics.Color.BLACK)
+                setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
                 isVerticalScrollBarEnabled = false
                 isHorizontalScrollBarEnabled = false
                 overScrollMode = WebView.OVER_SCROLL_NEVER
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
+                settings.databaseEnabled = true
+                @Suppress("DEPRECATION")
+                settings.setRenderPriority(WebSettings.RenderPriority.HIGH)
                 settings.mediaPlaybackRequiresUserGesture = false
                 settings.loadWithOverviewMode = true
                 settings.useWideViewPort = true
@@ -590,26 +659,6 @@ fun CinemaWatchPartyVideoBox(
     val videoTitle = room.watchPartyVideoTitle.ifBlank { WatchPartyCinemaEngine.CURATED_VIDEOS.first().title }
     val isPlaying = room.watchPartyIsPlaying
     var isFullScreen by remember(room.id) { mutableStateOf(false) }
-
-    // Real-time 3-minute (180s) Treasure Chest cycle countdown
-    var chestCooldownSec by remember(room.id) { mutableLongStateOf(180L) }
-    LaunchedEffect(room.id) {
-        while (true) {
-            delay(1000L)
-            if (chestCooldownSec > 0L) chestCooldownSec -= 1L
-        }
-    }
-
-    val infiniteTransition = rememberInfiniteTransition(label = "chest_pulse")
-    val glowAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.45f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(900, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "chest_glow"
-    )
 
     // Bleed 12.dp left + 12.dp right out of parent Column padding so the player sits 100% Edge-to-Edge
     Column(
@@ -730,44 +779,11 @@ fun CinemaWatchPartyVideoBox(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // Left: Compact Treasure Chest (zero video overlap!)
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background(
-                        if (chestCooldownSec == 0L) Color(0xFFFFD700).copy(alpha = 0.22f + 0.18f * glowAlpha)
-                        else Color(0x990A1942)
-                    )
-                    .border(
-                        width = 0.8.dp,
-                        color = if (chestCooldownSec == 0L) Color(0xFFFFD700) else Color(0x66FFD700),
-                        shape = RoundedCornerShape(50)
-                    )
-                    .clickable {
-                        if (chestCooldownSec == 0L) {
-                            chestCooldownSec = 180L
-                            onClaimTreasureChest()
-                        }
-                    }
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
-            ) {
-                Image(
-                    painter = painterResource(id = R.drawable.ic_room_treasure_chest_hd),
-                    contentDescription = "Treasure Chest",
-                    modifier = Modifier.size(20.dp),
-                    contentScale = ContentScale.Fit
-                )
-                val mins = chestCooldownSec / 60
-                val secs = chestCooldownSec % 60
-                Text(
-                    text = if (chestCooldownSec == 0L) "CLAIM!" else String.format(Locale.US, "%02d:%02d", mins, secs),
-                    color = if (chestCooldownSec == 0L) Color(0xFFFFE57F) else Color(0xFFFFE57F),
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Black
-                )
-            }
+            // Left: Isolated Compact Treasure Chest (zero video recomposition!)
+            IsolatedCinemaChestBadge(
+                roomId = room.id,
+                onClaimTreasureChest = onClaimTreasureChest
+            )
 
             Spacer(modifier = Modifier.width(6.dp))
 
@@ -1430,11 +1446,11 @@ fun YouTubeVideoPickerDialog(
     var selectedVideoId by remember { mutableStateOf("") }
     var selectedVideoTitle by remember { mutableStateOf("") }
 
-    // Continuously track SPA URL & title changes inside m.youtube.com so tapping ANY video is always detected
+    // Track SPA URL & title changes inside m.youtube.com without hammering the UI thread
     LaunchedEffect(webViewRef) {
+        val wv = webViewRef ?: return@LaunchedEffect
         while (true) {
-            delay(400L)
-            val wv = webViewRef ?: continue
+            delay(1200L)
             val currentUrl = wv.url.orEmpty()
             val extractedId = if (
                 currentUrl.contains("/watch") ||
@@ -1582,8 +1598,12 @@ fun YouTubeVideoPickerDialog(
                                 ViewGroup.LayoutParams.MATCH_PARENT
                             )
                             setBackgroundColor(android.graphics.Color.BLACK)
+                            setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
                             settings.javaScriptEnabled = true
                             settings.domStorageEnabled = true
+                            settings.databaseEnabled = true
+                            @Suppress("DEPRECATION")
+                            settings.setRenderPriority(WebSettings.RenderPriority.HIGH)
                             settings.mediaPlaybackRequiresUserGesture = false
                             settings.loadWithOverviewMode = true
                             settings.useWideViewPort = true
