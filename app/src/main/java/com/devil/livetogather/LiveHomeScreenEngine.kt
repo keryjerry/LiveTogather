@@ -120,21 +120,58 @@ fun LiveTogetherHomeScreen(
     }
 
     // STRICT REAL-TIME COUNTERS (100% FIREBASE LIVE SYNC, NO DUMMY NUMBERS)
+    val ghostTimeoutMs = 10 * 60 * 1000L // 10 minutes without host/admin heartbeat = ghost room
+    LaunchedEffect(roomsSnapshotKey) {
+        val now = System.currentTimeMillis()
+        rooms.forEach { r ->
+            val markedLive = r.isHostLive || r.isLive
+            val notClosed = !r.statusMessage.equals("OFFLINE", ignoreCase = true) &&
+                !r.statusMessage.equals("CLOSED", ignoreCase = true) &&
+                !r.statusMessage.equals("DELETED", ignoreCase = true)
+            val isStaleHeartbeat = r.lastHostHeartbeat > 0L && (now - r.lastHostHeartbeat > ghostTimeoutMs)
+            if (markedLive && notClosed && isStaleHeartbeat && r.id.isNotBlank()) {
+                val closeMap = mapOf<String, Any>(
+                    "isLive" to false,
+                    "isHostLive" to false,
+                    "isEnded" to true,
+                    "endedAt" to now,
+                    "activeUserCount" to 0,
+                    "isPlaying" to false,
+                    "watchPartyIsPlaying" to false,
+                    "watchPartyVideoId" to "",
+                    "watchPartyVideoTitle" to "",
+                    "watchPartyPositionSec" to 0L,
+                    "statusMessage" to "Room is closed"
+                )
+                val fs = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                fs.collection("rooms").document(r.id).update(closeMap)
+                if (r.category.isNotBlank()) {
+                    fs.collection("intent_categories").document(r.category)
+                        .collection("rooms").document(r.id).update(closeMap)
+                }
+            }
+        }
+    }
+
     val liveVoiceRooms = remember(roomsSnapshotKey) {
+        val now = System.currentTimeMillis()
         rooms.filter {
             (it.isHostLive || it.isLive) &&
             !it.statusMessage.equals("OFFLINE", ignoreCase = true) &&
             !it.statusMessage.equals("CLOSED", ignoreCase = true) &&
             !it.statusMessage.equals("DELETED", ignoreCase = true) &&
+            !(it.lastHostHeartbeat > 0L && (now - it.lastHostHeartbeat > ghostTimeoutMs)) &&
             it.category != "video_stream" && it.roomType != "video" && it.roomType != "video_pk" && !it.isVideoRoom
         }
     }
     val liveVideoRooms = remember(roomsSnapshotKey) {
+        val now = System.currentTimeMillis()
         rooms.filter {
             (it.isHostLive || it.isLive) &&
             !it.statusMessage.equals("OFFLINE", ignoreCase = true) &&
             !it.statusMessage.equals("CLOSED", ignoreCase = true) &&
             !it.statusMessage.equals("DELETED", ignoreCase = true) &&
+            !(it.lastHostHeartbeat > 0L && (now - it.lastHostHeartbeat > ghostTimeoutMs)) &&
             (it.category == "video_stream" || it.roomType == "video" || it.roomType == "video_pk" || it.isVideoRoom)
         }
     }

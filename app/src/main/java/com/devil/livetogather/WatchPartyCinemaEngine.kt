@@ -57,6 +57,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
@@ -72,6 +73,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -79,9 +82,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -328,17 +334,21 @@ object WatchPartyCinemaEngine {
         db: FirebaseFirestore,
         room: RoomItem,
         isActive: Boolean,
-        videoId: String = room.watchPartyVideoId.ifBlank { CURATED_VIDEOS.first().videoId },
-        videoTitle: String = room.watchPartyVideoTitle.ifBlank { CURATED_VIDEOS.first().title },
+        videoId: String = room.watchPartyVideoId,
+        videoTitle: String = room.watchPartyVideoTitle,
         isPlaying: Boolean = room.watchPartyIsPlaying,
+        positionSec: Long = room.watchPartyPositionSec,
+        durationSec: Long = room.watchPartyDurationSec,
         updatedBy: String
     ) {
         if (room.id.isBlank()) return
         val updates = mutableMapOf<String, Any>(
             "isWatchPartyActive" to isActive,
-            "watchPartyVideoId" to videoId,
-            "watchPartyVideoTitle" to videoTitle,
-            "watchPartyIsPlaying" to isPlaying,
+            "watchPartyVideoId" to if (isActive) videoId else "",
+            "watchPartyVideoTitle" to if (isActive) videoTitle else "",
+            "watchPartyIsPlaying" to if (isActive) isPlaying else false,
+            "watchPartyPositionSec" to if (isActive) positionSec.coerceAtLeast(0L) else 0L,
+            "watchPartyDurationSec" to if (isActive) durationSec.coerceAtLeast(0L) else 0L,
             "watchPartyUpdatedBy" to updatedBy,
             "watchPartyUpdatedAt" to System.currentTimeMillis()
         )
@@ -399,7 +409,7 @@ object WatchPartyCinemaEngine {
     }
 }
 
-private fun buildCleanWatchCssAndJs(shouldPlay: Boolean): String {
+private fun buildCleanWatchCssAndJs(shouldPlay: Boolean, targetPosSec: Long = 0L): String {
     return """
         (function() {
           try {
@@ -444,6 +454,25 @@ private fun buildCleanWatchCssAndJs(shouldPlay: Boolean): String {
             }
 
             window.__ltShouldPlay = $shouldPlay;
+            window.__ltTargetSeekSec = $targetPosSec;
+            window.__ltInitialSeekDone = false;
+
+            window.seekLtVideo = function(sec) {
+              window.__ltTargetSeekSec = sec;
+              var vids = document.querySelectorAll('video');
+              for (var i = 0; i < vids.length; i++) {
+                var v = vids[i];
+                if (v && v.readyState >= 1 && isFinite(sec) && sec >= 0) {
+                  try {
+                    if (Math.abs((v.currentTime || 0) - sec) > 1.5) {
+                      v.currentTime = sec;
+                    }
+                    window.__ltInitialSeekDone = true;
+                  } catch (e) {}
+                }
+              }
+            };
+
             window.applyLtPlayState = function(playNow) {
               window.__ltShouldPlay = playNow;
               var vids = document.querySelectorAll('video');
@@ -473,10 +502,20 @@ private fun buildCleanWatchCssAndJs(shouldPlay: Boolean): String {
               window.__ltCinemaInterval = setInterval(function() {
                 var v = document.querySelector('video');
                 if (v) {
+                  if (!window.__ltInitialSeekDone && window.__ltTargetSeekSec > 1 && v.readyState >= 1) {
+                    try {
+                      v.currentTime = window.__ltTargetSeekSec;
+                      window.__ltInitialSeekDone = true;
+                    } catch (e) {}
+                  }
                   if (window.__ltShouldPlay && v.paused && v.readyState >= 2) {
                     window.applyLtPlayState(true);
                   } else if (!window.__ltShouldPlay && !v.paused) {
                     v.pause();
+                  }
+                  if (window.LtYtBridge && window.LtYtBridge.onTimeUpdate && isFinite(v.currentTime)) {
+                    var dur = (isFinite(v.duration) && v.duration > 0) ? Math.floor(v.duration) : 0;
+                    window.LtYtBridge.onTimeUpdate(Math.floor(v.currentTime || 0), dur);
                   }
                 }
                 var dismissBtns = document.querySelectorAll('button[aria-label*="No thanks"], button[aria-label*="Dismiss"], .ytm-upsell-dialog-renderer button');
@@ -562,12 +601,24 @@ private fun IsolatedCinemaChestBadge(
 private fun CleanYouTubeIFrameWebView(
     videoId: String,
     isPlaying: Boolean,
+    targetPositionSec: Long = 0L,
+    updatedAtMs: Long = 0L,
+    seekTriggerSeq: Int = 0,
+    onTimeUpdate: (currentSec: Long, durationSec: Long) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val safeId = remember(videoId) {
         videoId.replace(Regex("[^A-Za-z0-9_-]"), "").ifBlank { WatchPartyCinemaEngine.CURATED_VIDEOS.first().videoId }
     }
     val watchUrl = remember(safeId) { "https://m.youtube.com/watch?v=$safeId" }
+    val latestOnTimeUpdate by rememberUpdatedState(onTimeUpdate)
+    val computedTargetSec = remember(targetPositionSec, updatedAtMs, isPlaying, seekTriggerSeq) {
+        if (isPlaying && updatedAtMs > 0L) {
+            (targetPositionSec + ((System.currentTimeMillis() - updatedAtMs) / 1000L).coerceAtLeast(0L))
+        } else {
+            targetPositionSec.coerceAtLeast(0L)
+        }
+    }
 
     AndroidView(
         factory = { ctx ->
@@ -590,6 +641,12 @@ private fun CleanYouTubeIFrameWebView(
                 settings.loadWithOverviewMode = true
                 settings.useWideViewPort = true
                 settings.cacheMode = WebSettings.LOAD_DEFAULT
+                addJavascriptInterface(object {
+                    @android.webkit.JavascriptInterface
+                    fun onTimeUpdate(curSec: Long, durSec: Long) {
+                        post { latestOnTimeUpdate(curSec.coerceAtLeast(0L), durSec.coerceAtLeast(0L)) }
+                    }
+                }, "LtYtBridge")
                 webChromeClient = WebChromeClient()
                 webViewClient = object : WebViewClient() {
                     override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
@@ -603,17 +660,21 @@ private fun CleanYouTubeIFrameWebView(
 
                     override fun onPageCommitVisible(view: WebView?, url: String?) {
                         super.onPageCommitVisible(view, url)
-                        val activePlay = (view?.tag as? String)?.substringAfter("|")?.toBooleanStrictOrNull() ?: true
-                        view?.evaluateJavascript(buildCleanWatchCssAndJs(activePlay), null)
+                        val parts = (view?.tag as? String)?.split("|")
+                        val activePlay = parts?.getOrNull(1)?.toBooleanStrictOrNull() ?: true
+                        val targetSec = parts?.getOrNull(2)?.toLongOrNull() ?: 0L
+                        view?.evaluateJavascript(buildCleanWatchCssAndJs(activePlay, targetSec), null)
                     }
 
                     override fun onPageFinished(view: WebView?, url: String?) {
                         super.onPageFinished(view, url)
-                        val activePlay = (view?.tag as? String)?.substringAfter("|")?.toBooleanStrictOrNull() ?: true
-                        view?.evaluateJavascript(buildCleanWatchCssAndJs(activePlay), null)
+                        val parts = (view?.tag as? String)?.split("|")
+                        val activePlay = parts?.getOrNull(1)?.toBooleanStrictOrNull() ?: true
+                        val targetSec = parts?.getOrNull(2)?.toLongOrNull() ?: 0L
+                        view?.evaluateJavascript(buildCleanWatchCssAndJs(activePlay, targetSec), null)
                     }
                 }
-                tag = "$safeId|$isPlaying"
+                tag = "$safeId|$isPlaying|$computedTargetSec|$updatedAtMs|$seekTriggerSeq"
                 loadUrl(watchUrl)
             }
         },
@@ -622,16 +683,25 @@ private fun CleanYouTubeIFrameWebView(
             val prevParts = prevTag.split("|")
             val prevId = prevParts.getOrNull(0).orEmpty()
             val prevPlaying = prevParts.getOrNull(1)?.toBooleanStrictOrNull()
+            val prevUpdatedAt = prevParts.getOrNull(3)?.toLongOrNull() ?: 0L
+            val prevSeekSeq = prevParts.getOrNull(4)?.toIntOrNull() ?: 0
+
             if (prevId != safeId) {
-                webView.tag = "$safeId|$isPlaying"
+                webView.tag = "$safeId|$isPlaying|$computedTargetSec|$updatedAtMs|$seekTriggerSeq"
                 webView.loadUrl("https://m.youtube.com/watch?v=$safeId")
-            } else if (prevPlaying != isPlaying) {
-                webView.tag = "$safeId|$isPlaying"
-                webView.evaluateJavascript("if (window.applyLtPlayState) { window.applyLtPlayState($isPlaying); }", null)
+            } else {
+                if (prevPlaying != isPlaying) {
+                    webView.evaluateJavascript("if (window.applyLtPlayState) { window.applyLtPlayState($isPlaying); }", null)
+                }
+                if (prevUpdatedAt != updatedAtMs || prevSeekSeq != seekTriggerSeq) {
+                    webView.evaluateJavascript("if (window.seekLtVideo) { window.seekLtVideo($computedTargetSec); }", null)
+                }
+                webView.tag = "$safeId|$isPlaying|$computedTargetSec|$updatedAtMs|$seekTriggerSeq"
             }
         },
         onRelease = { webView ->
             webView.stopLoading()
+            webView.removeJavascriptInterface("LtYtBridge")
             webView.loadUrl("about:blank")
             webView.destroy()
         },
@@ -643,6 +713,13 @@ private fun CleanYouTubeIFrameWebView(
  * Full-Width Edge-to-Edge Clean Synced YouTube Cinema Player + Dedicated Slim Control Bar
  * Zero m.youtube.com chrome, zero overlapping Treasure Chest, plus native Fullscreen Mode.
  */
+private fun formatWatchTime(sec: Long): String {
+    val s = sec.coerceAtLeast(0L)
+    val mins = s / 60L
+    val rem = s % 60L
+    return String.format(Locale.US, "%d:%02d", mins, rem)
+}
+
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun CinemaWatchPartyVideoBox(
@@ -650,15 +727,38 @@ fun CinemaWatchPartyVideoBox(
     canControlVideo: Boolean,
     currentUserName: String,
     currentRoomStaySeconds: Long,
-    onTogglePlay: () -> Unit,
+    onTogglePlay: (currentPosSec: Long, durationSec: Long) -> Unit,
     onOpenVideoPicker: () -> Unit,
+    onSeekTo: (positionSec: Long, durationSec: Long) -> Unit = { _, _ -> },
     onClaimTreasureChest: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val videoId = room.watchPartyVideoId.ifBlank { WatchPartyCinemaEngine.CURATED_VIDEOS.first().videoId }
-    val videoTitle = room.watchPartyVideoTitle.ifBlank { WatchPartyCinemaEngine.CURATED_VIDEOS.first().title }
+    val rawVideoId = room.watchPartyVideoId.trim()
+    val hasActiveVideo = rawVideoId.isNotBlank()
+    val videoId = rawVideoId
+    val videoTitle = room.watchPartyVideoTitle.ifBlank { "YouTube Watch Party" }
     val isPlaying = room.watchPartyIsPlaying
     var isFullScreen by remember(room.id) { mutableStateOf(false) }
+
+    var livePosSec by remember(room.id, videoId) { mutableLongStateOf(room.watchPartyPositionSec) }
+    var liveDurSec by remember(room.id, videoId) { mutableLongStateOf(room.watchPartyDurationSec) }
+    var isDraggingSeek by remember(room.id) { mutableStateOf(false) }
+    var dragSeekSec by remember(room.id) { mutableFloatStateOf(0f) }
+    var seekTriggerSeq by remember(room.id) { mutableIntStateOf(0) }
+
+    LaunchedEffect(room.watchPartyPositionSec, room.watchPartyDurationSec, room.watchPartyUpdatedAt) {
+        if (!isDraggingSeek) {
+            val syncedPos = if (isPlaying && room.watchPartyUpdatedAt > 0L) {
+                room.watchPartyPositionSec + ((System.currentTimeMillis() - room.watchPartyUpdatedAt) / 1000L).coerceAtLeast(0L)
+            } else {
+                room.watchPartyPositionSec
+            }
+            livePosSec = syncedPos.coerceAtLeast(0L)
+            if (room.watchPartyDurationSec > 0L) {
+                liveDurSec = room.watchPartyDurationSec
+            }
+        }
+    }
 
     // Bleed 12.dp left + 12.dp right out of parent Column padding so the player sits 100% Edge-to-Edge
     Column(
@@ -681,13 +781,54 @@ fun CinemaWatchPartyVideoBox(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(210.dp)
-                .background(Color.Black)
+                .background(Color(0xFF050B1E))
         ) {
-            // Render inline player only when fullscreen dialog is closed (prevents double audio)
-            if (!isFullScreen) {
+            if (!hasActiveVideo) {
+                // Clean Reset State: No song active -> display Search YouTube Song prompt!
+                Column(
+                    modifier = Modifier.fillMaxSize().padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text("🎬", fontSize = 32.sp)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "No YouTube Song Playing",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Search and play any YouTube song or video in real-time sync",
+                        color = Color(0xFF93C5FD),
+                        fontSize = 11.sp
+                    )
+                    if (canControlVideo) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Button(
+                            onClick = onOpenVideoPicker,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1D4ED8)),
+                            shape = RoundedCornerShape(50),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFFFFD700), modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Search YouTube Song", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+                        }
+                    }
+                }
+            } else if (!isFullScreen) {
                 CleanYouTubeIFrameWebView(
                     videoId = videoId,
                     isPlaying = isPlaying,
+                    targetPositionSec = room.watchPartyPositionSec,
+                    updatedAtMs = room.watchPartyUpdatedAt,
+                    seekTriggerSeq = seekTriggerSeq,
+                    onTimeUpdate = { cur, dur ->
+                        if (!isDraggingSeek) livePosSec = cur
+                        if (dur > 0L) liveDurSec = dur
+                    },
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
@@ -707,12 +848,12 @@ fun CinemaWatchPartyVideoBox(
             }
 
             // Synced Pause Status Overlay
-            if (!isPlaying && !isFullScreen) {
+            if (hasActiveVideo && !isPlaying && !isFullScreen) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(Color(0x88050D26))
-                        .clickable(enabled = canControlVideo) { onTogglePlay() },
+                        .clickable(enabled = canControlVideo) { onTogglePlay(livePosSec, liveDurSec) },
                     contentAlignment = Alignment.Center
                 ) {
                     Surface(
@@ -745,22 +886,80 @@ fun CinemaWatchPartyVideoBox(
             }
 
             // Subtle Bottom-Right Fullscreen Icon right on the edge-to-edge player
-            Box(
+            if (hasActiveVideo) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 8.dp, bottom = 8.dp)
+                        .size(30.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xB3000000))
+                        .border(0.9.dp, Color(0x99FFFFFF), RoundedCornerShape(8.dp))
+                        .clickable { isFullScreen = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Fullscreen,
+                        contentDescription = "Full Screen Video",
+                        tint = Color.White,
+                        modifier = Modifier.size(19.dp)
+                    )
+                }
+            }
+        }
+
+        // 1B. INTERACTIVE PROGRESS / SEEK BAR (Host/Admin can drag, swipe, or tap to skip forward/rewind!)
+        if (hasActiveVideo) {
+            val effectiveDur = liveDurSec.coerceAtLeast(1L)
+            val sliderVal = if (isDraggingSeek) dragSeekSec else livePosSec.coerceIn(0L, effectiveDur).toFloat()
+            Row(
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 8.dp, bottom = 8.dp)
-                    .size(30.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xB3000000))
-                    .border(0.9.dp, Color(0x99FFFFFF), RoundedCornerShape(8.dp))
-                    .clickable { isFullScreen = true },
-                contentAlignment = Alignment.Center
+                    .fillMaxWidth()
+                    .background(Color(0xFF050E26))
+                    .padding(horizontal = 10.dp, vertical = 1.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.Fullscreen,
-                    contentDescription = "Full Screen Video",
-                    tint = Color.White,
-                    modifier = Modifier.size(19.dp)
+                Text(
+                    text = formatWatchTime(sliderVal.toLong()),
+                    color = Color(0xFF93C5FD),
+                    fontSize = 9.5.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Slider(
+                    value = sliderVal,
+                    onValueChange = { newVal ->
+                        if (canControlVideo) {
+                            isDraggingSeek = true
+                            dragSeekSec = newVal
+                        }
+                    },
+                    onValueChangeFinished = {
+                        if (canControlVideo) {
+                            val targetSec = dragSeekSec.toLong().coerceIn(0L, effectiveDur)
+                            livePosSec = targetSec
+                            isDraggingSeek = false
+                            seekTriggerSeq += 1
+                            onSeekTo(targetSec, effectiveDur)
+                        }
+                    },
+                    valueRange = 0f..effectiveDur.toFloat(),
+                    enabled = canControlVideo,
+                    colors = SliderDefaults.colors(
+                        thumbColor = Color(0xFFFFD700),
+                        activeTrackColor = Color(0xFF38BDF8),
+                        inactiveTrackColor = Color(0x33FFFFFF),
+                        disabledThumbColor = Color(0xAA38BDF8),
+                        disabledActiveTrackColor = Color(0xAA38BDF8),
+                        disabledInactiveTrackColor = Color(0x22FFFFFF)
+                    ),
+                    modifier = Modifier.weight(1f).height(24.dp)
+                )
+                Text(
+                    text = if (liveDurSec > 0L) formatWatchTime(liveDurSec) else "--:--",
+                    color = Color(0xFF93C5FD),
+                    fontSize = 9.5.sp,
+                    fontWeight = FontWeight.Bold
                 )
             }
         }
@@ -812,7 +1011,7 @@ fun CinemaWatchPartyVideoBox(
                             .clip(CircleShape)
                             .background(Color(0xFF1D4ED8))
                             .border(0.9.dp, Color(0xAA93C5FD), CircleShape)
-                            .clickable { onTogglePlay() },
+                            .clickable { onTogglePlay(livePosSec, liveDurSec) },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -884,6 +1083,13 @@ fun CinemaWatchPartyVideoBox(
                 CleanYouTubeIFrameWebView(
                     videoId = videoId,
                     isPlaying = isPlaying,
+                    targetPositionSec = room.watchPartyPositionSec,
+                    updatedAtMs = room.watchPartyUpdatedAt,
+                    seekTriggerSeq = seekTriggerSeq,
+                    onTimeUpdate = { cur, dur ->
+                        if (!isDraggingSeek) livePosSec = cur
+                        if (dur > 0L) liveDurSec = dur
+                    },
                     modifier = Modifier.fillMaxSize()
                 )
 
@@ -922,7 +1128,7 @@ fun CinemaWatchPartyVideoBox(
                                     .clip(CircleShape)
                                     .background(Color(0xCC1D4ED8))
                                     .border(1.dp, Color(0xAA93C5FD), CircleShape)
-                                    .clickable { onTogglePlay() },
+                                    .clickable { onTogglePlay(livePosSec, liveDurSec) },
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
@@ -996,6 +1202,7 @@ fun RoyalBlueSofaTenMicStage(
     isLocalTalking: Boolean,
     allProfiles: List<UserProfile>,
     activeEmojiReactions: Map<String, String>,
+    roomAdminIds: List<String> = emptyList(),
     userActiveFrame: String = "",
     userActiveMicEffect: String = "",
     onSeatClick: (MicSeat) -> Unit,
@@ -1086,6 +1293,27 @@ fun RoyalBlueSofaTenMicStage(
                                     showMicEffect = seatMicEffectId.isNotBlank() && isEffectActiveNow,
                                     micEffectId = seatMicEffectId
                                 )
+
+                                // Admin Green Tick badge on bottom-left of sofa avatar
+                                if (seat.uid in roomAdminIds) {
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.BottomStart)
+                                            .padding(start = 7.dp, bottom = 8.dp)
+                                            .size(16.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF10B981))
+                                            .border(1.2.dp, Color.White, CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = "Room Admin",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(10.dp)
+                                        )
+                                    }
+                                }
 
                                 // Mic Mute / Active badge on bottom-right of sofa avatar (Red Crossed-Out Mic when muted)
                                 Box(
@@ -4839,6 +5067,7 @@ fun RoomConversionHubDialog(
     onToggleFamilyRoom: (Boolean) -> Unit,
     onOpenFamilyInviteDialog: () -> Unit,
     onSwitchToVideoStream: () -> Unit,
+    onOpenMusicPlayer: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -5005,6 +5234,59 @@ fun RoomConversionHubDialog(
                         },
                         modifier = Modifier.weight(1f)
                     )
+                }
+
+                // PLAY MUSIC OPTION INSIDE 4-BOX MENU (Opens Music Selector / Restores Floating Music Player)
+                Spacer(modifier = Modifier.height(10.dp))
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = Color(0xFF1A2030),
+                    border = BorderStroke(1.dp, Color(0x88EC4899)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            onOpenMusicPlayer()
+                            onDismiss()
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("🎵", fontSize = 18.sp)
+                            Column {
+                                Text(
+                                    text = "Play Music",
+                                    color = Color.White,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                                Text(
+                                    text = if (room.nowPlayingTitle.isNotBlank()) "Now: ${room.nowPlayingTitle}" else "Search & play room background music",
+                                    color = Color(0xFFF9A8D4),
+                                    fontSize = 10.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                        Surface(
+                            color = Color(0xFFEC4899),
+                            shape = RoundedCornerShape(50)
+                        ) {
+                            Text(
+                                text = "Open",
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
                 }
 
                 // Quick Family Member Invite Strip when Family Room is unlocked or active

@@ -4694,6 +4694,9 @@ fun RoomSettingsDialog(
     var liveFollowerCount by remember(room.id) { mutableStateOf(0) }
     var showBlockedSubView by remember { mutableStateOf(false) }
     var blockedUserNames by remember(room.id) { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var liveAdminIds by remember(room.id) { mutableStateOf(room.adminUserIds) }
+    var showAdminListSubView by remember { mutableStateOf(false) }
+    var adminUserProfiles by remember(room.id) { mutableStateOf<Map<String, Pair<String, String>>>(emptyMap()) }
 
     DisposableEffect(room.id) {
         if (room.id.isBlank()) return@DisposableEffect onDispose {}
@@ -4703,6 +4706,8 @@ fun RoomSettingsDialog(
                 liveKickedIds = (snap.get("kickedUserIds") as? List<String>) ?: emptyList()
                 @Suppress("UNCHECKED_CAST")
                 liveBannedIds = (snap.get("bannedUserIds") as? List<String>) ?: emptyList()
+                @Suppress("UNCHECKED_CAST")
+                liveAdminIds = (snap.get("adminUserIds") as? List<String>) ?: emptyList()
                 liveMaxMics = (snap.getLong("maxMicSeats") ?: 10L).toInt().coerceIn(8, 15)
                 liveMicPerm = snap.getString("micPermission")?.takeIf { it.isNotBlank() } ?: "Everyone"
                 val c = snap.getString("country")?.takeIf { it.isNotBlank() }
@@ -4738,6 +4743,26 @@ fun RoomSettingsDialog(
             rReg.remove()
             mReg.remove()
             fReg?.remove()
+        }
+    }
+
+    LaunchedEffect(liveAdminIds, showAdminListSubView) {
+        if (showAdminListSubView && liveAdminIds.isNotEmpty()) {
+            val map = mutableMapOf<String, Pair<String, String>>()
+            liveAdminIds.distinct().forEach { uid ->
+                val fromActive = activeMembers.find { it.uid == uid }
+                if (fromActive != null && fromActive.name.isNotBlank()) {
+                    map[uid] = fromActive.name to fromActive.photoUrl
+                    adminUserProfiles = map.toMap()
+                } else {
+                    db.collection("users").document(uid).get().addOnSuccessListener { d ->
+                        val n = d?.getString("name")?.takeIf { it.isNotBlank() } ?: "User (${uid.take(6)})"
+                        val p = d?.getString("photo") ?: ""
+                        map[uid] = n to p
+                        adminUserProfiles = map.toMap()
+                    }
+                }
+            }
         }
     }
 
@@ -4803,6 +4828,8 @@ fun RoomSettingsDialog(
                 keyboardController?.hide()
             } else if (showBlockedSubView) {
                 showBlockedSubView = false
+            } else if (showAdminListSubView) {
+                showAdminListSubView = false
             } else {
                 onDismiss()
             }
@@ -4834,9 +4861,12 @@ fun RoomSettingsDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (showBlockedSubView) {
+                        if (showBlockedSubView || showAdminListSubView) {
                             IconButton(
-                                onClick = { showBlockedSubView = false },
+                                onClick = {
+                                    showBlockedSubView = false
+                                    showAdminListSubView = false
+                                },
                                 modifier = Modifier.size(28.dp)
                             ) {
                                 Icon(
@@ -4848,7 +4878,11 @@ fun RoomSettingsDialog(
                             Spacer(modifier = Modifier.width(6.dp))
                         }
                         Text(
-                            text = if (showBlockedSubView) "Blocked list (Kick Out)" else "⚙️ Room Command & Settings",
+                            text = when {
+                                showBlockedSubView -> "Blocked list (Kick Out)"
+                                showAdminListSubView -> "🛡️ Room Admin List"
+                                else -> "⚙️ Room Command & Settings"
+                            },
                             color = goldPrimary,
                             fontSize = 16.5.sp,
                             fontWeight = FontWeight.ExtraBold
@@ -4861,7 +4895,102 @@ fun RoomSettingsDialog(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                if (showBlockedSubView) {
+                if (showAdminListSubView) {
+                    val admins = liveAdminIds.distinct()
+                    if (admins.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                "No admins appointed yet.\nTap any member's profile in the room to appoint an admin.",
+                                color = mutedText,
+                                fontSize = 13.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(admins, key = { it }) { adminUid ->
+                                val (aName, aPhoto) = adminUserProfiles[adminUid] ?: ("User (${adminUid.take(6)})" to "")
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = rowObsidian,
+                                    border = BorderStroke(1.dp, Color(0x6610B981)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(36.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color(0xFF10B981).copy(alpha = 0.25f))
+                                                    .border(1.5.dp, Color(0xFF10B981), CircleShape),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                if (aPhoto.isNotBlank()) {
+                                                    AsyncImage(
+                                                        model = aPhoto,
+                                                        contentDescription = aName,
+                                                        modifier = Modifier.fillMaxSize(),
+                                                        contentScale = ContentScale.Crop
+                                                    )
+                                                } else {
+                                                    Text(aName.take(1).uppercase(), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                                }
+                                            }
+                                            Column {
+                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                    Text(aName, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(14.dp)
+                                                            .clip(CircleShape)
+                                                            .background(Color(0xFF10B981)),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Icon(Icons.Default.Check, contentDescription = "Admin", tint = Color.White, modifier = Modifier.size(9.dp))
+                                                    }
+                                                }
+                                                Text("Room Admin", color = Color(0xFF34D399), fontSize = 10.5.sp)
+                                            }
+                                        }
+                                        Button(
+                                            onClick = {
+                                                liveAdminIds = liveAdminIds.filter { it != adminUid }
+                                                db.collection("rooms").document(room.id)
+                                                    .update("adminUserIds", FieldValue.arrayRemove(adminUid))
+                                                if (room.category.isNotBlank()) {
+                                                    db.collection("intent_categories").document(room.category)
+                                                        .collection("rooms").document(room.id)
+                                                        .update("adminUserIds", FieldValue.arrayRemove(adminUid))
+                                                }
+                                                db.collection("users").document(adminUid)
+                                                    .update("adminInRoomIds", FieldValue.arrayRemove(room.id))
+                                                Toast.makeText(context, "✅ Removed $aName from Room Admins", Toast.LENGTH_SHORT).show()
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
+                                            shape = RoundedCornerShape(10.dp),
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                            modifier = Modifier.height(30.dp)
+                                        ) {
+                                            Text("Remove", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else if (showBlockedSubView) {
                     val allBlockedIds = (liveKickedIds + liveBannedIds).distinct()
                     if (allBlockedIds.isEmpty()) {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -5051,6 +5180,31 @@ fun RoomSettingsDialog(
                                         }
                                         Text("LV.${(liveRoomLvl + 1).coerceAtMost(100)}", color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
                                     }
+                                }
+                            }
+
+                            // Admin List Row (View & Revoke Room Admins)
+                            val adminCount = liveAdminIds.distinct().size
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = rowObsidian,
+                                border = BorderStroke(1.dp, Color(0x6610B981)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { showAdminListSubView = true }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("🛡️ Admin List", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        text = "Manage ($adminCount) ›",
+                                        color = Color(0xFF34D399),
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
                                 }
                             }
 
@@ -6703,6 +6857,7 @@ fun AudioHangoutRoomDialog(
     // Floating Draggable Music Player PIP State
     var musicPlayerOffset by remember { mutableStateOf(Offset(0f, 420f)) }
     var isMusicPlayerMinimized by remember { mutableStateOf(true) }
+    var isFloatingMusicDismissed by remember(room.id) { mutableStateOf(false) }
 
     val displayRoomId = remember(room.roomId, room.id) {
         val raw = room.roomId
@@ -7506,6 +7661,7 @@ fun AudioHangoutRoomDialog(
                 db.collection("rooms").document(room.id)
                     .collection("members").document(currentUser.uid).delete()
             }
+            AudioPlayerManager.stop()
             com.devil.livetogather.agora.AgoraVoiceManager.leaveRoom()
         }
     }
@@ -7632,8 +7788,15 @@ fun AudioHangoutRoomDialog(
                         "isHostLive" to false,
                         "isEnded" to true,
                         "endedAt" to now,
+                        "activeUserCount" to 0,
                         "isPlaying" to false,
+                        "nowPlayingUrl" to "",
+                        "nowPlayingTitle" to "",
+                        "isWatchPartyActive" to false,
                         "watchPartyIsPlaying" to false,
+                        "watchPartyVideoId" to "",
+                        "watchPartyVideoTitle" to "",
+                        "watchPartyPositionSec" to 0L,
                         "statusMessage" to "Room is closed"
                     )
                     db.collection("rooms").document(room.id).update(autoCloseUpdates)
@@ -7641,13 +7804,17 @@ fun AudioHangoutRoomDialog(
                         db.collection("intent_categories").document(room.category)
                             .collection("rooms").document(room.id).update(autoCloseUpdates)
                     }
-                    AudioPlayerManager.pause()
+                    AudioPlayerManager.stop()
                     Toast.makeText(context, "⏳ Room closed automatically after 30 minutes of inactivity.", Toast.LENGTH_LONG).show()
                     onDismiss()
                     break
                 } else {
                     // Keep heartbeat fresh while Host/Admin is actively within the 30-min window
                     db.collection("rooms").document(room.id).update("lastHostHeartbeat", now)
+                    if (room.category.isNotBlank()) {
+                        db.collection("intent_categories").document(room.category)
+                            .collection("rooms").document(room.id).update("lastHostHeartbeat", now)
+                    }
                 }
             }
         }
@@ -7782,6 +7949,13 @@ fun AudioHangoutRoomDialog(
                     }
                     activeMembers.clear()
                     activeMembers.addAll(list)
+                    if ((isUserHost || isUserAdmin) && list.size != room.activeUserCount) {
+                        db.collection("rooms").document(room.id).update("activeUserCount", list.size)
+                        if (room.category.isNotBlank()) {
+                            db.collection("intent_categories").document(room.category)
+                                .collection("rooms").document(room.id).update("activeUserCount", list.size)
+                        }
+                    }
 
                     val isHostOrAdminPresent = list.any { m ->
                         m.uid == targetHostId || m.role.equals("host", ignoreCase = true) || m.uid in room.adminUserIds
@@ -8888,19 +9062,47 @@ fun AudioHangoutRoomDialog(
                             canControlVideo = isUserHost || isUserAdmin,
                             currentUserName = currentUser.name,
                             currentRoomStaySeconds = currentRoomStaySeconds,
-                            onTogglePlay = {
+                            onTogglePlay = { curPosSec, durSec ->
                                 val nextPlaying = !room.watchPartyIsPlaying
                                 val updaterName = currentUser.name.ifBlank { "Host" }
-                                room = room.copy(watchPartyIsPlaying = nextPlaying, watchPartyUpdatedBy = updaterName)
+                                val nowMs = System.currentTimeMillis()
+                                room = room.copy(
+                                    watchPartyIsPlaying = nextPlaying,
+                                    watchPartyPositionSec = curPosSec,
+                                    watchPartyDurationSec = durSec,
+                                    watchPartyUpdatedAt = nowMs,
+                                    watchPartyUpdatedBy = updaterName
+                                )
                                 WatchPartyCinemaEngine.updateRoomWatchPartyState(
                                     db = db,
                                     room = room,
                                     isActive = true,
                                     isPlaying = nextPlaying,
+                                    positionSec = curPosSec,
+                                    durationSec = durSec,
                                     updatedBy = updaterName
                                 )
                             },
                             onOpenVideoPicker = { showYouTubePickerDialog = true },
+                            onSeekTo = { targetSec, durSec ->
+                                val updaterName = currentUser.name.ifBlank { "Host" }
+                                val nowMs = System.currentTimeMillis()
+                                room = room.copy(
+                                    watchPartyPositionSec = targetSec,
+                                    watchPartyDurationSec = durSec,
+                                    watchPartyUpdatedAt = nowMs,
+                                    watchPartyUpdatedBy = updaterName
+                                )
+                                WatchPartyCinemaEngine.updateRoomWatchPartyState(
+                                    db = db,
+                                    room = room,
+                                    isActive = true,
+                                    isPlaying = room.watchPartyIsPlaying,
+                                    positionSec = targetSec,
+                                    durationSec = durSec,
+                                    updatedBy = updaterName
+                                )
+                            },
                             onClaimTreasureChest = {
                                 WatchPartyCinemaEngine.claimRoomTaskReward(
                                     context = context,
@@ -8922,6 +9124,7 @@ fun AudioHangoutRoomDialog(
                             isLocalTalking = isLocalTalking,
                             allProfiles = allProfiles,
                             activeEmojiReactions = activeEmojiReactions,
+                            roomAdminIds = room.adminUserIds,
                             userActiveFrame = activeUserFrame,
                             userActiveMicEffect = userActiveMicEffect,
                             onSeatClick = handleSeatClick
@@ -8982,6 +9185,7 @@ fun AudioHangoutRoomDialog(
                             isHost = isUserAdmin,
                             isLocalTalking = isLocalTalking,
                             allProfiles = allProfiles,
+                            roomAdminIds = room.adminUserIds,
                             userActiveFrame = activeUserFrame,
                             userActiveMicEffect = userActiveMicEffect,
                             activeEmojiReactions = activeEmojiReactions,
@@ -9006,6 +9210,7 @@ fun AudioHangoutRoomDialog(
                             isHost = isUserAdmin,
                             isLocalTalking = isLocalTalking,
                             allProfiles = allProfiles,
+                            roomAdminIds = room.adminUserIds,
                             userActiveFrame = activeUserFrame,
                             userActiveMicEffect = userActiveMicEffect,
                             activeEmojiReactions = activeEmojiReactions,
@@ -9544,8 +9749,8 @@ fun AudioHangoutRoomDialog(
                     )
                 }
 
-                // Non-VIP Rooms Floating Draggable PIP Music Player (Movable anywhere on screen — Hidden in YouTube Cinema Room)
-                if (!isVipRoom && !isYouTubeCinemaRoomActive) {
+                // Non-VIP Rooms Floating Draggable PIP Music Player (Only visible when music is actively playing & not dismissed!)
+                if (!isVipRoom && !isYouTubeCinemaRoomActive && !isFloatingMusicDismissed && (isMusicPlayingFloating || floatingTrackUrl.isNotBlank())) {
                     val currentArtwork = room.nowPlayingArtworkUrl.ifEmpty { AudioPlayerManager.currentTrackArtworkUrlState.value }
                     val isPlayingNow = AudioPlayerManager.isPlayingState.value
                     val isBuffering by AudioPlayerManager.isBufferingState
@@ -9658,6 +9863,18 @@ fun AudioHangoutRoomDialog(
                                             contentDescription = "Expand Player",
                                             tint = Color.White.copy(alpha = 0.8f),
                                             modifier = Modifier.size(14.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    IconButton(
+                                        onClick = { isFloatingMusicDismissed = true },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Dismiss Music Player",
+                                            tint = Color(0xFFFF6B6B),
+                                            modifier = Modifier.size(15.dp)
                                         )
                                     }
                                 }
@@ -10583,6 +10800,14 @@ fun AudioHangoutRoomDialog(
                     Toast.makeText(context, "📹 Switching to Live Video Stream...", Toast.LENGTH_SHORT).show()
                     onConvertToVideo?.invoke(room.copy(roomType = "video", title = finalTitle))
                 },
+                onOpenMusicPlayer = {
+                    isFloatingMusicDismissed = false
+                    if (isUserAdmin) {
+                        showTrackSelector = true
+                    } else if (room.nowPlayingUrl.isBlank() && AudioPlayerManager.currentTrackUrlState.value.isBlank()) {
+                        Toast.makeText(context, "Only room host or admin can start music 🎵", Toast.LENGTH_SHORT).show()
+                    }
+                },
                 onDismiss = { showRoomConversionHubDialog = false }
             )
         }
@@ -10609,11 +10834,15 @@ fun AudioHangoutRoomDialog(
                 currentVideoTitle = room.watchPartyVideoTitle.ifBlank { WatchPartyCinemaEngine.CURATED_VIDEOS.first().title },
                 onSelectVideo = { vidId, vidTitle ->
                     val updater = currentUser.name.ifBlank { "Host" }
+                    val nowMs = System.currentTimeMillis()
                     room = room.copy(
                         isWatchPartyActive = true,
                         watchPartyVideoId = vidId,
                         watchPartyVideoTitle = vidTitle,
                         watchPartyIsPlaying = true,
+                        watchPartyPositionSec = 0L,
+                        watchPartyDurationSec = 0L,
+                        watchPartyUpdatedAt = nowMs,
                         watchPartyUpdatedBy = updater
                     )
                     WatchPartyCinemaEngine.updateRoomWatchPartyState(
@@ -10623,6 +10852,8 @@ fun AudioHangoutRoomDialog(
                         videoId = vidId,
                         videoTitle = vidTitle,
                         isPlaying = true,
+                        positionSec = 0L,
+                        durationSec = 0L,
                         updatedBy = updater
                     )
                     Toast.makeText(context, "🎬 Now Playing: $vidTitle", Toast.LENGTH_SHORT).show()
@@ -13046,7 +13277,7 @@ fun CategoryHubLobbyDialog(
             compareByDescending<RoomItem> { currentUser.uid.isNotBlank() && (it.hostUid == currentUser.uid || it.hostId == currentUser.uid) }
                 .thenByDescending { it.isHostLive }
                 .thenByDescending { room ->
-                    allUsers.count { it.current_room == room.id }.coerceAtLeast(room.activeUserCount)
+                    allUsers.count { it.current_room == room.id }.let { live -> if (live > 0) live else if (room.isHostLive) room.activeUserCount else 0 }
                 }
                 .thenByDescending { room ->
                     val hostUid = room.hostUid.ifBlank { room.hostId }
@@ -13079,7 +13310,7 @@ fun CategoryHubLobbyDialog(
 
     val activeCategoryCount = remember(sortedCategoryRooms, allUsers, category.id) {
         val inRoomsCount = sortedCategoryRooms.sumOf { r ->
-            allUsers.count { u -> u.current_room == r.id }.coerceAtLeast(r.activeUserCount)
+            allUsers.count { u -> u.current_room == r.id }.let { live -> if (live > 0) live else if (r.isHostLive) r.activeUserCount else 0 }
         }
         val intentCount = allUsers.count { it.activeIntent == category.id || it.current_room.contains(category.id) }
         maxOf(inRoomsCount, intentCount)
@@ -13357,7 +13588,7 @@ fun CategoryHubLobbyDialog(
                     }
                 } else {
                     items(sortedCategoryRooms) { room ->
-                        val activeCount = allUsers.count { it.current_room == room.id }.coerceAtLeast(room.activeUserCount)
+                        val activeCount = allUsers.count { it.current_room == room.id }.let { live -> if (live > 0) live else if (room.isHostLive) room.activeUserCount else 0 }
                         val hostUser = allUsers.find { it.uid == room.hostUid || it.uid == room.hostId }
                         CategorySubRoomCard(
                             room = room,
@@ -13565,6 +13796,7 @@ fun StageFourSeatsRow(
     isLocalTalking: Boolean,
     linkedUserIds: Set<String>,
     allProfiles: List<UserProfile>,
+    roomAdminIds: List<String> = emptyList(),
     userActiveFrame: String,
     userActiveMicEffect: String,
     activeEmojiReactions: Map<String, String>,
@@ -13607,6 +13839,7 @@ fun StageFourSeatsRow(
                     isCurrentSelf = seat.uid.isNotEmpty() && seat.uid == currentUserId,
                     isLocalTalking = isLocalTalking,
                     isHost = isHost,
+                    isRoomAdmin = seat.uid in roomAdminIds,
                     isIntimacyLinked = seat.uid in linkedUserIds,
                     allProfiles = allProfiles,
                     userActiveFrame = userActiveFrame,
@@ -13676,6 +13909,7 @@ fun TenMicStageSection(
     isHost: Boolean,
     isLocalTalking: Boolean,
     allProfiles: List<UserProfile> = emptyList(),
+    roomAdminIds: List<String> = emptyList(),
     userActiveFrame: String = "",
     userActiveMicEffect: String = "",
     activeEmojiReactions: Map<String, String> = emptyMap(),
@@ -13720,6 +13954,7 @@ fun TenMicStageSection(
             isLocalTalking = isLocalTalking,
             linkedUserIds = linkedUserIds,
             allProfiles = allProfiles,
+            roomAdminIds = roomAdminIds,
             userActiveFrame = userActiveFrame,
             userActiveMicEffect = userActiveMicEffect,
             activeEmojiReactions = activeEmojiReactions,
@@ -13742,6 +13977,7 @@ fun TenMicStageSection(
             isLocalTalking = isLocalTalking,
             linkedUserIds = linkedUserIds,
             allProfiles = allProfiles,
+            roomAdminIds = roomAdminIds,
             userActiveFrame = userActiveFrame,
             userActiveMicEffect = userActiveMicEffect,
             activeEmojiReactions = activeEmojiReactions,
@@ -13764,6 +14000,7 @@ fun TenMicStageSection(
             isLocalTalking = isLocalTalking,
             linkedUserIds = linkedUserIds,
             allProfiles = allProfiles,
+            roomAdminIds = roomAdminIds,
             userActiveFrame = userActiveFrame,
             userActiveMicEffect = userActiveMicEffect,
             activeEmojiReactions = activeEmojiReactions,
@@ -13787,6 +14024,7 @@ fun VipRoyalStageCanvas(
     isHost: Boolean,
     isLocalTalking: Boolean,
     allProfiles: List<UserProfile> = emptyList(),
+    roomAdminIds: List<String> = emptyList(),
     userActiveFrame: String = "",
     userActiveMicEffect: String = "",
     activeEmojiReactions: Map<String, String> = emptyMap(),
@@ -13859,6 +14097,7 @@ fun VipRoyalStageCanvas(
                     isCurrentSelf = seat.uid.isNotEmpty() && seat.uid == currentUserId,
                     isLocalTalking = isLocalTalking,
                     isHost = isHost,
+                    isRoomAdmin = seat.uid in roomAdminIds,
                     isIntimacyLinked = seat.uid in linkedUserIds,
                     allProfiles = allProfiles,
                     userActiveFrame = userActiveFrame,
@@ -14110,8 +14349,10 @@ fun MicSeatView(
     isCurrentSelf: Boolean,
     isLocalTalking: Boolean,
     isHost: Boolean,
+    isRoomAdmin: Boolean = false,
     isIntimacyLinked: Boolean = false,
     allProfiles: List<UserProfile> = emptyList(),
+    roomAdminIds: List<String> = emptyList(),
     userActiveFrame: String = "",
     userActiveMicEffect: String = "",
     reactionEmoji: String? = null,
@@ -14208,6 +14449,27 @@ fun MicSeatView(
                         contentAlignment = Alignment.Center
                     ) {
                         Text("💞", fontSize = 9.sp, lineHeight = 10.sp)
+                    }
+                }
+
+                // Room Admin Green Tick Badge at bottom-left of avatar (completely plain with zero ticks if removed!)
+                if (isRoomAdmin || (seat.uid.isNotBlank() && seat.uid in roomAdminIds)) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .offset(x = (-1).dp, y = 1.dp)
+                            .size(15.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF10B981))
+                            .border(1.2.dp, Color.White, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = "Room Admin",
+                            tint = Color.White,
+                            modifier = Modifier.size(9.5.dp)
+                        )
                     }
                 }
 

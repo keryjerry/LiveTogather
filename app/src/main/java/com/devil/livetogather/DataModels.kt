@@ -102,6 +102,8 @@ data class RoomItem(
     @get:PropertyName("watchPartyIsPlaying") @set:PropertyName("watchPartyIsPlaying") var watchPartyIsPlaying: Boolean = true,
     @get:PropertyName("watchPartyUpdatedBy") @set:PropertyName("watchPartyUpdatedBy") var watchPartyUpdatedBy: String = "",
     @get:PropertyName("watchPartyUpdatedAt") @set:PropertyName("watchPartyUpdatedAt") var watchPartyUpdatedAt: Long = 0L,
+    @get:PropertyName("watchPartyPositionSec") @set:PropertyName("watchPartyPositionSec") var watchPartyPositionSec: Long = 0L,
+    @get:PropertyName("watchPartyDurationSec") @set:PropertyName("watchPartyDurationSec") var watchPartyDurationSec: Long = 0L,
     // Family Room System (Invite-Only Family Member Access)
     @get:PropertyName("isFamilyRoom") @set:PropertyName("isFamilyRoom") var isFamilyRoom: Boolean = false,
     @get:PropertyName("familyMemberIds") @set:PropertyName("familyMemberIds") var familyMemberIds: List<String> = emptyList(),
@@ -214,6 +216,8 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
     val watchPartyIsPlaying = doc.getBoolean("watchPartyIsPlaying") ?: true
     val watchPartyUpdatedBy = doc.getString("watchPartyUpdatedBy") ?: ""
     val watchPartyUpdatedAt = doc.getLong("watchPartyUpdatedAt") ?: 0L
+    val watchPartyPositionSec = doc.getLong("watchPartyPositionSec") ?: 0L
+    val watchPartyDurationSec = doc.getLong("watchPartyDurationSec") ?: 0L
     val isFamilyRoom = doc.getBoolean("isFamilyRoom") ?: (privacy.equals("family_only", ignoreCase = true))
     @Suppress("UNCHECKED_CAST")
     val familyMemberIds = (doc.get("familyMemberIds") as? List<String>) ?: emptyList()
@@ -279,6 +283,8 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
         watchPartyIsPlaying = watchPartyIsPlaying,
         watchPartyUpdatedBy = watchPartyUpdatedBy,
         watchPartyUpdatedAt = watchPartyUpdatedAt,
+        watchPartyPositionSec = watchPartyPositionSec,
+        watchPartyDurationSec = watchPartyDurationSec,
         isFamilyRoom = isFamilyRoom,
         familyMemberIds = familyMemberIds,
         familyName = familyName
