@@ -4690,11 +4690,11 @@ fun RoomSettingsDialog(
     var liveCountry by remember(room.id) { mutableStateOf("India") }
     var liveRoomXp by remember(room.id) { mutableLongStateOf(0L) }
     var liveRoomLvl by remember(room.id, currentRoomLevel) { mutableStateOf(currentRoomLevel.coerceAtLeast(1)) }
-    var liveFollowerCount by remember(room.hostId) { mutableStateOf(0) }
+    var liveFollowerCount by remember(room.id) { mutableStateOf(0) }
     var showBlockedSubView by remember { mutableStateOf(false) }
     var blockedUserNames by remember(room.id) { mutableStateOf<Map<String, String>>(emptyMap()) }
 
-    DisposableEffect(room.id, room.hostId) {
+    DisposableEffect(room.id) {
         if (room.id.isBlank()) return@DisposableEffect onDispose {}
         val rReg = db.collection("rooms").document(room.id).addSnapshotListener { snap, _ ->
             if (snap != null && snap.exists()) {
@@ -4721,12 +4721,18 @@ fun RoomSettingsDialog(
                     liveRoomLvl = maxOf(liveRoomLvl, mLvl, RoomLevelUpEngine.calculateOfficialRoomPersonalLevel(liveRoomXp))
                 }
             }
-        val hId = room.hostUid.ifBlank { room.hostId }
-        val fReg = if (hId.isNotBlank()) {
-            db.collection("users").document(hId).collection("followers").addSnapshotListener { snap, _ ->
-                if (snap != null) liveFollowerCount = snap.size()
+        val fReg = db.collection("rooms").document(room.id).collection("followers").addSnapshotListener { snap, _ ->
+            if (snap != null) {
+                liveFollowerCount = snap.documents.count { doc ->
+                    val id = doc.id
+                    id.isNotBlank() &&
+                        !id.startsWith("companion_", ignoreCase = true) &&
+                        !id.startsWith("dummy_", ignoreCase = true) &&
+                        !id.startsWith("seed_", ignoreCase = true) &&
+                        !id.startsWith("bot_", ignoreCase = true)
+                }
             }
-        } else null
+        }
         onDispose {
             rReg.remove()
             mReg.remove()
@@ -7541,21 +7547,22 @@ fun AudioHangoutRoomDialog(
         }
     }
 
-    // Host Follower Real-Time Listener (100% Real Firestore subcollection count — Zero stale/fake numbers like 15!)
-    DisposableEffect(room.id, targetHostId, currentUser.uid) {
+    // Room Follower Real-Time Listener (Separate from User Followers — 100% scoped to rooms/{roomId}/followers)
+    DisposableEffect(room.id, currentUser.uid) {
         hostFollowerCount = 0
-        if (targetHostId.isBlank()) {
+        isFollowingHost = false
+        if (room.id.isBlank()) {
             return@DisposableEffect onDispose {}
         }
-        val followDoc = if (targetHostId != currentUser.uid && currentUser.uid.isNotBlank()) {
-            db.collection("users").document(targetHostId)
+        val followDoc = if (!isUserHost && currentUser.uid.isNotBlank()) {
+            db.collection("rooms").document(room.id)
                 .collection("followers").document(currentUser.uid)
                 .addSnapshotListener { snapshot, _ ->
                     isFollowingHost = snapshot != null && snapshot.exists()
                 }
         } else null
 
-        val countListener = db.collection("users").document(targetHostId)
+        val countListener = db.collection("rooms").document(room.id)
             .collection("followers")
             .addSnapshotListener { snapshot, _ ->
                 if (snapshot != null) {
@@ -7576,8 +7583,8 @@ fun AudioHangoutRoomDialog(
                     if (hostFollowerCount != realFollowers.size) {
                         hostFollowerCount = realFollowers.size
                         if (isUserHost) {
-                            db.collection("users").document(targetHostId)
-                                .update("followerCount", realFollowers.size)
+                            db.collection("rooms").document(room.id)
+                                .update("roomFollowerCount", realFollowers.size)
                         }
                     }
                 }
@@ -8316,34 +8323,28 @@ fun AudioHangoutRoomDialog(
                                                 )
                                                 .clickable {
                                                     if (isUserHost) {
-                                                        Toast.makeText(context, "👑 Your Room • 👥 $hostFollowerCount Followers", Toast.LENGTH_SHORT).show()
+                                                        Toast.makeText(context, "👑 Your Room • 👥 $hostFollowerCount Room Followers", Toast.LENGTH_SHORT).show()
                                                     } else {
                                                         val newFollowing = !isFollowingHost
                                                         isFollowingHost = newFollowing
                                                         if (newFollowing) {
                                                             hostFollowerCount += 1
-                                                            if (targetHostId.isNotBlank() && targetHostId != currentUser.uid) {
+                                                            if (room.id.isNotBlank() && currentUser.uid.isNotBlank()) {
                                                                 val record = FollowerRecord(
                                                                     uid = currentUser.uid,
                                                                     name = currentUser.name,
                                                                     photo = currentUser.photo,
                                                                     timestamp = System.currentTimeMillis()
                                                                 )
-                                                                db.collection("users").document(targetHostId).collection("followers").document(currentUser.uid).set(record)
-                                                                db.collection("users").document(currentUser.uid).collection("following").document(targetHostId).set(
-                                                                    mapOf("hostUid" to targetHostId, "hostName" to hostName, "timestamp" to System.currentTimeMillis())
-                                                                )
-                                                                db.collection("users").document(targetHostId).update("followerCount", FieldValue.increment(1))
-                                                                db.collection("users").document(currentUser.uid).update("followingCount", FieldValue.increment(1))
+                                                                db.collection("rooms").document(room.id).collection("followers").document(currentUser.uid).set(record)
+                                                                db.collection("rooms").document(room.id).update("roomFollowerCount", FieldValue.increment(1))
                                                             }
-                                                            Toast.makeText(context, "🌟 Following $hostName!", Toast.LENGTH_SHORT).show()
+                                                            Toast.makeText(context, "🌟 Following Room!", Toast.LENGTH_SHORT).show()
                                                         } else {
                                                             hostFollowerCount = (hostFollowerCount - 1).coerceAtLeast(0)
-                                                            if (targetHostId.isNotBlank() && targetHostId != currentUser.uid) {
-                                                                db.collection("users").document(targetHostId).collection("followers").document(currentUser.uid).delete()
-                                                                db.collection("users").document(currentUser.uid).collection("following").document(targetHostId).delete()
-                                                                db.collection("users").document(targetHostId).update("followerCount", FieldValue.increment(-1))
-                                                                db.collection("users").document(currentUser.uid).update("followingCount", FieldValue.increment(-1))
+                                                            if (room.id.isNotBlank() && currentUser.uid.isNotBlank()) {
+                                                                db.collection("rooms").document(room.id).collection("followers").document(currentUser.uid).delete()
+                                                                db.collection("rooms").document(room.id).update("roomFollowerCount", FieldValue.increment(-1))
                                                             }
                                                         }
                                                     }

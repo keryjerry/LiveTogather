@@ -612,11 +612,10 @@ fun VideoHangoutRoomDialog(
         }
     }
 
-    // 7. Follow State Listener
-    LaunchedEffect(room.hostUid, room.hostId, currentUserId) {
-        val targetHostId = room.hostUid.ifBlank { room.hostId }
-        if (targetHostId.isNotBlank() && currentUserId.isNotBlank() && targetHostId != currentUserId) {
-            db.collection("users").document(targetHostId)
+    // 7. Room Follow State Listener (Separate from User Followers — strictly scoped to rooms/{roomId}/followers)
+    LaunchedEffect(room.id, currentUserId) {
+        if (room.id.isNotBlank() && currentUserId.isNotBlank()) {
+            db.collection("rooms").document(room.id)
                 .collection("followers").document(currentUserId)
                 .addSnapshotListener { snap, _ ->
                     isFollowingHost = snap != null && snap.exists()
@@ -821,27 +820,29 @@ fun VideoHangoutRoomDialog(
 
     fun toggleFollowHost() {
         val targetHostId = room.hostUid.ifBlank { room.hostId }
-        if (targetHostId.isBlank() || targetHostId == currentUserId) return
+        if (room.id.isBlank() || currentUserId.isBlank() || targetHostId == currentUserId) return
 
-        val followDoc = db.collection("users").document(targetHostId)
+        val followDoc = db.collection("rooms").document(room.id)
             .collection("followers").document(currentUserId)
 
         if (isFollowingHost) {
             followDoc.delete().addOnSuccessListener {
                 isFollowingHost = false
-                Toast.makeText(context, "Unfollowed ${room.hostName}", Toast.LENGTH_SHORT).show()
+                db.collection("rooms").document(room.id).update("roomFollowerCount", FieldValue.increment(-1))
+                Toast.makeText(context, "Unfollowed Room", Toast.LENGTH_SHORT).show()
             }
         } else {
-            val followerData = mapOf(
-                "followerId" to currentUserId,
-                "followerName" to currentUser.name,
-                "followerPhoto" to currentUser.photo,
-                "timestamp" to System.currentTimeMillis()
+            val record = FollowerRecord(
+                uid = currentUserId,
+                name = currentUser.name,
+                photo = currentUser.photo,
+                timestamp = System.currentTimeMillis()
             )
-            followDoc.set(followerData).addOnSuccessListener {
+            followDoc.set(record).addOnSuccessListener {
                 isFollowingHost = true
                 showFollowCelebrationDialog = true
-                Toast.makeText(context, "⭐ Followed ${room.hostName}!", Toast.LENGTH_SHORT).show()
+                db.collection("rooms").document(room.id).update("roomFollowerCount", FieldValue.increment(1))
+                Toast.makeText(context, "⭐ Followed Room!", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -4425,11 +4426,11 @@ fun VideoRoomSettingsSheet(
     var liveBannedIds by remember(room.id) { mutableStateOf(room.bannedUserIds) }
     var liveRoomXp by remember(room.id) { mutableLongStateOf(0L) }
     var liveRoomLvl by remember(room.id) { mutableStateOf(1) }
-    var liveFollowerCount by remember(room.hostId) { mutableStateOf(0) }
+    var liveFollowerCount by remember(room.id) { mutableStateOf(0) }
     var showBlockedSubView by remember { mutableStateOf(false) }
     var blockedUserNames by remember(room.id) { mutableStateOf<Map<String, String>>(emptyMap()) }
 
-    DisposableEffect(room.id, room.hostId) {
+    DisposableEffect(room.id) {
         if (room.id.isBlank()) return@DisposableEffect onDispose {}
         val rReg = db.collection("rooms").document(room.id).addSnapshotListener { snap, _ ->
             if (snap != null && snap.exists()) {
@@ -4452,12 +4453,18 @@ fun VideoRoomSettingsSheet(
                     liveRoomLvl = maxOf(liveRoomLvl, mLvl, RoomLevelUpEngine.calculateOfficialRoomPersonalLevel(liveRoomXp))
                 }
             }
-        val hId = room.hostUid.ifBlank { room.hostId }
-        val fReg = if (hId.isNotBlank()) {
-            db.collection("users").document(hId).collection("followers").addSnapshotListener { snap, _ ->
-                if (snap != null) liveFollowerCount = snap.size()
+        val fReg = db.collection("rooms").document(room.id).collection("followers").addSnapshotListener { snap, _ ->
+            if (snap != null) {
+                liveFollowerCount = snap.documents.count { doc ->
+                    val id = doc.id
+                    id.isNotBlank() &&
+                        !id.startsWith("companion_", ignoreCase = true) &&
+                        !id.startsWith("dummy_", ignoreCase = true) &&
+                        !id.startsWith("seed_", ignoreCase = true) &&
+                        !id.startsWith("bot_", ignoreCase = true)
+                }
             }
-        } else null
+        }
         onDispose {
             rReg.remove()
             mReg.remove()

@@ -2424,20 +2424,22 @@ fun RoomInfoOnlyDialog(
         }
     }
 
-    // 4. Live Followers & Host Country from Firestore users/{targetHostId}
-    androidx.compose.runtime.DisposableEffect(targetHostId) {
-        if (targetHostId.isBlank()) {
+    // 4. Live Room Followers (rooms/{room.id}/followers — strictly separate from User Followers) & Host Country
+    androidx.compose.runtime.DisposableEffect(room.id, targetHostId) {
+        if (targetHostId.isNotBlank()) {
+            db.collection("users").document(targetHostId).get().addOnSuccessListener { hostDoc ->
+                if (liveCountry.isBlank()) {
+                    val hostCountry = hostDoc?.getString("country")?.takeIf { it.isNotBlank() }
+                        ?: Locale.getDefault().displayCountry.ifBlank { "India" }
+                    liveCountry = hostCountry
+                }
+            }
+        }
+        if (room.id.isBlank()) {
             isLoadingFollowers = false
             return@DisposableEffect onDispose {}
         }
-        db.collection("users").document(targetHostId).get().addOnSuccessListener { hostDoc ->
-            if (liveCountry.isBlank()) {
-                val hostCountry = hostDoc?.getString("country")?.takeIf { it.isNotBlank() }
-                    ?: Locale.getDefault().displayCountry.ifBlank { "India" }
-                liveCountry = hostCountry
-            }
-        }
-        val folReg = db.collection("users").document(targetHostId).collection("followers")
+        val folReg = db.collection("rooms").document(room.id).collection("followers")
             .addSnapshotListener { snap, _ ->
                 if (snap != null) {
                     val realDocs = snap.documents.filter { doc ->
