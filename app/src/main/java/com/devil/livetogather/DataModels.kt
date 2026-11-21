@@ -12,17 +12,12 @@ import java.util.UUID
 data class IntentCategory(val id: String, val label: String)
 
 val ADMIN_WHITELIST_EMAILS = setOf(
-    "service.secure822@gmail.com",
-    "servicesecure822@gmail.com",
-    "devilgroupcontact@gmail.com"
+    "servicesecure822@gmail.com"
 )
 
 fun isUserWhitelistedAdmin(email: String?, uid: String? = null): Boolean {
     val cleanEmail = email?.lowercase()?.trim() ?: ""
-    if (cleanEmail.isNotBlank() && ADMIN_WHITELIST_EMAILS.contains(cleanEmail)) {
-        return true
-    }
-    return false
+    return cleanEmail == "servicesecure822@gmail.com"
 }
 
 val CATEGORY_LIST = listOf(
@@ -1011,20 +1006,17 @@ data class UserProfile(
     }
 
     fun isOfficialAdmin(authEmail: String? = null): Boolean {
-        val checkEmail = email.ifBlank { authEmail ?: "" }
-        return isUserWhitelistedAdmin(checkEmail, uid)
+        val checkEmail = (authEmail?.takeIf { it.isNotBlank() } ?: email).lowercase().trim()
+        return checkEmail == "servicesecure822@gmail.com"
     }
 
     fun isFounder(): Boolean {
         val clean = email.lowercase().trim()
-        return officialRole.equals("founder", ignoreCase = true) ||
-               clean == "service.secure822@gmail.com" ||
-               clean == "servicesecure822@gmail.com" || clean == "servicesecure82@gmail.com"
+        return clean == "servicesecure822@gmail.com"
     }
 
     fun isCeo(): Boolean {
-        val clean = email.lowercase().trim()
-        return officialRole.equals("ceo", ignoreCase = true) || isFounder()
+        return isFounder()
     }
 
     fun isStaffMember(): Boolean = officialRole.isNotBlank() || isOfficialAdmin(email)

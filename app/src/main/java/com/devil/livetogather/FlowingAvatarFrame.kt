@@ -286,8 +286,8 @@ fun FlowingAvatarFrame(
     val targetFrameSize = if (frameId.isNotBlank()) {
         if (isVipSuiteFrame) targetAvatarSize / vipApertureRatio
         else avatarSize * minScale
-    } else if (micEffectId.isNotBlank() && isSpeaking) {
-        avatarSize + 30.dp
+    } else if (micEffectId.isNotBlank() && showMicEffect) {
+        avatarSize + 36.dp
     } else {
         avatarSize
     }
@@ -310,8 +310,8 @@ fun FlowingAvatarFrame(
             modifier = Modifier.size(width = boxW, height = boxH),
             contentAlignment = Alignment.Center
         ) {
-            // 3D Transparent Video Magic Mic Effect (Strictly ONLY when actively equipped AND user is actively speaking)
-            val activeVideoRes = if (micEffectId.isNotBlank() && isSpeaking) {
+            // 3D Transparent Video Magic Mic Effect (Triggered when user speaks OR when in-app music is playing)
+            val activeVideoRes = if (micEffectId.isNotBlank() && (showMicEffect || isSpeaking)) {
                 getMicEffectVideoRes(micEffectId)
             } else {
                 0
@@ -332,7 +332,7 @@ fun FlowingAvatarFrame(
                 VideoMicMagicEffectOverlay(
                     videoRes = activeVideoRes,
                     avatarSize = targetAvatarSize,
-                    effectSize = targetAvatarSize + 30.dp
+                    effectSize = targetAvatarSize + 36.dp
                 )
             }
 
@@ -879,7 +879,7 @@ fun VideoMicMagicEffectOverlay(
     if (videoRes == 0) return
 
     Box(
-        modifier = modifier.size(effectSize), // Exact original circle size fitted snugly to avatar circle!
+        modifier = modifier.requiredSize(effectSize), // Broad outer reach while keeping inner aperture locked to avatarSize!
         contentAlignment = Alignment.Center
     ) {
         AndroidView(
@@ -920,11 +920,11 @@ fun VideoMicMagicEffectOverlay(
                 )
                 .drawWithContent {
                     drawContent()
-                    // Broad solid radial band (0.0f..0.88f solid) within the exact circle size
+                    // Broad solid radial band (0.0f..0.90f solid) within the exact circle size
                     drawRect(
                         brush = Brush.radialGradient(
                             0.0f to Color.Black,
-                            0.88f to Color.Black,
+                            0.90f to Color.Black,
                             1.0f to Color.Transparent,
                             radius = size.minDimension / 2f
                         ),

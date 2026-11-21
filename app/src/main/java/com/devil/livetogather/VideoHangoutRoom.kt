@@ -1518,22 +1518,28 @@ fun VideoHangoutRoomDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // 1. Comment Button
-                    Box(
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.12f))
-                            .border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape)
-                            .clickable { showCommentInputDialog = true },
-                        contentAlignment = Alignment.Center
+                    // 1. Comment Button with "Comment" label
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.clickable { showCommentInputDialog = true }
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.ChatBubbleOutline,
-                            contentDescription = "Chat",
-                            tint = Color.White,
-                            modifier = Modifier.size(19.dp)
-                        )
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.12f))
+                                .border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ChatBubbleOutline,
+                                contentDescription = "Comment",
+                                tint = Color.White,
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text("Comment", color = Color.White.copy(alpha = 0.9f), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
                     }
 
                     // 2. Stage Mic / Request Button
@@ -1609,25 +1615,31 @@ fun VideoHangoutRoomDialog(
                         }
                     }
 
-                    // 3. Audio Speaker Button (Both)
-                    Box(
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.12f))
-                            .border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape)
-                            .clickable {
-                                isSpeakerOn = !isSpeakerOn
-                                Toast.makeText(context, if (isSpeakerOn) "Speaker Output" else "Earpiece Output", Toast.LENGTH_SHORT).show()
-                            },
-                        contentAlignment = Alignment.Center
+                    // 3. Audio Speaker / Volume Button with "Volume" label
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.clickable {
+                            isSpeakerOn = !isSpeakerOn
+                            Toast.makeText(context, if (isSpeakerOn) "Speaker Output" else "Earpiece Output", Toast.LENGTH_SHORT).show()
+                        }
                     ) {
-                        Icon(
-                            imageVector = if (isSpeakerOn) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
-                            contentDescription = "Speaker",
-                            tint = Color.White,
-                            modifier = Modifier.size(19.dp)
-                        )
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.12f))
+                                .border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (isSpeakerOn) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
+                                contentDescription = "Volume",
+                                tint = Color.White,
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text("Volume", color = Color.White.copy(alpha = 0.9f), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
                     }
 
                     if (isUserHost) {
@@ -1663,17 +1675,23 @@ fun VideoHangoutRoomDialog(
                             Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White, modifier = Modifier.size(19.dp))
                         }
 
-                        // 6. HOST: Inbox / Gifting Overview
-                        Box(
-                            modifier = Modifier
-                                .size(38.dp)
-                                .clip(CircleShape)
-                                .background(Color.White.copy(alpha = 0.12f))
-                                .border(1.dp, BrandGold.copy(alpha = 0.6f), CircleShape)
-                                .clickable { showInRoomInboxDialog = true },
-                            contentAlignment = Alignment.Center
+                        // 6. HOST: Stylish Inbox Button with "Inbox" label
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.clickable { showInRoomInboxDialog = true }
                         ) {
-                            Icon(Icons.Default.Mail, contentDescription = "Inbox", tint = BrandGold, modifier = Modifier.size(19.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(Brush.linearGradient(listOf(Color(0xFF6D28D9), Color(0xFFEC4899))))
+                                    .border(1.2.dp, BrandGold, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Inbox", tint = Color.White, modifier = Modifier.size(17.dp))
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("Inbox", color = BrandGold, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                         }
 
                         // 6B. HOST: Luxury Store (Avatar Frames, Rings, Mic Links)
@@ -1711,19 +1729,44 @@ fun VideoHangoutRoomDialog(
                             Text("🎁", fontSize = 19.sp)
                         }
                     } else {
-                        // 4. VIEWER: Floating Hearts / Like Reaction Button
-                        Box(
-                            modifier = Modifier
-                                .size(38.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFFFF1744).copy(alpha = 0.15f))
-                                .border(1.dp, Color(0xFFFF1744).copy(alpha = 0.5f), CircleShape)
-                                .clickable {
-                                    floatingEmojis.add(Pair("❤️", System.currentTimeMillis()))
-                                },
-                            contentAlignment = Alignment.Center
+                        // 4. VIEWER: Stylish Inbox Button with "Inbox" label
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.clickable { showInRoomInboxDialog = true }
                         ) {
-                            Text("❤️", fontSize = 17.sp)
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(Brush.linearGradient(listOf(Color(0xFF6D28D9), Color(0xFFEC4899))))
+                                    .border(1.2.dp, BrandGold, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Inbox", tint = Color.White, modifier = Modifier.size(17.dp))
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("Inbox", color = BrandGold, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        // 4B. VIEWER: Emoji / Like Reaction Button with "Emoji" label
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.clickable {
+                                floatingEmojis.add(Pair("❤️", System.currentTimeMillis()))
+                            }
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFFF1744).copy(alpha = 0.15f))
+                                    .border(1.dp, Color(0xFFFF1744).copy(alpha = 0.5f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("😊", fontSize = 17.sp)
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("Emoji", color = Color.White.copy(alpha = 0.9f), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
                         }
 
                         // 5. VIEWER: Share Stream Button
@@ -2250,7 +2293,7 @@ fun VideoHangoutRoomDialog(
             }
 
             if (showInRoomInboxDialog) {
-                InRoomInboxDialog(
+                SyncedBrightInRoomInboxDialog(
                     currentUser = currentUser,
                     allProfiles = allProfiles,
                     activeMembers = activeMembers,

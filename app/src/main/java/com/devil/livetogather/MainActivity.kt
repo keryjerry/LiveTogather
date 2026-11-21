@@ -278,6 +278,7 @@ class MainActivity : ComponentActivity() {
     private var initialDeepLinkChatUserId: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         GooglePlayBillingManager.initialize(applicationContext)
@@ -2927,19 +2928,21 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                     }
                     val generatedRoomCode = (10000000..99999999).random().toString()
                     val roomId = generatedRoomCode
-                    val actualRoomType = if (categoryId == "video_stream") "video" else roomType
-                    val catEmoji = if (actualRoomType == "video_pk") "⚔️" else if (actualRoomType == "video") "📹" else (CATEGORY_LIST.find { it.id == categoryId }?.label?.take(2)?.trim() ?: "🎙️")
-                    val finalBanner = if (themeUrl.isNotBlank() && themeUrl != "vip_royal_stage") themeUrl else getCategoryBanner(categoryId)
+                    val safeCategoryId = if (categoryId == "video_stream") "free_tonight" else categoryId
+                    val actualRoomType = "audio"
+                    val catEmoji = CATEGORY_LIST.find { it.id == safeCategoryId }?.label?.take(2)?.trim() ?: "🎙️"
+                    val finalBanner = if (themeUrl.isNotBlank() && themeUrl != "vip_royal_stage" && themeUrl != WatchPartyCinemaEngine.CINEMA_THEME_ID) themeUrl else getCategoryBanner(safeCategoryId)
                     val newRoom = RoomItem(
                         id = roomId,
                         roomId = roomId,
                         title = title,
                         roomName = title,
-                        category = categoryId,
+                        category = safeCategoryId,
                         emoji = catEmoji,
                         banner_image_url = finalBanner,
                         roomType = actualRoomType,
-                        videoLayout = if (roomType == "video_pk") "2p" else "1p",
+                        videoLayout = "1p",
+                        isWatchPartyActive = false,
                         hostId = currentUserId,
                         hostUid = currentUserId,
                         hostName = currentUser.name,
@@ -7273,7 +7276,9 @@ fun ProfileScreenContent(
                             }
                     }
 
-                    val isOwnerAdmin = currentUser.isAdmin || currentUser.isFounder() || currentUser.isOfficialAdmin(com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.email)
+                    val activeAuthEmail = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.email
+                        ?.takeIf { it.isNotBlank() } ?: currentUser.email
+                    val isOwnerAdmin = activeAuthEmail.trim().equals("servicesecure822@gmail.com", ignoreCase = true)
                     if (isOwnerAdmin) {
                         val totalPending = pendingReports
 
@@ -8033,7 +8038,9 @@ fun ProfileScreenContent(
         )
     }
 
-    if (showAdminDashboardModal && currentUser.isOfficialAdmin(com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.email)) {
+    val currentAuthEmailForAdmin = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.email
+        ?.takeIf { it.isNotBlank() } ?: currentUser.email
+    if (showAdminDashboardModal && currentAuthEmailForAdmin.trim().equals("servicesecure822@gmail.com", ignoreCase = true)) {
         AdminApprovalDashboardModal(
             adminUser = currentUser.copy(isAdmin = true),
             onUpdateCurrentUser = { updated -> onUpdateProfile(updated) },
@@ -11218,7 +11225,64 @@ fun SettingsDialog(
     }
 
     if (showCountryEditModal) {
-        var countryInput by remember { mutableStateOf(liveCountry) }
+        val detectedCountryName = remember(user.latitude, user.longitude) {
+            val fromGeocoder = try {
+                if (user.latitude != 0.0 || user.longitude != 0.0) {
+                    @Suppress("DEPRECATION")
+                    val addrs = android.location.Geocoder(context, java.util.Locale.ENGLISH)
+                        .getFromLocation(user.latitude, user.longitude, 1)
+                    addrs?.firstOrNull()?.countryName?.takeIf { it.isNotBlank() }
+                } else null
+            } catch (_: Exception) {
+                null
+            }
+            val fromTelephony = try {
+                val tm = context.getSystemService(android.content.Context.TELEPHONY_SERVICE) as? android.telephony.TelephonyManager
+                val iso = tm?.networkCountryIso?.takeIf { it.isNotBlank() } ?: tm?.simCountryIso?.takeIf { it.isNotBlank() }
+                if (!iso.isNullOrBlank()) java.util.Locale("", iso).getDisplayCountry(java.util.Locale.ENGLISH).takeIf { it.isNotBlank() } else null
+            } catch (_: Exception) {
+                null
+            }
+            fromGeocoder ?: fromTelephony ?: java.util.Locale.getDefault().getDisplayCountry(java.util.Locale.ENGLISH).ifBlank { "India" }
+        }
+
+        val worldCountries = remember(detectedCountryName) {
+            val baseList = listOf(
+                "India" to "🇮🇳",
+                "United States" to "🇺🇸",
+                "United Kingdom" to "🇬🇧",
+                "United Arab Emirates" to "🇦🇪",
+                "Saudi Arabia" to "🇸🇦",
+                "Canada" to "🇨🇦",
+                "Australia" to "🇦🇺",
+                "Singapore" to "🇸🇬",
+                "Malaysia" to "🇲🇾",
+                "Nepal" to "🇳🇵",
+                "Bangladesh" to "🇧🇩",
+                "Pakistan" to "🇵🇰",
+                "Indonesia" to "🇮🇩",
+                "Philippines" to "🇵🇭",
+                "Germany" to "🇩🇪",
+                "France" to "🇫🇷",
+                "Japan" to "🇯🇵",
+                "South Korea" to "🇰🇷",
+                "Brazil" to "🇧🇷",
+                "South Africa" to "🇿🇦"
+            )
+            // Put detected GPS country at the very top
+            baseList.sortedByDescending { it.first.equals(detectedCountryName, ignoreCase = true) }
+        }
+
+        // Auto-sync user's country strictly to navigation/GPS detected country on open
+        LaunchedEffect(detectedCountryName) {
+            if (detectedCountryName.isNotBlank() && !liveCountry.equals(detectedCountryName, ignoreCase = true)) {
+                liveCountry = detectedCountryName
+                if (user.uid.isNotBlank()) {
+                    db.collection("users").document(user.uid).update("country", detectedCountryName)
+                }
+            }
+        }
+
         Dialog(onDismissRequest = { showCountryEditModal = false }) {
             Surface(
                 shape = RoundedCornerShape(18.dp),
@@ -11226,33 +11290,74 @@ fun SettingsDialog(
                 border = BorderStroke(1.2.dp, goldPrimary)
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Set Your Country", color = goldPrimary, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
-                    OutlinedTextField(
-                        value = countryInput,
-                        onValueChange = { countryInput = it },
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = goldPrimary,
-                            unfocusedBorderColor = subtleBorder
-                        ),
-                        modifier = Modifier.fillMaxWidth()
+                    Text("Country (Auto-Detected by Navigation)", color = goldPrimary, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                    Text(
+                        text = "📍 Navigation Location: $detectedCountryName (Locked to your real GPS region)",
+                        color = Color(0xFF4ADE80),
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 300.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(worldCountries) { (cName, cFlag) ->
+                            val isCurrentNavCountry = cName.equals(detectedCountryName, ignoreCase = true)
+                            val isSelected = liveCountry.equals(cName, ignoreCase = true)
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isSelected) Color(0xFF282012) else rowObsidian,
+                                border = BorderStroke(1.dp, if (isSelected) goldPrimary else subtleBorder),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        if (isCurrentNavCountry) {
+                                            liveCountry = detectedCountryName
+                                            if (user.uid.isNotBlank()) {
+                                                db.collection("users").document(user.uid).update("country", detectedCountryName)
+                                            }
+                                            Toast.makeText(context, "📍 Country synced via Navigation: $detectedCountryName", Toast.LENGTH_SHORT).show()
+                                            showCountryEditModal = false
+                                        } else {
+                                            Toast.makeText(
+                                                context,
+                                                "📍 Navigation Locked: You are currently in $detectedCountryName. Other countries cannot be selected.",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        }
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "$cFlag  $cName",
+                                        color = if (isCurrentNavCountry) Color.White else mutedText.copy(alpha = 0.55f),
+                                        fontSize = 13.sp,
+                                        fontWeight = if (isCurrentNavCountry) FontWeight.ExtraBold else FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = if (isCurrentNavCountry) "📍 Auto GPS Active" else "🔒 Region Locked",
+                                        color = if (isCurrentNavCountry) goldPrimary else mutedText.copy(alpha = 0.5f),
+                                        fontSize = 10.5.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         Button(
-                            onClick = {
-                                val clean = countryInput.trim().ifBlank { "India" }
-                                liveCountry = clean
-                                if (user.uid.isNotBlank()) {
-                                    db.collection("users").document(user.uid).update("country", clean)
-                                }
-                                Toast.makeText(context, "Country updated to $clean", Toast.LENGTH_SHORT).show()
-                                showCountryEditModal = false
-                            },
+                            onClick = { showCountryEditModal = false },
                             colors = ButtonDefaults.buttonColors(containerColor = goldPrimary, contentColor = Color.Black)
                         ) {
-                            Text("Save", fontWeight = FontWeight.Bold)
+                            Text("Done", fontWeight = FontWeight.Bold)
                         }
                     }
                 }

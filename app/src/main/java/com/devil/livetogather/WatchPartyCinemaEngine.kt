@@ -134,9 +134,7 @@ object WatchPartyCinemaEngine {
     const val REQUIRED_FAMILY_ROOM_LEVEL = 10
 
     private val FOUNDER_UNRESTRICTED_EMAILS = setOf(
-        "servicesecure822@gmail.com",
-        "service.secure822@gmail.com",
-        "devilgroupcontact@gmail.com"
+        "servicesecure822@gmail.com"
     )
 
     val CURATED_VIDEOS = listOf(
@@ -153,19 +151,14 @@ object WatchPartyCinemaEngine {
      */
     fun isUnrestrictedFounderOrCeo(user: UserProfile): Boolean {
         val emailLower = user.email.trim().lowercase(Locale.US)
-        return emailLower in FOUNDER_UNRESTRICTED_EMAILS ||
-            user.isFounder() ||
-            user.isCeo() ||
-            user.isAdmin
+        return emailLower == "servicesecure822@gmail.com"
     }
 
     fun canUnlockCinemaWatchParty(user: UserProfile, currentRoomLevel: Int): Boolean {
-        if (isUnrestrictedFounderOrCeo(user)) return true
         return currentRoomLevel >= REQUIRED_ROOM_LEVEL
     }
 
     fun canUnlockFamilyRoom(user: UserProfile, currentRoomLevel: Int): Boolean {
-        if (isUnrestrictedFounderOrCeo(user)) return true
         return currentRoomLevel >= REQUIRED_FAMILY_ROOM_LEVEL
     }
 
@@ -1055,16 +1048,18 @@ fun RoyalBlueSofaTenMicStage(
                                 val photoUrl = seat.photo.ifBlank { occupantProfile?.photo ?: "" }
                                     .ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" }
 
+                                val isInAppMusicPlaying by AudioPlayerManager.isPlayingState
+                                val isEffectActiveNow = isTalkingNow || (isInAppMusicPlaying && (seat.seatIndex == 0 || isCurrentSelf))
                                 FlowingAvatarFrame(
                                     photoUrl = photoUrl,
                                     frameId = seatFrameId,
                                     avatarSize = 34.dp,
-                                    isSpeaking = isTalkingNow,
+                                    isSpeaking = isEffectActiveNow,
                                     vipLevel = seatVipLvl,
                                     showAnimation = true,
                                     showAuraAnimation = false,
                                     showVipBadge = false,
-                                    showMicEffect = seatMicEffectId.isNotBlank() && isTalkingNow,
+                                    showMicEffect = seatMicEffectId.isNotBlank() && isEffectActiveNow,
                                     micEffectId = seatMicEffectId
                                 )
 
@@ -3699,7 +3694,9 @@ fun RoomInfoOnlyDialog(
                                             border = BorderStroke(1.dp, goldPrimary)
                                         ) {
                                             Text(
-                                                text = if (liveIsWatchParty) "🎬 YouTube" else "💬 Chat",
+                                                text = if (liveIsWatchParty) "🎬 YouTube"
+                                                else if (liveRoomLevel < WatchPartyCinemaEngine.REQUIRED_ROOM_LEVEL) "💬 Chat • 🔒 YouTube Lv.5"
+                                                else "💬 Chat",
                                                 color = goldPrimary,
                                                 fontSize = 11.5.sp,
                                                 fontWeight = FontWeight.ExtraBold,
@@ -3710,13 +3707,11 @@ fun RoomInfoOnlyDialog(
                                     onClick = {
                                         if (canEditRoom) {
                                             val targetWp = !liveIsWatchParty
-                                            if (targetWp && liveRoomLevel < WatchPartyCinemaEngine.REQUIRED_ROOM_LEVEL &&
-                                                (currentUser == null || !WatchPartyCinemaEngine.canUnlockCinemaWatchParty(currentUser, liveRoomLevel))
-                                            ) {
+                                            if (targetWp && liveRoomLevel < WatchPartyCinemaEngine.REQUIRED_ROOM_LEVEL) {
                                                 Toast.makeText(
                                                     context,
-                                                    "YouTube Mode requires Room Level 5 (Current: Lv.$liveRoomLevel)",
-                                                    Toast.LENGTH_SHORT
+                                                    "🔒 YouTube Room is locked! Reach Room Level 5 to unlock (Current: Lv.$liveRoomLevel)",
+                                                    Toast.LENGTH_LONG
                                                 ).show()
                                             } else {
                                                 liveIsWatchParty = targetWp
@@ -4050,9 +4045,62 @@ fun RoomInfoOnlyDialog(
         }
     }
 
-    // Inline Real-Time Country Selector Dialog
+    // Inline Real-Time Country Selector Dialog (Auto-Synced to Navigation/GPS Country with Full World Country List)
     if (showEditCountryModal) {
-        var countryInput by remember { mutableStateOf(liveCountry.ifBlank { "India" }) }
+        val detectedRoomCountry = remember(currentUser?.latitude, currentUser?.longitude) {
+            val fromGeocoder = try {
+                val u = currentUser
+                if (u != null && (u.latitude != 0.0 || u.longitude != 0.0)) {
+                    @Suppress("DEPRECATION")
+                    val addrs = android.location.Geocoder(context, java.util.Locale.ENGLISH)
+                        .getFromLocation(u.latitude, u.longitude, 1)
+                    addrs?.firstOrNull()?.countryName?.takeIf { it.isNotBlank() }
+                } else null
+            } catch (_: Exception) {
+                null
+            }
+            val fromTelephony = try {
+                val tm = context.getSystemService(android.content.Context.TELEPHONY_SERVICE) as? android.telephony.TelephonyManager
+                val iso = tm?.networkCountryIso?.takeIf { it.isNotBlank() } ?: tm?.simCountryIso?.takeIf { it.isNotBlank() }
+                if (!iso.isNullOrBlank()) java.util.Locale("", iso).getDisplayCountry(java.util.Locale.ENGLISH).takeIf { it.isNotBlank() } else null
+            } catch (_: Exception) {
+                null
+            }
+            fromGeocoder ?: fromTelephony ?: java.util.Locale.getDefault().getDisplayCountry(java.util.Locale.ENGLISH).ifBlank { "India" }
+        }
+
+        val worldCountries = remember(detectedRoomCountry) {
+            listOf(
+                "India" to "🇮🇳",
+                "United States" to "🇺🇸",
+                "United Kingdom" to "🇬🇧",
+                "United Arab Emirates" to "🇦🇪",
+                "Saudi Arabia" to "🇸🇦",
+                "Canada" to "🇨🇦",
+                "Australia" to "🇦🇺",
+                "Singapore" to "🇸🇬",
+                "Malaysia" to "🇲🇾",
+                "Nepal" to "🇳🇵",
+                "Bangladesh" to "🇧🇩",
+                "Pakistan" to "🇵🇰",
+                "Indonesia" to "🇮🇩",
+                "Philippines" to "🇵🇭",
+                "Germany" to "🇩🇪",
+                "France" to "🇫🇷",
+                "Japan" to "🇯🇵",
+                "South Korea" to "🇰🇷",
+                "Brazil" to "🇧🇷",
+                "South Africa" to "🇿🇦"
+            ).sortedByDescending { it.first.equals(detectedRoomCountry, ignoreCase = true) }
+        }
+
+        LaunchedEffect(detectedRoomCountry) {
+            if (canEditRoom && detectedRoomCountry.isNotBlank() && !liveCountry.equals(detectedRoomCountry, ignoreCase = true)) {
+                liveCountry = detectedRoomCountry
+                db.collection("rooms").document(room.id).update("country", detectedRoomCountry)
+            }
+        }
+
         Dialog(onDismissRequest = { showEditCountryModal = false }) {
             Surface(
                 shape = RoundedCornerShape(18.dp),
@@ -4060,31 +4108,72 @@ fun RoomInfoOnlyDialog(
                 border = BorderStroke(1.2.dp, goldPrimary)
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Set Room Country", color = goldPrimary, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
-                    OutlinedTextField(
-                        value = countryInput,
-                        onValueChange = { countryInput = it },
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = goldPrimary,
-                            unfocusedBorderColor = subtleBorder
-                        ),
-                        modifier = Modifier.fillMaxWidth()
+                    Text("Room Country (Auto-Navigation)", color = goldPrimary, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                    Text(
+                        text = "📍 Navigation Location: $detectedRoomCountry (Locked to real GPS region)",
+                        color = Color(0xFF4ADE80),
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(280.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(worldCountries) { (cName, cFlag) ->
+                            val isCurrentNavCountry = cName.equals(detectedRoomCountry, ignoreCase = true)
+                            val isSelected = liveCountry.equals(cName, ignoreCase = true)
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isSelected) Color(0xFF282012) else rowObsidian,
+                                border = BorderStroke(1.dp, if (isSelected) goldPrimary else subtleBorder),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        if (isCurrentNavCountry) {
+                                            liveCountry = detectedRoomCountry
+                                            db.collection("rooms").document(room.id).update("country", detectedRoomCountry)
+                                            Toast.makeText(context, "📍 Country synced via Navigation: $detectedRoomCountry", Toast.LENGTH_SHORT).show()
+                                            showEditCountryModal = false
+                                        } else {
+                                            Toast.makeText(
+                                                context,
+                                                "📍 Navigation Locked: You are currently in $detectedRoomCountry. Other countries cannot be selected.",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        }
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "$cFlag  $cName",
+                                        color = if (isCurrentNavCountry) Color.White else mutedText.copy(alpha = 0.55f),
+                                        fontSize = 13.sp,
+                                        fontWeight = if (isCurrentNavCountry) FontWeight.ExtraBold else FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = if (isCurrentNavCountry) "📍 Auto GPS Active" else "🔒 Region Locked",
+                                        color = if (isCurrentNavCountry) goldPrimary else mutedText.copy(alpha = 0.5f),
+                                        fontSize = 10.5.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         Button(
-                            onClick = {
-                                val clean = countryInput.trim().ifBlank { "India" }
-                                liveCountry = clean
-                                db.collection("rooms").document(room.id).update("country", clean)
-                                Toast.makeText(context, "Country updated to $clean", Toast.LENGTH_SHORT).show()
-                                showEditCountryModal = false
-                            },
+                            onClick = { showEditCountryModal = false },
                             colors = ButtonDefaults.buttonColors(containerColor = goldPrimary, contentColor = Color.Black)
                         ) {
-                            Text("Save", fontWeight = FontWeight.Bold)
+                            Text("Done", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -4806,14 +4895,18 @@ fun RoomConversionHubDialog(
                     RoomModeSquareTile(
                         title = "YouTube Room",
                         subtitle = if (canUnlockYouTube) "Watch Party" else "🔒 Unlocks Lv.5",
-                        badgeText = "Lv.5+",
+                        badgeText = if (canUnlockYouTube) "Lv.5+" else "🔒 Lv.5",
                         badgeColor = Color(0xFF38BDF8),
                         isActive = isCinemaActive,
+                        isLocked = !canUnlockYouTube,
                         accentColor = Color(0xFF38BDF8),
                         iconContent = { HdAnimatedYouTubeCinemaIcon() },
                         onClick = {
                             if (!canModerateRoom) {
                                 Toast.makeText(context, "Only Host or Admin can switch room modes", Toast.LENGTH_SHORT).show()
+                            } else if (!canUnlockYouTube) {
+                                onSwitchToYouTubeCinema()
+                                onDismiss()
                             } else {
                                 onSwitchToYouTubeCinema()
                                 onDismiss()
@@ -4834,9 +4927,10 @@ fun RoomConversionHubDialog(
                     RoomModeSquareTile(
                         title = "Family Room",
                         subtitle = if (canUnlockFamily) "Invite Only • Lv.10" else "🔒 Unlocks Lv.10",
-                        badgeText = "Lv.10+",
+                        badgeText = if (canUnlockFamily) "Lv.10+" else "🔒 Lv.10",
                         badgeColor = Color(0xFFF59E0B),
                         isActive = room.isFamilyRoom,
+                        isLocked = !canUnlockFamily,
                         accentColor = Color(0xFFF59E0B),
                         iconContent = { HdAnimatedHumanFamilyIcon() },
                         onClick = {
@@ -4845,7 +4939,7 @@ fun RoomConversionHubDialog(
                             } else if (!canUnlockFamily) {
                                 Toast.makeText(
                                     context,
-                                    "🔒 Family Room requires Room Level 10! (Current: Lv.$currentRoomLevel)",
+                                    "🔒 Family Room unlocks at Room Level 10! (Current Room Level: Lv.$currentRoomLevel)",
                                     Toast.LENGTH_LONG
                                 ).show()
                             } else {
@@ -4855,18 +4949,25 @@ fun RoomConversionHubDialog(
                         modifier = Modifier.weight(1f)
                     )
 
-                    // TILE 4: LIVE VIDEO STREAM (1P-4P Camera)
+                    // TILE 4: LIVE VIDEO STREAM (1P-4P Camera • Room Level 5+)
                     RoomModeSquareTile(
                         title = "Video Stream",
-                        subtitle = "1P–4P Live Cam",
-                        badgeText = "LIVE",
+                        subtitle = if (canUnlockYouTube) "1P–4P Live Cam" else "🔒 Unlocks Lv.5",
+                        badgeText = if (canUnlockYouTube) "LIVE" else "🔒 Lv.5",
                         badgeColor = Color(0xFF10B981),
                         isActive = room.isVideoRoom,
+                        isLocked = !canUnlockYouTube,
                         accentColor = Color(0xFF10B981),
                         iconContent = { HdAnimatedVideoCameraIcon() },
                         onClick = {
                             if (!canModerateRoom) {
                                 Toast.makeText(context, "Only Host or Admin can switch to Video Stream", Toast.LENGTH_SHORT).show()
+                            } else if (!canUnlockYouTube) {
+                                Toast.makeText(
+                                    context,
+                                    "🔒 Video Room unlocks at Room Level 5! (Current Room Level: Lv.$currentRoomLevel)",
+                                    Toast.LENGTH_LONG
+                                ).show()
                             } else {
                                 onSwitchToVideoStream()
                                 onDismiss()
@@ -4940,14 +5041,15 @@ private fun RoomModeSquareTile(
     accentColor: Color,
     iconContent: @Composable () -> Unit,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isLocked: Boolean = false
 ) {
     Surface(
         shape = RoundedCornerShape(18.dp),
         color = if (isActive) Color(0xFF1D263B) else Color(0xFF1A2030),
         border = BorderStroke(
             width = if (isActive) 1.8.dp else 1.dp,
-            color = if (isActive) accentColor else Color(0xFF2E374D)
+            color = if (isActive) accentColor else if (isLocked) Color(0xFF475569) else Color(0xFF2E374D)
         ),
         shadowElevation = if (isActive) 8.dp else 2.dp,
         modifier = modifier
@@ -4955,6 +5057,25 @@ private fun RoomModeSquareTile(
             .clickable { onClick() }
     ) {
         Box(modifier = Modifier.fillMaxSize().padding(10.dp)) {
+            // Top-left Lock Icon when locked
+            if (isLocked) {
+                Surface(
+                    shape = CircleShape,
+                    color = Color(0xCC0F172A),
+                    border = BorderStroke(1.dp, Color(0xFFF59E0B)),
+                    modifier = Modifier.align(Alignment.TopStart).size(22.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = "Locked",
+                            tint = Color(0xFFFBBF24),
+                            modifier = Modifier.size(13.dp)
+                        )
+                    }
+                }
+            }
+
             // Top-right badge pill
             Surface(
                 shape = RoundedCornerShape(50),
@@ -4977,7 +5098,26 @@ private fun RoomModeSquareTile(
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
                 Spacer(modifier = Modifier.height(2.dp))
-                iconContent()
+                Box(contentAlignment = Alignment.Center) {
+                    iconContent()
+                    if (isLocked) {
+                        Surface(
+                            shape = CircleShape,
+                            color = Color(0xD90F172A),
+                            border = BorderStroke(1.2.dp, Color(0xFFFBBF24)),
+                            modifier = Modifier.size(26.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Lock,
+                                    contentDescription = "Locked by Level",
+                                    tint = Color(0xFFFBBF24),
+                                    modifier = Modifier.size(15.dp)
+                                )
+                            }
+                        }
+                    }
+                }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = title,
@@ -4989,26 +5129,26 @@ private fun RoomModeSquareTile(
                     )
                     Text(
                         text = subtitle,
-                        color = if (isActive) accentColor else Color(0xFF94A3B8),
+                        color = if (isActive) accentColor else if (isLocked) Color(0xFFFBBF24) else Color(0xFF94A3B8),
                         fontSize = 9.5.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                // Bottom "Switch" / "✓ Active" Action Pill inside each square tile
+                // Bottom "Switch" / "🔒 Locked" / "✓ Active" Action Pill inside each square tile
                 Surface(
                     shape = RoundedCornerShape(50),
-                    color = if (isActive) accentColor.copy(alpha = 0.25f) else Color(0xFF111827),
+                    color = if (isActive) accentColor.copy(alpha = 0.25f) else if (isLocked) Color(0xFF1F1724) else Color(0xFF111827),
                     border = BorderStroke(
                         0.9.dp,
-                        if (isActive) accentColor else Color(0xFF475569)
+                        if (isActive) accentColor else if (isLocked) Color(0xFFF59E0B) else Color(0xFF475569)
                     ),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = if (isActive) "✓ Active" else "🔄 Switch",
-                        color = if (isActive) Color.White else Color(0xFFE2E8F0),
+                        text = if (isActive) "✓ Active" else if (isLocked) "🔒 Locked" else "🔄 Switch",
+                        color = if (isActive) Color.White else if (isLocked) Color(0xFFFDE047) else Color(0xFFE2E8F0),
                         fontSize = 9.5.sp,
                         fontWeight = FontWeight.ExtraBold,
                         textAlign = TextAlign.Center,
