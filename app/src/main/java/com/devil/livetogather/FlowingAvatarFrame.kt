@@ -332,8 +332,7 @@ fun FlowingAvatarFrame(
                 VideoMicMagicEffectOverlay(
                     videoRes = activeVideoRes,
                     avatarSize = targetAvatarSize,
-                    effectSize = targetAvatarSize + 46.dp,
-                    micEffectId = micEffectId
+                    effectSize = targetAvatarSize + 34.dp
                 )
             }
 
@@ -875,83 +874,14 @@ fun VideoMicMagicEffectOverlay(
     videoRes: Int,
     avatarSize: Dp,
     effectSize: Dp,
-    modifier: Modifier = Modifier,
-    micEffectId: String = ""
+    modifier: Modifier = Modifier
 ) {
     if (videoRes == 0) return
 
-    val infiniteTransition = rememberInfiniteTransition(label = "MicEffect3DGlow")
-    val glowPulse by infiniteTransition.animateFloat(
-        initialValue = 0.96f,
-        targetValue = 1.06f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 700, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "MicGlowPulse"
-    )
-    val glowSpin by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 2800, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "MicGlowSpin"
-    )
-
-    val effectAccentColors = when {
-        micEffectId.contains("ruby", true) || micEffectId.contains("flame", true) ->
-            listOf(Color(0xFFFF1744), Color(0xFFFF6D00), Color(0xFFFFD700), Color(0xFFFF1744))
-        micEffectId.contains("cyber", true) || micEffectId.contains("neon", true) ->
-            listOf(Color(0xFF00E5FF), Color(0xFFD500F9), Color(0xFF00E5FF))
-        micEffectId.contains("emerald", true) ->
-            listOf(Color(0xFF00E676), Color(0xFF1DE9B6), Color(0xFFFFD700), Color(0xFF00E676))
-        micEffectId.contains("diamond", true) || micEffectId.contains("vortex", true) ->
-            listOf(Color(0xFF40C4FF), Color(0xFFE040FB), Color(0xFFFFFFFF), Color(0xFF40C4FF))
-        else ->
-            listOf(Color(0xFFFFD700), Color(0xFFFF9100), Color(0xFFFFEA00), Color(0xFFFFD700))
-    }
-
     Box(
-        modifier = modifier.requiredSize(effectSize), // Slightly wider reach without shifting seat layout!
+        modifier = modifier.size(effectSize), // Exact original circle size fitted snugly to avatar circle!
         contentAlignment = Alignment.Center
     ) {
-        // 1. High-Opacity 3D Luminous Core Ring behind the video wave so it pops with zero washed-out transparency
-        androidx.compose.foundation.Canvas(
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer(
-                    scaleX = glowPulse,
-                    scaleY = glowPulse,
-                    rotationZ = glowSpin,
-                    alpha = 1.0f
-                )
-        ) {
-            val innerR = (avatarSize.toPx() / 2f) * 0.96f
-            val outerR = (size.minDimension / 2f) * 0.96f
-            val ringWidth = (outerR - innerR).coerceAtLeast(8f)
-            val midR = innerR + ringWidth * 0.48f
-
-            drawCircle(
-                brush = Brush.sweepGradient(effectAccentColors),
-                radius = midR,
-                style = androidx.compose.ui.graphics.drawscope.Stroke(width = ringWidth * 0.62f),
-                alpha = 0.72f
-            )
-            drawCircle(
-                brush = Brush.radialGradient(
-                    0.0f to Color.Transparent,
-                    (innerR / outerR).coerceIn(0.1f, 0.85f) to effectAccentColors[0].copy(alpha = 0.85f),
-                    0.88f to effectAccentColors[1].copy(alpha = 0.65f),
-                    1.0f to Color.Transparent,
-                    radius = outerR
-                ),
-                radius = outerR
-            )
-        }
-
-        // 2. Full-Opacity 3D Video Mic Effect Layer (1.0f Alpha + Wider 0.89f Radial Reach)
         AndroidView(
             factory = { ctx ->
                 TextureView(ctx).apply {
@@ -986,26 +916,24 @@ fun VideoMicMagicEffectOverlay(
                 .fillMaxSize()
                 .graphicsLayer(
                     compositingStrategy = CompositingStrategy.Offscreen,
-                    alpha = 1.0f, // 100% full opacity — zero dull transparency!
-                    scaleX = glowPulse,
-                    scaleY = glowPulse
+                    alpha = 0.98f
                 )
                 .drawWithContent {
                     drawContent()
-                    // Wider solid radial coverage (0.89f solid before feathering) so the wave reaches further & clearer
+                    // Broad solid radial band (0.0f..0.86f solid) within the exact circle size
                     drawRect(
                         brush = Brush.radialGradient(
                             0.0f to Color.Black,
-                            0.89f to Color.Black,
+                            0.86f to Color.Black,
                             1.0f to Color.Transparent,
                             radius = size.minDimension / 2f
                         ),
                         blendMode = BlendMode.DstIn
                     )
-                    // Clean circular aperture for avatar face
+                    // Exact circular aperture matching the profile photo circle with zero gap
                     drawCircle(
                         color = Color.Transparent,
-                        radius = (avatarSize.toPx() / 2f) * 0.96f,
+                        radius = (avatarSize.toPx() / 2f),
                         blendMode = BlendMode.Clear
                     )
                 }

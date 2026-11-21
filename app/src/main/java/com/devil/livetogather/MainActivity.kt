@@ -2057,8 +2057,27 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                                 }
                                 val canActuallyHost = !isHostCandidate || currentUser.canHostRoom()
 
-                                if (!isHostCandidate && (!room.isHostLive || room.statusMessage.equals("OFFLINE", ignoreCase = true) || room.statusMessage.equals("CLOSED", ignoreCase = true))) {
-                                    Toast.makeText(context, "⏳ The host (${room.hostName.ifBlank { "Host" }}) is currently offline. They will be live soon!", Toast.LENGTH_SHORT).show()
+                                val isRoomAdminCandidate = currentUserId.isNotBlank() && currentUserId in room.adminUserIds
+                                val isHostOrAdmin = isHostCandidate || isRoomAdminCandidate
+                                val isHeartbeatStale = room.lastHostHeartbeat > 0L && (System.currentTimeMillis() - room.lastHostHeartbeat > 30 * 60 * 1000L)
+
+                                if (!isHostOrAdmin && (!room.isHostLive || !room.isLive || room.isEnded || isHeartbeatStale || room.statusMessage.contains("OFFLINE", ignoreCase = true) || room.statusMessage.contains("CLOSED", ignoreCase = true))) {
+                                    if (isHeartbeatStale || room.isHostLive) {
+                                        val closeMap = mapOf<String, Any>(
+                                            "isLive" to false,
+                                            "isHostLive" to false,
+                                            "isEnded" to true,
+                                            "isPlaying" to false,
+                                            "watchPartyIsPlaying" to false,
+                                            "statusMessage" to "Room is closed"
+                                        )
+                                        db.collection("rooms").document(room.id).update(closeMap)
+                                        if (room.category.isNotBlank()) {
+                                            db.collection("intent_categories").document(room.category)
+                                                .collection("rooms").document(room.id).update(closeMap)
+                                        }
+                                    }
+                                    Toast.makeText(context, "🚫 Room is closed • Host & Admin are offline", Toast.LENGTH_SHORT).show()
                                     return@LiveTogetherHomeScreen
                                 }
 
@@ -2555,10 +2574,28 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                     }
                     val targetHost = room.hostUid.ifBlank { room.hostId }
                     val isHostCandidate = currentUserId.isNotBlank() && currentUserId == targetHost
+                    val isRoomAdminCandidate = currentUserId.isNotBlank() && currentUserId in room.adminUserIds
+                    val isHostOrAdmin = isHostCandidate || isRoomAdminCandidate
                     val canActuallyHost = !isHostCandidate || currentUser.canHostRoom()
+                    val isHeartbeatStale = room.lastHostHeartbeat > 0L && (System.currentTimeMillis() - room.lastHostHeartbeat > 30 * 60 * 1000L)
 
-                    if (!isHostCandidate && (!room.isHostLive || room.statusMessage.equals("OFFLINE", ignoreCase = true) || room.statusMessage.equals("CLOSED", ignoreCase = true))) {
-                        Toast.makeText(context, "⏳ The host (${room.hostName.ifBlank { "Host" }}) is currently offline. They will be live soon!", Toast.LENGTH_SHORT).show()
+                    if (!isHostOrAdmin && (!room.isHostLive || !room.isLive || room.isEnded || isHeartbeatStale || room.statusMessage.contains("OFFLINE", ignoreCase = true) || room.statusMessage.contains("CLOSED", ignoreCase = true))) {
+                        if (isHeartbeatStale || room.isHostLive) {
+                            val closeMap = mapOf<String, Any>(
+                                "isLive" to false,
+                                "isHostLive" to false,
+                                "isEnded" to true,
+                                "isPlaying" to false,
+                                "watchPartyIsPlaying" to false,
+                                "statusMessage" to "Room is closed"
+                            )
+                            db.collection("rooms").document(room.id).update(closeMap)
+                            if (room.category.isNotBlank()) {
+                                db.collection("intent_categories").document(room.category)
+                                    .collection("rooms").document(room.id).update(closeMap)
+                            }
+                        }
+                        Toast.makeText(context, "🚫 Room is closed • Host & Admin are offline", Toast.LENGTH_SHORT).show()
                         return@CategoryHubLobbyDialog
                     }
 

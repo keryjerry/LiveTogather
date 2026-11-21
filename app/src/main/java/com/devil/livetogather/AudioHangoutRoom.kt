@@ -7498,8 +7498,9 @@ fun AudioHangoutRoomDialog(
         }
     }
 
-    // Host Follower Real-Time Listener (Runs for BOTH Host & Viewers so Host NEVER sees 0!)
-    DisposableEffect(targetHostId, currentUser.uid) {
+    // Host Follower Real-Time Listener (100% Real Firestore subcollection count — Zero stale/fake numbers like 15!)
+    DisposableEffect(room.id, targetHostId, currentUser.uid) {
+        hostFollowerCount = 0
         if (targetHostId.isBlank()) {
             return@DisposableEffect onDispose {}
         }
@@ -7515,20 +7516,76 @@ fun AudioHangoutRoomDialog(
             .collection("followers")
             .addSnapshotListener { snapshot, _ ->
                 if (snapshot != null) {
-                    hostFollowerCount = snapshot.size()
-                }
-            }
-        val hostProfileFollowerListener = db.collection("users").document(targetHostId)
-            .addSnapshotListener { docSnap, _ ->
-                val fieldCount = docSnap?.getLong("followerCount")?.toInt() ?: 0
-                if (fieldCount > hostFollowerCount) {
-                    hostFollowerCount = fieldCount
+                    val realFollowers = snapshot.documents.filter { doc ->
+                        val id = doc.id
+                        id.isNotBlank() &&
+                            !id.startsWith("companion_", ignoreCase = true) &&
+                            !id.startsWith("dummy_", ignoreCase = true) &&
+                            !id.startsWith("seed_", ignoreCase = true) &&
+                            !id.startsWith("bot_", ignoreCase = true)
+                    }
+                    // Delete any legacy fake/seeded follower docs automatically
+                    snapshot.documents.forEach { doc ->
+                        if (doc !in realFollowers) {
+                            doc.reference.delete()
+                        }
+                    }
+                    hostFollowerCount = realFollowers.size
+                    db.collection("users").document(targetHostId)
+                        .update("followerCount", realFollowers.size)
                 }
             }
         onDispose {
             followDoc?.remove()
             countListener.remove()
-            hostProfileFollowerListener.remove()
+        }
+    }
+
+    // 30-Minute Host & Admin Inactivity Auto-Close Engine (1,800,000 ms = 30 minutes)
+    val roomInactivityLimitMs = 30 * 60 * 1000L
+    var lastHostOrAdminActivityMs by remember(room.id) { mutableStateOf(System.currentTimeMillis()) }
+
+    LaunchedEffect(isLocalTalking, room.watchPartyVideoId, room.watchPartyIsPlaying, room.nowPlayingUrl, room.announcement) {
+        if (isUserHost || isUserAdmin) {
+            lastHostOrAdminActivityMs = System.currentTimeMillis()
+            if (room.id.isNotBlank()) {
+                db.collection("rooms").document(room.id)
+                    .update("lastHostHeartbeat", lastHostOrAdminActivityMs)
+            }
+        }
+    }
+
+    LaunchedEffect(room.id, isUserHost, isUserAdmin) {
+        if (room.id.isBlank()) return@LaunchedEffect
+        while (true) {
+            delay(30_000L)
+            val now = System.currentTimeMillis()
+            if (isUserHost || isUserAdmin) {
+                val idleMs = now - lastHostOrAdminActivityMs
+                if (idleMs >= roomInactivityLimitMs) {
+                    val autoCloseUpdates = mapOf<String, Any>(
+                        "isLive" to false,
+                        "isHostLive" to false,
+                        "isEnded" to true,
+                        "endedAt" to now,
+                        "isPlaying" to false,
+                        "watchPartyIsPlaying" to false,
+                        "statusMessage" to "Room is closed"
+                    )
+                    db.collection("rooms").document(room.id).update(autoCloseUpdates)
+                    if (room.category.isNotBlank()) {
+                        db.collection("intent_categories").document(room.category)
+                            .collection("rooms").document(room.id).update(autoCloseUpdates)
+                    }
+                    AudioPlayerManager.pause()
+                    Toast.makeText(context, "⏳ Room closed automatically after 30 minutes of inactivity.", Toast.LENGTH_LONG).show()
+                    onDismiss()
+                    break
+                } else {
+                    // Keep heartbeat fresh while Host/Admin is actively within the 30-min window
+                    db.collection("rooms").document(room.id).update("lastHostHeartbeat", now)
+                }
+            }
         }
     }
 
@@ -7546,17 +7603,32 @@ fun AudioHangoutRoomDialog(
                         onConvertToVideo?.invoke(updated)
                         return@addSnapshotListener
                     }
+                    val now = System.currentTimeMillis()
                     val isLive = snapshot.getBoolean("isLive") ?: (snapshot.getBoolean("isHostLive") ?: updated.isLive)
                     val isEnded = snapshot.getBoolean("isEnded") ?: false
                     val isHostLive = snapshot.getBoolean("isHostLive") ?: updated.isHostLive
                     val isSetOfflineByHost = snapshot.getBoolean("isSetOfflineByHost") ?: false
-                    val endedAt = snapshot.getLong("endedAt") ?: 0L
-                    val hasAdminPresent = activeMembers.any { it.uid != room.hostId && it.uid in room.adminUserIds }
-                    val isRoomClosed = isSetOfflineByHost || !isLive || isEnded || (!isHostLive && !hasAdminPresent)
+                    val lastHb = snapshot.getLong("lastHostHeartbeat") ?: updated.lastHostHeartbeat
+                    val isHeartbeatExpired = lastHb > 0L && (now - lastHb > roomInactivityLimitMs)
+                    val hasAdminPresent = activeMembers.any {
+                        (it.uid == targetHostId || it.role == "host" || it.uid in updated.adminUserIds) &&
+                            (it.joinedAt == 0L || (now - it.joinedAt <= roomInactivityLimitMs))
+                    }
+                    val isRoomClosed = isSetOfflineByHost || !isLive || isEnded || isHeartbeatExpired || (!isHostLive && !hasAdminPresent)
 
-                    if (isRoomClosed && !isUserHost) {
-                        val closeMsg = if (isSetOfflineByHost) "Room is closed • Host has closed the room" else "Room is closed • Host is offline"
-                        Toast.makeText(context, closeMsg, Toast.LENGTH_LONG).show()
+                    if (isRoomClosed && !isUserHost && !isUserAdmin) {
+                        if (isHeartbeatExpired) {
+                            val closeMap = mapOf<String, Any>(
+                                "isLive" to false,
+                                "isHostLive" to false,
+                                "isEnded" to true,
+                                "isPlaying" to false,
+                                "watchPartyIsPlaying" to false,
+                                "statusMessage" to "Room is closed"
+                            )
+                            db.collection("rooms").document(room.id).update(closeMap)
+                        }
+                        Toast.makeText(context, "🚫 Room is closed • Host & Admin are offline", Toast.LENGTH_LONG).show()
                         AudioPlayerManager.pause()
                         onDismiss()
                         return@addSnapshotListener
@@ -7601,7 +7673,7 @@ fun AudioHangoutRoomDialog(
                         AudioPlayerManager.pause()
                     }
                 } else if (snapshot != null && !snapshot.exists() && !isUserHost && (System.currentTimeMillis() - room.createdAt > 15_000L)) {
-                    Toast.makeText(context, "This room is no longer active", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Room is closed", Toast.LENGTH_SHORT).show()
                     AudioPlayerManager.pause()
                     onDismiss()
                 }
@@ -7613,6 +7685,7 @@ fun AudioHangoutRoomDialog(
     }
 
     // 2. Real-Time Members Presence Listener (Rooms/{roomId}/members)
+    // Enforces that if NEITHER Host NOR Admin is present in the room, the room closes immediately!
     DisposableEffect(room.id) {
         if (room.id.isBlank()) return@DisposableEffect onDispose {}
         val membersListener = db.collection("rooms").document(room.id)
@@ -7624,10 +7697,8 @@ fun AudioHangoutRoomDialog(
                     val list = snapshot.documents.mapNotNull { doc ->
                         val m = doc.toObject(RoomMember::class.java)
                         if (m != null) {
-                            if (m.joinedAt > 0L && (now - m.joinedAt > 7_200_000L)) {
-                                if (isUserHost) {
-                                    doc.reference.delete()
-                                }
+                            if (m.joinedAt > 0L && (now - m.joinedAt > roomInactivityLimitMs)) {
+                                doc.reference.delete()
                                 null
                             } else {
                                 m
@@ -7636,6 +7707,32 @@ fun AudioHangoutRoomDialog(
                     }
                     activeMembers.clear()
                     activeMembers.addAll(list)
+
+                    val isHostOrAdminPresent = list.any { m ->
+                        m.uid == targetHostId || m.role.equals("host", ignoreCase = true) || m.uid in room.adminUserIds
+                    }
+                    if (!isUserHost && !isUserAdmin && !isHostOrAdminPresent) {
+                        // Neither Host nor Admin is in the room -> auto-close room in Firestore & exit immediately!
+                        val closeUpdates = mapOf<String, Any>(
+                            "isLive" to false,
+                            "isHostLive" to false,
+                            "isEnded" to true,
+                            "endedAt" to now,
+                            "isPlaying" to false,
+                            "watchPartyIsPlaying" to false,
+                            "statusMessage" to "Room is closed"
+                        )
+                        db.collection("rooms").document(room.id).update(closeUpdates)
+                        if (room.category.isNotBlank()) {
+                            db.collection("intent_categories").document(room.category)
+                                .collection("rooms").document(room.id).update(closeUpdates)
+                        }
+                        AudioPlayerManager.pause()
+                        Toast.makeText(context, "🚫 Room is closed • No Host or Admin in room", Toast.LENGTH_LONG).show()
+                        onDismiss()
+                        return@addSnapshotListener
+                    }
+
                     if (activeMembers.none { it.uid == currentUser.uid }) {
                         activeMembers.add(currentMember)
                     }
@@ -8702,7 +8799,7 @@ fun AudioHangoutRoomDialog(
                         // Royal Blue HD Cinema Watch Party (Boxed Synced YouTube Player + Floating 3D Treasure Chest)
                         CinemaWatchPartyVideoBox(
                             room = room,
-                            canControlVideo = canStaffModerate,
+                            canControlVideo = isUserHost || isUserAdmin,
                             currentUserName = currentUser.name,
                             currentRoomStaySeconds = currentRoomStaySeconds,
                             onTogglePlay = {

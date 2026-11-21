@@ -2167,9 +2167,21 @@ fun YouTubeLevelRequiredDialog(
     }
 }
 
+fun getRoomCrestBadgeDrawableRes(roomLevel: Int): Int {
+    val safeLevel = roomLevel.coerceAtLeast(1)
+    return when {
+        safeLevel >= 50 -> R.drawable.badge_hd_tier7_sovereign
+        safeLevel >= 35 -> R.drawable.badge_hd_tier5_diamond
+        safeLevel >= 20 -> R.drawable.badge_hd_tier6_master
+        safeLevel >= 10 -> R.drawable.badge_hd_tier3_gold
+        safeLevel >= 5 -> R.drawable.ic_wealth_shield_3d
+        else -> R.drawable.ic_wealth_shield_3d
+    }
+}
+
 /**
- * Dynamic Auto-Evolving Room Level Badge placed directly under the top-left Room Header Box.
- * Automatically updates color, tier icon, border, and glow as Room Level increases from gifting.
+ * Dynamic Auto-Evolving 3D Room Crest Level Badge placed directly under the top-left Room Header Box.
+ * Uses a dedicated 3D Winged Royal Shield Crest (never a plain star emoji!) and evolves with Room Level.
  */
 @Composable
 fun DynamicRoomLevelBadge(
@@ -2178,64 +2190,64 @@ fun DynamicRoomLevelBadge(
     modifier: Modifier = Modifier
 ) {
     val safeLevel = roomLevel.coerceAtLeast(1)
-    val (tierIcon, tierName, gradientColors, borderColor) = when {
-        safeLevel >= 50 -> Quadruple(
-            "🏆",
-            "Mythic",
-            listOf(Color(0xFFFF0080), Color(0xFFFFD700), Color(0xFF00E5FF)),
+    val badgeRes = getRoomCrestBadgeDrawableRes(safeLevel)
+    val (tierName, gradientColors, borderColor) = when {
+        safeLevel >= 50 -> Triple(
+            "Sovereign",
+            listOf(Color(0xFF281236), Color(0xFF4C1D95), Color(0xFF1F1630)),
             Color(0xFFFFD700)
         )
-        safeLevel >= 35 -> Quadruple(
-            "💠",
+        safeLevel >= 35 -> Triple(
             "Diamond",
-            listOf(Color(0xFF0284C7), Color(0xFF06B6D4), Color(0xFF38BDF8)),
+            listOf(Color(0xFF0C2442), Color(0xFF0369A1), Color(0xFF0A1D36)),
             Color(0xFF7DD3FC)
         )
-        safeLevel >= 20 -> Quadruple(
-            "🔥",
-            "Phoenix",
-            listOf(Color(0xFFB91C1C), Color(0xFFEA580C), Color(0xFFF59E0B)),
+        safeLevel >= 20 -> Triple(
+            "Imperial",
+            listOf(Color(0xFF3B1219), Color(0xFF991B1B), Color(0xFF291014)),
             Color(0xFFFFD700)
         )
-        safeLevel >= 10 -> Quadruple(
-            "👑",
+        safeLevel >= 10 -> Triple(
             "Royal",
-            listOf(Color(0xFF6D28D9), Color(0xFFA855F7), Color(0xFFEC4899)),
+            listOf(Color(0xFF2A1842), Color(0xFF6D28D9), Color(0xFF1D112E)),
             Color(0xFFFDE047)
         )
-        safeLevel >= 5 -> Quadruple(
-            "💎",
+        safeLevel >= 5 -> Triple(
             "Cinema",
-            listOf(Color(0xFF1E3A8A), Color(0xFF2563EB), Color(0xFF0EA5E9)),
+            listOf(Color(0xFF132347), Color(0xFF1D4ED8), Color(0xFF0F1B38)),
             Color(0xFFFFD700)
         )
-        else -> Quadruple(
-            "⭐",
+        else -> Triple(
             "Room",
-            listOf(Color(0xFF78350F), Color(0xFFB45309), Color(0xFFD97706)),
-            Color(0xFFFDE68A)
+            listOf(Color(0xFF1D1829), Color(0xFF2E2414), Color(0xFF181522)),
+            Color(0xFFF5C451)
         )
     }
 
     Surface(
         shape = RoundedCornerShape(50),
         color = Color.Transparent,
-        border = BorderStroke(0.9.dp, borderColor),
-        shadowElevation = 4.dp,
+        border = BorderStroke(1.dp, borderColor),
+        shadowElevation = 6.dp,
         modifier = modifier.clickable { onClick() }
     ) {
         Row(
             modifier = Modifier
                 .background(Brush.horizontalGradient(gradientColors))
-                .padding(horizontal = 8.dp, vertical = 2.dp),
+                .padding(start = 4.dp, end = 9.dp, top = 2.dp, bottom = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Text(text = tierIcon, fontSize = 9.5.sp)
+            Image(
+                painter = painterResource(id = badgeRes),
+                contentDescription = "Room Level Crest",
+                modifier = Modifier.size(16.dp),
+                contentScale = ContentScale.Fit
+            )
             Text(
                 text = "$tierName Lv.$safeLevel",
-                color = Color.White,
-                fontSize = 9.sp,
+                color = Color(0xFFFFE57F),
+                fontSize = 9.5.sp,
                 fontWeight = FontWeight.ExtraBold,
                 maxLines = 1
             )
@@ -2433,8 +2445,16 @@ fun RoomInfoOnlyDialog(
         val folReg = db.collection("users").document(targetHostId).collection("followers")
             .addSnapshotListener { snap, _ ->
                 if (snap != null) {
-                    liveFollowerCount = snap.size()
-                    followersList = snap.documents.mapNotNull { doc ->
+                    val realDocs = snap.documents.filter { doc ->
+                        val id = doc.id
+                        id.isNotBlank() &&
+                            !id.startsWith("companion_", ignoreCase = true) &&
+                            !id.startsWith("dummy_", ignoreCase = true) &&
+                            !id.startsWith("seed_", ignoreCase = true) &&
+                            !id.startsWith("bot_", ignoreCase = true)
+                    }
+                    liveFollowerCount = realDocs.size
+                    followersList = realDocs.mapNotNull { doc ->
                         try {
                             doc.toObject(FollowerRecord::class.java)
                         } catch (_: Exception) {
@@ -2557,28 +2577,26 @@ fun RoomInfoOnlyDialog(
                                     // 3D Gold Shield Crest
                                     Surface(
                                         shape = RoundedCornerShape(14.dp),
-                                        color = Color.Transparent,
+                                        color = Color(0xFF1F192E),
                                         border = BorderStroke(1.5.dp, goldPrimary)
                                     ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .background(
-                                                    Brush.verticalGradient(
-                                                        listOf(Color(0xFFFFE57F), Color(0xFFD99B1C), Color(0xFF8C5A08))
-                                                    )
-                                                )
-                                                .padding(horizontal = 14.dp, vertical = 12.dp),
-                                            contentAlignment = Alignment.Center
+                                        Column(
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally
                                         ) {
-                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                Text(text = "🛡️", fontSize = 16.sp)
-                                                Text(
-                                                    text = "Lv.$liveRoomLevel",
-                                                    color = Color(0xFF1A1204),
-                                                    fontSize = 14.sp,
-                                                    fontWeight = FontWeight.Black
-                                                )
-                                            }
+                                            Image(
+                                                painter = painterResource(id = getRoomCrestBadgeDrawableRes(liveRoomLevel)),
+                                                contentDescription = "Room Level Crest",
+                                                modifier = Modifier.size(34.dp),
+                                                contentScale = ContentScale.Fit
+                                            )
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = "Lv.$liveRoomLevel",
+                                                color = goldPrimary,
+                                                fontSize = 12.5.sp,
+                                                fontWeight = FontWeight.Black
+                                            )
                                         }
                                     }
 
@@ -3293,7 +3311,7 @@ fun RoomInfoOnlyDialog(
 
                                             Spacer(modifier = Modifier.height(6.dp))
 
-                                            // Real-time Room Shield Crest Badge (strictly reflects real liveRoomLevel / liveEquippedBadge)
+                                            // Real-time 3D Room Shield Crest Badge (strictly reflects real liveRoomLevel / liveEquippedBadge)
                                             Surface(
                                                 shape = RoundedCornerShape(8.dp),
                                                 color = Color(0xFF282012),
@@ -3303,9 +3321,14 @@ fun RoomInfoOnlyDialog(
                                                 Row(
                                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                                                     verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
                                                 ) {
-                                                    Text(text = "🛡️", fontSize = 11.sp)
+                                                    Image(
+                                                        painter = painterResource(id = getRoomCrestBadgeDrawableRes(liveRoomLevel)),
+                                                        contentDescription = "Room Badge",
+                                                        modifier = Modifier.size(16.dp),
+                                                        contentScale = ContentScale.Fit
+                                                    )
                                                     Text(
                                                         text = if (liveEquippedBadge.isNotBlank()) liveEquippedBadge else "Lv.$liveRoomLevel",
                                                         color = goldPrimary,
@@ -3534,8 +3557,14 @@ fun RoomInfoOnlyDialog(
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
+                                            Image(
+                                                painter = painterResource(id = getRoomCrestBadgeDrawableRes(liveRoomLevel)),
+                                                contentDescription = "Room Badge",
+                                                modifier = Modifier.size(20.dp),
+                                                contentScale = ContentScale.Fit
+                                            )
                                             Text(
-                                                text = if (liveEquippedBadge.isNotBlank()) "🛡️ $liveEquippedBadge" else "🛡️ Lv.$liveRoomLevel",
+                                                text = if (liveEquippedBadge.isNotBlank()) liveEquippedBadge else "Lv.$liveRoomLevel",
                                                 color = goldPrimary,
                                                 fontSize = 12.sp,
                                                 fontWeight = FontWeight.Bold
