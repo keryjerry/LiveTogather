@@ -310,9 +310,11 @@
     let diceValue = 1;
     let awaitingMove = false;
     let isRolling = false;
+    let isAnimatingMove = false;
     let consecutiveSixes = 0;
     let turnTimerSec = 30;
     let soundEnabled = true;
+    let lastSyncedStateJson = '';
 
     // Smooth step-by-step hop / capture fall-back animation
     let animToken = null; // { colorIdx, tokenIdx, fromPos, toPos, startTime, duration }
@@ -320,21 +322,27 @@
 
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     let audioCtx = null;
-    function playTone(freq, dur, type = 'sine', gainVal = 0.14) {
+    function playNativeOrFallback(sfxName, fallbackFreq, fallbackDur, fallbackType = 'sine', fallbackGain = 0.14) {
       if (!soundEnabled) return;
+      if (window.LudoBridge && window.LudoBridge.playSound) {
+        try {
+          window.LudoBridge.playSound(sfxName);
+          return;
+        } catch(e) {}
+      }
       try {
         if (!audioCtx) audioCtx = new AudioCtx();
         if (audioCtx.state === 'suspended') audioCtx.resume();
         const osc = audioCtx.createOscillator();
         const g = audioCtx.createGain();
-        osc.type = type;
-        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-        g.gain.setValueAtTime(gainVal, audioCtx.currentTime);
-        g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+        osc.type = fallbackType;
+        osc.frequency.setValueAtTime(fallbackFreq, audioCtx.currentTime);
+        g.gain.setValueAtTime(fallbackGain, audioCtx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + fallbackDur);
         osc.connect(g);
         g.connect(audioCtx.destination);
         osc.start();
-        osc.stop(audioCtx.currentTime + dur);
+        osc.stop(audioCtx.currentTime + fallbackDur);
       } catch(e) {}
     }
 
@@ -792,7 +800,7 @@
         ? (awaitingMove ? `Rolled ${diceValue}! Tap glowing 3D Goti` : `Tap ROLL to throw 3D dice`)
         : `Waiting for ${activeP ? activeP.name : 'player'} to play...`;
 
-      if (isMyTurn && !awaitingMove && !isRolling) {
+      if (isMyTurn && !awaitingMove && !isRolling && !isAnimatingMove) {
         btn.classList.remove('disabled');
       } else {
         btn.classList.add('disabled');
@@ -801,11 +809,11 @@
     }
 
     function handleRollClick() {
-      if (activeColorIdx !== myColorIdx || awaitingMove || isRolling) return;
+      if (activeColorIdx !== myColorIdx || awaitingMove || isRolling || isAnimatingMove) return;
       isRolling = true;
+      updateControlsUI();
       document.getElementById('dice3D').classList.add('rolling');
-      playTone(420, 0.08, 'triangle', 0.12);
-      setTimeout(() => playTone(560, 0.08, 'triangle', 0.12), 110);
+      playNativeOrFallback('dice', 420, 0.14, 'triangle', 0.14);
 
       setTimeout(() => {
         document.getElementById('dice3D').classList.remove('rolling');
@@ -813,7 +821,6 @@
         const rolled = Math.floor(Math.random() * 6) + 1;
         diceValue = rolled;
         setDicePips(rolled);
-        playTone(rolled === 6 ? 780 : 520, 0.12, 'sine', 0.15);
 
         if (rolled === 6) consecutiveSixes++;
         else consecutiveSixes = 0;
@@ -839,21 +846,51 @@
           awaitingMove = true;
           updateControlsUI();
         }
-      }, 280);
+      }, 320);
     }
 
     function executeTokenMove(colorIdx, tokenIdx, steps) {
       awaitingMove = false;
+      isAnimatingMove = true;
+      updateControlsUI();
       const arr = tokens[colorIdx];
       const oldStep = arr[tokenIdx];
       const newStep = (oldStep === -1) ? 0 : (oldStep + steps);
-      const fromPos = getTokenGridPos(colorIdx, tokenIdx, oldStep);
-      const toPos = getTokenGridPos(colorIdx, tokenIdx, newStep);
 
-      animToken = { colorIdx, tokenIdx, fromPos, toPos, startTime: performance.now(), duration: 280 };
-      arr[tokenIdx] = newStep;
-      playTone(640, 0.1, 'sine', 0.14);
+      // Build step-by-step hop sequence ("tak-tak-tak")
+      const stepSeq = [];
+      if (oldStep === -1) {
+        stepSeq.push(0);
+      } else {
+        for (let s = oldStep + 1; s <= newStep; s++) {
+          stepSeq.push(s);
+        }
+      }
 
+      let hopIdx = 0;
+      const HOP_MS = 70;
+      function runNextHop() {
+        const prevStep = (hopIdx === 0) ? oldStep : stepSeq[hopIdx - 1];
+        const currStep = stepSeq[hopIdx];
+        const fromPos = getTokenGridPos(colorIdx, tokenIdx, prevStep);
+        const toPos = getTokenGridPos(colorIdx, tokenIdx, currStep);
+
+        animToken = { colorIdx, tokenIdx, fromPos, toPos, startTime: performance.now(), duration: HOP_MS };
+        arr[tokenIdx] = currStep;
+        playNativeOrFallback('tak', 720, 0.055, 'triangle', 0.14);
+
+        hopIdx++;
+        if (hopIdx < stepSeq.length) {
+          setTimeout(runNextHop, HOP_MS);
+        } else {
+          finalizeTokenMove(colorIdx, tokenIdx, steps, newStep, arr);
+        }
+      }
+      runNextHop();
+    }
+
+    function finalizeTokenMove(colorIdx, tokenIdx, steps, newStep, arr) {
+      isAnimatingMove = false;
       let capturedOpponent = false;
       const landedGlobal = getGlobalTrackIndex(colorIdx, newStep);
       if (landedGlobal >= 0 && !SAFE_INDICES.has(landedGlobal)) {
@@ -866,16 +903,16 @@
               const cutFrom = getTokenGridPos(p.colorIdx, j, oppArr[j]);
               const cutTo = YARD_SLOTS[p.colorIdx][j];
               oppArr[j] = -1;
-              animToken = { colorIdx: p.colorIdx, tokenIdx: j, fromPos: cutFrom, toPos: cutTo, startTime: performance.now(), duration: 420 };
+              animToken = { colorIdx: p.colorIdx, tokenIdx: j, fromPos: cutFrom, toPos: cutTo, startTime: performance.now(), duration: 360 };
               capturedOpponent = true;
-              playTone(220, 0.25, 'sawtooth', 0.18);
+              playNativeOrFallback('capture', 220, 0.22, 'sawtooth', 0.18);
             }
           }
         });
       }
 
       const reachedHome = (newStep === 56);
-      if (reachedHome) playTone(880, 0.28, 'triangle', 0.18);
+      if (reachedHome) playNativeOrFallback('home', 880, 0.28, 'triangle', 0.18);
 
       // Check victory (all 4 tokens at step 56) -> show Congratulations overlay!
       const allHome = arr.every(s => s === 56);
@@ -947,8 +984,15 @@
       } catch(e) {}
       if (stateJson && stateJson.length > 2) {
         try {
+          const isNewRemoteState = (stateJson !== lastSyncedStateJson) && (activeIdx !== myIdx);
+          lastSyncedStateJson = stateJson;
           const parsed = JSON.parse(stateJson);
           if (parsed.tokens) tokens = parsed.tokens;
+          if (isNewRemoteState && parsed.event) {
+            if (parsed.event === 'CAPTURE') playNativeOrFallback('capture', 220, 0.22, 'sawtooth', 0.16);
+            else if (parsed.event === 'HOME') playNativeOrFallback('home', 880, 0.28, 'triangle', 0.16);
+            else if (parsed.event === 'MOVE') playNativeOrFallback('tak', 720, 0.055, 'triangle', 0.14);
+          }
           if (parsed.event && parsed.event.startsWith('WIN:')) {
             const winIdx = parseInt(parsed.event.split(':')[1] || '0', 10);
             const winP = players.find(p => p.colorIdx === winIdx);
@@ -960,6 +1004,7 @@
         lastKnownTurnIdx = activeIdx;
         awaitingMove = false;
         isRolling = false;
+        isAnimatingMove = false;
         consecutiveSixes = 0;
       }
       activeColorIdx = activeIdx;

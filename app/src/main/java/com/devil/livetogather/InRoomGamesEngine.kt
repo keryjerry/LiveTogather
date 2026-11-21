@@ -3,7 +3,9 @@ package com.devil.livetogather
 import com.google.firebase.firestore.FieldValue
 import org.json.JSONObject
 import android.content.Context
+import android.media.AudioAttributes
 import android.media.AudioManager
+import android.media.SoundPool
 import android.media.ToneGenerator
 import android.widget.Toast
 import androidx.compose.animation.*
@@ -61,6 +63,46 @@ import kotlin.math.*
 import kotlin.random.Random
 
 // -------------------------------------------------------------
+// NATIVE LOW-LATENCY GAME SOUND ENGINE (LUDO & CARROM)
+// -------------------------------------------------------------
+object GameSoundEngine {
+    private var soundPool: SoundPool? = null
+    private val soundIds = mutableMapOf<String, Int>()
+    private var initialized = false
+
+    fun init(context: Context) {
+        if (initialized) return
+        initialized = true
+        val attrs = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_GAME)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+        val pool = SoundPool.Builder()
+            .setMaxStreams(8)
+            .setAudioAttributes(attrs)
+            .build()
+        val appCtx = context.applicationContext
+        soundIds["ludo_dice"] = pool.load(appCtx, R.raw.sfx_ludo_dice, 1)
+        soundIds["ludo_tak"] = pool.load(appCtx, R.raw.sfx_ludo_tak, 1)
+        soundIds["ludo_capture"] = pool.load(appCtx, R.raw.sfx_ludo_capture, 1)
+        soundIds["ludo_home"] = pool.load(appCtx, R.raw.sfx_ludo_home, 1)
+        soundIds["carrom_hit"] = pool.load(appCtx, R.raw.sfx_carrom_hit, 1)
+        soundIds["carrom_cushion"] = pool.load(appCtx, R.raw.sfx_carrom_cushion, 1)
+        soundIds["carrom_slide"] = pool.load(appCtx, R.raw.sfx_carrom_slide, 1)
+        soundIds["carrom_pocket"] = pool.load(appCtx, R.raw.sfx_carrom_pocket, 1)
+        soundIds["carrom_foul"] = pool.load(appCtx, R.raw.sfx_carrom_foul, 1)
+        soundPool = pool
+    }
+
+    fun play(key: String, volume: Float = 1.0f, isMuted: Boolean = false) {
+        if (isMuted) return
+        val id = soundIds[key] ?: return
+        val vol = volume.coerceIn(0.05f, 1.0f)
+        soundPool?.play(id, vol, vol, 1, 0, 1.0f)
+    }
+}
+
+// -------------------------------------------------------------
 // IN-ROOM GAMES ENGINE (HD REALISTIC CLUB EDITIONS: LUDO, CARROM, TRUTH & DARE, VIGO LUCKY 7)
 // -------------------------------------------------------------
 
@@ -78,30 +120,49 @@ fun InRoomGameArenaOverlay(
 ) {
     var showEndGameConfirm by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    LaunchedEffect(Unit) { GameSoundEngine.init(context) }
+
     val canEndGame = isHost || isAdmin || currentUser.isAdmin || currentUser.isOfficialAdmin(currentUser.uid)
     val isCarrom = gameState.gameType == "carrom"
 
     var isSoundOn by remember { mutableStateOf(true) }
-    var showOptionsMenu by remember { mutableStateOf(false) }
+    var liveLudoTurnSec by remember { mutableIntStateOf(30) }
     var carromTurn by remember { mutableStateOf("p1") }
     var carromP1Score by remember { mutableIntStateOf(0) }
     var carromP2Score by remember { mutableIntStateOf(0) }
     var carromWebView by remember { mutableStateOf<WebView?>(null) }
+    var ludoWebView by remember { mutableStateOf<WebView?>(null) }
 
-    // Real-time connected room participants: No offline/fake profiles!
-    val p1Profile = remember(allProfiles, currentUser, gameState) {
-        allProfiles.find { it.uid == gameState.startedBy } ?: currentUser
-    }
-    val p2Profile = remember(allProfiles, p1Profile, gameState.participants) {
-        val opponentUid = gameState.participants.firstOrNull { it != p1Profile.uid }
-        if (opponentUid != null) {
-            allProfiles.find { it.uid == opponentUid } ?: UserProfile(name = "Player 2", uid = opponentUid)
-        } else {
-            null
+    // 100% Real-Time Firestore Profile Resolution (Zero dummy/fake profiles!)
+    val fetchedProfiles = remember { mutableStateMapOf<String, UserProfile>() }
+    LaunchedEffect(gameState.participants, gameState.startedBy, allProfiles) {
+        val neededUids = (gameState.participants + gameState.startedBy)
+            .filter { it.isNotBlank() }
+            .distinct()
+        neededUids.forEach { uid ->
+            if (uid == currentUser.uid) {
+                fetchedProfiles[uid] = currentUser
+            } else {
+                val fromRoom = allProfiles.find { it.uid == uid }
+                if (fromRoom != null && fromRoom.name.isNotBlank()) {
+                    fetchedProfiles[uid] = fromRoom
+                } else if (!fetchedProfiles.containsKey(uid)) {
+                    db.collection("users").document(uid).get()
+                        .addOnSuccessListener { snap ->
+                            snap.toObject(UserProfile::class.java)?.let { prof ->
+                                fetchedProfiles[uid] = prof.copy(uid = uid)
+                            }
+                        }
+                }
+            }
         }
     }
-    val hasTwoPlayers = p2Profile != null
-    val isUserInGame = gameState.participants.contains(currentUser.uid) || gameState.startedBy == currentUser.uid
+
+    fun resolveRealProfile(uid: String?): UserProfile? {
+        if (uid.isNullOrBlank()) return null
+        if (uid == currentUser.uid) return currentUser
+        return allProfiles.find { it.uid == uid } ?: fetchedProfiles[uid]
+    }
 
     if (isCarrom) {
         // -------------------------------------------------------------
@@ -117,44 +178,36 @@ fun InRoomGameArenaOverlay(
         val isHostOrStarter = canEndGame || gameState.startedBy == currentUser.uid
 
         // STRICT REAL-TIME ROSTER (ZERO DUMMY PROFILES): Slot 0..3
-        val p1Uid = gameState.startedBy.ifBlank { participants.firstOrNull() ?: "" }
-        val p1Profile = remember(allProfiles, p1Uid, currentUser) {
-            allProfiles.find { it.uid == p1Uid } ?: currentUser
+        val seatProfiles = (0 until maxPlayers).map { idx ->
+            val uid = participants.getOrNull(idx)
+            uid to resolveRealProfile(uid)
         }
+        val mySeatIdx = participants.indexOf(currentUser.uid)
+        val bottomSeatIdx = if (mySeatIdx >= 0) mySeatIdx else 0
+        val activeSeatIdx = if (participants.isNotEmpty()) (gameState.currentTurnIndex % participants.size) else 0
 
-        val p2Uid = participants.getOrNull(1)
-        val p2Profile = remember(allProfiles, p2Uid) {
-            if (!p2Uid.isNullOrBlank()) allProfiles.find { it.uid == p2Uid } ?: UserProfile(name = "Player 2", uid = p2Uid) else null
-        }
-
-        val p3Uid = if (maxPlayers == 4) participants.getOrNull(2) else null
-        val p3Profile = remember(allProfiles, p3Uid) {
-            if (!p3Uid.isNullOrBlank()) allProfiles.find { it.uid == p3Uid } ?: UserProfile(name = "Player 3", uid = p3Uid) else null
-        }
-
-        val p4Uid = if (maxPlayers == 4) participants.getOrNull(3) else null
-        val p4Profile = remember(allProfiles, p4Uid) {
-            if (!p4Uid.isNullOrBlank()) allProfiles.find { it.uid == p4Uid } ?: UserProfile(name = "Player 4", uid = p4Uid) else null
-        }
-
-        // Active Shooter Calculation & 40-Second Real-Time Turn Countdown Timer
-        val currentTurnUserUid = gameState.currentTurnUserId.ifBlank { participants.firstOrNull() ?: "" }
+        // Active Shooter Calculation & 30-Second Real-Time Turn Countdown Timer
+        val currentTurnUserUid = gameState.currentTurnUserId.ifBlank { participants.getOrNull(activeSeatIdx) ?: "" }
         val isMyTurn = !isGameWaiting && (currentTurnUserUid == currentUser.uid)
-        val currentShooterProfile = allProfiles.find { it.uid == currentTurnUserUid } ?: if (currentTurnUserUid == currentUser.uid) currentUser else null
-        val currentShooterName = currentShooterProfile?.name ?: if (isMyTurn) "You" else "Player"
+        val currentShooterProfile = resolveRealProfile(currentTurnUserUid)
+        val currentShooterName = currentShooterProfile?.name?.takeIf { it.isNotBlank() }
+            ?: if (isMyTurn) "You" else "..."
 
         var turnSecondsLeft by remember(gameState.currentTurnUserId, gameState.currentTurnIndex, gameState.lastShotTimestamp, isGameWaiting) {
-            mutableIntStateOf(40)
+            mutableIntStateOf(30)
         }
         LaunchedEffect(gameState.currentTurnUserId, gameState.currentTurnIndex, gameState.lastShotTimestamp, isGameWaiting, participants.size) {
             if (!isGameWaiting && participants.size >= 2) {
-                turnSecondsLeft = 40
+                turnSecondsLeft = 30
                 while (turnSecondsLeft > 0) {
                     kotlinx.coroutines.delay(1000L)
-                    turnSecondsLeft -= 1
+                    // Hold timer while shot physics are actively in flight
+                    if (gameState.lastShotJson.isBlank()) {
+                        turnSecondsLeft -= 1
+                    }
                 }
-                // 40-second turn expired -> Auto-switch turn in Firestore to next player
-                if (isMyTurn || isHostOrStarter) {
+                // 30-second turn expired -> Auto-switch turn in Firestore to next player (active player first; host fallback after 1.5s)
+                if (isMyTurn) {
                     val nextIdx = (gameState.currentTurnIndex + 1) % participants.size
                     val nextUid = participants.getOrNull(nextIdx) ?: participants.first()
                     db.collection("rooms").document(roomId)
@@ -163,14 +216,31 @@ fun InRoomGameArenaOverlay(
                             mapOf(
                                 "currentTurnIndex" to nextIdx,
                                 "currentTurnUserId" to nextUid,
-                                "timerRemaining" to 40,
+                                "timerRemaining" to 30,
+                                "lastShotJson" to "",
+                                "lastShotTimestamp" to System.currentTimeMillis()
+                            )
+                        )
+                    carromWebView?.evaluateJavascript("if (window.forceSwitchTurn) window.forceSwitchTurn();", null)
+                } else if (isHostOrStarter) {
+                    kotlinx.coroutines.delay(1500L)
+                    val nextIdx = (gameState.currentTurnIndex + 1) % participants.size
+                    val nextUid = participants.getOrNull(nextIdx) ?: participants.first()
+                    db.collection("rooms").document(roomId)
+                        .collection("games").document("active")
+                        .update(
+                            mapOf(
+                                "currentTurnIndex" to nextIdx,
+                                "currentTurnUserId" to nextUid,
+                                "timerRemaining" to 30,
+                                "lastShotJson" to "",
                                 "lastShotTimestamp" to System.currentTimeMillis()
                             )
                         )
                     carromWebView?.evaluateJavascript("if (window.forceSwitchTurn) window.forceSwitchTurn();", null)
                 }
             } else {
-                turnSecondsLeft = 40
+                turnSecondsLeft = 30
             }
         }
 
@@ -226,20 +296,31 @@ fun InRoomGameArenaOverlay(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // Sound Button
-                        IconButton(
+                        // Mute / Unmute Button just above the Carrom board
+                        Surface(
                             onClick = {
                                 isSoundOn = !isSoundOn
                                 carromWebView?.evaluateJavascript("window.setCarromSound($isSoundOn);", null)
-                                Toast.makeText(context, if (isSoundOn) "🔊 Sound ON" else "🔇 Sound OFF", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, if (isSoundOn) "🔊 Sound ON" else "🔇 Sound Muted", Toast.LENGTH_SHORT).show()
                             },
-                            modifier = Modifier
-                                .size(28.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFF1E2238))
-                                .border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape)
+                            color = if (isSoundOn) Color(0xFF1E2238) else Color(0xFF7F1D1D),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, if (isSoundOn) Color.White.copy(alpha = 0.25f) else Color(0xFFEF4444)),
+                            modifier = Modifier.height(26.dp)
                         ) {
-                            Text(if (isSoundOn) "🔊" else "🔇", fontSize = 12.sp)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 8.dp)
+                            ) {
+                                Text(if (isSoundOn) "🔊" else "🔇", fontSize = 11.sp)
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = if (isSoundOn) "Sound" else "Muted",
+                                    color = Color.White,
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
 
                         // End Game Button (Host/Admin only)
@@ -257,177 +338,65 @@ fun InRoomGameArenaOverlay(
                     }
                 }
 
-                // ROW 2: REAL-TIME PLAYER SLOTS STRIP
-                if (maxPlayers == 4) {
-                    // 4-PLAYER SLOTS (2 vs 2)
+                // ROW 2: TOP OPPONENT(S) STRIP (Local player's own profile is always oriented at the BOTTOM!)
+                val topSeatIndices = (0 until maxPlayers).filter { it != bottomSeatIdx }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 6.dp, vertical = 3.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Team White: Slot 1 (⚪ P1) & Slot 3 (⚪ P3)
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                            CarromSlotBadge(
-                                profile = p1Profile,
-                                slotName = "P1",
-                                coinSymbol = "⚪",
-                                isTurn = !isGameWaiting && (currentTurnUserUid == p1Profile.uid),
-                                score = carromP1Score
-                            )
-                            if (p3Profile != null) {
+                        topSeatIndices.forEach { sIdx ->
+                            val (sUid, sProf) = seatProfiles[sIdx]
+                            val isWhiteTeam = (sIdx % 2 == 0)
+                            val coinSym = if (isWhiteTeam) "⚪" else "⚫"
+                            val teamScore = if (isWhiteTeam) carromP1Score else carromP2Score
+                            if (sUid != null && sProf != null) {
                                 CarromSlotBadge(
-                                    profile = p3Profile,
-                                    slotName = "P3",
-                                    coinSymbol = "⚪",
-                                    isTurn = !isGameWaiting && (currentTurnUserUid == p3Profile.uid),
-                                    score = carromP1Score
+                                    profile = sProf,
+                                    slotName = "P${sIdx + 1}",
+                                    coinSymbol = coinSym,
+                                    isTurn = !isGameWaiting && (currentTurnUserUid == sUid),
+                                    score = teamScore,
+                                    turnSecondsLeft = turnSecondsLeft
                                 )
-                            } else {
+                            } else if (sUid == null && isGameWaiting) {
                                 CarromJoinSlotButton(
-                                    slotName = "+ P3",
-                                    coinSymbol = "⚪",
+                                    slotName = "+ P${sIdx + 1}",
+                                    coinSymbol = coinSym,
                                     canJoin = canJoinMatch,
                                     onClick = {
                                         db.collection("rooms").document(roomId)
                                             .collection("games").document("active")
                                             .update("participants", FieldValue.arrayUnion(currentUser.uid))
-                                        Toast.makeText(context, "🎯 Joined Team White (Slot 3)!", Toast.LENGTH_SHORT).show()
-                                    }
-                                )
-                            }
-                        }
-
-                        // Center Score / Turn Indicator
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xFF2E1065).copy(alpha = 0.9f))
-                                .border(1.dp, Color(0xFFFFD700).copy(alpha = 0.6f), RoundedCornerShape(10.dp))
-                                .padding(horizontal = 6.dp, vertical = 3.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = if (isGameWaiting) "VS" else "$carromP1Score : $carromP2Score",
-                                color = Color(0xFFFFD700),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.ExtraBold
-                            )
-                        }
-
-                        // Team Black: Slot 2 (⚫ P2) & Slot 4 (⚫ P4)
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                            if (p2Profile != null) {
-                                CarromSlotBadge(
-                                    profile = p2Profile,
-                                    slotName = "P2",
-                                    coinSymbol = "⚫",
-                                    isTurn = !isGameWaiting && (currentTurnUserUid == p2Profile.uid),
-                                    score = carromP2Score
-                                )
-                            } else {
-                                CarromJoinSlotButton(
-                                    slotName = "+ P2",
-                                    coinSymbol = "⚫",
-                                    canJoin = canJoinMatch,
-                                    onClick = {
-                                        db.collection("rooms").document(roomId)
-                                            .collection("games").document("active")
-                                            .update("participants", FieldValue.arrayUnion(currentUser.uid))
-                                        Toast.makeText(context, "🎯 Joined Team Black (Slot 2)!", Toast.LENGTH_SHORT).show()
-                                    }
-                                )
-                            }
-                            if (p4Profile != null) {
-                                CarromSlotBadge(
-                                    profile = p4Profile,
-                                    slotName = "P4",
-                                    coinSymbol = "⚫",
-                                    isTurn = !isGameWaiting && (currentTurnUserUid == p4Profile.uid),
-                                    score = carromP2Score
-                                )
-                            } else {
-                                CarromJoinSlotButton(
-                                    slotName = "+ P4",
-                                    coinSymbol = "⚫",
-                                    canJoin = canJoinMatch,
-                                    onClick = {
-                                        db.collection("rooms").document(roomId)
-                                            .collection("games").document("active")
-                                            .update("participants", FieldValue.arrayUnion(currentUser.uid))
-                                        Toast.makeText(context, "🎯 Joined Team Black (Slot 4)!", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "🎯 Joined Carrom Seat P${sIdx + 1}!", Toast.LENGTH_SHORT).show()
                                     }
                                 )
                             }
                         }
                     }
-                } else {
-                    // 2-PLAYER SLOTS (1 vs 1)
-                    Row(
+
+                    // Center Turn Status / Score Indicator
+                    Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 3.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFF2E1065).copy(alpha = 0.9f))
+                            .border(1.dp, Color(0xFFFFD700).copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
                     ) {
-                        // Player 1 (⚪ White)
-                        CarromSlotBadge(
-                            profile = p1Profile,
-                            slotName = "P1",
-                            coinSymbol = "⚪",
-                            isTurn = !isGameWaiting && (currentTurnUserUid == p1Profile.uid),
-                            score = carromP1Score,
-                            turnSecondsLeft = turnSecondsLeft
+                        Text(
+                            text = if (isGameWaiting) "⏳ Waiting (${participants.size}/$maxPlayers)"
+                            else if (isMyTurn) "👉 Your Turn (${turnSecondsLeft}s) • $carromP1Score:$carromP2Score"
+                            else "⏳ ${currentShooterName.take(8)} (${turnSecondsLeft}s) • $carromP1Score:$carromP2Score",
+                            color = Color(0xFFFFD700),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.ExtraBold
                         )
-
-                        // Center Turn Status Badge
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF2E1065).copy(alpha = 0.9f))
-                                .border(1.dp, Color(0xFFFFD700).copy(alpha = 0.6f), RoundedCornerShape(12.dp))
-                                .padding(horizontal = 10.dp, vertical = 4.dp)
-                        ) {
-                            Text(
-                                text = if (isGameWaiting) "⏳ Waiting (${participants.size}/$maxPlayers)"
-                                       else if (isMyTurn) "👉 Your Turn (${turnSecondsLeft}s)"
-                                       else "⏳ ${currentShooterName.take(8)} (${turnSecondsLeft}s)",
-                                color = Color(0xFFFFD700),
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.ExtraBold
-                            )
-                        }
-
-                        // Player 2 (⚫ Black) OR + Join Button
-                        if (p2Profile != null) {
-                            CarromSlotBadge(
-                                profile = p2Profile,
-                                slotName = "P2",
-                                coinSymbol = "⚫",
-                                isTurn = !isGameWaiting && (currentTurnUserUid == p2Profile.uid),
-                                score = carromP2Score,
-                                turnSecondsLeft = turnSecondsLeft
-                            )
-                        } else {
-                            Button(
-                                onClick = {
-                                    if (canJoinMatch) {
-                                        db.collection("rooms").document(roomId)
-                                            .collection("games").document("active")
-                                            .update("participants", FieldValue.arrayUnion(currentUser.uid))
-                                        Toast.makeText(context, "🎯 Joined Carrom match as Player 2!", Toast.LENGTH_SHORT).show()
-                                    }
-                                },
-                                enabled = canJoinMatch,
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 3.dp),
-                                shape = RoundedCornerShape(16.dp),
-                                modifier = Modifier.height(28.dp)
-                            ) {
-                                Text("+ Join Match", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
                     }
                 }
 
@@ -447,6 +416,7 @@ fun InRoomGameArenaOverlay(
                             db = db,
                             allProfiles = allProfiles,
                             liveComments = liveComments,
+                            isSoundOn = isSoundOn,
                             onWebViewReady = { webView -> carromWebView = webView },
                             onGameStateChange = { turn, p1, p2 ->
                                 carromTurn = turn
@@ -566,12 +536,12 @@ fun InRoomGameArenaOverlay(
                                                             "gameStage" to "PLAYING",
                                                             "currentTurnIndex" to 0,
                                                             "currentTurnUserId" to participants.first(),
-                                                            "timerRemaining" to 40,
+                                                            "timerRemaining" to 30,
                                                             "lastShotTimestamp" to System.currentTimeMillis(),
                                                             "playerScores" to mapOf("p1" to 0, "p2" to 0, "betDiamonds" to betDiamonds.toInt())
                                                         )
                                                     )
-                                                Toast.makeText(context, "🚀 Starting Carrom Match! (40s turn timer)", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, "🚀 Starting Carrom Match! (30s turn timer)", Toast.LENGTH_SHORT).show()
                                             },
                                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE11D48)),
                                             shape = RoundedCornerShape(20.dp),
@@ -597,6 +567,49 @@ fun InRoomGameArenaOverlay(
                                     )
                                 }
                             }
+                        }
+                    }
+                }
+
+                // ROW 3: BOTTOM LOCAL-PLAYER STRIP (Always orients local player's own profile at the bottom of their screen!)
+                val (bottomUid, bottomProf) = seatProfiles.getOrNull(bottomSeatIdx) ?: (null to null)
+                val isBottomWhite = (bottomSeatIdx % 2 == 0)
+                val bottomCoinSym = if (isBottomWhite) "⚪" else "⚫"
+                val bottomScore = if (isBottomWhite) carromP1Score else carromP2Score
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (bottomUid != null && bottomProf != null) {
+                        CarromSlotBadge(
+                            profile = bottomProf,
+                            slotName = if (bottomUid == currentUser.uid) "YOU" else "P${bottomSeatIdx + 1}",
+                            coinSymbol = bottomCoinSym,
+                            isTurn = !isGameWaiting && (currentTurnUserUid == bottomUid),
+                            score = bottomScore,
+                            turnSecondsLeft = turnSecondsLeft
+                        )
+                    } else if (canJoinMatch) {
+                        Button(
+                            onClick = {
+                                if (betDiamonds > 0L && currentUser.diamonds < betDiamonds) {
+                                    Toast.makeText(context, "💎 Need at least $betDiamonds diamonds to join!", Toast.LENGTH_LONG).show()
+                                    return@Button
+                                }
+                                db.collection("rooms").document(roomId)
+                                    .collection("games").document("active")
+                                    .update("participants", FieldValue.arrayUnion(currentUser.uid))
+                                Toast.makeText(context, "🎯 Joined Carrom match!", Toast.LENGTH_SHORT).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 3.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.height(28.dp)
+                        ) {
+                            Text("+ Join Match", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -716,27 +729,57 @@ fun InRoomGameArenaOverlay(
                     }
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    // Turn Timer Pill
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // Mute / Unmute Button just above Ludo / game board
+                    if (gameState.gameType == "ludo") {
+                        Surface(
+                            onClick = {
+                                isSoundOn = !isSoundOn
+                                ludoWebView?.evaluateJavascript("if (window.setLudoSound) window.setLudoSound($isSoundOn);", null)
+                                Toast.makeText(context, if (isSoundOn) "🔊 Sound ON" else "🔇 Sound Muted", Toast.LENGTH_SHORT).show()
+                            },
+                            color = if (isSoundOn) Color(0xFF1E2238) else Color(0xFF7F1D1D),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, if (isSoundOn) Color.White.copy(alpha = 0.25f) else Color(0xFFEF4444)),
+                            modifier = Modifier.height(26.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 7.dp)
+                            ) {
+                                Text(if (isSoundOn) "🔊" else "🔇", fontSize = 11.sp)
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = if (isSoundOn) "Sound" else "Muted",
+                                    color = Color.White,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+
+                    // Turn Timer Pill (live countdown for Ludo!)
+                    val shownTimerSec = if (gameState.gameType == "ludo") liveLudoTurnSec else gameState.timerRemaining
                     Row(
                         modifier = Modifier
                             .clip(RoundedCornerShape(50))
                             .background(
-                                if (gameState.timerRemaining <= 5) Color(0xFFEF4444).copy(alpha = 0.35f)
+                                if (shownTimerSec <= 5) Color(0xFFEF4444).copy(alpha = 0.35f)
                                 else Color(0xFF10B981).copy(alpha = 0.25f)
                             )
                             .border(
                                 1.dp,
-                                if (gameState.timerRemaining <= 5) Color(0xFFEF4444) else Color(0xFF10B981),
+                                if (shownTimerSec <= 5) Color(0xFFEF4444) else Color(0xFF10B981),
                                 RoundedCornerShape(50)
                             )
                             .padding(horizontal = 8.dp, vertical = 3.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(if (gameState.timerRemaining <= 5) "⚡" else "⏱️", fontSize = 10.sp)
+                        Text(if (shownTimerSec <= 5) "⚡" else "⏱️", fontSize = 10.sp)
                         Spacer(modifier = Modifier.width(3.dp))
                         Text(
-                            "${gameState.timerRemaining}s",
+                            "${shownTimerSec}s",
                             color = Color.White,
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 10.5.sp
@@ -771,11 +814,31 @@ fun InRoomGameArenaOverlay(
                 contentAlignment = Alignment.Center
             ) {
                 when (gameState.gameType) {
-                    "ludo" -> LudoGameArena(roomId, gameState, currentUser, db, allProfiles)
-                    "carrom" -> CarromGameArena(roomId, gameState, currentUser, db, allProfiles, liveComments)
+                    "ludo" -> LudoGameArena(
+                        roomId = roomId,
+                        gameState = gameState,
+                        currentUser = currentUser,
+                        db = db,
+                        allProfiles = allProfiles,
+                        resolvedProfiles = fetchedProfiles,
+                        isSoundOn = isSoundOn,
+                        onWebViewReady = { ludoWebView = it },
+                        onTimerTick = { liveLudoTurnSec = it }
+                    )
+                    "carrom" -> CarromGameArena(roomId, gameState, currentUser, db, allProfiles, liveComments, isSoundOn)
                     "truth_dare" -> TruthDareGameArena(roomId, gameState, currentUser, db, allProfiles)
                     "lucky_seven" -> LuckySevenGameArena(roomId, gameState, currentUser, db, allProfiles)
-                    else -> LudoGameArena(roomId, gameState, currentUser, db, allProfiles)
+                    else -> LudoGameArena(
+                        roomId = roomId,
+                        gameState = gameState,
+                        currentUser = currentUser,
+                        db = db,
+                        allProfiles = allProfiles,
+                        resolvedProfiles = fetchedProfiles,
+                        isSoundOn = isSoundOn,
+                        onWebViewReady = { ludoWebView = it },
+                        onTimerTick = { liveLudoTurnSec = it }
+                    )
                 }
             }
         }
@@ -849,9 +912,14 @@ fun LudoGameArena(
     gameState: InRoomGameState,
     currentUser: UserProfile,
     db: FirebaseFirestore,
-    allProfiles: List<UserProfile>
+    allProfiles: List<UserProfile>,
+    resolvedProfiles: Map<String, UserProfile> = emptyMap(),
+    isSoundOn: Boolean = true,
+    onWebViewReady: (WebView) -> Unit = {},
+    onTimerTick: (Int) -> Unit = {}
 ) {
     val context = LocalContext.current
+    val currentSoundOn by rememberUpdatedState(isSoundOn)
     val participants = gameState.participants
     val isLudoWaiting = gameState.gameStage != "PLAYING"
     val betDiamonds = (gameState.playerScores["betDiamonds"] ?: 0).toLong()
@@ -866,14 +934,15 @@ fun LudoGameArena(
         Triple("Yellow", Color(0xFFEAB308), "🟡"),
         Triple("Blue", Color(0xFF2563EB), "🔵")
     )
-    val joinedPlayersJson = remember(participants, allProfiles, currentUser) {
+    val joinedPlayersJson = remember(participants, allProfiles, resolvedProfiles.size, currentUser) {
         val arr = org.json.JSONArray()
         participants.take(4).forEachIndexed { idx, uid ->
-            val prof = allProfiles.find { it.uid == uid } ?: if (uid == currentUser.uid) currentUser else UserProfile(uid = uid, name = "Player ${idx + 1}")
+            val prof = if (uid == currentUser.uid) currentUser
+            else (allProfiles.find { it.uid == uid } ?: resolvedProfiles[uid])
             arr.put(org.json.JSONObject().apply {
                 put("uid", uid)
-                put("name", prof.name.ifBlank { "Player ${idx + 1}" })
-                put("photo", prof.photo)
+                put("name", prof?.name?.takeIf { it.isNotBlank() } ?: "...")
+                put("photo", prof?.photo ?: "")
                 put("colorIdx", idx)
             })
         }
@@ -885,20 +954,40 @@ fun LudoGameArena(
     val activeColorIdx = if (participants.isNotEmpty()) (gameState.currentTurnIndex % participants.size) else 0
     val activeTurnUid = participants.getOrNull(activeColorIdx) ?: gameState.startedBy
 
-    // 30-second real-time turn countdown timer with automatic Firestore turn advance
+    // 30-second real-time turn countdown timer with instant reset on move & race-free auto-advance
     var ludoTurnSec by remember(gameState.currentTurnIndex, gameState.lastShotTimestamp, isLudoWaiting) {
         mutableIntStateOf(30)
     }
     var ludoWebView by remember { mutableStateOf<WebView?>(null) }
 
+    LaunchedEffect(ludoTurnSec) {
+        onTimerTick(ludoTurnSec)
+    }
+
     LaunchedEffect(gameState.currentTurnIndex, gameState.lastShotTimestamp, isLudoWaiting, participants.size) {
         if (!isLudoWaiting && participants.size >= 2) {
             ludoTurnSec = 30
+            onTimerTick(30)
             while (ludoTurnSec > 0) {
                 kotlinx.coroutines.delay(1000L)
                 ludoTurnSec -= 1
+                onTimerTick(ludoTurnSec)
             }
-            if (activeTurnUid == currentUser.uid || isHostOrStarter) {
+            if (activeTurnUid == currentUser.uid) {
+                val nextIdx = (activeColorIdx + 1) % participants.size
+                val nextUid = participants.getOrNull(nextIdx) ?: participants.first()
+                db.collection("rooms").document(roomId)
+                    .collection("games").document("active")
+                    .update(
+                        mapOf(
+                            "currentTurnIndex" to nextIdx,
+                            "currentTurnUserId" to nextUid,
+                            "timerRemaining" to 30,
+                            "lastShotTimestamp" to System.currentTimeMillis()
+                        )
+                    )
+            } else if (isHostOrStarter) {
+                kotlinx.coroutines.delay(1500L)
                 val nextIdx = (activeColorIdx + 1) % participants.size
                 val nextUid = participants.getOrNull(nextIdx) ?: participants.first()
                 db.collection("rooms").document(roomId)
@@ -914,6 +1003,7 @@ fun LudoGameArena(
             }
         } else {
             ludoTurnSec = 30
+            onTimerTick(30)
         }
     }
 
@@ -954,27 +1044,41 @@ fun LudoGameArena(
             ) {
                 for (i in 0 until 4) {
                     val uid = participants.getOrNull(i)
-                    val prof = if (uid != null) (allProfiles.find { it.uid == uid } ?: if (uid == currentUser.uid) currentUser else UserProfile(uid = uid, name = "Player ${i + 1}")) else null
+                    val prof = if (uid != null) {
+                        if (uid == currentUser.uid) currentUser
+                        else (allProfiles.find { it.uid == uid } ?: resolvedProfiles[uid])
+                    } else null
                     val (cName, cColor, cEmoji) = ludoColorMeta[i]
                     Surface(
-                        color = if (prof != null) cColor.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.06f),
+                        color = if (uid != null) cColor.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.06f),
                         shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.2.dp, if (prof != null) cColor else Color.White.copy(alpha = 0.18f)),
+                        border = BorderStroke(1.2.dp, if (uid != null) cColor else Color.White.copy(alpha = 0.18f)),
                         modifier = Modifier.weight(1f)
                     ) {
                         Column(
                             modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            if (prof != null) {
-                                AsyncImage(
-                                    model = prof.photo.ifBlank { "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde" },
-                                    contentDescription = prof.name,
-                                    modifier = Modifier.size(34.dp).clip(CircleShape).border(1.5.dp, cColor, CircleShape),
-                                    contentScale = ContentScale.Crop
-                                )
+                            if (uid != null) {
+                                val displayName = prof?.name?.takeIf { it.isNotBlank() } ?: "..."
+                                val photoUrl = prof?.photo ?: ""
+                                if (photoUrl.isNotBlank()) {
+                                    AsyncImage(
+                                        model = photoUrl,
+                                        contentDescription = displayName,
+                                        modifier = Modifier.size(34.dp).clip(CircleShape).border(1.5.dp, cColor, CircleShape),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
+                                    Box(
+                                        modifier = Modifier.size(34.dp).clip(CircleShape).background(cColor.copy(alpha = 0.7f)).border(1.5.dp, cColor, CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(displayName.take(1).uppercase(), color = Color.White, fontWeight = FontWeight.Black, fontSize = 14.sp)
+                                    }
+                                }
                                 Spacer(modifier = Modifier.height(4.dp))
-                                Text(prof.name.take(7), color = Color.White, fontSize = 9.5.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                                Text(displayName.take(7), color = Color.White, fontSize = 9.5.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                             } else {
                                 Box(
                                     modifier = Modifier.size(34.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.1f)),
@@ -1117,6 +1221,11 @@ fun LudoGameArena(
                         settings.allowFileAccess = true
                         addJavascriptInterface(object {
                             @android.webkit.JavascriptInterface
+                            fun playSound(sfxName: String) {
+                                GameSoundEngine.play("ludo_$sfxName", 1.0f, !currentSoundOn)
+                            }
+
+                            @android.webkit.JavascriptInterface
                             fun onMoveCompleted(stateJson: String, rolledDice: Int, switchTurn: Boolean) {
                                 (context as? android.app.Activity)?.runOnUiThread {
                                     val liveState = currentLudoState
@@ -1162,13 +1271,14 @@ fun LudoGameArena(
                                 val safePlayers = org.json.JSONObject.quote(joinedPlayersJson)
                                 val safeState = org.json.JSONObject.quote(gameState.coinsStateJson)
                                 view?.evaluateJavascript(
-                                    "if (window.syncLudoState) window.syncLudoState($safePlayers, $safeState, $activeColorIdx, $myColorIdx, $ludoTurnSec, ${gameState.diceValue});",
+                                    "if (window.setLudoSound) window.setLudoSound($currentSoundOn); if (window.syncLudoState) window.syncLudoState($safePlayers, $safeState, $activeColorIdx, $myColorIdx, $ludoTurnSec, ${gameState.diceValue});",
                                     null
                                 )
                             }
                         }
                         loadUrl("file:///android_asset/ludo_game.html")
                         ludoWebView = this
+                        onWebViewReady(this)
                     }
                 },
                 modifier = Modifier.fillMaxSize()
@@ -1267,15 +1377,20 @@ fun CarromGameArena(
     db: FirebaseFirestore,
     allProfiles: List<UserProfile>,
     liveComments: List<LiveRoomComment> = emptyList(),
+    isSoundOn: Boolean = true,
     onWebViewReady: (WebView) -> Unit = {},
     onGameStateChange: (turn: String, p1Score: Int, p2Score: Int) -> Unit = { _, _, _ -> }
 ) {
     val context = LocalContext.current
+    val currentSoundOn by rememberUpdatedState(isSoundOn)
     var isGameCommentsExpanded by remember { mutableStateOf(false) }
     var gameCommentInputText by remember { mutableStateOf("") }
     var activeWebView by remember { mutableStateOf<WebView?>(null) }
 
     val currentGameState by rememberUpdatedState(gameState)
+    val maxPlayers = if (gameState.maxPlayers in listOf(2, 4)) gameState.maxPlayers else 2
+    val mySeatIdx = gameState.participants.indexOf(currentUser.uid)
+    val activeSeatIdx = if (gameState.participants.isNotEmpty()) (gameState.currentTurnIndex % gameState.participants.size) else 0
 
     // Listen for remote shots from other players!
     var lastHandledShotTime by remember { mutableLongStateOf(0L) }
@@ -1309,7 +1424,7 @@ fun CarromGameArena(
                 val safeCoins = JSONObject.quote(gameState.coinsStateJson)
                 val turnName = if (gameState.currentTurnIndex % 2 == 0) "p1" else "p2"
                 activeWebView?.evaluateJavascript(
-                    "window.syncCoinsState($safeCoins, '$turnName');",
+                    "window.syncCoinsState($safeCoins, '$turnName', $activeSeatIdx);",
                     null
                 )
             } catch (e: Exception) {
@@ -1318,12 +1433,12 @@ fun CarromGameArena(
         }
     }
 
-    // Control lock: Only current turn player can shoot!
-    val currentTurnUserUid = gameState.currentTurnUserId.ifBlank { gameState.participants.firstOrNull() ?: "" }
+    // Control lock + dynamic bottom-view orientation: Only current turn player can shoot, and own baseline is ALWAYS at bottom!
+    val currentTurnUserUid = gameState.currentTurnUserId.ifBlank { gameState.participants.getOrNull(activeSeatIdx) ?: "" }
     val isMyTurn = (gameState.gameStage == "PLAYING" || gameState.gameStage == "ACTIVE") && (currentTurnUserUid == currentUser.uid)
-    LaunchedEffect(isMyTurn, currentTurnUserUid, gameState.gameStage, gameState.currentTurnIndex) {
+    LaunchedEffect(isMyTurn, currentTurnUserUid, gameState.gameStage, gameState.currentTurnIndex, mySeatIdx, maxPlayers) {
         val turnName = if (gameState.currentTurnIndex % 2 == 0) "p1" else "p2"
-        activeWebView?.evaluateJavascript("window.setPlayerControl($isMyTurn, '$turnName');", null)
+        activeWebView?.evaluateJavascript("window.setPlayerControl($isMyTurn, '$turnName', $activeSeatIdx, $mySeatIdx, $maxPlayers);", null)
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -1354,13 +1469,19 @@ fun CarromGameArena(
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 super.onPageFinished(view, url)
                                 val turnName = if (gameState.currentTurnIndex % 2 == 0) "p1" else "p2"
-                                view?.evaluateJavascript("window.setPlayerControl($isMyTurn, '$turnName');", null)
+                                view?.evaluateJavascript("window.setCarromSound($currentSoundOn); window.setPlayerControl($isMyTurn, '$turnName', $activeSeatIdx, $mySeatIdx, $maxPlayers);", null)
                                 if (gameState.coinsStateJson.isNotBlank()) {
-                                    view?.evaluateJavascript("window.syncCoinsState('${gameState.coinsStateJson}');", null)
+                                    val safeCoins = JSONObject.quote(gameState.coinsStateJson)
+                                    view?.evaluateJavascript("window.syncCoinsState($safeCoins, '$turnName', $activeSeatIdx);", null)
                                 }
                             }
                         }
                         addJavascriptInterface(object {
+                            @android.webkit.JavascriptInterface
+                            fun playSound(sfxName: String, volume: Float) {
+                                GameSoundEngine.play("carrom_$sfxName", volume, !currentSoundOn)
+                            }
+
                             @android.webkit.JavascriptInterface
                             fun onShoot(startX: Float, startY: Float, vx: Float, vy: Float, turn: String) {
                                 (context as? android.app.Activity)?.runOnUiThread {
@@ -1418,7 +1539,7 @@ fun CarromGameArena(
                                         val updateMap = mutableMapOf<String, Any>(
                                             "currentTurnIndex" to nextTurnIndex,
                                             "currentTurnUserId" to nextTurnUserId,
-                                            "timerRemaining" to 40,
+                                            "timerRemaining" to 30,
                                             "lastShotTimestamp" to System.currentTimeMillis(),
                                             "lastShotJson" to "",
                                             "playerScores" to mapOf("p1" to p1, "p2" to p2, "betDiamonds" to betVal)
@@ -1620,12 +1741,12 @@ fun CarromSlotBadge(
     coinSymbol: String,
     isTurn: Boolean,
     score: Int,
-    turnSecondsLeft: Int = 40
+    turnSecondsLeft: Int = 30
 ) {
-    val timerFraction = (turnSecondsLeft.coerceIn(0, 40) / 40f)
+    val timerFraction = (turnSecondsLeft.coerceIn(0, 30) / 30f)
     val timerColor = when {
-        turnSecondsLeft <= 10 -> Color(0xFFEF4444)
-        turnSecondsLeft <= 20 -> Color(0xFFF59E0B)
+        turnSecondsLeft <= 8 -> Color(0xFFEF4444)
+        turnSecondsLeft <= 15 -> Color(0xFFF59E0B)
         else -> Color(0xFF10B981)
     }
     Row(
@@ -1662,27 +1783,40 @@ fun CarromSlotBadge(
                     )
                 }
             }
+            val safeName = profile.name.takeIf { it.isNotBlank() } ?: "..."
             Box(
                 modifier = Modifier
                     .size(23.dp)
                     .clip(CircleShape)
-                    .border(1.dp, if (coinSymbol == "⚪") Color.White else Color.Gray, CircleShape)
+                    .background(if (coinSymbol == "⚪") Color(0xFF334155) else Color(0xFF1E1B4B))
+                    .border(1.dp, if (coinSymbol == "⚪") Color.White else Color.Gray, CircleShape),
+                contentAlignment = Alignment.Center
             ) {
-                AsyncImage(
-                    model = profile.photo.ifBlank { "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde" },
-                    contentDescription = profile.name,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
+                if (profile.photo.isNotBlank()) {
+                    AsyncImage(
+                        model = profile.photo,
+                        contentDescription = safeName,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Text(
+                        text = safeName.take(1).uppercase(),
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Black
+                    )
+                }
             }
         }
         Spacer(modifier = Modifier.width(4.dp))
         Column {
+            val safeName = profile.name.takeIf { it.isNotBlank() } ?: "..."
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(coinSymbol, fontSize = 9.sp)
                 Spacer(modifier = Modifier.width(2.dp))
                 Text(
-                    text = profile.name.take(7),
+                    text = safeName.take(7),
                     color = Color.White,
                     fontSize = 9.5.sp,
                     fontWeight = FontWeight.Bold,
@@ -2508,7 +2642,7 @@ fun launchInRoomGame(
         startedAt = System.currentTimeMillis(),
         currentTurnIndex = 0,
         currentTurnUserId = currentUser.uid,
-        timerRemaining = 40,
+        timerRemaining = 30,
         diceValue = 1,
         bottleAngle = 0f,
         selectedPlayerId = "",

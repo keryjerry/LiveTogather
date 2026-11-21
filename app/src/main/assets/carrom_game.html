@@ -132,16 +132,56 @@
   </div>
 
   <script>
-    // Authentic Synthesized WebAudio Sounds
+    // Authentic Native Acoustic Audio & Dynamic Bottom-View Orientation
     let canLocalUserControl = true;
+    let activeSeatIdx = 0;
+    let mySeatIdx = 0;
+    let maxPlayersCount = 2;
+    let viewRotation = 0; // Radians around (CENTER, CENTER) so local player's baseline is ALWAYS at bottom
 
-    window.setPlayerControl = function(canControl, turnName) {
+    function computeViewRotation(seatIdx, maxP) {
+      if (seatIdx < 0) return 0; // Spectator default
+      if (maxP === 4) {
+        if (seatIdx === 1) return Math.PI / 2;   // Right -> Bottom
+        if (seatIdx === 2) return Math.PI;       // Top -> Bottom
+        if (seatIdx === 3) return -Math.PI / 2;  // Left -> Bottom
+        return 0;
+      }
+      // 2-Player mode: Seat 0 = Bottom (0), Seat 1 = Top (PI)
+      return (seatIdx % 2 === 1) ? Math.PI : 0;
+    }
+
+    function rotateAroundCenter(x, y, angle) {
+      if (!angle) return { x, y };
+      const dx = x - CENTER;
+      const dy = y - CENTER;
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      return {
+        x: CENTER + dx * cos - dy * sin,
+        y: CENTER + dx * sin + dy * cos
+      };
+    }
+
+    window.setPlayerControl = function(canControl, turnName, seatIdx, localSeatIdx, maxP) {
       canLocalUserControl = !!canControl;
+      if (typeof maxP === 'number' && (maxP === 2 || maxP === 4)) {
+        maxPlayersCount = maxP;
+      }
+      if (typeof localSeatIdx === 'number') {
+        mySeatIdx = localSeatIdx;
+        viewRotation = computeViewRotation(mySeatIdx, maxPlayersCount);
+      }
+      if (typeof seatIdx === 'number' && seatIdx >= 0) {
+        activeSeatIdx = seatIdx;
+      } else if (turnName) {
+        activeSeatIdx = (turnName === 'p2') ? 1 : 0;
+      }
       if (turnName) {
         currentTurn = turnName;
-        if (!shotFired) {
-          resetStriker();
-        }
+      }
+      if (!shotFired) {
+        resetStriker();
       }
       const track = document.getElementById('sliderTrack');
       if (track) {
@@ -156,16 +196,16 @@
       wasMoving = true;
       if (turn) currentTurn = turn;
       striker.x = Number(startX) || CENTER;
-      striker.y = Number(startY) || getActiveBaselineY();
+      striker.y = Number(startY) || getActiveBaselinePos(0.5).y;
       striker.vx = Number(vx) || 0;
       striker.vy = Number(vy) || 0;
       shotFired = true;
       pocketedInCurrentShot = [];
       const p = Math.hypot(striker.vx, striker.vy);
-      AudioEngine.play('wood_hit', Math.min(p / 10, 1.0));
+      AudioEngine.play('wood_hit', Math.min(p / 14, 1.0));
     };
 
-    window.syncCoinsState = function(coinsJson, turnName) {
+    window.syncCoinsState = function(coinsJson, turnName, seatIdx) {
       if (!coinsJson) return;
       try {
         const data = (typeof coinsJson === 'string') ? JSON.parse(coinsJson) : coinsJson;
@@ -183,6 +223,7 @@
             }
           });
           if (turnName) currentTurn = turnName;
+          if (typeof seatIdx === 'number' && seatIdx >= 0) activeSeatIdx = seatIdx;
           resetStriker();
         }
       } catch(e) {}
@@ -191,6 +232,7 @@
     const AudioEngine = {
       enabled: true,
       audioCtx: null,
+      lastSlideTime: 0,
       init() {
         if (!this.audioCtx) {
           try {
@@ -201,6 +243,29 @@
       },
       play(type, volume = 0.8) {
         if (!this.enabled) return;
+        const vol = Math.max(0.05, Math.min(1.0, volume));
+        if (type === 'slide') {
+          const now = performance.now();
+          if (now - this.lastSlideTime < 150) return;
+          this.lastSlideTime = now;
+        }
+        // Prefer crisp native Android SoundPool audio
+        if (window.CarromBridge && window.CarromBridge.playSound) {
+          const nativeMap = {
+            wood_hit: 'hit',
+            wood_cushion: 'cushion',
+            pocket_drop: 'pocket',
+            foul_alert: 'foul',
+            slide: 'slide'
+          };
+          const mapped = nativeMap[type];
+          if (mapped) {
+            try {
+              window.CarromBridge.playSound(mapped, vol);
+              return;
+            } catch(e) {}
+          }
+        }
         this.init();
         if (!this.audioCtx) return;
         try {
@@ -213,36 +278,36 @@
 
           if (type === 'wood_hit') {
             osc.type = 'triangle';
-            osc.frequency.setValueAtTime(320, t);
-            osc.frequency.exponentialRampToValueAtTime(70, t + 0.08);
-            gain.gain.setValueAtTime(Math.min(1.0, volume * 0.9), t);
+            osc.frequency.setValueAtTime(340, t);
+            osc.frequency.exponentialRampToValueAtTime(75, t + 0.08);
+            gain.gain.setValueAtTime(vol * 0.85, t);
             gain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
             osc.start(t);
             osc.stop(t + 0.08);
           } else if (type === 'wood_cushion') {
             osc.type = 'sine';
-            osc.frequency.setValueAtTime(180, t);
-            osc.frequency.exponentialRampToValueAtTime(45, t + 0.12);
-            gain.gain.setValueAtTime(Math.min(1.0, volume * 0.8), t);
-            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+            osc.frequency.setValueAtTime(190, t);
+            osc.frequency.exponentialRampToValueAtTime(50, t + 0.11);
+            gain.gain.setValueAtTime(vol * 0.75, t);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.11);
             osc.start(t);
-            osc.stop(t + 0.12);
+            osc.stop(t + 0.11);
           } else if (type === 'pocket_drop') {
             osc.type = 'sine';
             osc.frequency.setValueAtTime(520, t);
-            osc.frequency.exponentialRampToValueAtTime(140, t + 0.22);
-            gain.gain.setValueAtTime(0.7, t);
+            osc.frequency.exponentialRampToValueAtTime(130, t + 0.22);
+            gain.gain.setValueAtTime(0.65, t);
             gain.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
             osc.start(t);
             osc.stop(t + 0.22);
           } else if (type === 'foul_alert') {
             osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(220, t);
-            osc.frequency.setValueAtTime(160, t + 0.1);
-            gain.gain.setValueAtTime(0.4, t);
-            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+            osc.frequency.setValueAtTime(210, t);
+            osc.frequency.setValueAtTime(155, t + 0.1);
+            gain.gain.setValueAtTime(0.35, t);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.24);
             osc.start(t);
-            osc.stop(t + 0.25);
+            osc.stop(t + 0.24);
           }
         } catch(e) {}
       }
@@ -282,11 +347,52 @@
     const STRIKER_RADIUS = 26;
     const BASELINE_Y = PLAY_BOTTOM - 62;
     const BASELINE_TOP_Y = PLAY_TOP + 62;
+    const BASELINE_LEFT_X = PLAY_LEFT + 62;
+    const BASELINE_RIGHT_X = PLAY_RIGHT - 62;
     const BASELINE_MIN_X = PLAY_LEFT + 105;
     const BASELINE_MAX_X = PLAY_RIGHT - 105;
 
-    function getActiveBaselineY() {
-      return (currentTurn === 'p2') ? BASELINE_TOP_Y : BASELINE_Y;
+    function getActiveBaselineEndpoints() {
+      let pA, pB;
+      if (maxPlayersCount === 4) {
+        const s = activeSeatIdx % 4;
+        if (s === 0) {
+          pA = { x: BASELINE_MIN_X, y: BASELINE_Y };
+          pB = { x: BASELINE_MAX_X, y: BASELINE_Y };
+        } else if (s === 1) {
+          pA = { x: BASELINE_RIGHT_X, y: BASELINE_MAX_X };
+          pB = { x: BASELINE_RIGHT_X, y: BASELINE_MIN_X };
+        } else if (s === 2) {
+          pA = { x: BASELINE_MAX_X, y: BASELINE_TOP_Y };
+          pB = { x: BASELINE_MIN_X, y: BASELINE_TOP_Y };
+        } else {
+          pA = { x: BASELINE_LEFT_X, y: BASELINE_MIN_X };
+          pB = { x: BASELINE_LEFT_X, y: BASELINE_MAX_X };
+        }
+      } else {
+        const s = (activeSeatIdx % 2 === 1 || currentTurn === 'p2') ? 1 : 0;
+        if (s === 1) {
+          pA = { x: BASELINE_MAX_X, y: BASELINE_TOP_Y };
+          pB = { x: BASELINE_MIN_X, y: BASELINE_TOP_Y };
+        } else {
+          pA = { x: BASELINE_MIN_X, y: BASELINE_Y };
+          pB = { x: BASELINE_MAX_X, y: BASELINE_Y };
+        }
+      }
+      // Ensure ratio 0 -> 1 always maps left -> right in the user's rotated screen space
+      const sA = rotateAroundCenter(pA.x, pA.y, viewRotation);
+      const sB = rotateAroundCenter(pB.x, pB.y, viewRotation);
+      if (sA.x > sB.x) return { start: pB, end: pA };
+      return { start: pA, end: pB };
+    }
+
+    function getActiveBaselinePos(ratio = 0.5) {
+      const { start, end } = getActiveBaselineEndpoints();
+      const t = Math.max(0, Math.min(1, ratio));
+      return {
+        x: start.x + (end.x - start.x) * t,
+        y: start.y + (end.y - start.y) * t
+      };
     }
 
     let currentTurn = 'p1'; // 'p1' (White), 'p2' (Black)
@@ -317,8 +423,8 @@
         this.type = type; // 'white', 'black', 'queen', 'striker'
         this.vx = 0;
         this.vy = 0;
-        this.mass = type === 'striker' ? 3.0 : 1.0;
-        this.friction = 0.935;
+        this.mass = type === 'striker' ? 2.8 : 1.0;
+        this.friction = type === 'striker' ? 0.984 : 0.980;
         this.isPocketed = false;
       }
 
@@ -332,9 +438,12 @@
         this.vx *= stepFriction;
         this.vy *= stepFriction;
 
-        if (Math.hypot(this.vx, this.vy) < 0.65) {
+        const speed = Math.hypot(this.vx, this.vy);
+        if (speed < 0.16) {
           this.vx = 0;
           this.vy = 0;
+        } else if (speed > 6.5 && this.type === 'striker') {
+          AudioEngine.play('slide', Math.min(0.45, speed / 35));
         }
 
         const minX = PLAY_LEFT + this.radius;
@@ -345,27 +454,27 @@
         let hitWall = false;
         if (this.x < minX) {
           this.x = minX;
-          this.vx = -this.vx * 0.85;
+          this.vx = -this.vx * 0.84;
           hitWall = true;
         } else if (this.x > maxX) {
           this.x = maxX;
-          this.vx = -this.vx * 0.85;
+          this.vx = -this.vx * 0.84;
           hitWall = true;
         }
 
         if (this.y < minY) {
           this.y = minY;
-          this.vy = -this.vy * 0.85;
+          this.vy = -this.vy * 0.84;
           hitWall = true;
         } else if (this.y > maxY) {
           this.y = maxY;
-          this.vy = -this.vy * 0.85;
+          this.vy = -this.vy * 0.84;
           hitWall = true;
         }
 
         if (hitWall) {
-          const speed = Math.hypot(this.vx, this.vy);
-          if (speed > 1.0) AudioEngine.play('wood_cushion', Math.min(speed / 15, 1.0));
+          const wallSpeed = Math.hypot(this.vx, this.vy);
+          if (wallSpeed > 1.0) AudioEngine.play('wood_cushion', Math.min(wallSpeed / 14, 1.0));
         }
 
         for (const p of pockets) {
@@ -815,13 +924,13 @@
     };
 
     function resetStriker() {
-      const activeBaselineY = getActiveBaselineY();
+      const pos = getActiveBaselinePos(0.5);
       if (!striker) {
-        striker = new Piece(CENTER, activeBaselineY, STRIKER_RADIUS, 'striker');
+        striker = new Piece(pos.x, pos.y, STRIKER_RADIUS, 'striker');
         pieces.push(striker);
       } else {
-        striker.x = CENTER;
-        striker.y = activeBaselineY;
+        striker.x = pos.x;
+        striker.y = pos.y;
         striker.vx = 0;
         striker.vy = 0;
         striker.isPocketed = false;
@@ -855,7 +964,11 @@
 
     function updateSliderUI() {
       if (!striker || !sliderThumb) return;
-      const ratio = (striker.x - BASELINE_MIN_X) / (BASELINE_MAX_X - BASELINE_MIN_X);
+      const { start, end } = getActiveBaselineEndpoints();
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const lenSq = dx * dx + dy * dy;
+      const ratio = lenSq > 0 ? ((striker.x - start.x) * dx + (striker.y - start.y) * dy) / lenSq : 0.5;
       const clamped = Math.max(0, Math.min(1, ratio));
       sliderThumb.style.left = `${clamped * 100}%`;
     }
@@ -898,7 +1011,7 @@
 
     function isBoardStill() {
       for (const p of pieces) {
-        if (!p.isPocketed && (Math.abs(p.vx) > 0.35 || Math.abs(p.vy) > 0.35)) {
+        if (!p.isPocketed && (Math.abs(p.vx) > 0.15 || Math.abs(p.vy) > 0.15)) {
           return false;
         }
       }
@@ -910,9 +1023,9 @@
       const rect = sliderTrack.getBoundingClientRect();
       const clickX = clientX - rect.left;
       const ratio = Math.max(0, Math.min(1, clickX / rect.width));
-
-      striker.x = BASELINE_MIN_X + ratio * (BASELINE_MAX_X - BASELINE_MIN_X);
-      striker.y = getActiveBaselineY();
+      const pos = getActiveBaselinePos(ratio);
+      striker.x = pos.x;
+      striker.y = pos.y;
       updateSliderUI();
       updateOverlapCheck();
     }
@@ -944,10 +1057,10 @@
       const rect = canvas.getBoundingClientRect();
       const scaleX = BOARD_SIZE / rect.width;
       const scaleY = BOARD_SIZE / rect.height;
-      return {
-        x: (e.clientX - rect.left) * scaleX,
-        y: (e.clientY - rect.top) * scaleY
-      };
+      const sx = (e.clientX - rect.left) * scaleX;
+      const sy = (e.clientY - rect.top) * scaleY;
+      // Map screen coordinates back into canonical board space using -viewRotation
+      return rotateAroundCenter(sx, sy, -viewRotation);
     }
 
     canvas.addEventListener('pointerdown', (e) => {
@@ -956,7 +1069,7 @@
       const coords = getCanvasCoords(e);
       const distToStriker = Math.hypot(coords.x - striker.x, coords.y - striker.y);
 
-      if (distToStriker < STRIKER_RADIUS + 40) {
+      if (distToStriker < STRIKER_RADIUS + 55) {
         if (isStrikerOverlapping) {
           AudioEngine.play('foul_alert', 0.6);
           return;
@@ -994,16 +1107,16 @@
       const pullY = striker.y - aimDragPos.y;
       const pullDist = Math.hypot(pullX, pullY);
 
-      if (pullDist > 12) {
-        const maxPull = 160;
+      if (pullDist > 14) {
+        const maxPull = 175;
         const clampedDist = Math.min(pullDist, maxPull);
-        const power = (clampedDist / maxPull) * 36;
+        const power = Math.pow(clampedDist / maxPull, 1.08) * 24.5;
 
         const angle = Math.atan2(pullY, pullX);
         striker.vx = Math.cos(angle) * power;
         striker.vy = Math.sin(angle) * power;
 
-        AudioEngine.play('wood_hit', Math.min(power / 10, 1.0));
+        AudioEngine.play('wood_hit', Math.min(power / 14, 1.0));
         shotFired = true;
         wasMoving = true;
         pocketedInCurrentShot = [];
@@ -1158,17 +1271,25 @@
       const pullY = striker.y - aimDragPos.y;
       const pullDist = Math.hypot(pullX, pullY);
 
-      if (pullDist < 10) return;
+      if (pullDist < 14) return;
 
       const angle = Math.atan2(pullY, pullX);
-      const maxPull = 160;
+      const maxPull = 175;
       const clampedDist = Math.min(pullDist, maxPull);
-      const aimLen = (clampedDist / maxPull) * 320;
+      const ratio = clampedDist / maxPull;
+      const aimLen = ratio * 340;
 
       const endX = striker.x + Math.cos(angle) * aimLen;
       const endY = striker.y + Math.sin(angle) * aimLen;
 
       ctx.save();
+      // Power halo ring around striker
+      ctx.beginPath();
+      ctx.arc(striker.x, striker.y, STRIKER_RADIUS + 8 + ratio * 24, 0, Math.PI * 2);
+      ctx.strokeStyle = ratio > 0.78 ? 'rgba(239, 68, 68, 0.55)' : 'rgba(250, 204, 21, 0.55)';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
       ctx.setLineDash([8, 8]);
       ctx.beginPath();
       ctx.moveTo(striker.x, striker.y);
@@ -1190,7 +1311,7 @@
       ctx.beginPath();
       ctx.moveTo(striker.x, striker.y);
       ctx.lineTo(aimDragPos.x, aimDragPos.y);
-      ctx.strokeStyle = 'rgba(239, 68, 68, 0.6)';
+      ctx.strokeStyle = 'rgba(239, 68, 68, 0.65)';
       ctx.lineWidth = 2.5;
       ctx.stroke();
 
@@ -1223,16 +1344,21 @@
 
             const kx = p1.vx - p2.vx;
             const ky = p1.vy - p2.vy;
-            const p = 2 * (nx * kx + ny * ky) / (p1.mass + p2.mass);
+            const vn = nx * kx + ny * ky;
+            // Only resolve impulse if approaching
+            if (vn > 0) {
+              const restitution = 0.90;
+              const p = (1 + restitution) * vn / (p1.mass + p2.mass);
 
-            p1.vx -= p * p2.mass * nx * 0.92;
-            p1.vy -= p * p2.mass * ny * 0.92;
-            p2.vx += p * p1.mass * nx * 0.92;
-            p2.vy += p * p1.mass * ny * 0.92;
+              p1.vx -= p * p2.mass * nx;
+              p1.vy -= p * p2.mass * ny;
+              p2.vx += p * p1.mass * nx;
+              p2.vy += p * p1.mass * ny;
 
-            const relativeSpeed = Math.hypot(kx, ky);
-            if (relativeSpeed > 1.2) {
-              AudioEngine.play('wood_hit', Math.min(relativeSpeed / 12, 1.0));
+              const relativeSpeed = Math.hypot(kx, ky);
+              if (relativeSpeed > 1.0) {
+                AudioEngine.play('wood_hit', Math.min(relativeSpeed / 14, 1.0));
+              }
             }
           }
         }
@@ -1245,11 +1371,18 @@
     boardCacheCanvas.height = BOARD_SIZE;
     const boardCacheCtx = boardCacheCanvas.getContext('2d');
     let isBoardCached = false;
+    let lastFrameTime = performance.now();
 
-    function loop() {
-      // 2 physics sub-steps per frame for razor-sharp point-to-point collision precision
-      for (let step = 0; step < 2; step++) {
-        pieces.forEach(p => p.update(0.5));
+    function loop(now) {
+      const dt = Math.min(0.04, Math.max(0.004, ((now || performance.now()) - lastFrameTime) / 1000));
+      lastFrameTime = now || performance.now();
+      const frameScale = dt * 60; // Normalized to 60fps so 90Hz/120Hz screens play at exact real speed
+
+      // 4 physics sub-steps per frame for razor-sharp collision & rebound accuracy
+      const subSteps = 4;
+      const stepScale = frameScale / subSteps;
+      for (let step = 0; step < subSteps; step++) {
+        pieces.forEach(p => p.update(stepScale));
         resolveCollisions();
       }
       checkPostShotRules();
@@ -1259,16 +1392,23 @@
         isBoardCached = true;
       }
       ctx.clearRect(0, 0, BOARD_SIZE, BOARD_SIZE);
+      ctx.save();
+      if (viewRotation !== 0) {
+        ctx.translate(CENTER, CENTER);
+        ctx.rotate(viewRotation);
+        ctx.translate(-CENTER, -CENTER);
+      }
       ctx.drawImage(boardCacheCanvas, 0, 0);
 
       drawAimLine();
       pieces.forEach(p => p.draw(ctx));
+      ctx.restore();
 
       requestAnimationFrame(loop);
     }
 
     initBoard();
-    loop();
+    requestAnimationFrame(loop);
   </script>
 </body>
 </html>
