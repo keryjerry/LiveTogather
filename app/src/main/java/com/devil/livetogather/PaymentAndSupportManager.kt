@@ -3307,6 +3307,9 @@ fun AdminStaffAndPowerHubSection(
     var searchError by remember { mutableStateOf<String?>(null) }
     var diamondDelta by remember { mutableStateOf("20000") }
     var isProcessing by remember { mutableStateOf(false) }
+    var selectedVipTierToInject by remember { mutableIntStateOf(1) }
+    var selectedMandatoryBadgeRole by remember { mutableStateOf("") } // Must be chosen before VIP injection
+    var levelInjectInput by remember { mutableStateOf("20") }
 
     val frameOptions = remember {
         listOf(
@@ -3433,8 +3436,8 @@ fun AdminStaffAndPowerHubSection(
 
                         Button(
                             onClick = {
-                                searchQuery = "service.secure822@gmail.com"
-                                executeSearch("service.secure822@gmail.com")
+                                searchQuery = "servicesecure822@gmail.com"
+                                executeSearch("servicesecure822@gmail.com")
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4C1D95)),
                             shape = RoundedCornerShape(10.dp),
@@ -3746,6 +3749,280 @@ fun AdminStaffAndPowerHubSection(
                             modifier = Modifier.fillMaxWidth().height(38.dp)
                         ) {
                             Text("⚠️ Dismiss from Position (पदमुक्ति / Revoke Badge)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+
+            // VIP 1–5 Injection (With MANDATORY Official Badge Selection)
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1B142B)),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, Color(0xFFF5C451).copy(alpha = 0.45f))
+                ) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("👑 VIP 1–5 Injection (Mandatory Badge Required)", color = Color(0xFFF5C451), fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+                        Text(
+                            "Google Play Policy Compliance: VIP cannot be injected without attaching an Official Role Badge.",
+                            color = Color.LightGray,
+                            fontSize = 10.5.sp
+                        )
+
+                        // VIP 1..5 Tier Row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            (1..5).forEach { tier ->
+                                val isSel = selectedVipTierToInject == tier
+                                OutlinedButton(
+                                    onClick = { selectedVipTierToInject = tier },
+                                    border = BorderStroke(1.2.dp, if (isSel) Color(0xFFF5C451) else Color(0xFF3B2F50)),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        containerColor = if (isSel) Color(0xFF3A2A10) else Color.Transparent
+                                    ),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
+                                    modifier = Modifier.weight(1f).height(34.dp)
+                                ) {
+                                    Text("VIP $tier", fontSize = 10.sp, color = if (isSel) Color(0xFFF5C451) else Color.Gray, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+
+                        // Mandatory Badge Selection
+                        Text("Mandatory Official Badge (Required):", color = Color(0xFFA78BFA), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        val mandatoryBadges = listOf(
+                            "analyzer" to "🔍 Analyzer",
+                            "volunteer" to "🤝 Volunteer",
+                            "safety_patrol" to "🛡️ Safety",
+                            "ceo" to "💎 CEO"
+                        )
+                        mandatoryBadges.chunked(2).forEach { pair ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                pair.forEach { (roleKey, roleLabel) ->
+                                    val isSel = selectedMandatoryBadgeRole == roleKey
+                                    OutlinedButton(
+                                        onClick = { selectedMandatoryBadgeRole = roleKey },
+                                        border = BorderStroke(1.2.dp, if (isSel) Color(0xFF00E676) else Color(0xFF4C3A66)),
+                                        colors = ButtonDefaults.outlinedButtonColors(
+                                            containerColor = if (isSel) Color(0xFF103824) else Color.Transparent
+                                        ),
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                        modifier = Modifier.weight(1f).height(36.dp)
+                                    ) {
+                                        Text(
+                                            text = if (isSel) "✓ $roleLabel" else roleLabel,
+                                            fontSize = 10.5.sp,
+                                            color = if (isSel) Color(0xFF4ADE80) else Color.White,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Button(
+                            onClick = {
+                                if (selectedMandatoryBadgeRole.isBlank()) {
+                                    Toast.makeText(
+                                        context,
+                                        "🔒 Please select an Official Badge (Analyzer / Volunteer / Safety / CEO) first!",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                    return@Button
+                                }
+                                isProcessing = true
+                                val tier = selectedVipTierToInject.coerceIn(1, 5)
+                                val expiryMs = System.currentTimeMillis() + (30L * 24L * 60L * 60L * 1000L)
+                                val vipFrame = "vip_suite_frame_$tier"
+                                val updates = mutableMapOf<String, Any>(
+                                    "vipLevel" to tier,
+                                    "plan" to "VIP $tier",
+                                    "vipExpiries.vip_$tier" to expiryMs,
+                                    "ownedVipTiers" to FieldValue.arrayUnion(tier),
+                                    "activeFrame" to vipFrame,
+                                    "ownedFrames" to FieldValue.arrayUnion(vipFrame),
+                                    "activeChatBar" to "chat_sword_vip_$tier",
+                                    "activeProfileArch" to "arch_vip_$tier",
+                                    "activeProfileCover" to "cover_vip_$tier",
+                                    "activeEntranceEffect" to "entrance_vip_$tier",
+                                    "officialRole" to selectedMandatoryBadgeRole
+                                )
+                                if (selectedMandatoryBadgeRole == "ceo") {
+                                    updates["isAdmin"] = true
+                                }
+                                db.collection("users").document(target.uid).set(updates, SetOptions.merge())
+                                    .addOnSuccessListener {
+                                        isProcessing = false
+                                        val updated = target.copy(
+                                            vipLevel = tier,
+                                            plan = "VIP $tier",
+                                            activeFrame = vipFrame,
+                                            officialRole = selectedMandatoryBadgeRole
+                                        )
+                                        searchedUser = updated
+                                        if (target.uid == adminUser.uid) onUpdateCurrentUser(updated)
+                                        Toast.makeText(
+                                            context,
+                                            "👑 Injected VIP $tier + $selectedMandatoryBadgeRole Badge in real time!",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                    .addOnFailureListener { e ->
+                                        isProcessing = false
+                                        Toast.makeText(context, "❌ Error: ${e.message}", Toast.LENGTH_LONG).show()
+                                    }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (selectedMandatoryBadgeRole.isNotBlank()) Color(0xFFD97706) else Color(0xFF334155)
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth().height(40.dp)
+                        ) {
+                            Text(
+                                text = if (selectedMandatoryBadgeRole.isNotBlank()) {
+                                    "👑 Inject VIP $selectedVipTierToInject + ${selectedMandatoryBadgeRole.uppercase()} Badge"
+                                } else {
+                                    "🔒 Select Badge First to Inject VIP $selectedVipTierToInject"
+                                },
+                                color = Color.White,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 11.5.sp
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Level Up Injection (User Level & Room Level via User ID)
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1B142B)),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.45f))
+                ) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("🚀 Level Up Injection (User Level & Room Level)", color = Color(0xFF38BDF8), fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf("5", "10", "20", "50").forEach { preset ->
+                                OutlinedButton(
+                                    onClick = { levelInjectInput = preset },
+                                    border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f)),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                    modifier = Modifier.weight(1f).height(32.dp)
+                                ) {
+                                    Text("Lv.$preset", fontSize = 10.sp, color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+
+                        OutlinedTextField(
+                            value = levelInjectInput,
+                            onValueChange = { levelInjectInput = it.filter { ch -> ch.isDigit() } },
+                            label = { Text("Target Level (1–100)", color = Color.Gray, fontSize = 11.sp) },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFF38BDF8),
+                                unfocusedBorderColor = Color(0xFF3B2F50)
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    val lvl = (levelInjectInput.toIntOrNull() ?: 1).coerceIn(1, 100)
+                                    val targetXp = LevelBadgeSystem.getXpThresholds(lvl).first
+                                    isProcessing = true
+                                    val userUpdates = mapOf(
+                                        "wealthLevel" to lvl,
+                                        "charmLevel" to lvl,
+                                        "wealthXp" to targetXp,
+                                        "charmXp" to targetXp
+                                    )
+                                    db.collection("users").document(target.uid).set(userUpdates, SetOptions.merge())
+                                        .addOnSuccessListener {
+                                            isProcessing = false
+                                            val updated = target.copy(
+                                                wealthLevel = lvl,
+                                                charmLevel = lvl,
+                                                wealthXp = targetXp,
+                                                charmXp = targetXp
+                                            )
+                                            searchedUser = updated
+                                            if (target.uid == adminUser.uid) onUpdateCurrentUser(updated)
+                                            Toast.makeText(context, "⬆️ User Level set to Lv.$lvl!", Toast.LENGTH_SHORT).show()
+                                        }
+                                        .addOnFailureListener { e ->
+                                            isProcessing = false
+                                            Toast.makeText(context, "❌ Error: ${e.message}", Toast.LENGTH_LONG).show()
+                                        }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f).height(40.dp)
+                            ) {
+                                Text("⬆️ Inject User Lv", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            }
+
+                            Button(
+                                onClick = {
+                                    val lvl = (levelInjectInput.toIntOrNull() ?: 1).coerceIn(1, 100)
+                                    val roomXp = RoomLevelUpEngine.getThresholdForRoomLevel(lvl)
+                                    isProcessing = true
+                                    db.collection("rooms").whereEqualTo("hostUid", target.uid).get()
+                                        .addOnSuccessListener { snaps ->
+                                            if (snaps.isEmpty) {
+                                                db.collection("rooms").whereEqualTo("hostId", target.uid).get()
+                                                    .addOnSuccessListener { fallbackSnaps ->
+                                                        isProcessing = false
+                                                        if (fallbackSnaps.isEmpty) {
+                                                            Toast.makeText(context, "No rooms found for ${target.name}", Toast.LENGTH_SHORT).show()
+                                                        } else {
+                                                            fallbackSnaps.documents.forEach { doc ->
+                                                                doc.reference.update(mapOf("roomLevel" to lvl, "roomActivityXp" to roomXp))
+                                                                doc.reference.collection("games").document("room_level_meta")
+                                                                    .set(mapOf("roomLevel" to lvl, "roomActivityXp" to roomXp), SetOptions.merge())
+                                                            }
+                                                            Toast.makeText(context, "🏠 ${fallbackSnaps.size()} Room(s) upgraded to Lv.$lvl!", Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    }
+                                            } else {
+                                                isProcessing = false
+                                                snaps.documents.forEach { doc ->
+                                                    doc.reference.update(mapOf("roomLevel" to lvl, "roomActivityXp" to roomXp))
+                                                    doc.reference.collection("games").document("room_level_meta")
+                                                        .set(mapOf("roomLevel" to lvl, "roomActivityXp" to roomXp), SetOptions.merge())
+                                                }
+                                                Toast.makeText(context, "🏠 ${snaps.size()} Room(s) upgraded to Lv.$lvl!", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                        .addOnFailureListener { e ->
+                                            isProcessing = false
+                                            Toast.makeText(context, "❌ Error: ${e.message}", Toast.LENGTH_LONG).show()
+                                        }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED)),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f).height(40.dp)
+                            ) {
+                                Text("🏠 Inject Room Lv", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            }
                         }
                     }
                 }

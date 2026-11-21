@@ -1016,10 +1016,10 @@ data class UserProfile(
     }
 
     fun isCeo(): Boolean {
-        return isFounder()
+        return officialRole.equals("ceo", ignoreCase = true) || isFounder()
     }
 
-    fun isStaffMember(): Boolean = officialRole.isNotBlank() || isOfficialAdmin(email)
+    fun isStaffMember(): Boolean = officialRole.lowercase() in setOf("founder", "ceo", "analyzer", "volunteer", "safety_patrol") || isOfficialAdmin(email)
     fun isOfficialAnalyzer(): Boolean = officialRole.equals("analyzer", ignoreCase = true)
     fun isCommunityVolunteer(): Boolean = officialRole.equals("volunteer", ignoreCase = true)
     fun isSafetyPatrol(): Boolean = officialRole.equals("safety_patrol", ignoreCase = true)
@@ -1031,7 +1031,7 @@ data class UserProfile(
     }
 
     fun hasRoomModerationAuthority(): Boolean {
-        return isFounder() || isCeo() || isStaffMember() || isCommunityVolunteer() || isSafetyPatrol() || isAdmin || isOfficialAdmin(email)
+        return isFounder() || isCeo() || isStaffMember() || isCommunityVolunteer() || isSafetyPatrol() || isOfficialAnalyzer() || isAdmin || isOfficialAdmin(email)
     }
 
     fun getOfficialRoleBadgeRes(): Int? = when (officialRole.lowercase()) {

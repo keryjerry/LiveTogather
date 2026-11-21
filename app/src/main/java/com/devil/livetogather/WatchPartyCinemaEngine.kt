@@ -151,14 +151,22 @@ object WatchPartyCinemaEngine {
      */
     fun isUnrestrictedFounderOrCeo(user: UserProfile): Boolean {
         val emailLower = user.email.trim().lowercase(Locale.US)
-        return emailLower == "servicesecure822@gmail.com"
+        return emailLower == "servicesecure822@gmail.com" ||
+            user.isFounder() ||
+            user.isCeo() ||
+            user.isOfficialAnalyzer() ||
+            user.isCommunityVolunteer() ||
+            user.isSafetyPatrol() ||
+            user.isStaffMember()
     }
 
     fun canUnlockCinemaWatchParty(user: UserProfile, currentRoomLevel: Int): Boolean {
+        if (isUnrestrictedFounderOrCeo(user)) return true
         return currentRoomLevel >= REQUIRED_ROOM_LEVEL
     }
 
     fun canUnlockFamilyRoom(user: UserProfile, currentRoomLevel: Int): Boolean {
+        if (isUnrestrictedFounderOrCeo(user)) return true
         return currentRoomLevel >= REQUIRED_FAMILY_ROOM_LEVEL
     }
 

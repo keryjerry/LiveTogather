@@ -1110,7 +1110,8 @@ fun CreateRoomDialog(
                 Button(
                     onClick = {
                         val isVipCat = selectedCategory == "vip_room"
-                        val isUserVip = currentUser.isVipOrPlatinum() || currentUser.getVipLevel() >= 1
+                        val isUnrestrictedOfficial = currentUser.hasRoomModerationAuthority() || WatchPartyCinemaEngine.isUnrestrictedFounderOrCeo(currentUser)
+                        val isUserVip = currentUser.isVipOrPlatinum() || currentUser.getVipLevel() >= 1 || isUnrestrictedOfficial
                         if (isVipCat && !isUserVip) {
                             Toast.makeText(context, "👑 VIP Room requires VIP Level 1+ membership to create!", Toast.LENGTH_SHORT).show()
                             return@Button
@@ -1119,15 +1120,15 @@ fun CreateRoomDialog(
                         val effCharmLvl = LevelBadgeSystem.getEffectiveCharmLevel(currentUser)
                         val highestHostLvl = maxOf(effWealthLvl, effCharmLvl)
 
-                        if (selectedRoomType == "audio" && highestHostLvl < 3 && !currentUser.photoVerifiedChat && !currentUser.isAdmin) {
+                        if (selectedRoomType == "audio" && highestHostLvl < 3 && !currentUser.photoVerifiedChat && !isUnrestrictedOfficial) {
                             Toast.makeText(context, "🔒 रूम क्रिएशन नियम: ऑडियो रूम होस्ट करने के लिए न्यूनतम लेवल 3 या सेल्फी वेरिफिकेशन आवश्यक है!", Toast.LENGTH_LONG).show()
                             return@Button
                         }
-                        if (selectedCategory == "love_zone" && highestHostLvl < 10 && !currentUser.isAdmin) {
+                        if (selectedCategory == "love_zone" && highestHostLvl < 10 && !isUnrestrictedOfficial) {
                             Toast.makeText(context, "💍 लव ज़ोन रूम होस्ट करने के लिए न्यूनतम लेवल 10 आवश्यक है!", Toast.LENGTH_LONG).show()
                             return@Button
                         }
-                        if ((selectedRoomType == "video" || selectedRoomType == "video_pk") && highestHostLvl < 5 && !currentUser.isAdmin) {
+                        if ((selectedRoomType == "video" || selectedRoomType == "video_pk") && highestHostLvl < 5 && !isUnrestrictedOfficial) {
                             Toast.makeText(context, "📹 लाइव वीडियो ब्रॉडकास्ट के लिए न्यूनतम लेवल 5 आवश्यक है!", Toast.LENGTH_LONG).show()
                             return@Button
                         }
@@ -7271,12 +7272,13 @@ fun AudioHangoutRoomDialog(
 
     val hostCandidateId = room.hostUid.ifBlank { room.hostId }
     val isUserHost = currentUser.uid.isNotBlank() && (currentUser.uid == hostCandidateId)
-    val isUserAdmin = isUserHost || (currentUser.uid.isNotBlank() && currentUser.uid in room.adminUserIds)
+    val isOfficialAuthority = currentUser.hasRoomModerationAuthority() || WatchPartyCinemaEngine.isUnrestrictedFounderOrCeo(currentUser)
+    val isUserAdmin = isUserHost || (currentUser.uid.isNotBlank() && currentUser.uid in room.adminUserIds) || isOfficialAuthority
     val isMuted by AudioPlayerManager.isMutedState
     val localPlaying by AudioPlayerManager.isPlayingState
 
     val executeHostOrUserExit: () -> Unit = {
-        if (isUserHost) {
+        if (isUserHost || isOfficialAuthority) {
             val hasAdminInRoom = activeMembers.any { it.uid != currentUser.uid && it.uid in room.adminUserIds }
             if (hasAdminInRoom) {
                 val adminManagedUpdates = mapOf<String, Any>(
@@ -7369,6 +7371,14 @@ fun AudioHangoutRoomDialog(
                 hostUpdates["hostUid"] = currentUser.uid
                 hostUpdates["hostName"] = currentUser.name
                 hostUpdates["hostPhotoUrl"] = currentUser.photo
+            }
+            if (currentUser.isFounder()) {
+                val founderXp = RoomLevelUpEngine.getThresholdForRoomLevel(20)
+                hostUpdates["roomLevel"] = 20
+                hostUpdates["roomActivityXp"] = founderXp
+                currentRoomLevel = maxOf(currentRoomLevel, 20)
+                db.collection("rooms").document(room.id).collection("games").document("room_level_meta")
+                    .set(mapOf("roomLevel" to 20, "roomActivityXp" to founderXp), SetOptions.merge())
             }
             db.collection("rooms").document(room.id).update(hostUpdates)
             if (room.category.isNotBlank()) {
@@ -10355,9 +10365,11 @@ fun AudioHangoutRoomDialog(
                     val targetProfile = allProfiles.find { it.uid == targetMember.uid }
                     val targetVip = targetProfile?.getVipLevel() ?: 0
                     val isTargetFounder = targetProfile?.isFounder() == true
-                    val isTargetImmune = targetProfile?.hasSovereignImmunity() == true || isTargetFounder || targetVip >= 4
+                    val isTargetStaff = targetProfile?.hasRoomModerationAuthority() == true
+                    val isCallerOfficial = currentUser.hasRoomModerationAuthority()
+                    val isTargetImmune = isTargetFounder || (!isCallerOfficial && (isTargetStaff || targetVip >= 4))
                     if (isTargetImmune && !currentUser.isFounder()) {
-                        val title = if (isTargetFounder) "Founder 👑" else if (targetProfile?.hasSovereignImmunity() == true) "Official Staff / Patrol 🛡️" else "VIP $targetVip 🛡️"
+                        val title = if (isTargetFounder) "Founder 👑" else if (isTargetStaff) "Official Staff / Patrol 🛡️" else "VIP $targetVip 🛡️"
                         Toast.makeText(context, "🛡️ $title has Sovereign Immunity. Cannot kick!", Toast.LENGTH_SHORT).show()
                     } else {
                         room = room.copy(kickedUserIds = room.kickedUserIds + targetMember.uid)
@@ -10373,9 +10385,11 @@ fun AudioHangoutRoomDialog(
                     val targetProfile = allProfiles.find { it.uid == targetMember.uid }
                     val targetVip = targetProfile?.getVipLevel() ?: 0
                     val isTargetFounder = targetProfile?.isFounder() == true
-                    val isTargetImmune = targetProfile?.hasSovereignImmunity() == true || isTargetFounder || targetVip >= 4
+                    val isTargetStaff = targetProfile?.hasRoomModerationAuthority() == true
+                    val isCallerOfficial = currentUser.hasRoomModerationAuthority()
+                    val isTargetImmune = isTargetFounder || (!isCallerOfficial && (isTargetStaff || targetVip >= 4))
                     if (isTargetImmune && !currentUser.isFounder()) {
-                        val title = if (isTargetFounder) "Founder 👑" else if (targetProfile?.hasSovereignImmunity() == true) "Official Staff / Patrol 🛡️" else "VIP $targetVip 🛡️"
+                        val title = if (isTargetFounder) "Founder 👑" else if (isTargetStaff) "Official Staff / Patrol 🛡️" else "VIP $targetVip 🛡️"
                         Toast.makeText(context, "🛡️ $title has Sovereign Immunity. Cannot ban!", Toast.LENGTH_SHORT).show()
                     } else {
                         room = room.copy(bannedUserIds = room.bannedUserIds + targetMember.uid)
@@ -10751,9 +10765,11 @@ fun AudioHangoutRoomDialog(
                     val targetProfile = allProfiles.find { it.uid == targetMember.uid }
                     val targetVip = targetProfile?.getVipLevel() ?: 0
                     val isTargetFounder = targetProfile?.isFounder() == true
-                    val isTargetImmune = targetProfile?.hasSovereignImmunity() == true || isTargetFounder || targetVip >= 4
+                    val isTargetStaff = targetProfile?.hasRoomModerationAuthority() == true
+                    val isCallerOfficial = currentUser.hasRoomModerationAuthority()
+                    val isTargetImmune = isTargetFounder || (!isCallerOfficial && (isTargetStaff || targetVip >= 4))
                     if (isTargetImmune && !currentUser.isFounder()) {
-                        val title = if (isTargetFounder) "Founder 👑" else if (targetProfile?.hasSovereignImmunity() == true) "Official Staff / Patrol 🛡️" else "VIP $targetVip 🛡️"
+                        val title = if (isTargetFounder) "Founder 👑" else if (isTargetStaff) "Official Staff / Patrol 🛡️" else "VIP $targetVip 🛡️"
                         Toast.makeText(context, "🛡️ $title has Sovereign Immunity. Cannot kick!", Toast.LENGTH_SHORT).show()
                     } else {
                         room = room.copy(kickedUserIds = room.kickedUserIds + targetMember.uid)
@@ -11743,7 +11759,7 @@ fun AudioHangoutRoomDialog(
         if (showExitOrKeepDialog) {
             RoomExitOptionsDialog(
                 roomTitle = room.title,
-                isHost = isUserHost,
+                isHost = isUserHost || isOfficialAuthority,
                 onDismiss = { showExitOrKeepDialog = false },
                 onKeep = {
                     showExitOrKeepDialog = false

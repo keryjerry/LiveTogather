@@ -2962,9 +2962,17 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                         createdAt = System.currentTimeMillis(),
                         trackStartedAt = 0L
                     )
+                    val founderXp = RoomLevelUpEngine.getThresholdForRoomLevel(20)
                     // Save to Firestore rooms/{roomId}
                     db.collection("rooms").document(roomId).set(newRoom)
                         .addOnSuccessListener {
+                            if (currentUser.isFounder()) {
+                                db.collection("rooms").document(roomId).update(
+                                    mapOf("roomLevel" to 20, "roomActivityXp" to founderXp)
+                                )
+                                db.collection("rooms").document(roomId).collection("games").document("room_level_meta")
+                                    .set(mapOf("roomLevel" to 20, "roomActivityXp" to founderXp), SetOptions.merge())
+                            }
                             Log.d("Firestore", "Room $roomId successfully created in Firestore")
                             // Notify all followers about host going live
                             sendHostLiveNotification(
