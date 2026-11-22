@@ -278,8 +278,10 @@ class MainActivity : ComponentActivity() {
     private var initialDeepLinkChatUserId: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        GooglePlayBillingManager.initialize(applicationContext)
         initialDeepLinkRoomId = extractRoomId(intent)
         initialDeepLinkChatUserId = extractChatUserId(intent)
         val imageLoader = ImageLoader.Builder(this)
@@ -301,6 +303,9 @@ class MainActivity : ComponentActivity() {
             .crossfade(true)
             .build()
         Coil.setImageLoader(imageLoader)
+        if (intent?.getBooleanExtra("OPEN_INBOX", false) == true) {
+            pendingDeepLinkOpenInbox.value = true
+        }
         setContent {
             LiveTogatherApp(
                 initialRoomId = initialDeepLinkRoomId,
@@ -320,10 +325,14 @@ class MainActivity : ComponentActivity() {
         if (!chatUserId.isNullOrBlank()) {
             pendingDeepLinkChatUserId.value = chatUserId
         }
+        if (intent.getBooleanExtra("OPEN_INBOX", false)) {
+            pendingDeepLinkOpenInbox.value = true
+        }
     }
 
     override fun onResume() {
         super.onResume()
+        currentActivity = this
         val uid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
         if (!uid.isNullOrBlank()) {
             com.google.firebase.firestore.FirebaseFirestore.getInstance().collection("users").document(uid).update(
@@ -348,6 +357,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        if (currentActivity == this) {
+            currentActivity = null
+        }
+    }
+
     private fun extractRoomId(intent: Intent?): String? {
         if (intent == null) return null
         return intent.getStringExtra("ROOM_ID")
@@ -366,8 +382,10 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        var currentActivity: Activity? = null
         val pendingDeepLinkRoomId = mutableStateOf<String?>(null)
         val pendingDeepLinkChatUserId = mutableStateOf<String?>(null)
+        val pendingDeepLinkOpenInbox = mutableStateOf(false)
     }
 }
 
@@ -551,6 +569,7 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                             )
                             db.collection("users").document(currentUserId)
                                 .collection("notifications").document(greetingNotif.id).set(greetingNotif)
+                            db.collection("notifications").document(greetingNotif.id).set(greetingNotif)
 
                             AppNotificationHelper.showSystemNotification(
                                 context = context,
@@ -673,126 +692,6 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
     var helpDeskPackageForStore by remember { mutableStateOf<CoinPackageItem?>(null) }
     var showAppHelpDeskModal by remember { mutableStateOf(false) }
 
-    // Top Search Bar State (Dual-Mode: Room vs User)
-    var isSearchExpanded by remember { mutableStateOf(false) }
-    var searchQuery by remember { mutableStateOf("") }
-    var searchMode by remember { mutableStateOf("room") } // "room" or "user"
-    val searchRoomResults = remember { mutableStateListOf<RoomItem>() }
-    val searchUserResults = remember { mutableStateListOf<UserProfile>() }
-    var isSearching by remember { mutableStateOf(false) }
-
-    LaunchedEffect(searchQuery, searchMode) {
-        val q = searchQuery.trim()
-        if (q.isBlank()) {
-            searchRoomResults.clear()
-            searchUserResults.clear()
-            isSearching = false
-            return@LaunchedEffect
-        }
-        isSearching = true
-        if (searchMode == "room") {
-            db.collection("rooms").whereEqualTo("roomId", q).get()
-                .addOnSuccessListener { exactDocs ->
-                    if (exactDocs != null && !exactDocs.isEmpty) {
-                        val list = exactDocs.documents.mapNotNull { parseRoomFromDoc(it) }
-                        searchRoomResults.clear()
-                        searchRoomResults.addAll(list)
-                        isSearching = false
-                    } else {
-                        db.collection("rooms").limit(60).get()
-                            .addOnSuccessListener { snapshot ->
-                                val list = mutableListOf<RoomItem>()
-                                for (doc in snapshot.documents) {
-                                    val r = parseRoomFromDoc(doc)
-                                    if (r.id.contains(q, ignoreCase = true) ||
-                                        r.roomId.contains(q, ignoreCase = true) ||
-                                        r.title.contains(q, ignoreCase = true) ||
-                                        r.roomName.contains(q, ignoreCase = true) ||
-                                        r.hostName.contains(q, ignoreCase = true)
-                                    ) {
-                                        list.add(r)
-                                    }
-                                }
-                                searchRoomResults.clear()
-                                searchRoomResults.addAll(list)
-                                isSearching = false
-                            }
-                            .addOnFailureListener { isSearching = false }
-                    }
-                }
-                .addOnFailureListener {
-                    db.collection("rooms").limit(60).get()
-                        .addOnSuccessListener { snapshot ->
-                            val list = mutableListOf<RoomItem>()
-                            for (doc in snapshot.documents) {
-                                val r = parseRoomFromDoc(doc)
-                                if (r.id.contains(q, ignoreCase = true) ||
-                                    r.roomId.contains(q, ignoreCase = true) ||
-                                    r.title.contains(q, ignoreCase = true) ||
-                                    r.roomName.contains(q, ignoreCase = true) ||
-                                    r.hostName.contains(q, ignoreCase = true)
-                                ) {
-                                    list.add(r)
-                                }
-                            }
-                            searchRoomResults.clear()
-                            searchRoomResults.addAll(list)
-                            isSearching = false
-                        }
-                        .addOnFailureListener { isSearching = false }
-                }
-        } else {
-            db.collection("users").whereEqualTo("userId", q).get()
-                .addOnSuccessListener { exactDocs ->
-                    if (exactDocs != null && !exactDocs.isEmpty) {
-                        val list = exactDocs.documents.mapNotNull { parseUserProfileFromDoc(it) }
-                        searchUserResults.clear()
-                        searchUserResults.addAll(list)
-                        isSearching = false
-                    } else {
-                        db.collection("users").limit(60).get()
-                            .addOnSuccessListener { snapshot ->
-                                val list = mutableListOf<UserProfile>()
-                                for (doc in snapshot.documents) {
-                                    val u = parseUserProfileFromDoc(doc)
-                                    if (u.uid.contains(q, ignoreCase = true) ||
-                                        u.userId.contains(q, ignoreCase = true) ||
-                                        u.name.contains(q, ignoreCase = true) ||
-                                        u.city.contains(q, ignoreCase = true)
-                                    ) {
-                                        list.add(u)
-                                    }
-                                }
-                                searchUserResults.clear()
-                                searchUserResults.addAll(list)
-                                isSearching = false
-                            }
-                            .addOnFailureListener { isSearching = false }
-                    }
-                }
-                .addOnFailureListener {
-                    db.collection("users").limit(60).get()
-                        .addOnSuccessListener { snapshot ->
-                            val list = mutableListOf<UserProfile>()
-                            for (doc in snapshot.documents) {
-                                val u = parseUserProfileFromDoc(doc)
-                                if (u.uid.contains(q, ignoreCase = true) ||
-                                    u.userId.contains(q, ignoreCase = true) ||
-                                    u.name.contains(q, ignoreCase = true) ||
-                                    u.city.contains(q, ignoreCase = true)
-                                ) {
-                                    list.add(u)
-                                }
-                            }
-                            searchUserResults.clear()
-                            searchUserResults.addAll(list)
-                            isSearching = false
-                        }
-                        .addOnFailureListener { isSearching = false }
-                }
-        }
-    }
-
     var currentScreen by remember { mutableStateOf("discover") }
     var discoverTab by remember { mutableStateOf("cards") } // "cards" or "rooms"
     var selectedCategory by remember { mutableStateOf("all") }
@@ -849,6 +748,22 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
             }
         }
     }
+
+    // Active App Presence Heartbeat Engine (Keeps User Online in Real-Time)
+    LaunchedEffect(currentUserId) {
+        if (currentUserId.isNotBlank()) {
+            while (true) {
+                db.collection("users").document(currentUserId).update(
+                    mapOf(
+                        "isOnline" to true,
+                        "lastActive" to System.currentTimeMillis()
+                    )
+                )
+                kotlinx.coroutines.delay(45_000L)
+            }
+        }
+    }
+
     var showNotificationsDialog by remember { mutableStateOf(false) }
     var showAdminDashboardModal by remember { mutableStateOf(false) }
 
@@ -901,10 +816,12 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
         }
     }
     var showCreateRoomDialog by remember { mutableStateOf(false) }
+    var showGoLiveMyRoomsDialog by remember { mutableStateOf(false) }
     var createRoomInitialCategory by remember { mutableStateOf("free_tonight") }
     var activeCategoryHub by remember { mutableStateOf<IntentCategory?>(null) }
     var matchedPartner by remember { mutableStateOf<UserProfile?>(null) }
     var activeChatPartner by remember { mutableStateOf<UserProfile?>(null) }
+    var isGlobalCapsuleExpanded by remember { mutableStateOf(true) }
 
 // Automatic 1-on-1 Chat Deep-Linking from FCM Notification / Internal Intent
     val pendingChatLink = MainActivity.pendingDeepLinkChatUserId.value ?: initialChatUserId
@@ -936,6 +853,93 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
     val notifications = remember { mutableStateListOf<NotificationItem>() }
     val chatMessages = remember { mutableStateListOf<ChatMessage>() }
     val roomsList = remember { mutableStateListOf<RoomItem>() }
+
+    // Top Search Bar State (Dual-Mode: Room vs User)
+    var isSearchExpanded by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var searchMode by remember { mutableStateOf("room") } // "room" or "user"
+    val searchRoomResults = remember { mutableStateListOf<RoomItem>() }
+    val searchUserResults = remember { mutableStateListOf<UserProfile>() }
+    var isSearching by remember { mutableStateOf(false) }
+
+    LaunchedEffect(searchQuery, searchMode) {
+        val q = searchQuery.trim()
+        if (q.isBlank()) {
+            searchRoomResults.clear()
+            searchUserResults.clear()
+            isSearching = false
+            return@LaunchedEffect
+        }
+        if (searchMode == "room") {
+            // 1. Instant local search from active roomsList
+            val local = roomsList.filter { r ->
+                r.id.contains(q, ignoreCase = true) ||
+                r.roomId.contains(q, ignoreCase = true) ||
+                r.title.contains(q, ignoreCase = true) ||
+                r.roomName.contains(q, ignoreCase = true) ||
+                r.hostName.contains(q, ignoreCase = true)
+            }
+            searchRoomResults.clear()
+            searchRoomResults.addAll(local)
+
+            // 2. Exact match lookup from Firestore if room is not cached locally
+            isSearching = local.isEmpty()
+            db.collection("rooms").whereEqualTo("roomId", q).limit(10).get()
+                .addOnSuccessListener { exactDocs ->
+                    isSearching = false
+                    if (exactDocs != null && !exactDocs.isEmpty) {
+                        val list = exactDocs.documents.mapNotNull { parseRoomFromDoc(it) }
+                        for (item in list) {
+                            if (searchRoomResults.none { it.id == item.id }) {
+                                searchRoomResults.add(item)
+                            }
+                        }
+                    }
+                }
+                .addOnFailureListener { isSearching = false }
+        } else {
+            // 1. Instant local search from discoverProfiles + currentUser
+            val allUsersList = (discoverProfiles + currentUser).distinctBy { it.uid }
+            val local = allUsersList.filter { u ->
+                u.uid.contains(q, ignoreCase = true) ||
+                u.userId.contains(q, ignoreCase = true) ||
+                u.name.contains(q, ignoreCase = true) ||
+                u.city.contains(q, ignoreCase = true)
+            }
+            searchUserResults.clear()
+            searchUserResults.addAll(local)
+
+            // 2. Query Firestore by 8-digit userId or uid
+            isSearching = local.isEmpty()
+            if (q.all { it.isDigit() } && q.length >= 3) {
+                db.collection("users").whereEqualTo("userId", q).limit(10).get()
+                    .addOnSuccessListener { exactDocs ->
+                        isSearching = false
+                        if (exactDocs != null && !exactDocs.isEmpty) {
+                            val list = exactDocs.documents.mapNotNull { parseUserProfileFromDoc(it) }
+                            for (item in list) {
+                                if (searchUserResults.none { it.uid == item.uid }) {
+                                    searchUserResults.add(item)
+                                }
+                            }
+                        }
+                    }
+                    .addOnFailureListener { isSearching = false }
+            } else {
+                db.collection("users").document(q).get()
+                    .addOnSuccessListener { doc ->
+                        isSearching = false
+                        if (doc != null && doc.exists()) {
+                            val u = parseUserProfileFromDoc(doc)
+                            if (u != null && searchUserResults.none { it.uid == u.uid }) {
+                                searchUserResults.add(u)
+                            }
+                        }
+                    }
+                    .addOnFailureListener { isSearching = false }
+            }
+        }
+    }
 
     // Real-Time Cloud Firestore Refresh Engine (Zero Dummy Data, Direct Source.SERVER)
     val refreshEngine = remember { FirestoreRefreshEngine(context, db, prefs) }
@@ -1004,12 +1008,15 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
             }
             if (snapshot != null) {
                 val fetchedRooms = snapshot.documents.mapNotNull { doc ->
-                    val r = parseRoomFromDoc(doc)
-                    if (r != null) {
-                        val docRoomId = doc.getString("roomId") ?: ""
-                        if (docRoomId.isBlank() || docRoomId.length != 8 || !docRoomId.all { it.isDigit() }) {
-                            doc.reference.update("roomId", r.roomId)
-                        }
+                    val r = parseRoomFromDoc(doc) ?: return@mapNotNull null
+                    val isDummy = r.hostUid.startsWith("dummy") || r.hostUid.isBlank() || doc.id.startsWith("dummy") || r.title.contains("dummy", ignoreCase = true)
+                    if (isDummy) {
+                        doc.reference.delete()
+                        return@mapNotNull null
+                    }
+                    val docRoomId = doc.getString("roomId") ?: ""
+                    if (docRoomId.isBlank() || docRoomId.length != 8 || !docRoomId.all { it.isDigit() }) {
+                        doc.reference.update("roomId", r.roomId)
                     }
                     r
                 }
@@ -1018,33 +1025,10 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                 Log.d("Firestore", "Loaded ${fetchedRooms.size} real-time rooms from Firestore")
             }
         }
-
-        // Initial scrub of stale room comments across Firestore for offline/ended rooms
-        db.collection("rooms").get().addOnSuccessListener { rSnaps ->
-            if (rSnaps != null) {
-                for (rDoc in rSnaps.documents) {
-                    val isHostLive = rDoc.getBoolean("isHostLive") ?: false
-                    val isLive = rDoc.getBoolean("isLive") ?: false
-                    val isEnded = rDoc.getBoolean("isEnded") ?: false
-                    if (isEnded || !isHostLive || !isLive) {
-                        rDoc.reference.collection("live_comments").limit(100).get().addOnSuccessListener { cSnaps ->
-                            if (cSnaps != null && !cSnaps.isEmpty) {
-                                val batch = db.batch()
-                                for (cDoc in cSnaps.documents) {
-                                    batch.delete(cDoc.reference)
-                                }
-                                batch.commit()
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 
     // --- Real-Time Firestore Listeners ---
-    val isUserAdminOrFounder = currentUser.isAdmin || currentUser.isFounder() || currentUser.isOfficialAdmin(auth.currentUser?.email)
-    LaunchedEffect(currentUserId, isUserAdminOrFounder) {
+    LaunchedEffect(currentUserId) {
         // 1. Sync Current User Profile
         val userDoc = db.collection("users").document(currentUserId)
         userDoc.addSnapshotListener { snapshot, error ->
@@ -1117,14 +1101,28 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                 return@addSnapshotListener
             }
             if (snapshot != null) {
-                val list = snapshot.documents.mapNotNull { parseUserProfileFromDoc(it) }
-                    .filter { it.uid.isNotBlank() && it.uid != currentUserId && !currentUser.blockedUserIds.contains(it.uid) }
+                val list = snapshot.documents.mapNotNull { doc ->
+                    val uid = doc.id
+                    val docUid = doc.getString("uid") ?: ""
+                    val name = doc.getString("name") ?: ""
+                    val isDummy = uid.startsWith("dummy") || docUid.startsWith("dummy") ||
+                            uid.startsWith("seed_") || docUid.startsWith("seed_") ||
+                            name.contains("dummy", ignoreCase = true)
+                    if (isDummy && uid != currentUserId && docUid != currentUserId) {
+                        doc.reference.delete()
+                        null
+                    } else {
+                        val u = parseUserProfileFromDoc(doc)
+                        if (u != null && u.uid.isNotBlank() && u.uid != currentUserId && !currentUser.blockedUserIds.contains(u.uid)) u else null
+                    }
+                }
                 discoverProfiles.clear()
                 discoverProfiles.addAll(list)
             }
         }
 
-        // 3. Notifications Listener (Real-Time Bell & Status Bar)
+        // 3. Notifications Listener (Real-Time Bell & Status Bar — excludes Gift Rewards, Assistant Rewards & Level Up which live exclusively in Inbox)
+        val inboxOnlyTypes = setOf("gift_reward", "creator_earning", "gift_received", "level_up", "assistant_reward")
         val isUserAdminOrFounderListener = currentUser.isAdmin || currentUser.isFounder() || currentUser.isOfficialAdmin(auth.currentUser?.email)
         val notifTargets = if (isUserAdminOrFounderListener) listOf(currentUserId, "admin", "founder") else listOf(currentUserId)
         db.collection("notifications")
@@ -1139,7 +1137,7 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                         .sortedByDescending { it.timestamp }
 
                     val items = rawItems.filter { notif ->
-                        val isSelf = notif.senderId == currentUserId
+                        if (notif.type.lowercase() in inboxOnlyTypes) return@filter false
                         val isAdminType = notif.type.contains("report") || notif.type.contains("payment") || notif.type.contains("utr") || notif.type.contains("pay_req") || notif.type.contains("verify") || notif.type.contains("selfie")
                         if (!isUserAdminOrFounderListener && isAdminType) {
                             false // Regular user should never see admin reports/payments in their bell
@@ -1151,6 +1149,7 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                     for (dc in snapshot.documentChanges) {
                         if (dc.type == com.google.firebase.firestore.DocumentChange.Type.ADDED) {
                             val notif = dc.document.toObject(NotificationItem::class.java)
+                            val isInboxSystem = notif.type.lowercase() in inboxOnlyTypes
                             val isSelf = notif.senderId == currentUserId
                             val isAdminType = notif.type.contains("report") || notif.type.contains("payment") || notif.type.contains("utr") || notif.type.contains("pay_req") || notif.type.contains("verify") || notif.type.contains("selfie")
                             val shouldShowSystem = if (isAdminType) {
@@ -1180,8 +1179,11 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                                         context = context,
                                         title = notif.title.ifBlank { "LiveTogether Alert" },
                                         message = notif.message,
-                                        roomId = notif.roomId,
-                                        isLiveAlert = notif.type.contains("LIVE", ignoreCase = true) || notif.type.contains("host_live", ignoreCase = true)
+                                        roomId = notif.roomId.ifBlank { null },
+                                        chatPartnerUid = if (!isInboxSystem && notif.senderId.isNotBlank() && notif.senderId != "system_livetogather") notif.senderId else null,
+                                        isLiveAlert = notif.type.contains("LIVE", ignoreCase = true) || notif.type.contains("host_live", ignoreCase = true),
+                                        giftId = notif.giftId.ifBlank { null },
+                                        openInbox = isInboxSystem
                                     )
                                 }
                             }
@@ -1190,6 +1192,42 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
 
                     notifications.clear()
                     notifications.addAll(items)
+                }
+            }
+
+        // 3B. User Personal Notifications Listener (users/{currentUserId}/notifications)
+        // Gift rewards & Level-Up messages route straight to Official Inbox threads + clickable OS status bar alert!
+        db.collection("users").document(currentUserId)
+            .collection("notifications")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null || snapshot == null) return@addSnapshotListener
+                for (dc in snapshot.documentChanges) {
+                    if (dc.type == com.google.firebase.firestore.DocumentChange.Type.ADDED) {
+                        val uNotif = dc.document.toObject(NotificationItem::class.java)
+                        val isInboxSystem = uNotif.type.lowercase() in inboxOnlyTypes
+                        if (isInboxSystem && !uNotif.isRead && (System.currentTimeMillis() - uNotif.timestamp) < 120_000L) {
+                            AppNotificationHelper.showSystemNotification(
+                                context = context,
+                                title = uNotif.title.ifBlank { "LiveTogather System" },
+                                message = uNotif.message,
+                                giftId = uNotif.giftId.ifBlank { null },
+                                openInbox = true
+                            )
+                        }
+                    }
+                }
+                val userNotifs = snapshot.documents
+                    .mapNotNull { it.toObject(NotificationItem::class.java) }
+                    .filter { it.type.lowercase() !in inboxOnlyTypes }
+                userNotifs.forEach { uNotif ->
+                    val existingIdx = notifications.indexOfFirst { it.id == uNotif.id }
+                    if (existingIdx >= 0) {
+                        if (notifications[existingIdx].isRead != uNotif.isRead) {
+                            notifications[existingIdx] = uNotif
+                        }
+                    } else {
+                        notifications.add(0, uNotif)
+                    }
                 }
             }
 
@@ -1290,8 +1328,10 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
         }
     }
 
-    val unreadNotificationsCount = remember(notifications, pendingIntimacyRequestsCount) {
-        notifications.count { !it.isRead } + pendingIntimacyRequestsCount
+    val unreadNotificationsCount by remember(notifications.size, notifications.map { it.isRead }, pendingIntimacyRequestsCount) {
+        derivedStateOf {
+            notifications.count { !it.isRead } + pendingIntimacyRequestsCount
+        }
     }
 
     val isKeyboardOpen = WindowInsets.isImeVisible
@@ -1398,53 +1438,111 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
     }
 
     val isProfileScreen = currentScreen == "profile"
+    val isChatsScreen = currentScreen == "chats"
+    val isMomentsScreen = currentScreen == "moments"
+
+    // Automated Level-Up, Recharge, VIP 1-5 & Activity Milestone Assistant (dispatches free 24h / 3-day 3D rewards to Inbox)
+    LaunchedEffect(
+        currentUser.uid,
+        currentUser.wealthXp,
+        currentUser.charmXp,
+        currentUser.rechargeCount,
+        currentUser.hasRecharged,
+        currentUser.getVipLevel(),
+        currentUser.totalRoomTimeSeconds / 1800L
+    ) {
+        if (currentUser.uid.isNotBlank()) {
+            ProgressionAutomationService.evaluateAndDispatchMilestones(
+                context = context,
+                user = currentUser,
+                db = db
+            )
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(BrandDark)) {
         Scaffold(
             containerColor = BrandDark,
             topBar = {
-                if (!isProfileScreen && (activeAudioRoom == null || isAudioRoomMinimized)) {
+                if (!isProfileScreen && !isChatsScreen && !isMomentsScreen && (activeAudioRoom == null || isAudioRoomMinimized)) {
+                    val isHomeDiscover = currentScreen == "discover"
+                    val homeAllUsers = remember(discoverProfiles.toList(), currentUser) {
+                        (discoverProfiles + currentUser).distinctBy { it.uid }
+                    }
+                    val homeActiveRoomsCount = remember(roomsList.map { "${it.id}_${it.isHostLive}_${it.isLive}_${it.statusMessage}" }) {
+                        roomsList.count {
+                            (it.isHostLive || it.isLive) &&
+                            !it.statusMessage.equals("OFFLINE", ignoreCase = true) &&
+                            !it.statusMessage.equals("CLOSED", ignoreCase = true) &&
+                            !it.statusMessage.equals("DELETED", ignoreCase = true)
+                        }
+                    }
+                    val onlineCount = remember(homeAllUsers.size, homeActiveRoomsCount) {
+                        val c = homeAllUsers.count { it.isUserOnline() }
+                        if (c > 0) c else if (homeActiveRoomsCount > 0) 1 else 0
+                    }
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .statusBarsPadding()
-                            .background(if (isProfileScreen) Color.Transparent else BrandCard)
+                            .background(if (isHomeDiscover || isProfileScreen) Color.Transparent else BrandCard)
                     ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = if (isProfileScreen) 4.dp else 10.dp),
+                            .padding(horizontal = 16.dp, vertical = if (isHomeDiscover || isProfileScreen) 6.dp else 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.LocalFireDepartment,
-                                contentDescription = null,
-                                tint = BrandCoral,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "LiveTogather",
-                                color = BrandCoral,
-                                fontWeight = FontWeight.Black,
-                                fontSize = 20.sp
-                            )
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.LocalFireDepartment,
+                                    contentDescription = null,
+                                    tint = BrandCoral,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "LiveTogather",
+                                    color = BrandCoral,
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 19.sp
+                                )
+                            }
+                            if (isHomeDiscover) {
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.5.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF10B981))
+                                    )
+                                    Text(
+                                        text = "$onlineCount Online • $homeActiveRoomsCount Active Rooms",
+                                        color = Color.White.copy(alpha = 0.88f),
+                                        fontSize = 10.5.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
                         }
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             val topBarIconTint = if (isProfileScreen) Color(0xFF1B1433) else Color.White
-                            // Real-Time Cloud Firestore Server Refresh Action
-                            val infiniteTransition = rememberInfiniteTransition(label = "refreshAnim")
-                            val rotation by infiniteTransition.animateFloat(
-                                initialValue = 0f,
-                                targetValue = 360f,
-                                animationSpec = infiniteRepeatable(
-                                    animation = tween(1000, easing = LinearEasing)
-                                ),
-                                label = "refreshRotation"
-                            )
+                            val rotation = if (refreshEngine.isRefreshing) {
+                                val infiniteTransition = rememberInfiniteTransition(label = "refreshAnim")
+                                infiniteTransition.animateFloat(
+                                    initialValue = 0f,
+                                    targetValue = 360f,
+                                    animationSpec = infiniteRepeatable(animation = tween(1000, easing = LinearEasing)),
+                                    label = "refreshRotation"
+                                ).value
+                            } else 0f
                             IconButton(
                                 onClick = triggerRefresh,
                                 enabled = !refreshEngine.isRefreshing
@@ -1452,37 +1550,82 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                                 Icon(
                                     imageVector = Icons.Default.Refresh,
                                     contentDescription = "Refresh Cloud Firestore",
-                                    modifier = Modifier.rotate(if (refreshEngine.isRefreshing) rotation else 0f),
+                                    modifier = Modifier.rotate(rotation),
                                     tint = if (refreshEngine.isRefreshing) BrandCoral else topBarIconTint
                                 )
                             }
 
+                            val bellRotationTop: Float
+                            val badgePulseScaleTop: Float
+                            val badgeAlphaTop: Float
+                            if (unreadNotificationsCount > 0) {
+                                val bellAnimTop = rememberInfiniteTransition(label = "bellNotificationAnimTop")
+                                bellRotationTop = bellAnimTop.animateFloat(
+                                    initialValue = -15f,
+                                    targetValue = 15f,
+                                    animationSpec = infiniteRepeatable(animation = tween(150, easing = LinearEasing), repeatMode = RepeatMode.Reverse),
+                                    label = "bellRotationTop"
+                                ).value
+                                badgePulseScaleTop = bellAnimTop.animateFloat(
+                                    initialValue = 0.88f,
+                                    targetValue = 1.18f,
+                                    animationSpec = infiniteRepeatable(animation = tween(550, easing = FastOutSlowInEasing), repeatMode = RepeatMode.Reverse),
+                                    label = "badgePulseTop"
+                                ).value
+                                badgeAlphaTop = bellAnimTop.animateFloat(
+                                    initialValue = 0.65f,
+                                    targetValue = 1.0f,
+                                    animationSpec = infiniteRepeatable(animation = tween(550, easing = FastOutSlowInEasing), repeatMode = RepeatMode.Reverse),
+                                    label = "badgeAlphaTop"
+                                ).value
+                            } else {
+                                bellRotationTop = 0f
+                                badgePulseScaleTop = 1f
+                                badgeAlphaTop = 1f
+                            }
+
                             // Sleek Dual-Mode Search Button
-                            IconButton(onClick = {
-                                isSearchExpanded = !isSearchExpanded
-                                if (!isSearchExpanded) {
-                                    searchQuery = ""
-                                    searchRoomResults.clear()
-                                    searchUserResults.clear()
-                                }
-                            }) {
+                            IconButton(
+                                onClick = {
+                                    isSearchExpanded = !isSearchExpanded
+                                    if (!isSearchExpanded) {
+                                        searchQuery = ""
+                                        searchRoomResults.clear()
+                                        searchUserResults.clear()
+                                    }
+                                },
+                                modifier = Modifier.size(42.dp)
+                            ) {
                                 Icon(
                                     imageVector = if (isSearchExpanded) Icons.Default.Close else Icons.Default.Search,
                                     contentDescription = "Search",
-                                    tint = if (isSearchExpanded) BrandCoral else topBarIconTint
+                                    tint = if (isSearchExpanded) Color(0xFFEA4335) else Color(0xFFFFD700),
+                                    modifier = Modifier.size(26.dp)
                                 )
                             }
 
-                            // Real-time Notification Bell with Badge
-                            IconButton(onClick = { showNotificationsDialog = true }) {
+                            // Real-time Notification Bell with Blinking Number Badge
+                            IconButton(
+                                onClick = { showNotificationsDialog = true },
+                                modifier = Modifier.size(42.dp)
+                            ) {
                                 BadgedBox(
                                     badge = {
                                         if (unreadNotificationsCount > 0) {
                                             Badge(
-                                                containerColor = BrandCoral,
-                                                contentColor = Color.White
+                                                containerColor = Color(0xFFFF2A55),
+                                                contentColor = Color.White,
+                                                modifier = Modifier.graphicsLayer {
+                                                    scaleX = badgePulseScaleTop
+                                                    scaleY = badgePulseScaleTop
+                                                    alpha = badgeAlphaTop
+                                                }
                                             ) {
-                                                Text("$unreadNotificationsCount", fontSize = 10.sp)
+                                                Text(
+                                                    text = if (unreadNotificationsCount > 99) "99+" else "$unreadNotificationsCount",
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
                                             }
                                         }
                                     }
@@ -1490,18 +1633,14 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                                     Icon(
                                         imageVector = Icons.Default.Notifications,
                                         contentDescription = "Notifications",
-                                        tint = if (unreadNotificationsCount > 0) BrandOrange else topBarIconTint
-                                    )
-                                }
-                            }
-
-                            // Discovery Filters (Manual distance, age & city filter)
-                            if (currentScreen == "discover") {
-                                IconButton(onClick = { showSettingsDialog = true }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Tune,
-                                        contentDescription = "Discovery Filters",
-                                        tint = Color.White
+                                        tint = if (unreadNotificationsCount > 0) Color(0xFFFFD700) else topBarIconTint,
+                                        modifier = Modifier
+                                            .size(28.dp)
+                                            .graphicsLayer {
+                                                if (unreadNotificationsCount > 0) {
+                                                    rotationZ = bellRotationTop
+                                                }
+                                            }
                                     )
                                 }
                             }
@@ -1552,7 +1691,7 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                                                 .padding(horizontal = 16.dp, vertical = 5.dp)
                                         ) {
                                             Text(
-                                                text = "🎙️ Room",
+                                                text = "🎙️ Room ID",
                                                 fontSize = 12.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = if (searchMode == "room") Color.White else Color.Gray
@@ -1566,7 +1705,7 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                                                 .padding(horizontal = 16.dp, vertical = 5.dp)
                                         ) {
                                             Text(
-                                                text = "👤 User",
+                                                text = "👤 User ID",
                                                 fontSize = 12.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = if (searchMode == "user") Color.White else Color.Gray
@@ -1663,6 +1802,8 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                                                             .clickable {
                                                                 if ((room.category == "vip_room" || room.isVipRoom) && (!currentUser.isVipOrPlatinum() && currentUser.getVipLevel() < 1)) {
                                                                     Toast.makeText(context, "👑 VIP Access Only: This room is reserved for VIP Level 1+ members!", Toast.LENGTH_LONG).show()
+                                                                } else if (!room.canEnterFamilyRoom(currentUserId, currentUser.hasRoomModerationAuthority() || WatchPartyCinemaEngine.isUnrestrictedFounderOrCeo(currentUser))) {
+                                                                    Toast.makeText(context, "🛡️ Family Room: Only invited Family Members can enter this room!", Toast.LENGTH_LONG).show()
                                                                 } else {
                                                                     isSearchExpanded = false
                                                                     activeAudioRoom = room
@@ -1700,6 +1841,8 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                                                             onClick = {
                                                                 if ((room.category == "vip_room" || room.isVipRoom) && (!currentUser.isVipOrPlatinum() && currentUser.getVipLevel() < 1)) {
                                                                     Toast.makeText(context, "👑 VIP Access Only: This room is reserved for VIP Level 1+ members!", Toast.LENGTH_LONG).show()
+                                                                } else if (!room.canEnterFamilyRoom(currentUserId, currentUser.hasRoomModerationAuthority() || WatchPartyCinemaEngine.isUnrestrictedFounderOrCeo(currentUser))) {
+                                                                    Toast.makeText(context, "🛡️ Family Room: Only invited Family Members can enter this room!", Toast.LENGTH_LONG).show()
                                                                 } else {
                                                                     isSearchExpanded = false
                                                                     activeAudioRoom = room
@@ -1792,10 +1935,32 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
         },
         bottomBar = {
             if (activeAudioRoom == null || isAudioRoomMinimized) {
-                GalaxyGlossyBottomNavigationBar(
-                    currentScreen = currentScreen,
-                    onNavigate = { route -> currentScreen = route }
-                )
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    AnimatedExpandableNeonCapsule(
+                        currentScreen = currentScreen,
+                        currentUser = currentUser,
+                        isExpanded = isGlobalCapsuleExpanded,
+                        onToggleExpand = { isGlobalCapsuleExpanded = !isGlobalCapsuleExpanded },
+                        onNavigate = { route -> currentScreen = route },
+                        onCreateRoom = {
+                            val myExistingVoiceRooms = roomsList.filter {
+                                ((it.hostUid.isNotBlank() && it.hostUid == currentUserId) || (it.hostId.isNotBlank() && it.hostId == currentUserId)) &&
+                                !it.statusMessage.equals("DELETED", ignoreCase = true) &&
+                                it.category != "video_stream" && it.roomType != "video" && it.roomType != "video_pk" && !it.isVideoRoom
+                            }
+                            if (myExistingVoiceRooms.isNotEmpty()) {
+                                showGoLiveMyRoomsDialog = true
+                            } else {
+                                createRoomInitialCategory = "party_rooms"
+                                showCreateRoomDialog = true
+                            }
+                        },
+                        onOpenMoments = { currentScreen = "moments" }
+                    )
+                }
             }
         }
         ) { paddingValues ->
@@ -1804,254 +1969,157 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                 onRefresh = triggerRefresh,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(paddingValues)
+                    .padding(
+                        if (currentScreen == "discover" || currentScreen == "profile" || currentScreen == "chats" || currentScreen == "moments")
+                            PaddingValues(0.dp)
+                        else
+                            PaddingValues(top = paddingValues.calculateTopPadding(), bottom = 0.dp)
+                    )
             ) {
                 when (currentScreen) {
                     "discover" -> {
-                        Column(modifier = Modifier.fillMaxSize()) {
-                            // Discover View Toggle: Swipe Cards vs Intent Rooms Grid
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(BrandCard)
-                                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(50))
-                                        .background(BrandDark)
-                                        .padding(4.dp)
-                                ) {
-                                    Row {
-                                        Box(
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(50))
-                                                .background(if (discoverTab == "cards") BrandCoral else Color.Transparent)
-                                                .clickable { discoverTab = "cards" }
-                                                .padding(horizontal = 16.dp, vertical = 6.dp)
-                                        ) {
-                                            Text(
-                                                "🔥 Swipe Cards",
-                                                color = Color.White,
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
-
-                                        Box(
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(50))
-                                                .background(if (discoverTab == "rooms") BrandCoral else Color.Transparent)
-                                                .clickable { discoverTab = "rooms" }
-                                                .padding(horizontal = 16.dp, vertical = 6.dp)
-                                        ) {
-                                            val intentCategoriesCount = remember { CATEGORY_LIST.filter { it.id != "all" }.size }
-                                            Text(
-                                                "🏛️ Intent Rooms ($intentCategoriesCount)",
-                                                color = Color.White,
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
-                                    }
+                        LiveTogetherHomeScreen(
+                            allUsers = (discoverProfiles + currentUser).distinctBy { it.uid },
+                            rooms = roomsList,
+                            currentUser = currentUser,
+                            moments = moments,
+                            unreadNotificationsCount = unreadNotificationsCount,
+                            onCapsuleExpandChange = { isGlobalCapsuleExpanded = it },
+                            onJoinRoom = { room ->
+                                val targetHost = room.hostUid.ifBlank { room.hostId }
+                                val isHostCandidate = currentUserId.isNotBlank() && currentUserId == targetHost
+                                if (!isHostCandidate && (room.category == "vip_room" || room.isVipRoom) && (!currentUser.isVipOrPlatinum() && currentUser.getVipLevel() < 1)) {
+                                    Toast.makeText(context, "👑 VIP Access Only: This room is reserved for VIP Level 1+ members!", Toast.LENGTH_LONG).show()
+                                    return@LiveTogetherHomeScreen
                                 }
-                            }
+                                if (!room.canEnterFamilyRoom(currentUserId, currentUser.hasRoomModerationAuthority() || WatchPartyCinemaEngine.isUnrestrictedFounderOrCeo(currentUser))) {
+                                    Toast.makeText(context, "🛡️ Family Room: Only invited Family Members can enter this room!", Toast.LENGTH_LONG).show()
+                                    return@LiveTogetherHomeScreen
+                                }
+                                val canActuallyHost = !isHostCandidate || currentUser.canHostRoom()
 
-                            if (discoverTab == "cards") {
-                                val todayDateStr = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()) }
+                                val isRoomAdminCandidate = currentUserId.isNotBlank() && currentUserId in room.adminUserIds
+                                val isHostOrAdmin = isHostCandidate || isRoomAdminCandidate
+                                val isHeartbeatStale = room.lastHostHeartbeat > 0L && (System.currentTimeMillis() - room.lastHostHeartbeat > 30 * 60 * 1000L)
 
-                                DiscoverScreenContent(
-                                    profiles = filteredProfiles,
-                                    selectedCategory = selectedCategory,
-                                    currentUser = currentUser,
-                                    onSelectCategory = { selectedCategory = it },
-                                    onPass = { profile ->
-                                        val isToday = currentUser.lastSwipeDate == todayDateStr
-                                        val currentDailyCount = if (isToday) currentUser.dailySwipeCount else 0
-
-                                        if (!currentUser.isPaidSubscriber() && currentDailyCount >= 15) {
-                                            subscriptionPaywallNotice = "Daily Free Limit Reached (15/15 Swipes) 🔒\nUpgrade your membership for unlimited swipes & instant matching!"
-                                            showMainSubscriptionModal = true
-                                        } else {
-                                            val newCount = currentDailyCount + 1
-                                            currentUser = currentUser.copy(
-                                                dailySwipeCount = newCount,
-                                                lastSwipeDate = todayDateStr
-                                            )
-                                            saveProfileToPrefs(prefs, currentUser)
-                                            db.collection("users").document(currentUserId).update(
-                                                mapOf(
-                                                    "dailySwipeCount" to newCount,
-                                                    "lastSwipeDate" to todayDateStr
-                                                )
-                                            )
-                                            recordSwipe(db, currentUserId, profile.uid, "pass")
-                                            val remaining = maxOf(0, 15 - newCount)
-                                            if (!currentUser.isPaidSubscriber()) {
-                                                Toast.makeText(context, "Passed ${profile.name} ($remaining free swipes left today)", Toast.LENGTH_SHORT).show()
-                                            } else {
-                                                Toast.makeText(context, "Passed ${profile.name}", Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    },
-                                    onSuperStar = { profile ->
-                                        if (!currentUser.isPaidSubscriber()) {
-                                            subscriptionPaywallNotice = "⭐ SuperStar is a Premium Feature!\nUpgrade your membership to send SuperStars, stand out, and get noticed instantly."
-                                            showMainSubscriptionModal = true
-                                        } else {
-                                            recordSwipe(db, currentUserId, profile.uid, "superstar")
-                                            sendNotification(
-                                                db = db,
-                                                targetUserId = profile.uid,
-                                                sender = currentUser,
-                                                type = "superstar",
-                                                title = "⭐ SuperStar Received!",
-                                                message = "${currentUser.name} gave you a SuperStar!"
-                                            )
-                                            Toast.makeText(context, "SuperStar sent to ${profile.name}!", Toast.LENGTH_SHORT).show()
-                                        }
-                                    },
-                                    onDirectMessage = { profile ->
-                                        // Tier Rule Check: VIP / Platinum only
-                                        if (currentUser.isVipOrPlatinum()) {
-                                            showDirectMessageDialog = profile
-                                        } else {
-                                            Toast.makeText(
-                                                context,
-                                                "Direct messaging is exclusive to VIP or Platinum members. Like back to chat for free!",
-                                                Toast.LENGTH_LONG
-                                            ).show()
-                                        }
-                                    },
-                                    onLike = { profile ->
-                                        val isToday = currentUser.lastSwipeDate == todayDateStr
-                                        val currentDailyCount = if (isToday) currentUser.dailySwipeCount else 0
-
-                                        if (!currentUser.isPaidSubscriber() && currentDailyCount >= 15) {
-                                            subscriptionPaywallNotice = "Daily Free Limit Reached (15/15 Swipes) 🔒\nUpgrade your membership for unlimited swipes & instant matching!"
-                                            showMainSubscriptionModal = true
-                                        } else {
-                                            val newCount = currentDailyCount + 1
-                                            currentUser = currentUser.copy(
-                                                dailySwipeCount = newCount,
-                                                lastSwipeDate = todayDateStr
-                                            )
-                                            saveProfileToPrefs(prefs, currentUser)
-                                            db.collection("users").document(currentUserId).update(
-                                                mapOf(
-                                                    "dailySwipeCount" to newCount,
-                                                    "lastSwipeDate" to todayDateStr
-                                                )
-                                            )
-                                            recordSwipe(db, currentUserId, profile.uid, "like")
-                                            checkAndHandleMutualMatch(
-                                                db = db,
-                                                currentUser = currentUser,
-                                                partner = profile,
-                                                onMatch = { matchedPartner = profile }
-                                            )
-                                            val remaining = maxOf(0, 15 - newCount)
-                                            if (!currentUser.isPaidSubscriber()) {
-                                                Toast.makeText(context, "Liked ${profile.name}! ($remaining free swipes left today)", Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    }
-                                )
-                            } else {
-                                // 2-Column Clean Intent Category Hubs Grid Layout
-                                IntentRoomsGrid(
-                                    categories = CATEGORY_LIST.filter { it.id != "all" },
-                                    catalogRooms = emptyList(),
-                                    rooms = roomsList,
-                                    allUsers = discoverProfiles + currentUser,
-                                    onCreateRoom = {
-                                        createRoomInitialCategory = "free_tonight"
-                                        showCreateRoomDialog = true
-                                    },
-                                    onOpenCategoryHub = { category ->
-                                        if (category.id == "vip_room" && (!currentUser.isVipOrPlatinum() && currentUser.getVipLevel() < 1)) {
-                                            Toast.makeText(context, "👑 VIP Access Only: VIP Room is reserved for VIP Level 1+ members!", Toast.LENGTH_LONG).show()
-                                        } else {
-                                            activeCategoryHub = category
-                                        }
-                                    },
-                                    onJoinRoom = { room ->
-                                        if ((room.category == "vip_room" || room.isVipRoom) && (!currentUser.isVipOrPlatinum() && currentUser.getVipLevel() < 1)) {
-                                            Toast.makeText(context, "👑 VIP Access Only: This room is reserved for VIP Level 1+ members!", Toast.LENGTH_LONG).show()
-                                            return@IntentRoomsGrid
-                                        }
-                                        val targetHost = room.hostUid.ifBlank { room.hostId }
-                                        val isHostCandidate = currentUserId.isNotBlank() && currentUserId == targetHost
-                                        val canActuallyHost = !isHostCandidate || currentUser.canHostRoom()
-
-                                        if (!isHostCandidate && (!room.isHostLive || room.statusMessage.equals("OFFLINE", ignoreCase = true) || room.statusMessage.equals("CLOSED", ignoreCase = true))) {
-                                            Toast.makeText(context, "⏳ The host (${room.hostName.ifBlank { "Host" }}) is currently offline. They will be live soon!", Toast.LENGTH_SHORT).show()
-                                            return@IntentRoomsGrid
-                                        }
-                                        // 1. Register presence in rooms/{roomId}/members/{userId}
-
-                                        if (isHostCandidate && !canActuallyHost) {
-                                            subscriptionPaywallNotice = "👑 Host Access Criteria: Minimum Platinum Membership Required!\nYour 7-day launch trial has ended. Upgrade to Platinum (₹249/mo) or VIP to host."
-                                            showMainSubscriptionModal = true
-                                        }
-
-                                        val isHost = isHostCandidate && canActuallyHost
-                                        val member = RoomMember(
-                                            uid = currentUserId,
-                                            name = currentUser.name,
-                                            photoUrl = currentUser.photo,
-                                            joinedAt = System.currentTimeMillis(),
-                                            role = if (isHost) "host" else "listener",
-                                            tier = if (currentUser.getVipLevel() > 0) "VIP" else if (currentUser.isVipOrPlatinum()) "Platinum" else "Standard"
+                                if (!isHostOrAdmin && (!room.isHostLive || !room.isLive || room.isEnded || isHeartbeatStale || room.statusMessage.contains("OFFLINE", ignoreCase = true) || room.statusMessage.contains("CLOSED", ignoreCase = true))) {
+                                    if (isHeartbeatStale || room.isHostLive) {
+                                        val closeMap = mapOf<String, Any>(
+                                            "isLive" to false,
+                                            "isHostLive" to false,
+                                            "isEnded" to true,
+                                            "isPlaying" to false,
+                                            "watchPartyIsPlaying" to false,
+                                            "statusMessage" to "Room is closed"
                                         )
-                                        db.collection("rooms").document(room.id)
-                                            .collection("members").document(currentUserId)
-                                            .set(member)
-
-                                        if (isHost) {
-                                            val hostUpdates = mutableMapOf<String, Any>(
-                                                "isLive" to true,
-                                                "isHostLive" to true,
-                                                "isEnded" to false,
-                                                "endedAt" to 0L,
-                                                "statusMessage" to "LIVE NOW"
-                                            )
-                                            if (room.hostId.isBlank()) {
-                                                hostUpdates["hostId"] = currentUserId
-                                                hostUpdates["hostUid"] = currentUserId
-                                                hostUpdates["hostName"] = currentUser.name
-                                                hostUpdates["hostPhotoUrl"] = currentUser.photo
-                                            }
-                                            db.collection("rooms").document(room.id).update(hostUpdates)
-                                            if (room.category.isNotBlank()) {
-                                                db.collection("intent_categories").document(room.category)
-                                                    .collection("rooms").document(room.id).update(hostUpdates)
-                                            }
-                                            broadcastLiveNotificationToFollowers(
-                                                db = db,
-                                                hostId = currentUserId,
-                                                hostName = currentUser.name,
-                                                hostPhoto = currentUser.photo,
-                                                room = room
-                                            )
+                                        db.collection("rooms").document(room.id).update(closeMap)
+                                        if (room.category.isNotBlank()) {
+                                            db.collection("intent_categories").document(room.category)
+                                                .collection("rooms").document(room.id).update(closeMap)
                                         }
-
-                                        // 2. Update current_room in Firestore user doc
-                                        currentUser = currentUser.copy(current_room = room.id)
-                                        saveProfileToPrefs(prefs, currentUser)
-                                        db.collection("users").document(currentUserId)
-                                            .update("current_room", room.id)
-                                            .addOnSuccessListener {
-                                                Log.d("Rooms", "Joined room ${room.id} as ${member.role}")
-                                            }
-
-                                        // 3. Open Audio Hangout Room Dialog
-                                        activeAudioRoom = room
                                     }
+                                    Toast.makeText(context, "🚫 Room is closed • Host & Admin are offline", Toast.LENGTH_SHORT).show()
+                                    return@LiveTogetherHomeScreen
+                                }
+
+                                if (isHostCandidate && !canActuallyHost) {
+                                    subscriptionPaywallNotice = "👑 Host Access Criteria: Minimum Platinum Membership Required!\nYour 7-day launch trial has ended. Upgrade to Platinum (₹249/mo) or VIP to host."
+                                    showMainSubscriptionModal = true
+                                }
+
+                                val isHost = isHostCandidate && canActuallyHost
+                                val member = RoomMember(
+                                    uid = currentUserId,
+                                    name = currentUser.name,
+                                    photoUrl = currentUser.photo,
+                                    joinedAt = System.currentTimeMillis(),
+                                    role = if (isHost) "host" else "listener",
+                                    tier = if (currentUser.getVipLevel() > 0) "VIP" else if (currentUser.isVipOrPlatinum()) "Platinum" else "Standard"
                                 )
+                                db.collection("rooms").document(room.id)
+                                    .collection("members").document(currentUserId)
+                                    .set(member)
+
+                                if (isHost) {
+                                    val hostUpdates = mutableMapOf<String, Any>(
+                                        "isLive" to true,
+                                        "isHostLive" to true,
+                                        "isEnded" to false,
+                                        "endedAt" to 0L,
+                                        "statusMessage" to "LIVE NOW"
+                                    )
+                                    if (room.hostId.isBlank()) {
+                                        hostUpdates["hostId"] = currentUserId
+                                        hostUpdates["hostUid"] = currentUserId
+                                        hostUpdates["hostName"] = currentUser.name
+                                        hostUpdates["hostPhotoUrl"] = currentUser.photo
+                                    }
+                                    db.collection("rooms").document(room.id).update(hostUpdates)
+                                    if (room.category.isNotBlank()) {
+                                        db.collection("intent_categories").document(room.category)
+                                            .collection("rooms").document(room.id).update(hostUpdates)
+                                    }
+                                    broadcastLiveNotificationToFollowers(
+                                        db = db,
+                                        hostId = currentUserId,
+                                        hostName = currentUser.name,
+                                        hostPhoto = currentUser.photo,
+                                        room = room
+                                    )
+                                }
+
+                                db.collection("users").document(currentUserId)
+                                    .update("current_room", room.id)
+
+                                val isVideo = room.category == "video_stream" || room.roomType == "video" || room.roomType == "video_pk" || room.isVideoRoom
+                                activeAudioRoom = if (isVideo) room.copy(roomType = "video") else room.copy(roomType = "audio")
+                            },
+                            onCreateRoom = {
+                                val myExistingRooms = roomsList.filter {
+                                    ((it.hostUid.isNotBlank() && it.hostUid == currentUserId) || (it.hostId.isNotBlank() && it.hostId == currentUserId)) &&
+                                    !it.statusMessage.equals("DELETED", ignoreCase = true)
+                                }
+                                if (myExistingRooms.isNotEmpty()) {
+                                    showGoLiveMyRoomsDialog = true
+                                } else {
+                                    createRoomInitialCategory = "party_rooms"
+                                    showCreateRoomDialog = true
+                                }
+                            },
+                            onOpenCategoryHub = { category ->
+                                activeCategoryHub = category
+                            },
+                            onSelectUserProfile = { profile ->
+                                selectedUserProfile = profile
+                            },
+                            onOpenSearch = {
+                                isSearchExpanded = true
+                            },
+                            onOpenNotifications = {
+                                showNotificationsDialog = true
+                            },
+                            onPostMoment = {
+                                showPostMomentDialog = true
+                            },
+                            onLikeMoment = { moment ->
+                                val idx = moments.indexOfFirst { it.id == moment.id }
+                                if (idx != -1) {
+                                    val isLiked = moment.likedByUsers.contains(currentUserId)
+                                    val updatedList = if (isLiked) moment.likedByUsers - currentUserId else moment.likedByUsers + currentUserId
+                                    moments[idx] = moment.copy(
+                                        likes = if (isLiked) maxOf(0, moment.likes - 1) else moment.likes + 1,
+                                        likedByUsers = updatedList
+                                    )
+                                    db.collection("moments").document(moment.id).update(
+                                        "likes", moments[idx].likes,
+                                        "likedByUsers", updatedList
+                                    )
+                                }
+                            },
+                            onNavigate = { route ->
+                                currentScreen = route
                             }
-                        }
+                        )
                     }
 
                     "likes" -> {
@@ -2076,12 +2144,37 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                     }
 
                     "chats" -> {
-                        ChatsScreenContent(
+                        ModernInboxScreen(
                             matches = matches,
+                            roomsList = roomsList,
+                            allProfiles = discoverProfiles,
                             currentUserId = currentUserId,
                             currentUser = currentUser,
                             db = db,
                             onOpenChat = { partner -> activeChatPartner = partner },
+                            onJoinRoom = { room ->
+                                if (!room.canEnterFamilyRoom(currentUserId, currentUser.hasRoomModerationAuthority() || WatchPartyCinemaEngine.isUnrestrictedFounderOrCeo(currentUser))) {
+                                    Toast.makeText(context, "🛡️ Family Room: Only invited Family Members can enter this room!", Toast.LENGTH_LONG).show()
+                                } else {
+                                    val isVideo = room.category == "video_stream" || room.roomType == "video" || room.roomType == "video_pk" || room.isVideoRoom
+                                    db.collection("users").document(currentUserId).update("current_room", room.id)
+                                    activeAudioRoom = if (isVideo) room.copy(roomType = "video") else room.copy(roomType = "audio")
+                                }
+                            },
+                            onOpenEventHub = {
+                                activeCategoryHub = CATEGORY_LIST.firstOrNull { it.id == "official_event" }
+                                    ?: IntentCategory(
+                                        id = "official_event",
+                                        label = "🏆 Official Event"
+                                    )
+                            },
+                            onOpenVipService = {
+                                showMainSubscriptionModal = true
+                            },
+                            onUserUpdated = { updated ->
+                                currentUser = updated
+                                saveProfileToPrefs(prefs, updated)
+                            },
                             onToggleBlock = { partner ->
                                 val isBlocked = currentUser.blockedUserIds.contains(partner.uid)
                                 val updatedBlocked = if (isBlocked) {
@@ -2103,7 +2196,7 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                     }
 
                     "moments" -> {
-                        MomentsScreenContent(
+                        InstagramMomentsScreen(
                             moments = moments,
                             currentUserId = currentUserId,
                             onOpenProfile = { userId ->
@@ -2314,7 +2407,9 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                 }
             }
 
-            if (room.roomType == "video" || room.roomType == "video_pk" || room.isVideoRoom) {
+            val isOfficialEventRoom = room.category.equals("official_event", ignoreCase = true) ||
+                room.category.equals("mega_star_gala", ignoreCase = true)
+            if (!isOfficialEventRoom && (room.roomType == "video" || room.roomType == "video_pk" || room.isVideoRoom)) {
                 VideoHangoutRoomDialog(
                     initialRoom = room,
                     currentUser = currentUser,
@@ -2355,6 +2450,28 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
         // 0.05 Category Hub / Lobby Dialog (Category-Scoped Sub-Rooms Grid)
         if (activeCategoryHub != null) {
             val cat = activeCategoryHub!!
+            if (cat.id == "official_event") {
+                OfficialEventArenaHubModal(
+                    currentUser = currentUser,
+                    allRooms = roomsList,
+                    allProfiles = discoverProfiles + currentUser,
+                    onDismiss = { activeCategoryHub = null },
+                    onJoinRoom = { room ->
+                        currentUser = currentUser.copy(current_room = room.id)
+                        saveProfileToPrefs(prefs, currentUser)
+                        if (currentUserId.isNotBlank()) {
+                            db.collection("users").document(currentUserId)
+                                .update("current_room", room.id)
+                        }
+                        activeCategoryHub = null
+                        activeAudioRoom = room
+                    },
+                    onOpenTopUpStore = {
+                        activeCategoryHub = null
+                        showMainSubscriptionModal = true
+                    }
+                )
+            } else {
             val bannerUrl = getCategoryBanner(cat.id)
             CategoryHubLobbyDialog(
                 category = cat,
@@ -2364,15 +2481,26 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                 currentUser = currentUser,
                 onDismiss = { activeCategoryHub = null },
                 onCreateRoom = {
-                    val isVipCat = cat.id == "vip_room"
-                    val isUserVip = currentUser.isVipOrPlatinum() || currentUser.getVipLevel() >= 1
-                    if (isVipCat && !isUserVip) {
-                        Toast.makeText(context, "👑 VIP Room requires VIP Level 1+ membership to create!", Toast.LENGTH_SHORT).show()
-                        return@CategoryHubLobbyDialog
+                    val isVideoCat = cat.id == "video_stream"
+                    val existingRoom = roomsList.firstOrNull {
+                        ((it.hostUid.isNotBlank() && it.hostUid == currentUserId) || (it.hostId.isNotBlank() && it.hostId == currentUserId)) &&
+                        !it.statusMessage.equals("DELETED", ignoreCase = true)
                     }
-                    createRoomInitialCategory = cat.id
-                    activeCategoryHub = null
-                    showCreateRoomDialog = true
+                    if (existingRoom != null) {
+                        activeCategoryHub = null
+                        Toast.makeText(context, "You already have a room! Opening your room...", Toast.LENGTH_SHORT).show()
+                        activeAudioRoom = if (isVideoCat || existingRoom.isVideoRoom) existingRoom.copy(roomType = "video") else existingRoom.copy(roomType = "audio")
+                    } else {
+                        val isVipCat = cat.id == "vip_room"
+                        val isUserVip = currentUser.isVipOrPlatinum() || currentUser.getVipLevel() >= 1
+                        if (isVipCat && !isUserVip) {
+                            Toast.makeText(context, "👑 VIP Room requires VIP Level 1+ membership to create!", Toast.LENGTH_SHORT).show()
+                            return@CategoryHubLobbyDialog
+                        }
+                        createRoomInitialCategory = cat.id
+                        activeCategoryHub = null
+                        showCreateRoomDialog = true
+                    }
                 },
                 onJoinRoom = { room ->
                     val isVipRoomCategory = room.category == "vip_room" || room.isVipRoom
@@ -2381,12 +2509,34 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                         Toast.makeText(context, "👑 VIP Access Only: This room is reserved for VIP Level 1+ members!", Toast.LENGTH_LONG).show()
                         return@CategoryHubLobbyDialog
                     }
+                    if (!room.canEnterFamilyRoom(currentUserId, currentUser.hasRoomModerationAuthority() || WatchPartyCinemaEngine.isUnrestrictedFounderOrCeo(currentUser))) {
+                        Toast.makeText(context, "🛡️ Family Room: Only invited Family Members can enter this room!", Toast.LENGTH_LONG).show()
+                        return@CategoryHubLobbyDialog
+                    }
                     val targetHost = room.hostUid.ifBlank { room.hostId }
                     val isHostCandidate = currentUserId.isNotBlank() && currentUserId == targetHost
+                    val isRoomAdminCandidate = currentUserId.isNotBlank() && currentUserId in room.adminUserIds
+                    val isHostOrAdmin = isHostCandidate || isRoomAdminCandidate
                     val canActuallyHost = !isHostCandidate || currentUser.canHostRoom()
+                    val isHeartbeatStale = room.lastHostHeartbeat > 0L && (System.currentTimeMillis() - room.lastHostHeartbeat > 30 * 60 * 1000L)
 
-                    if (!isHostCandidate && (!room.isHostLive || room.statusMessage.equals("OFFLINE", ignoreCase = true) || room.statusMessage.equals("CLOSED", ignoreCase = true))) {
-                        Toast.makeText(context, "⏳ The host (${room.hostName.ifBlank { "Host" }}) is currently offline. They will be live soon!", Toast.LENGTH_SHORT).show()
+                    if (!isHostOrAdmin && (!room.isHostLive || !room.isLive || room.isEnded || isHeartbeatStale || room.statusMessage.contains("OFFLINE", ignoreCase = true) || room.statusMessage.contains("CLOSED", ignoreCase = true))) {
+                        if (isHeartbeatStale || room.isHostLive) {
+                            val closeMap = mapOf<String, Any>(
+                                "isLive" to false,
+                                "isHostLive" to false,
+                                "isEnded" to true,
+                                "isPlaying" to false,
+                                "watchPartyIsPlaying" to false,
+                                "statusMessage" to "Room is closed"
+                            )
+                            db.collection("rooms").document(room.id).update(closeMap)
+                            if (room.category.isNotBlank()) {
+                                db.collection("intent_categories").document(room.category)
+                                    .collection("rooms").document(room.id).update(closeMap)
+                            }
+                        }
+                        Toast.makeText(context, "🚫 Room is closed • Host & Admin are offline", Toast.LENGTH_SHORT).show()
                         return@CategoryHubLobbyDialog
                     }
 
@@ -2447,24 +2597,26 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                     activeAudioRoom = targetRoom
                 }
             )
+            }
         }
 
-        // Subscription Paywall Modal
+        // Official VIP 1-5 Center Modal (Replaces removed Dating & Matching Passes)
         if (showMainSubscriptionModal) {
-            SubscriptionPlansModal(
-                currentPlan = currentUser.plan,
-                customNotice = subscriptionPaywallNotice,
+            VipCenterDialog(
+                currentUser = currentUser,
+                db = db,
                 onDismiss = {
                     showMainSubscriptionModal = false
                     subscriptionPaywallNotice = null
                 },
-                onSelectPlan = { plan ->
-                    currentUser = currentUser.copy(plan = plan.title)
-                    saveProfileToPrefs(prefs, currentUser)
-                    db.collection("users").document(currentUserId).update("plan", plan.title)
-                    Toast.makeText(context, "Upgraded to ${plan.title}! 🎉", Toast.LENGTH_SHORT).show()
+                onOpenTopUp = {
                     showMainSubscriptionModal = false
                     subscriptionPaywallNotice = null
+                    currentScreen = "profile"
+                },
+                onProfileUpdated = { updated ->
+                    currentUser = updated
+                    saveProfileToPrefs(prefs, updated)
                 }
             )
         }
@@ -2574,6 +2726,123 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
             )
         }
 
+        // 0.09 Go Live - User's Own Existing Room List Modal (Never auto-enters directly)
+        if (showGoLiveMyRoomsDialog) {
+            val myLiveRoomsList = remember(roomsList.toList(), currentUserId) {
+                roomsList.filter {
+                    ((it.hostUid.isNotBlank() && it.hostUid == currentUserId) || (it.hostId.isNotBlank() && it.hostId == currentUserId)) &&
+                    !it.statusMessage.equals("DELETED", ignoreCase = true) &&
+                    it.category != "video_stream" && it.roomType != "video" && it.roomType != "video_pk" && !it.isVideoRoom
+                }
+            }
+            AlertDialog(
+                onDismissRequest = { showGoLiveMyRoomsDialog = false },
+                containerColor = Color(0xFF141026),
+                title = {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "🎙️ My Live Room (${myLiveRoomsList.size})",
+                            color = Color.White,
+                            fontWeight = FontWeight.Black,
+                            fontSize = 16.sp
+                        )
+                        IconButton(onClick = { showGoLiveMyRoomsDialog = false }, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.LightGray)
+                        }
+                    }
+                },
+                text = {
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 320.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(myLiveRoomsList) { room ->
+                            val isLiveNow = (room.isHostLive || room.isLive) && !room.statusMessage.equals("OFFLINE", ignoreCase = true) && !room.statusMessage.equals("CLOSED", ignoreCase = true)
+                            val publicRoomNumber = remember(room.id, room.roomId) {
+                                when {
+                                    room.roomId.length == 8 && room.roomId.all { it.isDigit() } -> room.roomId
+                                    room.id.length == 8 && room.id.all { it.isDigit() } -> room.id
+                                    else -> (10000000 + kotlin.math.abs(room.id.hashCode()) % 90000000).toString()
+                                }
+                            }
+                            Surface(
+                                color = Color.White.copy(alpha = 0.08f),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, if (isLiveNow) Color(0xFF10B981) else Color(0xFF8B5CF6).copy(alpha = 0.6f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        showGoLiveMyRoomsDialog = false
+                                        activeAudioRoom = room.copy(roomType = "audio")
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    AsyncImage(
+                                        model = room.hostPhotoUrl.ifBlank { room.banner_image_url }.ifBlank { currentUser.photo },
+                                        contentDescription = room.title,
+                                        modifier = Modifier
+                                            .size(50.dp)
+                                            .clip(RoundedCornerShape(10.dp)),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = room.title.ifBlank { room.roomName.ifBlank { "My Voice Room" } },
+                                            color = Color.White,
+                                            fontSize = 13.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Text(
+                                                text = "Room #$publicRoomNumber",
+                                                color = Color(0xFFFBBF24),
+                                                fontSize = 10.5.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                            DenseGalaAudioEqualizer(
+                                                styleTheme = if (isLiveNow) "emerald" else "gold",
+                                                modifier = Modifier.width(34.dp).height(12.dp)
+                                            )
+                                        }
+                                    }
+                                    Surface(
+                                        color = BrandCoral,
+                                        shape = RoundedCornerShape(50)
+                                    ) {
+                                        Text(
+                                            text = if (isLiveNow) "LIVE" else "Enter",
+                                            color = Color.White,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showGoLiveMyRoomsDialog = false }) {
+                        Text("Close", color = Color(0xFFFFD700), fontWeight = FontWeight.Bold)
+                    }
+                }
+            )
+        }
+
         // 0.1 Create Custom Room Dialog
         if (showCreateRoomDialog) {
             CreateRoomDialog(
@@ -2589,23 +2858,31 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                     }
                     val existingHostRoom = roomsList.firstOrNull { r ->
                         val rHost = r.hostUid.ifBlank { r.hostId }
-                        rHost == currentUserId && (r.category == categoryId || (categoryId == "video_stream" && (r.category == "video_stream" || r.roomType == "video" || r.isVideoRoom)))
+                        rHost == currentUserId && !r.statusMessage.equals("DELETED", ignoreCase = true)
+                    }
+                    if (existingHostRoom != null) {
+                        Toast.makeText(context, "You can only create 1 room per account! Opening your existing room.", Toast.LENGTH_LONG).show()
+                        showCreateRoomDialog = false
+                        activeAudioRoom = existingHostRoom
+                        return@CreateRoomDialog
                     }
                     val generatedRoomCode = (10000000..99999999).random().toString()
-                    val roomId = existingHostRoom?.id?.ifBlank { null } ?: generatedRoomCode
-                    val actualRoomType = if (categoryId == "video_stream") "video" else roomType
-                    val catEmoji = if (actualRoomType == "video_pk") "⚔️" else if (actualRoomType == "video") "📹" else (CATEGORY_LIST.find { it.id == categoryId }?.label?.take(2)?.trim() ?: "🎙️")
-                    val finalBanner = if (themeUrl.isNotBlank()) themeUrl else getCategoryBanner(categoryId)
+                    val roomId = generatedRoomCode
+                    val safeCategoryId = if (categoryId == "video_stream") "free_tonight" else categoryId
+                    val actualRoomType = "audio"
+                    val catEmoji = CATEGORY_LIST.find { it.id == safeCategoryId }?.label?.take(2)?.trim() ?: "🎙️"
+                    val finalBanner = if (themeUrl.isNotBlank() && themeUrl != "vip_royal_stage" && themeUrl != WatchPartyCinemaEngine.CINEMA_THEME_ID) themeUrl else getCategoryBanner(safeCategoryId)
                     val newRoom = RoomItem(
                         id = roomId,
                         roomId = roomId,
                         title = title,
                         roomName = title,
-                        category = categoryId,
+                        category = safeCategoryId,
                         emoji = catEmoji,
                         banner_image_url = finalBanner,
                         roomType = actualRoomType,
-                        videoLayout = if (roomType == "video_pk") "2p" else "1p",
+                        videoLayout = "1p",
+                        isWatchPartyActive = false,
                         hostId = currentUserId,
                         hostUid = currentUserId,
                         hostName = currentUser.name,
@@ -2616,18 +2893,26 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                         nowPlayingArtworkUrl = CURATED_HANGOUT_TRACKS[0].artworkUrl,
                         currentPlayingTrack = CURATED_HANGOUT_TRACKS[0].title,
                         playbackPosition = 0L,
-                        isPlaying = true,
+                        isPlaying = false,
                         isCustom = true,
                         isHostLive = true,
                         isLive = true,
                         statusMessage = "LIVE NOW",
                         privacy = if (categoryId == "vip_room") "vip_only" else "public",
                         createdAt = System.currentTimeMillis(),
-                        trackStartedAt = System.currentTimeMillis()
+                        trackStartedAt = 0L
                     )
+                    val founderXp = RoomLevelUpEngine.getThresholdForRoomLevel(20)
                     // Save to Firestore rooms/{roomId}
                     db.collection("rooms").document(roomId).set(newRoom)
                         .addOnSuccessListener {
+                            if (currentUser.isFounder()) {
+                                db.collection("rooms").document(roomId).update(
+                                    mapOf("roomLevel" to 20, "roomActivityXp" to founderXp)
+                                )
+                                db.collection("rooms").document(roomId).collection("games").document("room_level_meta")
+                                    .set(mapOf("roomLevel" to 20, "roomActivityXp" to founderXp), SetOptions.merge())
+                            }
                             Log.d("Firestore", "Room $roomId successfully created in Firestore")
                             // Notify all followers about host going live
                             sendHostLiveNotification(
@@ -2753,11 +3038,26 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
             )
         }
 
+        // Automatic Inbox Deep-Linking from Android Notification Bar tap
+        LaunchedEffect(MainActivity.pendingDeepLinkOpenInbox.value) {
+            if (MainActivity.pendingDeepLinkOpenInbox.value) {
+                currentScreen = "chats"
+                MainActivity.pendingDeepLinkOpenInbox.value = false
+            }
+        }
+
         // 3. Real-Time Notification Center Dialog
         if (showNotificationsDialog) {
             NotificationsDialog(
                 notifications = notifications,
+                currentUserId = currentUser.uid,
                 onDismiss = { showNotificationsDialog = false },
+                onNotificationRead = { notifId ->
+                    val idx = notifications.indexOfFirst { it.id == notifId }
+                    if (idx != -1) {
+                        notifications[idx] = notifications[idx].copy(isRead = true)
+                    }
+                },
                 onOpenRoom = { rId ->
                     db.collection("rooms").document(rId).get()
                         .addOnSuccessListener { doc ->
@@ -2780,6 +3080,12 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                         adminDashboardInitialTab = tab
                         showAdminDashboardModal = true
                     }
+                },
+                onOpenInbox = {
+                    currentScreen = "chats"
+                },
+                onOpenProfile = {
+                    currentScreen = "profile"
                 },
                 onMarkAllRead = {
                     val toDelete = notifications.toList()
@@ -2904,7 +3210,7 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
             )
         }
 
-        // 5. Direct Message Routing to Advanced 1-on-1 Chat Screen
+        // 5. Direct Message Routing to Advanced 1-on-1 Chat Screen (Half-profile does NOT log profile visits; ONLY Full Profile visits log visitors!)
         if (selectedUserProfile != null) {
             val profile = selectedUserProfile!!
             RoomMemberProfileSheet(
@@ -3007,6 +3313,11 @@ fun LiveTogatherApp(initialRoomId: String? = null, initialChatUserId: String? = 
                 onUpdateCurrentUser = { updated ->
                     currentUser = updated
                     saveProfileToPrefs(prefs, updated)
+                },
+                onJumpToRoom = { targetRoom ->
+                    activeChatPartner = null
+                    val isVideo = targetRoom.category == "video_stream" || targetRoom.roomType == "video" || targetRoom.roomType == "video_pk" || targetRoom.isVideoRoom
+                    activeAudioRoom = if (isVideo) targetRoom.copy(roomType = "video") else targetRoom.copy(roomType = "audio")
                 }
             )
         }
@@ -3205,7 +3516,7 @@ fun IntentRoomsGrid(
                 val subRoomsCount = categoryRooms.size
                 val activeRoomsCount = categoryRooms.count { it.isHostLive }
                 val isAnyRoomLive = activeRoomsCount > 0
-                val totalRoomViewers = categoryRooms.filter { it.isHostLive }.sumOf { maxOf(1, it.activeUserCount) }
+                val totalRoomViewers = categoryRooms.filter { it.isHostLive }.sumOf { it.activeUserCount }
                 val totalOnlineUsers = maxOf(activeCount, totalRoomViewers)
                 val isAnyAudioPlaying = categoryRooms.any { it.isHostLive && it.isPlaying }
 
@@ -4037,6 +4348,40 @@ fun ChatsScreenContent(
     var selectedProfilePartner by remember { mutableStateOf<UserProfile?>(null) }
     val archivedMatchIds = remember { mutableStateListOf<String>() }
 
+    // Real-time Official System Inbox Messages (Gift Rewards + Level Up Milestones from Firestore)
+    val officialSystemMessages = remember { mutableStateListOf<NotificationItem>() }
+    var openOfficialThread by remember { mutableStateOf<String?>(null) } // "rewards" or "level_up"
+
+    DisposableEffect(currentUserId) {
+        if (currentUserId.isBlank()) return@DisposableEffect onDispose {}
+        val reg = db.collection("users").document(currentUserId)
+            .collection("notifications")
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .limit(80)
+            .addSnapshotListener { snap, _ ->
+                if (snap != null) {
+                    val parsed = snap.documents.mapNotNull { d ->
+                        d.toObject(NotificationItem::class.java)?.let { item ->
+                            if (item.id.isBlank()) item.copy(id = d.id) else item
+                        }
+                    }
+                    officialSystemMessages.clear()
+                    officialSystemMessages.addAll(parsed)
+                }
+            }
+        onDispose { reg.remove() }
+    }
+
+    val rewardInboxMsgs = officialSystemMessages.filter {
+        val t = it.type.lowercase()
+        t == "gift_reward" || t == "creator_earning" || t == "gift_received"
+    }
+    val levelUpInboxMsgs = officialSystemMessages.filter {
+        it.type.equals("level_up", ignoreCase = true)
+    }
+    val unreadRewardCount = rewardInboxMsgs.count { !it.isRead }
+    val unreadLevelUpCount = levelUpInboxMsgs.count { !it.isRead }
+
     LaunchedEffect(matches) {
         matches.forEach { match ->
             val pId = match.users.firstOrNull { it != currentUserId }
@@ -4065,16 +4410,186 @@ fun ChatsScreenContent(
         }
         Spacer(modifier = Modifier.height(12.dp))
 
-        if (visibleMatches.isEmpty()) {
-            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("No messages yet. Like back profiles to start chatting!", color = Color.Gray, fontSize = 13.sp)
-                    Spacer(modifier = Modifier.height(16.dp))
-
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // 1. Official Clickable Inbox Thread: Gift Rewards & Monetized Earnings (with Gift Thumbnail)
+            item(key = "official_inbox_rewards") {
+                val latestReward = rewardInboxMsgs.firstOrNull()
+                val latestThumb = latestReward?.giftId?.let { giftThumbnailResourceId(it) } ?: 0
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            openOfficialThread = "rewards"
+                            rewardInboxMsgs.filter { !it.isRead && it.id.isNotBlank() }.forEach { msg ->
+                                db.collection("users").document(currentUserId)
+                                    .collection("notifications").document(msg.id)
+                                    .update("isRead", true)
+                            }
+                        },
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1432)),
+                    border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.55f)),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(46.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Brush.linearGradient(listOf(Color(0xFFFFD700), Color(0xFFFF4081))))
+                                .border(1.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(12.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (latestThumb != 0) {
+                                Image(
+                                    painter = painterResource(id = latestThumb),
+                                    contentDescription = latestReward?.giftName ?: "Gift Reward",
+                                    modifier = Modifier.fillMaxSize().padding(3.dp).clip(RoundedCornerShape(10.dp)),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                Text("🎁", fontSize = 22.sp)
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "LiveTogather Rewards",
+                                    color = BrandGold,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 14.sp
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(
+                                    color = BrandGold.copy(alpha = 0.2f),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        "OFFICIAL",
+                                        color = BrandGold,
+                                        fontSize = 8.5.sp,
+                                        fontWeight = FontWeight.Black,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                    )
+                                }
+                            }
+                            Text(
+                                text = latestReward?.message ?: "All received gifts & wallet credits appear here.",
+                                color = Color(0xFFE2E8F0),
+                                fontSize = 11.5.sp,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                        }
+                        if (unreadRewardCount > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFFF2A55))
+                                    .padding(horizontal = 7.dp, vertical = 2.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("$unreadRewardCount", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                            }
+                        } else {
+                            Text("›", color = BrandGold, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
-        } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+
+            // 2. Official Clickable Inbox Thread: Level Up Milestones
+            item(key = "official_inbox_level_up") {
+                val latestLvl = levelUpInboxMsgs.firstOrNull()
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            openOfficialThread = "level_up"
+                            levelUpInboxMsgs.filter { !it.isRead && it.id.isNotBlank() }.forEach { msg ->
+                                db.collection("users").document(currentUserId)
+                                    .collection("notifications").document(msg.id)
+                                    .update("isRead", true)
+                            }
+                        },
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF151C36)),
+                    border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.50f)),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(46.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Brush.linearGradient(listOf(Color(0xFF38BDF8), Color(0xFF8B5CF6)))),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("⭐", fontSize = 22.sp)
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "LiveTogather Level Up",
+                                    color = Color(0xFF7DD3FC),
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 14.sp
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(
+                                    color = Color(0xFF38BDF8).copy(alpha = 0.2f),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        "SYSTEM",
+                                        color = Color(0xFF7DD3FC),
+                                        fontSize = 8.5.sp,
+                                        fontWeight = FontWeight.Black,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                    )
+                                }
+                            }
+                            Text(
+                                text = latestLvl?.message ?: "Wealth & Charm level-up celebrations appear here.",
+                                color = Color(0xFFE2E8F0),
+                                fontSize = 11.5.sp,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                        }
+                        if (unreadLevelUpCount > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF38BDF8))
+                                    .padding(horizontal = 7.dp, vertical = 2.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("$unreadLevelUpCount", color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                            }
+                        } else {
+                            Text("›", color = Color(0xFF7DD3FC), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+
+            if (visibleMatches.isEmpty()) {
+                item(key = "empty_matches_hint") {
+                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 28.dp), contentAlignment = Alignment.Center) {
+                        Text("No personal chats yet. Like back profiles to start chatting!", color = Color.Gray, fontSize = 12.5.sp)
+                    }
+                }
+            } else {
                 items(visibleMatches) { match ->
                     val pId = match.users.firstOrNull { it != currentUserId }
                     val partner = partnerMap[pId]
@@ -4151,6 +4666,128 @@ fun ChatsScreenContent(
                                     modifier = Modifier.size(36.dp)
                                 ) {
                                     Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = Color.LightGray)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Official Clickable System Inbox Thread Dialog (Gift Rewards with Thumbnails & Level-Up Milestones)
+    if (openOfficialThread != null) {
+        val isRewardsThread = openOfficialThread == "rewards"
+        val threadMsgs = if (isRewardsThread) rewardInboxMsgs else levelUpInboxMsgs
+        Dialog(onDismissRequest = { openOfficialThread = null }) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.78f),
+                colors = CardDefaults.cardColors(containerColor = BrandCard),
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, if (isRewardsThread) BrandGold.copy(alpha = 0.55f) else Color(0xFF38BDF8).copy(alpha = 0.55f))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (isRewardsThread) "🎁 LiveTogather Rewards" else "⭐ LiveTogather Level Up",
+                            color = if (isRewardsThread) BrandGold else Color(0xFF7DD3FC),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        TextButton(onClick = { openOfficialThread = null }) {
+                            Text("Close", color = BrandCoral, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    if (threadMsgs.isEmpty()) {
+                        Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            Text(
+                                text = if (isRewardsThread) "No gift reward messages yet." else "No level-up messages yet.",
+                                color = Color.Gray,
+                                fontSize = 13.sp
+                            )
+                        }
+                    } else {
+                        val sdf = remember { java.text.SimpleDateFormat("dd MMM • hh:mm a", java.util.Locale.getDefault()) }
+                        LazyColumn(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            items(threadMsgs, key = { it.id.ifBlank { it.timestamp.toString() } }) { msg ->
+                                val thumbRes = if (msg.giftId.isNotBlank()) giftThumbnailResourceId(msg.giftId) else 0
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            if (msg.senderId.isNotBlank() && msg.senderId != "system_livetogather" && msg.senderId != currentUserId) {
+                                                db.collection("users").document(msg.senderId).get().addOnSuccessListener { doc ->
+                                                    if (doc != null && doc.exists()) {
+                                                        openOfficialThread = null
+                                                        onOpenChat(parseUserProfileFromDoc(doc).copy(uid = doc.id))
+                                                    }
+                                                }
+                                            } else {
+                                                Toast.makeText(context, msg.message, Toast.LENGTH_LONG).show()
+                                            }
+                                        },
+                                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1A142B)),
+                                    border = BorderStroke(1.dp, if (isRewardsThread) BrandGold.copy(alpha = 0.35f) else Color(0xFF38BDF8).copy(alpha = 0.35f)),
+                                    shape = RoundedCornerShape(14.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        if (thumbRes != 0) {
+                                            Image(
+                                                painter = painterResource(id = thumbRes),
+                                                contentDescription = msg.giftName.ifBlank { "Gift" },
+                                                modifier = Modifier
+                                                    .size(50.dp)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .border(1.dp, BrandGold.copy(alpha = 0.7f), RoundedCornerShape(10.dp)),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                        } else {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(46.dp)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(if (isRewardsThread) BrandGold.copy(alpha = 0.18f) else Color(0xFF38BDF8).copy(alpha = 0.18f)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(if (isRewardsThread) "🎁" else "⭐", fontSize = 22.sp)
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = msg.title.ifBlank { if (isRewardsThread) "🎁 Gift Received!" else "⭐ Level Up!" },
+                                                color = if (isRewardsThread) BrandGold else Color(0xFF7DD3FC),
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp
+                                            )
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = msg.message,
+                                                color = Color.White,
+                                                fontSize = 12.sp,
+                                                lineHeight = 16.sp
+                                            )
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(
+                                                text = if (msg.timestamp > 0L) sdf.format(java.util.Date(msg.timestamp)) else "",
+                                                color = Color.Gray,
+                                                fontSize = 10.sp
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -4350,29 +4987,55 @@ fun MomentsScreenContent(
     onDeleteMoment: (MomentItem) -> Unit = {}
 ) {
     var selectedGallery by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.White)
+    ) {
+        // Full-Screen Edge-to-Edge Bright Lavender-White Header (Zero Black Header!)
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color(0xFFEDE7FF), Color(0xFFF6F3FF), Color.White)
+                    )
+                )
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Moments Feed", color = BrandCoral, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text(
+                text = "Moments",
+                color = Color(0xFF151726),
+                fontSize = 20.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
             Button(
                 onClick = onPostClick,
-                colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
-                shape = RoundedCornerShape(50)
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED)),
+                shape = RoundedCornerShape(50),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                modifier = Modifier.height(34.dp)
             ) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("+ Post Moment", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("Post Moment", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        HorizontalDivider(color = Color(0xFFF0F1F7), thickness = 1.dp)
 
         if (moments.isEmpty()) {
-            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Text("No moments posted yet. Be the first to share one!", color = Color.Gray, fontSize = 13.sp)
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(bottom = 96.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("No moments posted yet. Be the first to share one!", color = Color(0xFF8B90A7), fontSize = 13.5.sp)
             }
         } else {
             val listState = rememberLazyListState()
@@ -4386,15 +5049,18 @@ fun MomentsScreenContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 104.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(moments, key = { it.id }) { item ->
-                    Card(
+                    Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = BrandCard),
-                        shape = RoundedCornerShape(16.dp)
+                        color = Color.White,
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, Color(0xFFECEAF5)),
+                        shadowElevation = 1.dp
                     ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
+                        Column(modifier = Modifier.padding(14.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -4404,7 +5070,7 @@ fun MomentsScreenContent(
                                     AsyncImage(
                                         model = item.userPhoto.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80" },
                                         contentDescription = "View ${item.userName}'s profile",
-                                        modifier = Modifier.size(34.dp).clip(CircleShape)
+                                        modifier = Modifier.size(38.dp).clip(CircleShape)
                                             .clickable { if (item.userId.isNotBlank()) onOpenProfile(item.userId) },
                                         contentScale = ContentScale.Crop
                                     )
@@ -4412,8 +5078,8 @@ fun MomentsScreenContent(
                                     Column(modifier = Modifier.clickable {
                                         if (item.userId.isNotBlank()) onOpenProfile(item.userId)
                                     }) {
-                                        Text(item.userName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                        Text(formatRelativeTime(item.timestamp), color = Color.Gray, fontSize = 10.sp)
+                                        Text(item.userName, color = Color(0xFF151726), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                        Text(formatRelativeTime(item.timestamp), color = Color(0xFF8B90A7), fontSize = 11.sp)
                                     }
                                 }
 
@@ -4426,8 +5092,8 @@ fun MomentsScreenContent(
                                             Icon(
                                                 Icons.Default.Edit,
                                                 contentDescription = "Edit Post",
-                                                tint = BrandCoral,
-                                                modifier = Modifier.size(15.dp)
+                                                tint = Color(0xFF7C3AED),
+                                                modifier = Modifier.size(16.dp)
                                             )
                                         }
                                         Spacer(modifier = Modifier.width(2.dp))
@@ -4438,8 +5104,8 @@ fun MomentsScreenContent(
                                             Icon(
                                                 Icons.Default.Delete,
                                                 contentDescription = "Delete Post",
-                                                tint = Color.Red.copy(alpha = 0.85f),
-                                                modifier = Modifier.size(15.dp)
+                                                tint = Color(0xFFDC2626),
+                                                modifier = Modifier.size(16.dp)
                                             )
                                         }
                                     }
@@ -4447,17 +5113,17 @@ fun MomentsScreenContent(
                             }
 
                             Spacer(modifier = Modifier.height(8.dp))
-                            Text(item.caption, color = Color.White, fontSize = 13.sp)
+                            Text(item.caption, color = Color(0xFF262A3E), fontSize = 13.5.sp, lineHeight = 19.sp)
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            val displayPhotos = if (item.mediaUrls.isNotEmpty()) item.mediaUrls 
-                                else if (item.mediaUrl.isNotBlank()) listOf(item.mediaUrl) 
+                            val displayPhotos = if (item.mediaUrls.isNotEmpty()) item.mediaUrls
+                                else if (item.mediaUrl.isNotBlank()) listOf(item.mediaUrl)
                                 else emptyList()
 
                             if (displayPhotos.size == 1) {
                                 MomentMediaThumbnail(
                                     url = displayPhotos.first(),
-                                    modifier = Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(12.dp)),
+                                    modifier = Modifier.fillMaxWidth().height(200.dp).clip(RoundedCornerShape(12.dp)),
                                     onClick = { selectedGallery = displayPhotos to 0 }
                                 )
                             } else if (displayPhotos.size > 1) {
@@ -4465,7 +5131,7 @@ fun MomentsScreenContent(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(180.dp)
+                                        .height(200.dp)
                                 ) {
                                     itemsIndexed(displayPhotos) { index, mediaUrl ->
                                         MomentMediaThumbnail(
@@ -4488,11 +5154,11 @@ fun MomentsScreenContent(
                                     Icon(
                                         imageVector = if (isLikedByMe) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                                         contentDescription = "Like",
-                                        tint = if (isLikedByMe) BrandCoral else Color.Gray,
+                                        tint = if (isLikedByMe) Color(0xFFFF3B6B) else Color(0xFF8B90A7),
                                         modifier = Modifier.size(20.dp)
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("${item.likes}", color = Color.White, fontSize = 12.sp)
+                                    Text("${item.likes}", color = Color(0xFF474C66), fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
                                 }
 
                                 Spacer(modifier = Modifier.width(20.dp))
@@ -4504,11 +5170,11 @@ fun MomentsScreenContent(
                                     Icon(
                                         imageVector = Icons.Default.ChatBubble,
                                         contentDescription = "Comment",
-                                        tint = Color.Gray,
+                                        tint = Color(0xFF8B90A7),
                                         modifier = Modifier.size(18.dp)
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("${item.commentCount}", color = Color.White, fontSize = 12.sp)
+                                    Text("${item.commentCount}", color = Color(0xFF474C66), fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
                                 }
                             }
                         }
@@ -4647,8 +5313,34 @@ fun ProfileScreenContent(
     var selectedBondForDetails by remember { mutableStateOf<IntimacyBond?>(null) }
     var showAvatarClickOptions by remember { mutableStateOf(false) }
     var pendingIntimacyIncomingCount by remember { mutableIntStateOf(0) }
+    val profileVisitorsList = remember { mutableStateListOf<Map<String, Any>>() }
+    val receivedGiftsList = remember { mutableStateListOf<Map<String, Any>>() }
+    var showVisitorsModal by remember { mutableStateOf(false) }
+    var showReceivedGiftsModal by remember { mutableStateOf(false) }
     LaunchedEffect(currentUser.uid) {
         if (currentUser.uid.isNotBlank()) {
+            db.collection("users").document(currentUser.uid)
+                .collection("profile_visitors")
+                .orderBy("visitedAt", Query.Direction.DESCENDING)
+                .limit(50)
+                .addSnapshotListener { snap, _ ->
+                    if (snap != null) {
+                        profileVisitorsList.clear()
+                        profileVisitorsList.addAll(snap.documents.mapNotNull { it.data })
+                    }
+                }
+
+            db.collection("users").document(currentUser.uid)
+                .collection("received_gifts")
+                .orderBy("timestamp", Query.Direction.DESCENDING)
+                .limit(100)
+                .addSnapshotListener { snap, _ ->
+                    if (snap != null) {
+                        receivedGiftsList.clear()
+                        receivedGiftsList.addAll(snap.documents.mapNotNull { it.data })
+                    }
+                }
+
             db.collection("intimacy_requests")
                 .whereEqualTo("recipientUid", currentUser.uid)
                 .whereEqualTo("status", "pending")
@@ -4769,6 +5461,19 @@ fun ProfileScreenContent(
             .fillMaxSize()
             .background(BrandDark)
     ) {
+        // 1. 100% FIXED & STATIC FULL-SCREEN BACKGROUND IMAGE (VIP PALACE COVER)
+        val profileVipLvl = currentUser.getVipLevel()
+        val fixedProfileVipCoverRes = getVipMobileBackgroundDrawable(if (profileVipLvl in 1..5) profileVipLvl else 3)
+        if (fixedProfileVipCoverRes != 0) {
+            Image(
+                painter = painterResource(id = fixedProfileVipCoverRes),
+                contentDescription = "Profile Fixed Palace Backdrop",
+                contentScale = ContentScale.Crop,
+                alignment = Alignment.Center,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
         // Live animated luxury frame: edge-to-edge, sits BEHIND all profile content
         // so every button / avatar / badge stays visible on top of it.
         if (currentUser.hasActiveProfileBorderFrame()) {
@@ -4882,6 +5587,7 @@ fun ProfileScreenContent(
             }
         }
 
+        val profileScreenHeightDp = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -4890,6 +5596,12 @@ fun ProfileScreenContent(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 48.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+
+            // 1.5 SHEET RESTING POSITION: transparent spacer so the glowing white glass sheet opens at ~50% of the screen,
+            // keeping the full fixed background character visible above. Dragging up slides smoothly over the backdrop.
+            item {
+                Spacer(modifier = Modifier.height((profileScreenHeightDp * 0.43f).dp))
+            }
 
             // 2. SOULMATE / COUPLE DUAL-AVATAR HEADER & VOICE INTRO (MATCHING REFERENCE IMAGES)
             item {
@@ -4900,51 +5612,41 @@ fun ProfileScreenContent(
                 val vipCoverRes = getVipMobileBackgroundDrawable(if (vipLvl in 1..5) vipLvl else 3)
                 Surface(
                     color = Color.Transparent,
-                    shape = RoundedCornerShape(24.dp),
+                    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp, bottomStart = 22.dp, bottomEnd = 22.dp),
                     shadowElevation = 0.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Box(modifier = Modifier.fillMaxWidth().heightIn(min = 320.dp)) {
-                        // FULL-CARD 3D PALACE BACKGROUND (Edge-to-edge covering the entire card!)
-                        if (vipCoverRes != 0) {
-                            Image(
-                                painter = painterResource(id = vipCoverRes),
-                                contentDescription = "VIP Palace Cover",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.matchParentSize()
-                            )
-                            // Elegant Dark Vertical Gradient so the full palace shows while text remains 100% legible
-                            Box(
-                                modifier = Modifier
-                                    .matchParentSize()
-                                    .background(
-                                        Brush.verticalGradient(
-                                            listOf(
-                                                Color.Transparent,
-                                                Color(0x3309070D),
-                                                Color(0x7709070D),
-                                                Color(0xEE09070D)
-                                            )
+                    Box(modifier = Modifier.fillMaxWidth().heightIn(min = 300.dp)) {
+                        // Glowing semi-transparent white frosted glass sliding sheet (matches reference screenshots)
+                        Box(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp, bottomStart = 22.dp, bottomEnd = 22.dp))
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(
+                                            Color.White.copy(alpha = 0.80f),
+                                            Color.White.copy(alpha = 0.70f),
+                                            Color.White.copy(alpha = 0.74f)
                                         )
                                     )
-                            )
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .matchParentSize()
-                                    .background(
-                                        Brush.verticalGradient(
-                                            listOf(
-                                                Color(0xFF2E1065),
-                                                Color(0xFF1E1B4B),
-                                                Color(0xFF0F0B18)
-                                            )
-                                        )
-                                    )
-                            )
-                        }
-
-
+                                )
+                                .border(
+                                    1.4.dp,
+                                    Color.White.copy(alpha = 0.92f),
+                                    RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp, bottomStart = 22.dp, bottomEnd = 22.dp)
+                                )
+                        )
+                        // Subtle top drag handle pill
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(top = 8.dp)
+                                .width(44.dp)
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(Color(0xFF94A3B8).copy(alpha = 0.65f))
+                        )
 
                         // Content inside the card
                         Column(
@@ -5087,36 +5789,36 @@ fun ProfileScreenContent(
 
                                         val isCoupleBond = activeCoupleBond.bondType.equals("couple", ignoreCase = true) || activeCoupleBond.bondType.equals("love", ignoreCase = true) || activeCoupleBond.bondType.equals("proposal", ignoreCase = true)
                                         if (isCoupleBond) {
-                                            // 3D Moving & Flowing Intimacy Ring Attachment (Strictly for Couples only)
+                                            // Exact Sent Proposal Ring / Couple Emblem Attachment Bridge
                                             IntimacyRingAttachmentBridge(
                                                 activeRingId = activeCoupleBond.activeMicLinkId,
                                                 modifier = Modifier.align(Alignment.Center).zIndex(50f),
                                                 onClick = { showIntimacyRingPickerModal = true }
                                             )
                                         } else {
-                                            // Bestie Bond: STRICTLY NO RING! Show equipped mic effect thumbnail / bestie badge
-                                            val effectThumbRes = getMicEffectThumbRes(currentUser.activeMicEffect.ifBlank { "mic_effect_golden_amber_aura" })
+                                            // Bestie / Cyber Bond: Show exact sent Mic Link emblem (e.g. Twin Besties Crystal / Cyberpunk Plasma Reactor)
+                                            val bestieLinkId = activeCoupleBond.activeMicLinkId.ifBlank {
+                                                if (activeCoupleBond.bondType.equals("cyber", ignoreCase = true)) "mic_link_cyberpunk_reactor"
+                                                else "mic_link_twin_besties"
+                                            }
+                                            val bestieThumbRes = getProposalRingThumbRes(bestieLinkId)
                                             Box(
                                                 modifier = Modifier
                                                     .align(Alignment.Center)
                                                     .zIndex(50f)
-                                                    .size(46.dp)
+                                                    .size(48.dp)
                                                     .clip(CircleShape)
                                                     .background(Color(0xFF1E2235).copy(alpha = 0.92f))
                                                     .border(1.5.dp, Color(0xFF00E5FF), CircleShape)
                                                     .clickable { showIntimacyRingPickerModal = true },
                                                 contentAlignment = Alignment.Center
                                             ) {
-                                                if (currentUser.activeMicEffect.isNotBlank()) {
-                                                    Image(
-                                                        painter = painterResource(id = effectThumbRes),
-                                                        contentDescription = "Active Mic Effect",
-                                                        modifier = Modifier.fillMaxSize().padding(3.dp).clip(CircleShape),
-                                                        contentScale = ContentScale.Crop
-                                                    )
-                                                } else {
-                                                    Text("🤝", fontSize = 22.sp)
-                                                }
+                                                Image(
+                                                    painter = painterResource(id = bestieThumbRes),
+                                                    contentDescription = "Active Mic Link",
+                                                    modifier = Modifier.fillMaxSize().padding(3.dp).clip(CircleShape),
+                                                    contentScale = ContentScale.Fit
+                                                )
                                             }
                                         }
                                     }
@@ -5218,7 +5920,7 @@ fun ProfileScreenContent(
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Text(
                                                 text = name,
-                                                color = if (vipLvl > 0) Color(0xFFFFD700) else Color.White,
+                                                color = if (vipLvl > 0) Color(0xFFB45309) else Color(0xFF1B1433),
                                                 fontSize = 18.sp,
                                                 fontWeight = FontWeight.Black
                                             )
@@ -5509,7 +6211,7 @@ fun ProfileScreenContent(
                                             list.add(bItem.drawableRes to bItem.title)
                                         }
                                     }
-                                    if (currentUser.isFounder() || userEquippedBadges.isEmpty()) {
+                                    if (currentUser.isFounder()) {
                                         listOf(
                                             "badge_honor_supreme_emperor", "badge_honor_grand_duke",
                                             "badge_honor_earl", "badge_honor_baron",
@@ -5551,47 +6253,183 @@ fun ProfileScreenContent(
                                     Spacer(modifier = Modifier.height(6.dp))
                                 }
 
-                                Spacer(modifier = Modifier.height(14.dp))
+                                Spacer(modifier = Modifier.height(10.dp))
 
-                                // Counters Row: Following, Followers, Moments
+                                // Compact Glowing White Frosted Glass 4-Column Stats Bar: Followers | Following | Intimacy | Visitors
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .background(Color(0xFF181324).copy(alpha = 0.85f), RoundedCornerShape(16.dp))
-                                        .padding(vertical = 10.dp),
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(Color.White.copy(alpha = 0.68f))
+                                        .border(1.dp, Color.White.copy(alpha = 0.92f), RoundedCornerShape(14.dp))
+                                        .padding(vertical = 8.dp),
                                     horizontalArrangement = Arrangement.SpaceAround,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column(
                                         horizontalAlignment = Alignment.CenterHorizontally,
-                                        modifier = Modifier.clickable {
-                                            socialConnectionsInitialTab = 0
-                                            showSocialConnectionsDialog = true
-                                        }
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable {
+                                                socialConnectionsInitialTab = 1
+                                                showSocialConnectionsDialog = true
+                                            }
                                     ) {
-                                        Text(text = "${currentUser.followingCount}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black)
-                                        Text(text = "Following", color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                                        Text(text = "${currentUser.followerCount}", color = Color(0xFF0F172A), fontSize = 14.sp, fontWeight = FontWeight.Black)
+                                        Text(text = "Followers", color = Color(0xFF475569), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
                                     }
-                                    Box(modifier = Modifier.width(1.dp).height(20.dp).background(Color(0xFF33264A)))
+                                    Box(modifier = Modifier.width(1.dp).height(22.dp).background(Color(0xFFCBD5E1)))
                                     Column(
                                         horizontalAlignment = Alignment.CenterHorizontally,
-                                        modifier = Modifier.clickable {
-                                            socialConnectionsInitialTab = 1
-                                            showSocialConnectionsDialog = true
-                                        }
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable {
+                                                socialConnectionsInitialTab = 0
+                                                showSocialConnectionsDialog = true
+                                            }
                                     ) {
-                                        Text(text = "${currentUser.followerCount}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black)
-                                        Text(text = "Followers", color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                                        Text(text = "${currentUser.followingCount}", color = Color(0xFF0F172A), fontSize = 14.sp, fontWeight = FontWeight.Black)
+                                        Text(text = "Following", color = Color(0xFF475569), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
                                     }
-                                    Box(modifier = Modifier.width(1.dp).height(20.dp).background(Color(0xFF33264A)))
+                                    Box(modifier = Modifier.width(1.dp).height(22.dp).background(Color(0xFFCBD5E1)))
                                     Column(
                                         horizontalAlignment = Alignment.CenterHorizontally,
-                                        modifier = Modifier.clickable {
-                                            onNavigateToMoments()
-                                        }
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable {
+                                                showIntimacyRequestsModal = true
+                                            }
                                     ) {
-                                        Text(text = "${userMoments.size}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black)
-                                        Text(text = "Moments", color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                                        Text(text = "${activeIntimacyBonds.size}", color = Color(0xFF0F172A), fontSize = 14.sp, fontWeight = FontWeight.Black)
+                                        Text(text = "Intimacy", color = Color(0xFF475569), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+                                    Box(modifier = Modifier.width(1.dp).height(22.dp).background(Color(0xFFCBD5E1)))
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable {
+                                                showVisitorsModal = true
+                                            }
+                                    ) {
+                                        Text(text = "${profileVisitorsList.size}", color = Color(0xFF0F172A), fontSize = 14.sp, fontWeight = FontWeight.Black)
+                                        Text(text = "Visitors", color = Color(0xFF475569), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                // Received Gifts Showcase Card (Real-time Firestore + Top Gifters & Gifting Level)
+                                Surface(
+                                    color = Color(0xFF231E46).copy(alpha = 0.92f),
+                                    shape = RoundedCornerShape(16.dp),
+                                    border = BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.55f)),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { showReceivedGiftsModal = true }
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "🎁 Received Gifts (${receivedGiftsList.size})",
+                                                color = Color.White,
+                                                fontSize = 12.5.sp,
+                                                fontWeight = FontWeight.Black
+                                            )
+                                            Text(
+                                                text = "View All ❯",
+                                                color = Color(0xFFFFD700),
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        if (receivedGiftsList.isEmpty()) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(Color(0xFF14102E).copy(alpha = 0.85f))
+                                                    .padding(horizontal = 10.dp, vertical = 8.dp)
+                                            ) {
+                                                Text(
+                                                    text = "✨ No gifts received yet • Live gifts from fans show here",
+                                                    color = Color(0xFFE2E8F0),
+                                                    fontSize = 10.5.sp
+                                                )
+                                            }
+                                        } else {
+                                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                items(receivedGiftsList.take(15)) { g ->
+                                                    val gId = (g["giftId"] as? String).orEmpty()
+                                                    val gEmoji = (g["giftEmoji"] as? String) ?: "🎁"
+                                                    val gName = (g["giftName"] as? String) ?: "Gift"
+                                                    val gSender = (g["senderName"] as? String) ?: "Fan"
+                                                    val gQty = (g["quantity"] as? Number)?.toInt()?.coerceAtLeast(1) ?: 1
+                                                    val catalogDrawable = remember(gId) {
+                                                        ROOM_GIFT_CATALOG.find { it.id == gId }?.drawableResId
+                                                            ?: VIDEO_GIFT_CATALOG.find { it.id == gId }?.thumbnailResId
+                                                            ?: 0
+                                                    }
+                                                    Surface(
+                                                        color = Color(0xFF14102E).copy(alpha = 0.9f),
+                                                        shape = RoundedCornerShape(10.dp),
+                                                        border = BorderStroke(0.8.dp, Color(0xFFFFD700).copy(alpha = 0.4f))
+                                                    ) {
+                                                        Row(
+                                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            if (catalogDrawable != 0) {
+                                                                Image(
+                                                                    painter = painterResource(id = catalogDrawable),
+                                                                    contentDescription = gName,
+                                                                    contentScale = ContentScale.Fit,
+                                                                    modifier = Modifier.size(28.dp).clip(RoundedCornerShape(6.dp))
+                                                                )
+                                                            } else {
+                                                                Text(gEmoji, fontSize = 18.sp)
+                                                            }
+                                                            Spacer(modifier = Modifier.width(6.dp))
+                                                            Column {
+                                                                Text(
+                                                                    text = if (gQty > 1) "$gName x$gQty" else gName,
+                                                                    color = Color.White,
+                                                                    fontSize = 10.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    maxLines = 1
+                                                                )
+                                                                Text("by $gSender", color = Color(0xFFFBBF24), fontSize = 8.5.sp, maxLines = 1)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Bio Quote Pill (Frosted White Glass matching reference screenshot)
+                                if (currentUser.bio.isNotBlank()) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Surface(
+                                        color = Color.White.copy(alpha = 0.65f),
+                                        shape = RoundedCornerShape(12.dp),
+                                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.88f)),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            text = "❝ ${currentUser.bio} ❞",
+                                            color = Color(0xFF334155),
+                                            fontSize = 11.5.sp,
+                                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                            fontWeight = FontWeight.Medium,
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                                        )
                                     }
                                 }
                             }
@@ -5622,12 +6460,12 @@ fun ProfileScreenContent(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    // Wealth Level Card with Real 3D Metallic Badge (Sleek Dark Theme)
+                    // Wealth Level Card with Real 3D Metallic Badge (Consistent Glowing White Frosted Glass)
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF181024)),
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.2.dp, Brush.horizontalGradient(wealthTier.gradientColors)),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.74f)),
+                        shape = RoundedCornerShape(18.dp),
+                        border = BorderStroke(1.2.dp, Color.White.copy(alpha = 0.90f)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(14.dp)) {
@@ -5636,33 +6474,39 @@ fun ProfileScreenContent(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                Row(
+                                    modifier = Modifier.weight(1f),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
                                     Image(
                                         painter = painterResource(id = wealthTier.badgeDrawableRes),
                                         contentDescription = wealthTier.tierName,
-                                        modifier = Modifier.size(44.dp)
+                                        modifier = Modifier.size(40.dp)
                                     )
-                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     Column {
                                         Text(
                                             text = "Wealth Level • Lv.$effWealthLvlVal",
-                                            color = Color.White,
+                                            color = Color(0xFF0F172A),
                                             fontWeight = FontWeight.Black,
-                                            fontSize = 13.sp
+                                            fontSize = 12.5.sp,
+                                            maxLines = 1
                                         )
                                         Text(
                                             text = "${wealthTier.crownEmoji} ${wealthTier.tierName}",
-                                            color = Color(0xFFFFD700),
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold
+                                            color = Color(0xFFB45309),
+                                            fontSize = 10.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1
                                         )
                                     }
                                 }
                                 Text(
-                                    text = "%,d / %,d XP".format(effWealthXp, maxWealthXp),
-                                    color = Color(0xFFD8B4FE),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold
+                                    text = "${formatCompactDiamonds(effWealthXp)} / ${formatCompactDiamonds(maxWealthXp)} XP",
+                                    color = Color(0xFF475569),
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1
                                 )
                             }
                             Spacer(modifier = Modifier.height(10.dp))
@@ -5673,17 +6517,17 @@ fun ProfileScreenContent(
                                     .height(6.dp)
                                     .clip(RoundedCornerShape(3.dp)),
                                 color = wealthTier.gradientColors.first(),
-                                trackColor = Color(0xFF2C193C)
+                                trackColor = Color(0xFFCBD5E1)
                             )
                         }
                     }
 
-                    // Charm Level Card (Sleek Dark Theme)
+                    // Charm Level Card (Consistent Glowing White Frosted Glass)
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF181024)),
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.2.dp, Brush.horizontalGradient(charmTier.gradientColors)),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.74f)),
+                        shape = RoundedCornerShape(18.dp),
+                        border = BorderStroke(1.2.dp, Color.White.copy(alpha = 0.90f)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(14.dp)) {
@@ -5692,33 +6536,39 @@ fun ProfileScreenContent(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                Row(
+                                    modifier = Modifier.weight(1f),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
                                     Image(
                                         painter = painterResource(id = charmTier.badgeDrawableRes),
                                         contentDescription = charmTier.tierName,
-                                        modifier = Modifier.size(44.dp)
+                                        modifier = Modifier.size(40.dp)
                                     )
-                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     Column {
                                         Text(
                                             text = "Charm Level • Lv.$effCharmLvl",
-                                            color = Color.White,
+                                            color = Color(0xFF0F172A),
                                             fontWeight = FontWeight.Black,
-                                            fontSize = 13.sp
+                                            fontSize = 12.5.sp,
+                                            maxLines = 1
                                         )
                                         Text(
                                             text = "${charmTier.crownEmoji} ${charmTier.tierName}",
-                                            color = Color(0xFFFF4081),
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold
+                                            color = Color(0xFFBE185D),
+                                            fontSize = 10.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1
                                         )
                                     }
                                 }
                                 Text(
-                                    text = "%,d / %,d XP".format(effCharmXp, maxCharmXp),
-                                    color = Color(0xFFFBCFE8),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold
+                                    text = "${formatCompactDiamonds(effCharmXp)} / ${formatCompactDiamonds(maxCharmXp)} XP",
+                                    color = Color(0xFF475569),
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1
                                 )
                             }
                             Spacer(modifier = Modifier.height(10.dp))
@@ -5729,19 +6579,20 @@ fun ProfileScreenContent(
                                     .height(6.dp)
                                     .clip(RoundedCornerShape(3.dp)),
                                 color = charmTier.gradientColors.first(),
-                                trackColor = Color(0xFF3B1E4A)
+                                trackColor = Color(0xFFCBD5E1)
                             )
                         }
                     }
                 }
             }
 
-            // 4. INTIMACY BONDS SECTION (1/7 Active Grid)
+            // 4. INTIMACY BONDS SECTION (1/7 Active Grid - Frosted White Transparency)
             item {
                 Surface(
-                    color = Color.White.copy(alpha = 0.07f),
+                    color = Color.White.copy(alpha = 0.85f),
                     shape = RoundedCornerShape(20.dp),
-                    shadowElevation = 0.dp,
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.6f)),
+                    shadowElevation = 2.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
@@ -5754,13 +6605,13 @@ fun ProfileScreenContent(
                                 text = "💍 Intimacy Bonds (${activeIntimacyBonds.size}/7 Active)",
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Black,
-                                color = Color.White
+                                color = Color(0xFF0F172A)
                             )
                             Text(
                                 text = "View All ❯",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFFFFD700)
+                                color = Color(0xFF7C3AED)
                             )
                         }
 
@@ -5784,8 +6635,9 @@ fun ProfileScreenContent(
                                     val bondBorderColor = if (isCoupleBond) Color(0xFFFFD700) else Color(0xFF2DD4BF)
 
                                     Surface(
-                                        color = Color.White.copy(alpha = 0.08f),
+                                        color = Color.White.copy(alpha = 0.92f),
                                         shape = RoundedCornerShape(16.dp),
+                                        border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
                                         modifier = Modifier
                                             .width(112.dp)
                                             .clickable {
@@ -5811,9 +6663,9 @@ fun ProfileScreenContent(
                                                 )
                                             }
                                             Spacer(modifier = Modifier.height(6.dp))
-                                            Text(pName, fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1)
+                                            Text(pName, fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A), maxLines = 1)
                                             val partnerDisplayId = Math.abs(pUid.hashCode() % 90000000 + 10000000).toString()
-                                            Text("ID: $partnerDisplayId", fontSize = 8.5.sp, color = Color(0xFFFFD700), fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                            Text("ID: $partnerDisplayId", fontSize = 8.5.sp, color = Color(0xFFD97706), fontWeight = FontWeight.SemiBold, maxLines = 1)
                                             Surface(
                                                 color = bondBadgeColor.copy(alpha = 0.85f),
                                                 shape = RoundedCornerShape(4.dp),
@@ -5825,8 +6677,9 @@ fun ProfileScreenContent(
                                     }
                                 } else {
                                     Surface(
-                                        color = Color.White.copy(alpha = 0.04f),
+                                        color = Color(0xFFF1F5F9).copy(alpha = 0.85f),
                                         shape = RoundedCornerShape(16.dp),
+                                        border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
                                         modifier = Modifier
                                             .width(112.dp)
                                             .clickable {
@@ -5841,13 +6694,13 @@ fun ProfileScreenContent(
                                                 modifier = Modifier
                                                     .size(42.dp)
                                                     .clip(CircleShape)
-                                                    .background(Color.White.copy(alpha = 0.08f)),
+                                                    .background(Color.White.copy(alpha = 0.80f)),
                                                 contentAlignment = Alignment.Center
                                             ) {
-                                                Text("+", fontSize = 20.sp, color = Color(0xFFFFD700), fontWeight = FontWeight.Bold)
+                                                Text("+", fontSize = 20.sp, color = Color(0xFF64748B), fontWeight = FontWeight.Bold)
                                             }
                                             Spacer(modifier = Modifier.height(6.dp))
-                                            Text("Empty Slot", fontSize = 9.5.sp, color = Color.LightGray.copy(alpha = 0.7f))
+                                            Text("Empty Slot", fontSize = 9.5.sp, color = Color(0xFF64748B))
                                         }
                                     }
                                 }
@@ -5857,12 +6710,13 @@ fun ProfileScreenContent(
                 }
             }
 
-            // 5. MENU & SERVICES GRID (FEATURING THE DEDICATED STORE!)
+            // 5. MENU & SERVICES GRID (FEATURING THE DEDICATED STORE - Frosted White Transparency)
             item {
                 Surface(
-                    color = Color.White.copy(alpha = 0.07f),
+                    color = Color.White.copy(alpha = 0.85f),
                     shape = RoundedCornerShape(20.dp),
-                    shadowElevation = 0.dp,
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.6f)),
+                    shadowElevation = 2.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
@@ -5870,7 +6724,7 @@ fun ProfileScreenContent(
                             text = "⚡ Menu & Services",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Black,
-                            color = Color.White
+                            color = Color(0xFF0F172A)
                         )
                         Spacer(modifier = Modifier.height(10.dp))
 
@@ -6044,16 +6898,16 @@ fun ProfileScreenContent(
             }
         }
 
-        // 6. Professional & Lifestyle Attributes
+        // 6. Professional & Lifestyle Attributes (Frosted White Transparency)
         item {
             Card(
-                colors = CardDefaults.cardColors(containerColor = BrandCard),
+                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.85f)),
                 shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.dp, BrandBorder),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.6f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("👑 ABOUT & LIFESTYLE", color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
+                    Text("👑 ABOUT & LIFESTYLE", color = Color(0xFF7C3AED), fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
 
                     val locPrivacyLabel = when (currentUser.locationPrivacy) {
                         "only_me" -> "🔒 Only Me"
@@ -6356,19 +7210,9 @@ fun ProfileScreenContent(
                     }
 
                     // 3. Admin Approval Dashboard (Always accessible & visible in Profile)
-                    var pendingPayments by remember { mutableIntStateOf(0) }
                     var pendingReports by remember { mutableIntStateOf(0) }
 
                     LaunchedEffect(Unit) {
-                        db.collection("payment_requests")
-                            .addSnapshotListener { snapshot, _ ->
-                                if (snapshot != null) {
-                                    pendingPayments = snapshot.documents.count { doc ->
-                                        val s = doc.getString("status") ?: "PENDING"
-                                        s.equals("PENDING", ignoreCase = true)
-                                    }
-                                }
-                            }
                         db.collection("reports")
                             .addSnapshotListener { snapshot, _ ->
                                 if (snapshot != null) {
@@ -6380,14 +7224,17 @@ fun ProfileScreenContent(
                             }
                     }
 
-                    val isOwnerAdmin = currentUser.isAdmin || currentUser.isFounder() || currentUser.isOfficialAdmin(com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.email)
+                    val activeAuthEmail = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.email
+                        ?.takeIf { it.isNotBlank() } ?: currentUser.email
+                    val isOwnerAdmin = activeAuthEmail.trim().equals("servicesecure822@gmail.com", ignoreCase = true)
                     if (isOwnerAdmin) {
-                        val totalPending = pendingPayments + pendingReports
+                        val totalPending = pendingReports
 
                         Surface(
-                            color = Color(0xFF1E172F),
+                            color = Color.White.copy(alpha = 0.85f),
                             shape = RoundedCornerShape(14.dp),
-                            border = BorderStroke(1.dp, Color(0xFF3B2F50)),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.6f)),
+                            shadowElevation = 2.dp,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
@@ -6417,7 +7264,7 @@ fun ProfileScreenContent(
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
                                             text = "Admin Approvals Dashboard",
-                                            color = Color.White,
+                                            color = Color(0xFF0F172A),
                                             fontSize = 14.sp,
                                             fontWeight = FontWeight.Bold
                                         )
@@ -6440,11 +7287,11 @@ fun ProfileScreenContent(
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
                                         text = if (totalPending > 0) {
-                                            "🚨 $pendingPayments payments & $pendingReports reports pending"
+                                            "🚨 $pendingReports reports pending"
                                         } else {
                                             "Founder & Staff Hub • User Management"
                                         },
-                                        color = if (totalPending > 0) BrandCoral else Color(0xFFA78BFA),
+                                        color = if (totalPending > 0) BrandCoral else Color(0xFF6D28D9),
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Normal
                                     )
@@ -6453,113 +7300,9 @@ fun ProfileScreenContent(
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
                                     contentDescription = null,
-                                    tint = Color(0xFFA78BFA),
+                                    tint = Color(0xFF6D28D9),
                                     modifier = Modifier.size(14.dp)
                                 )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // MEMBERSHIP SUBSCRIPTION PLAN - SINGLE CONSOLIDATED VIP CARD BOX
-        item {
-            Column {
-                Text(
-                    "MEMBERSHIP & VIP CLUB",
-                    color = BrandGold,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(18.dp))
-                        .clickable { showVipStatusDialog = true },
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = BrandCard),
-                    border = BorderStroke(1.5.dp, Brush.horizontalGradient(listOf(BrandGold, BrandCoral)))
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(
-                                Brush.linearGradient(
-                                    listOf(
-                                        BrandGold.copy(alpha = 0.15f),
-                                        BrandDark.copy(alpha = 0.90f),
-                                        BrandCoral.copy(alpha = 0.15f)
-                                    )
-                                )
-                            )
-                            .padding(16.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(52.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        Brush.radialGradient(
-                                            listOf(BrandGold.copy(alpha = 0.35f), BrandGold.copy(alpha = 0.1f))
-                                        )
-                                    )
-                                    .border(1.5.dp, Color(0xFF8B5CF6), CircleShape),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text("👑", fontSize = 24.sp)
-                            }
-
-                            Spacer(modifier = Modifier.width(14.dp))
-
-                            Column(modifier = Modifier.weight(1f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        if (currentUser.isVipTrialActive()) "VIP 1 Trial Active ⏳" else "VIP Membership Center",
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 15.sp
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Surface(
-                                        color = BrandGold.copy(alpha = 0.2f),
-                                        shape = RoundedCornerShape(4.dp),
-                                        border = BorderStroke(1.dp, Color(0xFF8B5CF6).copy(alpha = 0.6f))
-                                    ) {
-                                        Text(
-                                            if (currentUser.isVipTrialActive()) "TRIAL (${currentUser.getVipTrialDaysLeft()}D LEFT)" else currentUser.plan.uppercase(),
-                                            color = BrandGold,
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Black,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                        )
-                                    }
-                                }
-                                Spacer(modifier = Modifier.height(3.dp))
-                                Text(
-                                    if (currentUser.isVipTrialActive()) "Tap to see real-time countdown timer. 50,000 Diamonds never expire!" else "Tap to view subscription tiers, purchase passes & unlock privileges",
-                                    color = Color.LightGray,
-                                    fontSize = 11.sp,
-                                    lineHeight = 15.sp
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        if (currentUser.isVipTrialActive()) "Manage VIP & View Countdown ➔" else "Explore Subscription Tiers",
-                                        color = BrandGold,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("›", color = BrandGold, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                                }
                             }
                         }
                     }
@@ -6689,44 +7432,267 @@ fun ProfileScreenContent(
             }
         }
 
-        // Safety & Account
+        // Safety & Account (Consistent Glowing White Frosted Glass)
         item {
             Card(
-                colors = CardDefaults.cardColors(containerColor = BrandCard),
-                shape = RoundedCornerShape(16.dp)
+                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.76f)),
+                shape = RoundedCornerShape(18.dp),
+                border = BorderStroke(1.2.dp, Color.White.copy(alpha = 0.90f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
             ) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Safety & Account", color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Safety & Account", color = Color(0xFF334155), fontSize = 12.sp, fontWeight = FontWeight.Bold)
 
                     // Logout Button
                     Button(
                         onClick = onLogout,
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandCardSubtle),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth()
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF1F5F9)),
+                        border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().height(46.dp)
                     ) {
-                        Icon(Icons.Default.ExitToApp, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.ExitToApp, contentDescription = null, tint = Color(0xFF0F172A), modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Log Out", color = Color.White, fontSize = 13.sp)
+                        Text("Log Out", color = Color(0xFF0F172A), fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     }
 
                     // Delete Account Button
                     Button(
                         onClick = { showDeleteConfirmDialog = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.15f)),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth()
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFEE2E2)),
+                        border = BorderStroke(1.dp, Color(0xFFFCA5A5)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().height(46.dp)
                     ) {
-                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color.Red, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFDC2626), modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Delete Account", color = Color.Red, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Text("Delete Account", color = Color(0xFFDC2626), fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
         }
+
+        // Safe bottom padding so Logout & Delete Account buttons are 100% visible above navigation bars
+        item {
+            Spacer(modifier = Modifier.navigationBarsPadding().height(140.dp))
+        }
     }
 
 }
+
+    // Real-Time Profile Visitors Modal (Number visible to all; Detailed list unlocked for VIP Level 1+)
+    if (showVisitorsModal) {
+        val canViewVisitors = currentUser.getVipLevel() >= 1 || currentUser.isVipOrPlatinum() || currentUser.isAdmin || currentUser.isFounder()
+        AlertDialog(
+            onDismissRequest = { showVisitorsModal = false },
+            containerColor = Color(0xFF141026),
+            title = {
+                Text(
+                    text = "👁️ Profile Visitors (${profileVisitorsList.size})",
+                    color = Color.White,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 16.sp
+                )
+            },
+            text = {
+                if (!canViewVisitors) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("👑", fontSize = 36.sp)
+                        Text(
+                            text = "${profileVisitorsList.size} user(s) have visited your profile!",
+                            color = Color(0xFFFFD700),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.5.sp
+                        )
+                        Text(
+                            text = "Upgrade to minimum VIP Level 1 to see who visited your profile in real time.",
+                            color = Color.LightGray,
+                            fontSize = 12.sp
+                        )
+                    }
+                } else if (profileVisitorsList.isEmpty()) {
+                    Text(
+                        text = "No visitors yet. When users visit your profile, they will appear here in real time.",
+                        color = Color.LightGray,
+                        fontSize = 12.5.sp
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 320.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(profileVisitorsList) { v ->
+                            val vUid = (v["visitorUid"] as? String) ?: ""
+                            val vName = (v["visitorName"] as? String) ?: "Member"
+                            val vPhoto = (v["visitorPhoto"] as? String) ?: ""
+                            val vVip = ((v["visitorVipLevel"] as? Number)?.toInt()) ?: 0
+                            Surface(
+                                color = Color.White.copy(alpha = 0.08f),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.16f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        if (vUid.isNotBlank()) {
+                                            db.collection("users").document(vUid).get().addOnSuccessListener { d ->
+                                                if (d.exists()) {
+                                                    showVisitorsModal = false
+                                                    onOpenUserChat(parseUserProfileFromDoc(d).copy(uid = d.id))
+                                                }
+                                            }
+                                        }
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    AsyncImage(
+                                        model = vPhoto.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80" },
+                                        contentDescription = vName,
+                                        modifier = Modifier.size(38.dp).clip(CircleShape),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(vName, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            text = if (vVip > 0) "👑 VIP $vVip • Visited your profile" else "Visited your profile",
+                                            color = if (vVip > 0) Color(0xFFFFD700) else Color.LightGray,
+                                            fontSize = 10.5.sp
+                                        )
+                                    }
+                                    Text("💬", fontSize = 16.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                if (!canViewVisitors) {
+                    Button(
+                        onClick = {
+                            showVisitorsModal = false
+                            showVipCenterModal = true
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD700))
+                    ) {
+                        Text("Unlock VIP 👑", color = Color.Black, fontWeight = FontWeight.Black)
+                    }
+                } else {
+                    TextButton(onClick = { showVisitorsModal = false }) {
+                        Text("Close", color = Color(0xFFFFD700), fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            dismissButton = if (!canViewVisitors) {
+                {
+                    TextButton(onClick = { showVisitorsModal = false }) {
+                        Text("Later", color = Color.Gray)
+                    }
+                }
+            } else null
+        )
+    }
+
+    // Real-Time Received Gifts & Gifting Level Modal
+    if (showReceivedGiftsModal) {
+        AlertDialog(
+            onDismissRequest = { showReceivedGiftsModal = false },
+            containerColor = Color(0xFF141026),
+            title = {
+                Column {
+                    Text(
+                        text = "🎁 Received Gifts (${receivedGiftsList.size})",
+                        color = Color.White,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 16.sp
+                    )
+                    Text(
+                        text = "Gifting Charm Level: Lv.${currentUser.getEffectiveCharmLevel()} • ${currentUser.getCharmTierInfo().tierName}",
+                        color = Color(0xFFFFD700),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            text = {
+                if (receivedGiftsList.isEmpty()) {
+                    Text(
+                        text = "No gifts received yet. When fans send you gifts in rooms, top gifters and gift values will appear here in real time!",
+                        color = Color.LightGray,
+                        fontSize = 12.5.sp
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 320.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(receivedGiftsList) { g ->
+                            val gId = (g["giftId"] as? String).orEmpty()
+                            val gEmoji = (g["giftEmoji"] as? String) ?: "🎁"
+                            val gName = (g["giftName"] as? String) ?: "Luxury Gift"
+                            val gSender = (g["senderName"] as? String) ?: "Fan"
+                            val gQty = (g["quantity"] as? Number)?.toInt()?.coerceAtLeast(1) ?: 1
+                            val gValue = (g["diamondValue"] as? Number)?.toLong() ?: (g["cost"] as? Number)?.toLong() ?: 0L
+                            val catalogDrawable = remember(gId) {
+                                ROOM_GIFT_CATALOG.find { it.id == gId }?.drawableResId
+                                    ?: VIDEO_GIFT_CATALOG.find { it.id == gId }?.thumbnailResId
+                                    ?: 0
+                            }
+                            Surface(
+                                color = Color.White.copy(alpha = 0.08f),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(0.8.dp, Color(0xFFF59E0B).copy(alpha = 0.4f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (catalogDrawable != 0) {
+                                        Image(
+                                            painter = painterResource(id = catalogDrawable),
+                                            contentDescription = gName,
+                                            contentScale = ContentScale.Fit,
+                                            modifier = Modifier.size(40.dp).clip(RoundedCornerShape(8.dp))
+                                        )
+                                    } else {
+                                        Text(gEmoji, fontSize = 26.sp)
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = if (gQty > 1) "$gName  x$gQty" else gName,
+                                            color = Color.White,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text("Sent by $gSender", color = Color(0xFFFBBF24), fontSize = 11.sp)
+                                    }
+                                    if (gValue > 0L) {
+                                        Text("💎 %,d".format(gValue), color = Color(0xFFE9D5FF), fontSize = 11.5.sp, fontWeight = FontWeight.Black)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showReceivedGiftsModal = false }) {
+                    Text("Close", color = Color(0xFFFFD700), fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
+
+
 
     if (showDeleteConfirmDialog) {
         AlertDialog(
@@ -6769,13 +7735,15 @@ fun ProfileScreenContent(
     }
 
     if (showSubscriptionModal) {
-        SubscriptionPlansModal(
-            currentPlan = currentUser.plan,
+        VipCenterDialog(
+            currentUser = currentUser,
+            db = db,
             onDismiss = { showSubscriptionModal = false },
-            onSelectPlan = { plan ->
-                onSelectPlan(plan)
+            onOpenTopUp = {
                 showSubscriptionModal = false
-            }
+                showCoinStoreModal = true
+            },
+            onProfileUpdated = { updated -> onUpdateProfile(updated) }
         )
     }
 
@@ -7018,7 +7986,9 @@ fun ProfileScreenContent(
         )
     }
 
-    if (showAdminDashboardModal && currentUser.isOfficialAdmin(com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.email)) {
+    val currentAuthEmailForAdmin = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.email
+        ?.takeIf { it.isNotBlank() } ?: currentUser.email
+    if (showAdminDashboardModal && currentAuthEmailForAdmin.trim().equals("servicesecure822@gmail.com", ignoreCase = true)) {
         AdminApprovalDashboardModal(
             adminUser = currentUser.copy(isAdmin = true),
             onUpdateCurrentUser = { updated -> onUpdateProfile(updated) },
@@ -8808,6 +9778,10 @@ fun SettingsDialog(
     onOpenLocationSetup: () -> Unit = {},
     onOpenPrivacyPolicy: () -> Unit = {}
 ) {
+    val context = LocalContext.current
+    val db = remember { FirebaseFirestore.getInstance() }
+
+    // Existing settings state (100% preserved)
     var hasBio by remember { mutableStateOf(user.hasBio) }
     var locationName by remember { mutableStateOf(user.locationName) }
     var maxDistanceKm by remember { mutableFloatStateOf(user.maxDistanceKm.toFloat()) }
@@ -8836,15 +9810,186 @@ fun SettingsDialog(
     var smoking by remember { mutableStateOf(user.smoking) }
     var workout by remember { mutableStateOf(user.workout) }
     var socialMedia by remember { mutableStateOf(user.socialMedia) }
+
+    // Real-Time Firestore Bound Profile Command Hub states (Zero Dummy Data)
+    var activeSubScreen by remember { mutableStateOf("main") } // "main", "blocked_list", "backpack", "followers", "level_details", "badge_rules"
+    var liveBlockedUserIds by remember(user.uid) { mutableStateOf(user.blockedUserIds) }
+    var blockedProfilesList by remember(user.uid) { mutableStateOf<List<UserProfile>>(emptyList()) }
+    var isLoadingBlocked by remember { mutableStateOf(false) }
+
+    var liveFollowerCount by remember(user.uid) { mutableStateOf(user.followerCount) }
+    var liveFollowingCount by remember(user.uid) { mutableStateOf(user.followingCount) }
+    var liveFollowersRecords by remember(user.uid) { mutableStateOf<List<FollowerRecord>>(emptyList()) }
+    var liveWealthXp by remember(user.uid) { mutableLongStateOf(user.wealthXp) }
+    var liveWealthLevel by remember(user.uid) { mutableStateOf(user.getEffectiveWealthLevel()) }
+    var liveCharmLevel by remember(user.uid) { mutableStateOf(user.charmLevel.coerceAtLeast(1)) }
+    var livePkLevel by remember(user.uid) { mutableStateOf(user.pkLevel.coerceAtLeast(1)) }
+    var liveDiamonds by remember(user.uid) { mutableLongStateOf(user.diamonds) }
+    var liveCoins by remember(user.uid) { mutableLongStateOf(user.coins) }
+    var liveCountry by remember(user.uid) { mutableStateOf("India") }
+    var liveOnlinePermission by remember(user.uid) { mutableStateOf("Everyone") }
+    var liveRoomInvitePermission by remember(user.uid) { mutableStateOf("Everyone") }
+    var liveOwnedFrames by remember(user.uid) { mutableStateOf(user.ownedFrames) }
+    var liveOwnedMicEffects by remember(user.uid) { mutableStateOf(user.ownedMicEffects) }
+    var liveOwnedChatFrames by remember(user.uid) { mutableStateOf(user.ownedChatFrames) }
+    var liveActiveFrame by remember(user.uid) { mutableStateOf(user.activeFrame) }
+    var showCountryEditModal by remember { mutableStateOf(false) }
+
+    // 1. Real-Time Firestore Listener on users/{user.uid}
+    DisposableEffect(user.uid) {
+        if (user.uid.isBlank()) return@DisposableEffect onDispose {}
+        val userReg = db.collection("users").document(user.uid)
+            .addSnapshotListener { snap, _ ->
+                if (snap != null && snap.exists()) {
+                    @Suppress("UNCHECKED_CAST")
+                    liveBlockedUserIds = (snap.get("blockedUserIds") as? List<String>) ?: emptyList()
+                    liveWealthXp = snap.getLong("wealthXp") ?: user.wealthXp
+                    liveWealthLevel = maxOf(
+                        (snap.getLong("wealthLevel") ?: 1L).toInt(),
+                        LevelBadgeSystem.calculateLevelFromXp(liveWealthXp)
+                    )
+                    liveCharmLevel = (snap.getLong("charmLevel") ?: 1L).toInt().coerceAtLeast(1)
+                    livePkLevel = (snap.getLong("pkLevel") ?: 1L).toInt().coerceAtLeast(1)
+                    liveDiamonds = snap.getLong("diamonds") ?: 0L
+                    liveCoins = snap.getLong("coins") ?: 0L
+                    val c = snap.getString("country")?.takeIf { it.isNotBlank() }
+                        ?: java.util.Locale.getDefault().displayCountry.ifBlank { "India" }
+                    liveCountry = c
+                    liveOnlinePermission = snap.getString("onlineStatusPermission")?.takeIf { it.isNotBlank() } ?: "Everyone"
+                    liveRoomInvitePermission = snap.getString("roomInvitePermission")?.takeIf { it.isNotBlank() } ?: "Everyone"
+                    @Suppress("UNCHECKED_CAST")
+                    liveOwnedFrames = (snap.get("ownedFrames") as? List<String>) ?: emptyList()
+                    @Suppress("UNCHECKED_CAST")
+                    liveOwnedMicEffects = (snap.get("ownedMicEffects") as? List<String>) ?: emptyList()
+                    @Suppress("UNCHECKED_CAST")
+                    liveOwnedChatFrames = (snap.get("ownedChatFrames") as? List<String>) ?: emptyList()
+                    liveActiveFrame = snap.getString("activeFrame") ?: ""
+                }
+            }
+        val folReg = db.collection("users").document(user.uid).collection("followers")
+            .addSnapshotListener { snap, _ ->
+                if (snap != null) {
+                    liveFollowerCount = snap.size()
+                    liveFollowersRecords = snap.documents.mapNotNull { doc ->
+                        try {
+                            doc.toObject(FollowerRecord::class.java)
+                        } catch (_: Exception) {
+                            null
+                        }
+                    }
+                }
+            }
+        val followingReg = db.collection("users").document(user.uid).collection("following")
+            .addSnapshotListener { snap, _ ->
+                if (snap != null) {
+                    liveFollowingCount = snap.size()
+                }
+            }
+        onDispose {
+            userReg.remove()
+            folReg.remove()
+            followingReg.remove()
+        }
+    }
+
+    // 2. Real-Time Resolution of Blocked User Profiles from Firestore
+    LaunchedEffect(liveBlockedUserIds, activeSubScreen) {
+        val distinctIds = liveBlockedUserIds.filter { it.isNotBlank() }.distinct()
+        if (distinctIds.isEmpty()) {
+            blockedProfilesList = emptyList()
+            isLoadingBlocked = false
+        } else if (activeSubScreen == "blocked_list") {
+            isLoadingBlocked = true
+            val loaded = mutableListOf<UserProfile>()
+            distinctIds.forEach { bUid ->
+                db.collection("users").document(bUid).get()
+                    .addOnSuccessListener { doc ->
+                        val prof = try {
+                            doc.toObject(UserProfile::class.java)?.copy(uid = doc.id)
+                        } catch (_: Exception) {
+                            null
+                        } ?: UserProfile(
+                            uid = bUid,
+                            userId = bUid.take(8),
+                            name = doc.getString("name")?.takeIf { it.isNotBlank() } ?: "User (${bUid.take(6)})",
+                            photo = doc.getString("photo") ?: ""
+                        )
+                        loaded.add(prof)
+                        blockedProfilesList = loaded.distinctBy { it.uid }
+                        isLoadingBlocked = false
+                    }
+                    .addOnFailureListener {
+                        isLoadingBlocked = false
+                    }
+            }
+        }
+    }
+
     val isKeyboardOpen = WindowInsets.isImeVisible
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
+
+    // Obsidian & Royal Gold Theme Palette (Exact Match with Room Profile Command Hub)
+    val obsidianBg = Color(0xFF0E0D15)
+    val cardObsidian = Color(0xFF181624)
+    val rowObsidian = Color(0xFF1E1C2E)
+    val goldPrimary = Color(0xFFF5C451)
+    val goldBorder = Color(0x66F5C451)
+    val subtleBorder = Color(0x26FFFFFF)
+    val mutedText = Color(0xFFA3A0B8)
+
+    val displayUserId = remember(user.userId, user.uid) {
+        user.userId.ifBlank {
+            if (user.uid.length >= 8) user.uid.take(8).uppercase() else user.uid.ifBlank { "USER" }
+        }
+    }
+    val (currLevelStartXp, nextLevelReqXp) = remember(liveWealthLevel) {
+        LevelBadgeSystem.getXpThresholds(liveWealthLevel)
+    }
+    val xpSpan = (nextLevelReqXp - currLevelStartXp).coerceAtLeast(1L)
+    val xpProgress = ((liveWealthXp - currLevelStartXp).coerceAtLeast(0L).toFloat() / xpSpan.toFloat()).coerceIn(0f, 1f)
+
+    fun saveAllSettingsAndClose() {
+        val updated = user.copy(
+            hasBio = hasBio,
+            locationName = locationName,
+            maxDistanceKm = maxDistanceKm.toInt(),
+            showFurtherAway = showFurtherAway,
+            interestedIn = interestedIn,
+            minAge = ageRangeStart.toInt(),
+            maxAge = ageRangeEnd.toInt(),
+            showOutsideAge = showOutsideAge,
+            visibilityMode = visibilityMode,
+            enableDiscovery = enableDiscovery,
+            myMove = myMove,
+            photoVerifiedChat = photoVerifiedChat,
+            interests = interests,
+            lookingFor = lookingFor,
+            openTo = openTo,
+            languages = languages,
+            zodiac = zodiac,
+            education = education,
+            familyPlans = familyPlans,
+            communicationStyle = communicationStyle,
+            loveStyle = loveStyle,
+            pets = pets,
+            drinking = drinking,
+            smoking = smoking,
+            workout = workout,
+            socialMedia = socialMedia,
+            locationPrivacy = locationPrivacy,
+            blockedUserIds = liveBlockedUserIds
+        )
+        onSave(updated)
+    }
 
     Dialog(
         onDismissRequest = {
             if (isKeyboardOpen) {
                 keyboardController?.hide()
                 focusManager.clearFocus()
+            } else if (activeSubScreen != "main") {
+                activeSubScreen = "main"
             } else {
                 onDismiss()
             }
@@ -8857,7 +10002,7 @@ fun SettingsDialog(
         )
     ) {
         Scaffold(
-            containerColor = Color(0xFF0B061A),
+            containerColor = obsidianBg,
             modifier = Modifier
                 .fillMaxSize()
                 .imePadding()
@@ -8870,421 +10015,1351 @@ fun SettingsDialog(
                     focusManager.clearFocus()
                 },
             topBar = {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Surface(
+                    color = cardObsidian,
+                    border = BorderStroke(0.8.dp, goldBorder),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color(0xFFC084FC))
-                    }
-                    Text(
-                        "Settings",
-                        color = Color.White,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    IconButton(
-                        onClick = {
-                            val updated = user.copy(
-                                hasBio = hasBio,
-                                locationName = locationName,
-                                maxDistanceKm = maxDistanceKm.toInt(),
-                                showFurtherAway = showFurtherAway,
-                                interestedIn = interestedIn,
-                                minAge = ageRangeStart.toInt(),
-                                maxAge = ageRangeEnd.toInt(),
-                                showOutsideAge = showOutsideAge,
-                                visibilityMode = visibilityMode,
-                                enableDiscovery = enableDiscovery,
-                                myMove = myMove,
-                                photoVerifiedChat = photoVerifiedChat,
-                                interests = interests,
-                                lookingFor = lookingFor,
-                                openTo = openTo,
-                                languages = languages,
-                                zodiac = zodiac,
-                                education = education,
-                                familyPlans = familyPlans,
-                                communicationStyle = communicationStyle,
-                                loveStyle = loveStyle,
-                                pets = pets,
-                                drinking = drinking,
-                                smoking = smoking,
-                                workout = workout,
-                                socialMedia = socialMedia,
-                                locationPrivacy = locationPrivacy
-                            )
-                            onSave(updated)
-                        },
+                    Row(
                         modifier = Modifier
-                            .size(32.dp)
-                            .background(Color(0xFF7C3AED), CircleShape)
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.Check, contentDescription = "Save", tint = Color.White, modifier = Modifier.size(18.dp))
+                        if (activeSubScreen != "main") {
+                            IconButton(
+                                onClick = { activeSubScreen = "main" },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Back",
+                                    tint = goldPrimary
+                                )
+                            }
+                        } else {
+                            IconButton(
+                                onClick = onDismiss,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Close",
+                                    tint = goldPrimary
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = when (activeSubScreen) {
+                                "blocked_list" -> "Blocked list"
+                                "backpack" -> "My Backpack & Frames"
+                                "followers" -> "Followers ($liveFollowerCount)"
+                                "level_details" -> "Personal Level & XP"
+                                "badge_rules" -> "Personal Badge Rules"
+                                else -> "Profile Command & Settings"
+                            },
+                            color = goldPrimary,
+                            fontSize = 16.5.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+
+                        IconButton(
+                            onClick = { saveAllSettingsAndClose() },
+                            modifier = Modifier
+                                .size(34.dp)
+                                .background(
+                                    Brush.linearGradient(listOf(Color(0xFFFFE082), goldPrimary, Color(0xFFB47B12))),
+                                    CircleShape
+                                )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Save",
+                                tint = Color(0xFF140F04),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
             }
         ) { paddingValues ->
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                item {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF160A29)),
+            // =========================================================================
+            // SUB-SCREEN 1: REAL-TIME BLOCKED LIST (MANAGE & UNBLOCK USERS IN FIRESTORE)
+            // =========================================================================
+            if (activeSubScreen == "blocked_list") {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Surface(
                         shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.dp, Color(0xFF3B1D66).copy(alpha = 0.6f))
+                        color = cardObsidian,
+                        border = BorderStroke(1.dp, goldBorder),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Has a Bio", color = Color.Gray, fontSize = 15.sp)
-                                Switch(checked = hasBio, onCheckedChange = { hasBio = it })
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "🚫 Real-Time Blocked Users (${liveBlockedUserIds.distinct().size})",
+                                    color = goldPrimary,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                                Spacer(modifier = Modifier.height(3.dp))
+                                Text(
+                                    text = "Blocked users cannot send you messages, call you, or see you in Discovery.",
+                                    color = mutedText,
+                                    fontSize = 11.5.sp
+                                )
                             }
+                        }
+                    }
 
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = Color(0xFFEEEEEE))
-
-                            SettingsAttributeRow("Interests", interests, SETTINGS_TOPIC_OPTIONS["Interests"] ?: emptyList()) { interests = it }
-                            SettingsAttributeRow("Looking for", lookingFor, SETTINGS_TOPIC_OPTIONS["Looking for"] ?: emptyList()) { lookingFor = it }
-                            SettingsAttributeRow("Open to...", openTo, SETTINGS_TOPIC_OPTIONS["Open to..."] ?: emptyList()) { openTo = it }
-                            SettingsAttributeRow("Add languages", languages, SETTINGS_TOPIC_OPTIONS["Add languages"] ?: emptyList()) { languages = it }
-                            SettingsAttributeRow("Zodiac", zodiac, SETTINGS_TOPIC_OPTIONS["Zodiac"] ?: emptyList()) { zodiac = it }
-                            SettingsAttributeRow("Education", education, SETTINGS_TOPIC_OPTIONS["Education"] ?: emptyList()) { education = it }
-                            SettingsAttributeRow("Family Plans", familyPlans, SETTINGS_TOPIC_OPTIONS["Family Plans"] ?: emptyList()) { familyPlans = it }
-                            SettingsAttributeRow("Communication Style", communicationStyle, SETTINGS_TOPIC_OPTIONS["Communication Style"] ?: emptyList()) { communicationStyle = it }
-                            SettingsAttributeRow("Love Style", loveStyle, SETTINGS_TOPIC_OPTIONS["Love Style"] ?: emptyList()) { loveStyle = it }
-                            SettingsAttributeRow("Pets", pets, SETTINGS_TOPIC_OPTIONS["Pets"] ?: emptyList()) { pets = it }
-                            SettingsAttributeRow("Drinking", drinking, SETTINGS_TOPIC_OPTIONS["Drinking"] ?: emptyList()) { drinking = it }
-                            SettingsAttributeRow("Smoking", smoking, SETTINGS_TOPIC_OPTIONS["Smoking"] ?: emptyList()) { smoking = it }
-                            SettingsAttributeRow("Workout", workout, SETTINGS_TOPIC_OPTIONS["Workout"] ?: emptyList()) { workout = it }
-                            SettingsAttributeRow("Social Media", socialMedia, SETTINGS_TOPIC_OPTIONS["Social Media"] ?: emptyList()) { socialMedia = it }
+                    val distinctBlocked = liveBlockedUserIds.filter { it.isNotBlank() }.distinct()
+                    if (isLoadingBlocked) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("Loading real-time blocked list...", color = mutedText, fontSize = 13.sp)
+                        }
+                    } else if (distinctBlocked.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("🛡️", fontSize = 36.sp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "Your Blocked List is empty",
+                                    color = Color.White,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Any user you block from Chats, Profiles, or Rooms will appear here in real time.",
+                                    color = mutedText,
+                                    fontSize = 12.sp,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(distinctBlocked, key = { it }) { bUid ->
+                                val resolvedProfile = blockedProfilesList.find { it.uid == bUid }
+                                val bName = resolvedProfile?.name?.takeIf { it.isNotBlank() } ?: "User (${bUid.take(6)})"
+                                val bPhoto = resolvedProfile?.photo.orEmpty()
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = rowObsidian,
+                                    border = BorderStroke(1.dp, subtleBorder),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            AsyncImage(
+                                                model = bPhoto.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                                                contentDescription = bName,
+                                                modifier = Modifier
+                                                    .size(38.dp)
+                                                    .clip(CircleShape)
+                                                    .border(1.dp, goldPrimary, CircleShape),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                            Column {
+                                                Text(
+                                                    text = bName,
+                                                    color = Color.White,
+                                                    fontSize = 13.5.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Text(
+                                                    text = "Blocked • ID: ${bUid.take(8).uppercase()}",
+                                                    color = Color(0xFFFF6B6B),
+                                                    fontSize = 11.sp
+                                                )
+                                            }
+                                        }
+                                        Button(
+                                            onClick = {
+                                                val updatedList = liveBlockedUserIds.filter { it != bUid }
+                                                liveBlockedUserIds = updatedList
+                                                if (user.uid.isNotBlank()) {
+                                                    db.collection("users").document(user.uid)
+                                                        .update("blockedUserIds", updatedList)
+                                                }
+                                                Toast.makeText(context, "✅ Unblocked $bName", Toast.LENGTH_SHORT).show()
+                                            },
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = goldPrimary,
+                                                contentColor = Color.Black
+                                            ),
+                                            shape = RoundedCornerShape(10.dp),
+                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                        ) {
+                                            Text("Unblock", fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
-
-                item {
-                    Text("Discovery", color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF160A29)),
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.dp, Color(0xFF3B1D66).copy(alpha = 0.6f))
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onOpenLocationSetup() },
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("Location & Area", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                    Text("Tap to change real GPS location & area.", color = Color.Gray, fontSize = 11.sp)
+            }
+            // =========================================================================
+            // SUB-SCREEN 2: MY BACKPACK & OWNED FRAMES (100% REAL-TIME FIRESTORE)
+            // =========================================================================
+            else if (activeSubScreen == "backpack") {
+                val allItems = liveOwnedFrames.map { Triple("frame", it, "Avatar Frame: $it") } +
+                    liveOwnedMicEffects.map { Triple("mic", it, "Mic Wave Effect: $it") } +
+                    liveOwnedChatFrames.map { Triple("chat", it, "VIP Chat Frame: $it") }
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (allItems.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                text = "Your Backpack is currently empty.\nAny Avatar Frames, Chat Frames, or Mic Effects you unlock in real time will appear here.",
+                                color = mutedText,
+                                fontSize = 13.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(allItems) { (type, itemId, label) ->
+                                val isEquipped = (type == "frame" && liveActiveFrame == itemId)
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = rowObsidian,
+                                    border = BorderStroke(1.dp, if (isEquipped) goldPrimary else goldBorder),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(14.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "🎒 $label",
+                                            color = Color.White,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        if (type == "frame") {
+                                            Button(
+                                                onClick = {
+                                                    val nextFrame = if (isEquipped) "" else itemId
+                                                    liveActiveFrame = nextFrame
+                                                    if (user.uid.isNotBlank()) {
+                                                        db.collection("users").document(user.uid)
+                                                            .update("activeFrame", nextFrame)
+                                                    }
+                                                    Toast.makeText(
+                                                        context,
+                                                        if (nextFrame.isBlank()) "Frame unequipped" else "Equipped $itemId!",
+                                                        Toast.LENGTH_SHORT
+                                                    ).show()
+                                                },
+                                                colors = ButtonDefaults.buttonColors(
+                                                    containerColor = if (isEquipped) Color(0xFF282012) else goldPrimary,
+                                                    contentColor = if (isEquipped) goldPrimary else Color.Black
+                                                ),
+                                                shape = RoundedCornerShape(10.dp),
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                            ) {
+                                                Text(
+                                                    text = if (isEquipped) "Equipped ✓" else "Wear",
+                                                    fontSize = 11.5.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
-                                Text("📍 $locationName ✏️", color = BrandCoral, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                             }
-
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            // Location Privacy Controls (Public / Friends / Only Me)
+                        }
+                    }
+                }
+            }
+            // =========================================================================
+            // SUB-SCREEN 3: REAL-TIME FOLLOWERS LIST
+            // =========================================================================
+            else if (activeSubScreen == "followers") {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .padding(16.dp)
+                ) {
+                    if (liveFollowersRecords.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("No followers yet.", color = mutedText, fontSize = 13.5.sp)
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(liveFollowersRecords) { fol ->
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = rowObsidian,
+                                    border = BorderStroke(1.dp, subtleBorder),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        AsyncImage(
+                                            model = fol.photo.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                                            contentDescription = fol.name,
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .clip(CircleShape)
+                                                .border(1.dp, goldPrimary, CircleShape),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                        Text(
+                                            text = fol.name.ifBlank { "Member" },
+                                            color = Color.White,
+                                            fontSize = 13.5.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // =========================================================================
+            // SUB-SCREEN 4: PERSONAL LEVEL & XP PROGRESSION (REAL-TIME FIRESTORE)
+            // =========================================================================
+            else if (activeSubScreen == "level_details") {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(18.dp),
+                            color = cardObsidian,
+                            border = BorderStroke(1.2.dp, goldBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(
+                                    text = "🛡️ Personal Wealth Level: Lv.$liveWealthLevel",
+                                    color = goldPrimary,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                                Text(
+                                    text = "Current XP: $liveWealthXp / $nextLevelReqXp EXP ➔ Next: Lv.${(liveWealthLevel + 1).coerceAtMost(100)}",
+                                    color = Color.White,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(8.dp)
+                                        .clip(RoundedCornerShape(50))
+                                        .background(Color(0xFF2C283E))
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth(xpProgress.coerceAtLeast(0.04f))
+                                            .height(8.dp)
+                                            .clip(RoundedCornerShape(50))
+                                            .background(
+                                                Brush.horizontalGradient(
+                                                    listOf(Color(0xFFFFE082), goldPrimary, Color(0xFF9333EA))
+                                                )
+                                            )
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("• Broadcaster Charm Level: Lv.$liveCharmLevel", color = Color.White, fontSize = 12.5.sp)
+                                Text("• PK Battle Swords Level: Lv.$livePkLevel", color = Color.White, fontSize = 12.5.sp)
+                                Text("• Live Wallet: $liveDiamonds 💎 Diamonds • $liveCoins 🪙 Coins", color = goldPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+            // =========================================================================
+            // SUB-SCREEN 5: PERSONAL BADGE RULES
+            // =========================================================================
+            else if (activeSubScreen == "badge_rules") {
+                val badgeRules = listOf(
+                    "1. What is Personal Badge?" to "Your Personal Badge represents your real-time Wealth Level (Lv.$liveWealthLevel), Broadcaster Charm Level (Lv.$liveCharmLevel), and PK Battle Level (Lv.$livePkLevel) across LiveTogather.",
+                    "2. How do I level up my badge?" to "Send gifts in rooms, stay active on mics, win PK battles, and complete daily room tasks to automatically upgrade your badge tier in real time.",
+                    "3. Where is my badge displayed?" to "Your active badge is displayed on your Profile card, in Audio & Video room comment streams, on mic seats, and on leaderboards."
+                )
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(badgeRules) { (t, b) ->
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = cardObsidian,
+                            border = BorderStroke(1.dp, goldBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Text(t, color = goldPrimary, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(b, color = Color.White.copy(alpha = 0.9f), fontSize = 12.5.sp, lineHeight = 17.sp)
+                            }
+                        }
+                    }
+                }
+            }
+            // =========================================================================
+            // MAIN PROFILE SETTINGS SCREEN (OBSIDIAN & ROYAL GOLD COMMAND HUB + ALL EXISTING SETTINGS)
+            // =========================================================================
+            else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // 1. TOP PROFILE COMMAND HEADER CARD (Matches Room Profile Header Card!)
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(18.dp),
+                            color = cardObsidian,
+                            border = BorderStroke(1.2.dp, goldBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                    .padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("Location Privacy", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                                    Text("Who can see your location", color = Color.Gray, fontSize = 10.sp)
+                                Box(
+                                    modifier = Modifier
+                                        .size(66.dp)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .border(1.5.dp, goldPrimary, RoundedCornerShape(16.dp))
+                                ) {
+                                    AsyncImage(
+                                        model = user.photo.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                                        contentDescription = user.name,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
                                 }
-                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    listOf(
-                                        "public" to "🌐 Public",
-                                        "friends" to "👥 Friends",
-                                        "only_me" to "🔒 Only Me"
-                                    ).forEach { (key, lbl) ->
-                                        val isSel = locationPrivacy == key
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = user.name.ifBlank { "LiveTogather Member" },
+                                        color = Color.White,
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(modifier = Modifier.height(3.dp))
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        modifier = Modifier.clickable {
+                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                                            clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("User ID", displayUserId))
+                                            Toast.makeText(context, "Copied ID: $displayUserId", Toast.LENGTH_SHORT).show()
+                                        }
+                                    ) {
+                                        Text(
+                                            text = "ID: $displayUserId",
+                                            color = mutedText,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Text(text = "📋", fontSize = 11.sp)
+                                    }
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                         Surface(
-                                            color = if (isSel) Color(0xFF7E22CE) else Color(0xFFF3F4F6),
                                             shape = RoundedCornerShape(8.dp),
-                                            modifier = Modifier.clickable { locationPrivacy = key }
+                                            color = Color(0xFF282012),
+                                            border = BorderStroke(1.dp, goldPrimary),
+                                            modifier = Modifier.clickable { activeSubScreen = "badge_rules" }
                                         ) {
                                             Text(
-                                                text = lbl,
-                                                color = if (isSel) Color.White else Color(0xFF4B5563),
-                                                fontSize = 10.sp,
-                                                fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
-                                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp)
+                                                text = "🛡️ Lv.$liveWealthLevel",
+                                                color = goldPrimary,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                            )
+                                        }
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = rowObsidian,
+                                            border = BorderStroke(1.dp, subtleBorder)
+                                        ) {
+                                            Text(
+                                                text = "💎 $liveDiamonds",
+                                                color = Color.White,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                             )
                                         }
                                     }
                                 }
                             }
+                        }
+                    }
 
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color(0xFFEEEEEE))
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text("Maximum Distance", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                Text("${maxDistanceKm.toInt()} km", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            }
-                            Slider(
-                                value = maxDistanceKm,
-                                onValueChange = { maxDistanceKm = it },
-                                valueRange = 10f..120f,
-                                colors = SliderDefaults.colors(
-                                    thumbColor = Color.White,
-                                    activeTrackColor = Color.Red,
-                                    inactiveTrackColor = Color.LightGray
-                                )
-                            )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Show people further away if I run out of profiles to see.", color = Color.Gray, fontSize = 11.sp, modifier = Modifier.weight(1f))
-                                Switch(checked = showFurtherAway, onCheckedChange = { showFurtherAway = it })
-                            }
-
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color(0xFFEEEEEE))
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Interested In", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                Row {
-                                    listOf("Women", "Men", "Everyone").forEach { opt ->
-                                        Text(
-                                            text = opt,
-                                            color = if (interestedIn == opt) Color.Red else Color.Gray,
-                                            fontWeight = if (interestedIn == opt) FontWeight.Bold else FontWeight.Normal,
-                                            fontSize = 13.sp,
+                    // 2. PERSONAL LEVEL PROGRESS BAR CARD (Matches Room Level Progress Bar Card!)
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = cardObsidian,
+                            border = BorderStroke(1.dp, goldBorder),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { activeSubScreen = "level_details" }
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Level",
+                                        color = goldPrimary,
+                                        fontSize = 13.5.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .size(22.dp)
+                                            .clip(CircleShape)
+                                            .border(1.dp, mutedText, CircleShape)
+                                            .clickable { activeSubScreen = "level_details" },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text("?", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text("LV.$liveWealthLevel", color = goldPrimary, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(8.dp)
+                                            .clip(RoundedCornerShape(50))
+                                            .background(Color(0xFF2C283E))
+                                    ) {
+                                        Box(
                                             modifier = Modifier
-                                                .clickable { interestedIn = opt }
-                                                .padding(horizontal = 6.dp)
+                                                .fillMaxWidth(xpProgress.coerceAtLeast(0.05f))
+                                                .height(8.dp)
+                                                .clip(RoundedCornerShape(50))
+                                                .background(
+                                                    Brush.horizontalGradient(
+                                                        listOf(Color(0xFFFFE082), goldPrimary, Color(0xFF9333EA))
+                                                    )
+                                                )
                                         )
                                     }
+                                    Text("LV.${(liveWealthLevel + 1).coerceAtMost(100)}", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                 }
-                            }
-
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color(0xFFEEEEEE))
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text("Age Range", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                Text("${ageRangeStart.toInt()} - ${ageRangeEnd.toInt()}", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            }
-                            Slider(
-                                value = ageRangeEnd,
-                                onValueChange = { ageRangeEnd = it },
-                                valueRange = 21f..50f,
-                                colors = SliderDefaults.colors(
-                                    thumbColor = Color.White,
-                                    activeTrackColor = Color.Red,
-                                    inactiveTrackColor = Color.LightGray
+                                Spacer(modifier = Modifier.height(5.dp))
+                                Text(
+                                    text = "$liveWealthXp / $nextLevelReqXp EXP",
+                                    color = Color.White.copy(alpha = 0.88f),
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth()
                                 )
-                            )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Show people slightly out of my preferred range if I run out of profiles to see", color = Color.Gray, fontSize = 11.sp, modifier = Modifier.weight(1f))
-                                Switch(checked = showOutsideAge, onCheckedChange = { showOutsideAge = it })
                             }
                         }
                     }
-                }
 
-                item {
-                    Text("Control my visibility", color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(6.dp))
+                    // 3. REAL-TIME ACCOUNT & PRIVACY COMMAND HUB ROWS (Matches Room Profile Settings Rows!)
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            // Row A: Blocked list (Real-Time Firestore)
+                            val blockedCount = liveBlockedUserIds.filter { it.isNotBlank() }.distinct().size
+                            ProfileCommandSettingRow(
+                                label = "Blocked list",
+                                valueText = if (blockedCount > 0) "View Blocked ($blockedCount)" else "View Blocked (0)",
+                                valueColor = if (blockedCount > 0) Color(0xFFFF6B6B) else Color.White.copy(alpha = 0.88f),
+                                onClick = { activeSubScreen = "blocked_list" }
+                            )
 
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF160A29)),
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.dp, Color(0xFF3B1D66).copy(alpha = 0.6f))
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { visibilityMode = "Standard" },
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("Standard", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                    Text("You will be discoverable in the card stack.", color = Color.Gray, fontSize = 11.sp)
-                                }
-                                if (visibilityMode == "Standard") {
-                                    Icon(Icons.Default.Check, contentDescription = null, tint = Color.Red)
-                                }
+                            // Row B: My backpack & frames (Real-Time Firestore)
+                            val totalBackpackCount = liveOwnedFrames.size + liveOwnedMicEffects.size + liveOwnedChatFrames.size
+                            ProfileCommandSettingRow(
+                                label = "My backpack",
+                                valueText = "$totalBackpackCount items",
+                                onClick = { activeSubScreen = "backpack" }
+                            )
+
+                            // Row C: Follower & Following (Real-Time Firestore)
+                            ProfileCommandSettingRow(
+                                label = "Follower",
+                                valueText = "$liveFollowerCount Followers • $liveFollowingCount Following",
+                                onClick = { activeSubScreen = "followers" }
+                            )
+
+                            // Row D: Country (Real-Time Firestore)
+                            val countryFlag = when {
+                                liveCountry.equals("India", true) -> "🇮🇳"
+                                liveCountry.equals("USA", true) || liveCountry.equals("United States", true) -> "🇺🇸"
+                                liveCountry.equals("UK", true) || liveCountry.equals("United Kingdom", true) -> "🇬🇧"
+                                else -> "🌍"
                             }
+                            ProfileCommandSettingRow(
+                                label = "Country",
+                                valueText = "$countryFlag $liveCountry",
+                                onClick = { showCountryEditModal = true }
+                            )
 
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color(0xFFEEEEEE))
+                            // Row E: Personal badge & rules
+                            ProfileCommandSettingRow(
+                                label = "Personal badge",
+                                valueText = "🛡️ Lv.$liveWealthLevel",
+                                valueColor = goldPrimary,
+                                onClick = { activeSubScreen = "badge_rules" }
+                            )
 
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { visibilityMode = "Incognito" },
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text("Incognito", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("PLUS", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.background(Color.Red, RoundedCornerShape(4.dp)).padding(horizontal = 4.dp, vertical = 1.dp))
+                            // Row F: Online status permission (Everyone / Friends / Hidden)
+                            ProfileCommandSettingRow(
+                                label = "Online status permission",
+                                valueText = liveOnlinePermission,
+                                onClick = {
+                                    val next = when (liveOnlinePermission) {
+                                        "Everyone" -> "Friends"
+                                        "Friends" -> "Hidden"
+                                        else -> "Everyone"
                                     }
-                                    Text("You will be discoverable only by people you Like.", color = Color.Gray, fontSize = 11.sp)
+                                    liveOnlinePermission = next
+                                    if (user.uid.isNotBlank()) {
+                                        db.collection("users").document(user.uid)
+                                            .update("onlineStatusPermission", next)
+                                    }
+                                    Toast.makeText(context, "Online status permission: $next", Toast.LENGTH_SHORT).show()
                                 }
-                                if (visibilityMode == "Incognito") {
-                                    Icon(Icons.Default.Check, contentDescription = null, tint = Color.Red)
+                            )
+
+                            // Row G: Room & Mic invite permission (Everyone / Friends / No One)
+                            ProfileCommandSettingRow(
+                                label = "Room invite permission",
+                                valueText = liveRoomInvitePermission,
+                                onClick = {
+                                    val next = when (liveRoomInvitePermission) {
+                                        "Everyone" -> "Friends"
+                                        "Friends" -> "No One"
+                                        else -> "Everyone"
+                                    }
+                                    liveRoomInvitePermission = next
+                                    if (user.uid.isNotBlank()) {
+                                        db.collection("users").document(user.uid)
+                                            .update("roomInvitePermission", next)
+                                    }
+                                    Toast.makeText(context, "Room invite permission: $next", Toast.LENGTH_SHORT).show()
                                 }
-                            }
-                        }
-                    }
-                }
-
-                item {
-                    Text("Enable Discovery", color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF160A29)),
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.dp, Color(0xFF3B1D66).copy(alpha = 0.6f))
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Enable Discovery", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                Switch(checked = enableDiscovery, onCheckedChange = { enableDiscovery = it })
-                            }
-                            Text(
-                                "When turned off, your profile will be hidden from the card stack and Discovery will be disabled. People you have already Liked may still see and match with you.",
-                                color = Color.Gray,
-                                fontSize = 11.sp
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Text("Control who messages you", color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF160A29)),
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.dp, Color(0xFF3B1D66).copy(alpha = 0.6f))
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("My Move", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                    Text("Message your matches first to initiate conversation. They won't be able to message you until you do.", color = Color.Gray, fontSize = 11.sp)
+                    // 4. EXISTING PROFILE ATTRIBUTES SECTION (100% Preserved, Restyled in Obsidian & Royal Gold)
+                    item {
+                        Text(
+                            text = "Profile Attributes & Lifestyle",
+                            color = goldPrimary,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier.padding(top = 6.dp, bottom = 4.dp)
+                        )
+                        Surface(
+                            color = cardObsidian,
+                            shape = RoundedCornerShape(18.dp),
+                            border = BorderStroke(1.dp, goldBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Has a Bio", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    Switch(
+                                        checked = hasBio,
+                                        onCheckedChange = { hasBio = it },
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = Color.Black,
+                                            checkedTrackColor = goldPrimary
+                                        )
+                                    )
                                 }
-                                Switch(checked = myMove, onCheckedChange = { myMove = it })
-                            }
 
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color(0xFFEEEEEE))
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = subtleBorder)
 
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("Photo Verified Chat", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                    Text("Photo Verified members can enable this to only receive messages from other Photo Verified profiles.", color = Color.Gray, fontSize = 11.sp)
-                                }
-                                Switch(checked = photoVerifiedChat, onCheckedChange = { photoVerifiedChat = it })
+                                SettingsAttributeRow("Interests", interests, SETTINGS_TOPIC_OPTIONS["Interests"] ?: emptyList()) { interests = it }
+                                SettingsAttributeRow("Looking for", lookingFor, SETTINGS_TOPIC_OPTIONS["Looking for"] ?: emptyList()) { lookingFor = it }
+                                SettingsAttributeRow("Open to...", openTo, SETTINGS_TOPIC_OPTIONS["Open to..."] ?: emptyList()) { openTo = it }
+                                SettingsAttributeRow("Add languages", languages, SETTINGS_TOPIC_OPTIONS["Add languages"] ?: emptyList()) { languages = it }
+                                SettingsAttributeRow("Zodiac", zodiac, SETTINGS_TOPIC_OPTIONS["Zodiac"] ?: emptyList()) { zodiac = it }
+                                SettingsAttributeRow("Education", education, SETTINGS_TOPIC_OPTIONS["Education"] ?: emptyList()) { education = it }
+                                SettingsAttributeRow("Family Plans", familyPlans, SETTINGS_TOPIC_OPTIONS["Family Plans"] ?: emptyList()) { familyPlans = it }
+                                SettingsAttributeRow("Communication Style", communicationStyle, SETTINGS_TOPIC_OPTIONS["Communication Style"] ?: emptyList()) { communicationStyle = it }
+                                SettingsAttributeRow("Love Style", loveStyle, SETTINGS_TOPIC_OPTIONS["Love Style"] ?: emptyList()) { loveStyle = it }
+                                SettingsAttributeRow("Pets", pets, SETTINGS_TOPIC_OPTIONS["Pets"] ?: emptyList()) { pets = it }
+                                SettingsAttributeRow("Drinking", drinking, SETTINGS_TOPIC_OPTIONS["Drinking"] ?: emptyList()) { drinking = it }
+                                SettingsAttributeRow("Smoking", smoking, SETTINGS_TOPIC_OPTIONS["Smoking"] ?: emptyList()) { smoking = it }
+                                SettingsAttributeRow("Workout", workout, SETTINGS_TOPIC_OPTIONS["Workout"] ?: emptyList()) { workout = it }
+                                SettingsAttributeRow("Social Media", socialMedia, SETTINGS_TOPIC_OPTIONS["Social Media"] ?: emptyList()) { socialMedia = it }
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Text("Legal & Policies", color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(6.dp))
+                    // 5. EXISTING DISCOVERY SECTION (100% Preserved, Restyled in Obsidian & Royal Gold)
+                    item {
+                        Text(
+                            text = "Discovery & Location",
+                            color = goldPrimary,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier.padding(top = 6.dp, bottom = 4.dp)
+                        )
+                        Surface(
+                            color = cardObsidian,
+                            shape = RoundedCornerShape(18.dp),
+                            border = BorderStroke(1.dp, goldBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onOpenLocationSetup() },
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("Location & Area", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                        Text("Tap to change real GPS location & area.", color = mutedText, fontSize = 11.sp)
+                                    }
+                                    Text("📍 $locationName ✏️", color = goldPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                }
 
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF160A29)),
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.dp, Color(0xFF3B1D66).copy(alpha = 0.6f))
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                // Location Privacy Controls (Public / Friends / Only Me)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("Location Privacy", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp)
+                                        Text("Who can see your location", color = mutedText, fontSize = 10.5.sp)
+                                    }
+                                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                        listOf(
+                                            "public" to "🌐 Public",
+                                            "friends" to "👥 Friends",
+                                            "only_me" to "🔒 Only Me"
+                                        ).forEach { (key, lbl) ->
+                                            val isSel = locationPrivacy == key
+                                            Surface(
+                                                color = if (isSel) Color(0xFF282012) else rowObsidian,
+                                                border = BorderStroke(1.dp, if (isSel) goldPrimary else subtleBorder),
+                                                shape = RoundedCornerShape(8.dp),
+                                                modifier = Modifier.clickable { locationPrivacy = key }
+                                            ) {
+                                                Text(
+                                                    text = lbl,
+                                                    color = if (isSel) goldPrimary else Color.White.copy(alpha = 0.8f),
+                                                    fontSize = 10.sp,
+                                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = subtleBorder)
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("Maximum Distance", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    Text("${maxDistanceKm.toInt()} km", color = goldPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                }
+                                Slider(
+                                    value = maxDistanceKm,
+                                    onValueChange = { maxDistanceKm = it },
+                                    valueRange = 10f..120f,
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = goldPrimary,
+                                        activeTrackColor = goldPrimary,
+                                        inactiveTrackColor = Color(0xFF2C283E)
+                                    )
+                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Show people further away if I run out of profiles to see.", color = mutedText, fontSize = 11.5.sp, modifier = Modifier.weight(1f))
+                                    Switch(
+                                        checked = showFurtherAway,
+                                        onCheckedChange = { showFurtherAway = it },
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = Color.Black,
+                                            checkedTrackColor = goldPrimary
+                                        )
+                                    )
+                                }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = subtleBorder)
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Interested In", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        listOf("Women", "Men", "Everyone").forEach { opt ->
+                                            val isSel = interestedIn == opt
+                                            Surface(
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = if (isSel) Color(0xFF282012) else rowObsidian,
+                                                border = BorderStroke(1.dp, if (isSel) goldPrimary else subtleBorder),
+                                                modifier = Modifier.clickable { interestedIn = opt }
+                                            ) {
+                                                Text(
+                                                    text = opt,
+                                                    color = if (isSel) goldPrimary else Color.White.copy(alpha = 0.8f),
+                                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                                    fontSize = 12.sp,
+                                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = subtleBorder)
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("Age Range", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    Text("${ageRangeStart.toInt()} - ${ageRangeEnd.toInt()}", color = goldPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                }
+                                Slider(
+                                    value = ageRangeEnd,
+                                    onValueChange = { ageRangeEnd = it },
+                                    valueRange = 21f..50f,
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = goldPrimary,
+                                        activeTrackColor = goldPrimary,
+                                        inactiveTrackColor = Color(0xFF2C283E)
+                                    )
+                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Show people slightly out of my preferred range if I run out of profiles to see", color = mutedText, fontSize = 11.5.sp, modifier = Modifier.weight(1f))
+                                    Switch(
+                                        checked = showOutsideAge,
+                                        onCheckedChange = { showOutsideAge = it },
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = Color.Black,
+                                            checkedTrackColor = goldPrimary
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // 6. EXISTING VISIBILITY SECTION (100% Preserved, Restyled in Obsidian & Royal Gold)
+                    item {
+                        Text(
+                            text = "Control my visibility",
+                            color = goldPrimary,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier.padding(top = 6.dp, bottom = 4.dp)
+                        )
+                        Surface(
+                            color = cardObsidian,
+                            shape = RoundedCornerShape(18.dp),
+                            border = BorderStroke(1.dp, goldBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { visibilityMode = "Standard" },
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("Standard", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                        Text("You will be discoverable in the card stack.", color = mutedText, fontSize = 11.5.sp)
+                                    }
+                                    if (visibilityMode == "Standard") {
+                                        Icon(Icons.Default.Check, contentDescription = null, tint = goldPrimary)
+                                    }
+                                }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = subtleBorder)
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { visibilityMode = "Incognito" },
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text("Incognito", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                "PLUS",
+                                                color = Color.Black,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                modifier = Modifier
+                                                    .background(goldPrimary, RoundedCornerShape(4.dp))
+                                                    .padding(horizontal = 5.dp, vertical = 1.dp)
+                                            )
+                                        }
+                                        Text("You will be discoverable only by people you Like.", color = mutedText, fontSize = 11.5.sp)
+                                    }
+                                    if (visibilityMode == "Incognito") {
+                                        Icon(Icons.Default.Check, contentDescription = null, tint = goldPrimary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 7. EXISTING ENABLE DISCOVERY & MESSAGE CONTROLS + PRIVACY POLICY (100% Preserved, Restyled in Obsidian & Royal Gold)
+                    item {
+                        Text(
+                            text = "Enable Discovery",
+                            color = goldPrimary,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier.padding(top = 6.dp, bottom = 4.dp)
+                        )
+                        Surface(
+                            color = cardObsidian,
+                            shape = RoundedCornerShape(18.dp),
+                            border = BorderStroke(1.dp, goldBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Enable Discovery", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    Switch(
+                                        checked = enableDiscovery,
+                                        onCheckedChange = { enableDiscovery = it },
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = Color.Black,
+                                            checkedTrackColor = goldPrimary
+                                        )
+                                    )
+                                }
+                                Text(
+                                    "When turned off, your profile will be hidden from the card stack and Discovery will be disabled. People you have already Liked may still see and match with you.",
+                                    color = mutedText,
+                                    fontSize = 11.5.sp
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text(
+                            text = "Control who messages you",
+                            color = goldPrimary,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Surface(
+                            color = cardObsidian,
+                            shape = RoundedCornerShape(18.dp),
+                            border = BorderStroke(1.dp, goldBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("My Move", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                        Text("Message your matches first to initiate conversation. They won't be able to message you until you do.", color = mutedText, fontSize = 11.5.sp)
+                                    }
+                                    Switch(
+                                        checked = myMove,
+                                        onCheckedChange = { myMove = it },
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = Color.Black,
+                                            checkedTrackColor = goldPrimary
+                                        )
+                                    )
+                                }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = subtleBorder)
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("Photo Verified Chat", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                        Text("Photo Verified members can enable this to only receive messages from other Photo Verified profiles.", color = mutedText, fontSize = 11.5.sp)
+                                    }
+                                    Switch(
+                                        checked = photoVerifiedChat,
+                                        onCheckedChange = { photoVerifiedChat = it },
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = Color.Black,
+                                            checkedTrackColor = goldPrimary
+                                        )
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text(
+                            text = "Legal & Policies",
+                            color = goldPrimary,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Surface(
+                            color = cardObsidian,
+                            shape = RoundedCornerShape(18.dp),
+                            border = BorderStroke(1.dp, goldBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            onDismiss()
+                                            onOpenPrivacyPolicy()
+                                        },
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.Security,
+                                            contentDescription = null,
+                                            tint = goldPrimary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Column {
+                                            Text(
+                                                text = "Privacy Policy",
+                                                color = Color.White,
+                                                fontWeight = FontWeight.SemiBold,
+                                                fontSize = 14.sp
+                                            )
+                                            Text(
+                                                text = "How AYAD Creations protects your data",
+                                                color = mutedText,
+                                                fontSize = 11.5.sp
+                                            )
+                                        }
+                                    }
+
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                        contentDescription = null,
+                                        tint = goldPrimary,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(30.dp))
+                    }
+                }
+            }
+        }
+    }
+
+    if (showCountryEditModal) {
+        val detectedCountryName = remember(user.latitude, user.longitude) {
+            val fromGeocoder = try {
+                if (user.latitude != 0.0 || user.longitude != 0.0) {
+                    @Suppress("DEPRECATION")
+                    val addrs = android.location.Geocoder(context, java.util.Locale.ENGLISH)
+                        .getFromLocation(user.latitude, user.longitude, 1)
+                    addrs?.firstOrNull()?.countryName?.takeIf { it.isNotBlank() }
+                } else null
+            } catch (_: Exception) {
+                null
+            }
+            val fromTelephony = try {
+                val tm = context.getSystemService(android.content.Context.TELEPHONY_SERVICE) as? android.telephony.TelephonyManager
+                val iso = tm?.networkCountryIso?.takeIf { it.isNotBlank() } ?: tm?.simCountryIso?.takeIf { it.isNotBlank() }
+                if (!iso.isNullOrBlank()) java.util.Locale("", iso).getDisplayCountry(java.util.Locale.ENGLISH).takeIf { it.isNotBlank() } else null
+            } catch (_: Exception) {
+                null
+            }
+            fromGeocoder ?: fromTelephony ?: java.util.Locale.getDefault().getDisplayCountry(java.util.Locale.ENGLISH).ifBlank { "India" }
+        }
+
+        val worldCountries = remember(detectedCountryName) {
+            val baseList = listOf(
+                "India" to "🇮🇳",
+                "United States" to "🇺🇸",
+                "United Kingdom" to "🇬🇧",
+                "United Arab Emirates" to "🇦🇪",
+                "Saudi Arabia" to "🇸🇦",
+                "Canada" to "🇨🇦",
+                "Australia" to "🇦🇺",
+                "Singapore" to "🇸🇬",
+                "Malaysia" to "🇲🇾",
+                "Nepal" to "🇳🇵",
+                "Bangladesh" to "🇧🇩",
+                "Pakistan" to "🇵🇰",
+                "Indonesia" to "🇮🇩",
+                "Philippines" to "🇵🇭",
+                "Germany" to "🇩🇪",
+                "France" to "🇫🇷",
+                "Japan" to "🇯🇵",
+                "South Korea" to "🇰🇷",
+                "Brazil" to "🇧🇷",
+                "South Africa" to "🇿🇦"
+            )
+            // Put detected GPS country at the very top
+            baseList.sortedByDescending { it.first.equals(detectedCountryName, ignoreCase = true) }
+        }
+
+        // Auto-sync user's country strictly to navigation/GPS detected country on open
+        LaunchedEffect(detectedCountryName) {
+            if (detectedCountryName.isNotBlank() && !liveCountry.equals(detectedCountryName, ignoreCase = true)) {
+                liveCountry = detectedCountryName
+                if (user.uid.isNotBlank()) {
+                    db.collection("users").document(user.uid).update("country", detectedCountryName)
+                }
+            }
+        }
+
+        Dialog(onDismissRequest = { showCountryEditModal = false }) {
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = cardObsidian,
+                border = BorderStroke(1.2.dp, goldPrimary)
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Country (Auto-Detected by Navigation)", color = goldPrimary, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                    Text(
+                        text = "📍 Navigation Location: $detectedCountryName (Locked to your real GPS region)",
+                        color = Color(0xFF4ADE80),
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 300.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
+                        items(worldCountries) { (cName, cFlag) ->
+                            val isCurrentNavCountry = cName.equals(detectedCountryName, ignoreCase = true)
+                            val isSelected = liveCountry.equals(cName, ignoreCase = true)
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isSelected) Color(0xFF282012) else rowObsidian,
+                                border = BorderStroke(1.dp, if (isSelected) goldPrimary else subtleBorder),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        onDismiss()
-                                        onOpenPrivacyPolicy()
-                                    },
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.Security,
-                                        contentDescription = null,
-                                        tint = BrandCoral,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Column {
-                                        Text(
-                                            text = "Privacy Policy",
-                                            color = Color.Black,
-                                            fontWeight = FontWeight.SemiBold,
-                                            fontSize = 14.sp
-                                        )
-                                        Text(
-                                            text = "How AYAD Creations protects your data",
-                                            color = Color.Gray,
-                                            fontSize = 11.sp
-                                        )
+                                        if (isCurrentNavCountry) {
+                                            liveCountry = detectedCountryName
+                                            if (user.uid.isNotBlank()) {
+                                                db.collection("users").document(user.uid).update("country", detectedCountryName)
+                                            }
+                                            Toast.makeText(context, "📍 Country synced via Navigation: $detectedCountryName", Toast.LENGTH_SHORT).show()
+                                            showCountryEditModal = false
+                                        } else {
+                                            Toast.makeText(
+                                                context,
+                                                "📍 Navigation Locked: You are currently in $detectedCountryName. Other countries cannot be selected.",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        }
                                     }
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "$cFlag  $cName",
+                                        color = if (isCurrentNavCountry) Color.White else mutedText.copy(alpha = 0.55f),
+                                        fontSize = 13.sp,
+                                        fontWeight = if (isCurrentNavCountry) FontWeight.ExtraBold else FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = if (isCurrentNavCountry) "📍 Auto GPS Active" else "🔒 Region Locked",
+                                        color = if (isCurrentNavCountry) goldPrimary else mutedText.copy(alpha = 0.5f),
+                                        fontSize = 10.5.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
                                 }
-
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-                                    contentDescription = null,
-                                    tint = Color.Gray,
-                                    modifier = Modifier.size(14.dp)
-                                )
                             }
                         }
                     }
-
-                    Spacer(modifier = Modifier.height(30.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        Button(
+                            onClick = { showCountryEditModal = false },
+                            colors = ButtonDefaults.buttonColors(containerColor = goldPrimary, contentColor = Color.Black)
+                        ) {
+                            Text("Done", fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfileCommandSettingRow(
+    label: String,
+    valueText: String = "",
+    valueColor: Color = Color.White.copy(alpha = 0.88f),
+    onClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = Color(0xFF1E1C2E),
+        border = BorderStroke(1.dp, Color(0x26FFFFFF)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = label,
+                color = Color.White,
+                fontSize = 13.5.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                if (valueText.isNotBlank()) {
+                    Text(
+                        text = valueText,
+                        color = valueColor,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                Icon(
+                    imageVector = Icons.Default.ChevronRight,
+                    contentDescription = null,
+                    tint = Color(0xFFA3A0B8),
+                    modifier = Modifier.size(18.dp)
+                )
             }
         }
     }
@@ -9452,116 +11527,295 @@ fun SettingsTopicSelectionDialog(
 @Composable
 fun NotificationsDialog(
     notifications: List<NotificationItem>,
+    currentUserId: String = "",
     onDismiss: () -> Unit,
+    onNotificationRead: ((String) -> Unit)? = null,
     onOpenRoom: ((String) -> Unit)? = null,
     onOpenChat: ((String) -> Unit)? = null,
     onOpenAdmin: ((Int) -> Unit)? = null,
+    onOpenInbox: (() -> Unit)? = null,
+    onOpenProfile: (() -> Unit)? = null,
     onMarkAllRead: () -> Unit
 ) {
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
+    val context = LocalContext.current
+    val inboxOnlyTypes = remember { setOf("gift_reward", "creator_earning", "gift_received", "level_up", "assistant_reward") }
+    var notifFilter by remember { mutableStateOf("All") } // "All" or "Unread"
+    val locallySeenIds = remember { mutableStateListOf<String>() }
+
+    // Same recency-first logic as Inbox: newest notification ALWAYS #1 TOP
+    val allVisible = notifications
+        .filter { it.type.lowercase() !in inboxOnlyTypes }
+        .sortedByDescending { it.timestamp }
+    val visibleNotifications = if (notifFilter == "Unread") {
+        allVisible.filter { !it.isRead && it.id !in locallySeenIds }
+    } else {
+        allVisible
+    }
+
+    // Same instant-seen sync logic as Inbox: entering Notifications clears unread state cleanly in Firestore & UI
+    LaunchedEffect(allVisible.size) {
+        val unseen = allVisible.filter { !it.isRead && it.id.isNotBlank() && it.id !in locallySeenIds }
+        if (unseen.isNotEmpty()) {
+            val db = FirebaseFirestore.getInstance()
+            val batch = db.batch()
+            unseen.take(300).forEach { item ->
+                locallySeenIds.add(item.id)
+                onNotificationRead?.invoke(item.id)
+                batch.set(db.collection("notifications").document(item.id), mapOf("isRead" to true), SetOptions.merge())
+                if (currentUserId.isNotBlank()) {
+                    batch.set(
+                        db.collection("users").document(currentUserId)
+                            .collection("notifications").document(item.id),
+                        mapOf("isRead" to true),
+                        SetOptions.merge()
+                    )
+                }
+            }
+            batch.commit()
+        }
+    }
+
+    val timeFormatter = remember { java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault()) }
+    val dateFormatter = remember { java.text.SimpleDateFormat("dd MMM", java.util.Locale.getDefault()) }
+    val todayCal = remember { java.util.Calendar.getInstance() }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.75f),
-            colors = CardDefaults.cardColors(containerColor = BrandCard),
-            shape = RoundedCornerShape(20.dp)
+                .fillMaxSize()
+                .background(Color.White)
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
+            // Bright Lavender-to-White Seamless Top Header (matching ModernInboxScreen)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color(0xFFEDE7FF), Color(0xFFF6F3FF), Color.White)
+                        )
+                    )
+                    .statusBarsPadding()
+                    .padding(horizontal = 10.dp, vertical = 8.dp)
+            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Notifications, contentDescription = null, tint = BrandCoral)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Notifications", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        IconButton(onClick = onDismiss) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = Color(0xFF151726)
+                            )
+                        }
+                        Text(
+                            text = "Notifications",
+                            color = Color(0xFF151726),
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 19.sp
+                        )
                     }
                     TextButton(onClick = onMarkAllRead) {
-                        Text("Wipe All 🗑️", color = BrandCoral, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = "Clear All",
+                            color = Color(0xFF7C3AED),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
-
-                if (notifications.isEmpty()) {
-                    Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        Text("No notifications yet", color = Color.Gray, fontSize = 13.sp)
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(notifications) { notif ->
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        // Real-time unread decrement
-                                        if (!notif.isRead && notif.id.isNotBlank()) {
-                                            FirebaseFirestore.getInstance().collection("notifications").document(notif.id).update("isRead", true)
-                                        }
-                                        if (notif.type.contains("report")) {
-                                            onOpenAdmin?.invoke(1)
-                                            onDismiss()
-                                        } else if (notif.type.contains("payment") || notif.type.contains("utr") || notif.type.contains("pay_req")) {
-                                            onOpenAdmin?.invoke(0)
-                                            onDismiss()
-                                        } else if (notif.roomId.isNotBlank()) {
-                                            onOpenRoom?.invoke(notif.roomId)
-                                            onDismiss()
-                                        } else if (notif.senderId.isNotBlank() && notif.senderId != "system_livetogather") {
-                                            onOpenChat?.invoke(notif.senderId)
-                                            onDismiss()
-                                        }
-                                    },
-                                colors = CardDefaults.cardColors(
-                                    containerColor = if (notif.isRead) BrandDark else BrandCardSubtle
-                                ),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    val giftThumbnailResId = if (notif.type.equals("GIFT_RECEIVED", ignoreCase = true)) {
-                                        giftThumbnailResourceId(notif.giftId)
-                                    } else {
-                                        0
-                                    }
-                                    if (giftThumbnailResId != 0) {
-                                        Image(
-                                            painter = painterResource(id = giftThumbnailResId),
-                                            contentDescription = notif.giftName,
-                                            modifier = Modifier.size(38.dp).clip(RoundedCornerShape(8.dp)),
-                                            contentScale = ContentScale.Crop
-                                        )
-                                    } else {
-                                        AsyncImage(
-                                            model = notif.senderPhoto.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80" },
-                                            contentDescription = null,
-                                            modifier = Modifier.size(38.dp).clip(CircleShape),
-                                            contentScale = ContentScale.Crop
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(notif.title, color = BrandCoral, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                        Text(notif.message, color = Color.White, fontSize = 12.sp)
-                                    }
-                                }
-                            }
+                // Clean Filter Pills (All / Unread)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf("All", "Unread").forEach { tab ->
+                        val isSel = notifFilter == tab
+                        Surface(
+                            color = if (isSel) Color(0xFF7C3AED) else Color(0xFFF2F0FA),
+                            shape = RoundedCornerShape(50),
+                            modifier = Modifier.clickable { notifFilter = tab }
+                        ) {
+                            Text(
+                                text = tab,
+                                color = if (isSel) Color.White else Color(0xFF474C66),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp)
+                            )
                         }
                     }
                 }
+            }
 
-                Button(
-                    onClick = onDismiss,
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandCoral),
-                    modifier = Modifier.fillMaxWidth()
+            HorizontalDivider(color = Color(0xFFF0F1F7), thickness = 1.dp)
+
+            if (visibleNotifications.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .navigationBarsPadding(),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text("Close")
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = Icons.Default.Notifications,
+                            contentDescription = null,
+                            tint = Color(0xFF7C3AED).copy(alpha = 0.35f),
+                            modifier = Modifier.size(44.dp)
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text("No notifications yet", color = Color(0xFF151726), fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("New room alerts, visits & updates appear here", color = Color(0xFF8B90A7), fontSize = 12.sp)
+                    }
+                }
+            } else {
+                // Seamless Borderless Notification List (NO heavy boxes — matches Inbox!)
+                LazyColumn(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .navigationBarsPadding(),
+                    contentPadding = PaddingValues(bottom = 24.dp)
+                ) {
+                    items(visibleNotifications, key = { it.id.ifBlank { "${it.timestamp}_${it.title}" } }) { notif ->
+                        val isUnseen = !notif.isRead && notif.id !in locallySeenIds
+                        val timeLabel = remember(notif.timestamp) {
+                            if (notif.timestamp <= 0L) "" else {
+                                val c = java.util.Calendar.getInstance().apply { timeInMillis = notif.timestamp }
+                                if (c.get(java.util.Calendar.YEAR) == todayCal.get(java.util.Calendar.YEAR) &&
+                                    c.get(java.util.Calendar.DAY_OF_YEAR) == todayCal.get(java.util.Calendar.DAY_OF_YEAR)
+                                ) timeFormatter.format(java.util.Date(notif.timestamp))
+                                else dateFormatter.format(java.util.Date(notif.timestamp))
+                            }
+                        }
+
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(if (isUnseen) Color(0xFFF7F4FF) else Color.White)
+                                    .clickable {
+                                        if (!notif.isRead && notif.id.isNotBlank()) {
+                                            if (notif.id !in locallySeenIds) locallySeenIds.add(notif.id)
+                                            val db = FirebaseFirestore.getInstance()
+                                            db.collection("notifications").document(notif.id).set(mapOf("isRead" to true), SetOptions.merge())
+                                            if (currentUserId.isNotBlank()) {
+                                                db.collection("users").document(currentUserId)
+                                                    .collection("notifications").document(notif.id).set(mapOf("isRead" to true), SetOptions.merge())
+                                            }
+                                            onNotificationRead?.invoke(notif.id)
+                                        }
+                                        val t = notif.type.lowercase()
+                                        when {
+                                            t.contains("report") -> {
+                                                onOpenAdmin?.invoke(1)
+                                                onDismiss()
+                                            }
+                                            t.contains("payment") || t.contains("utr") || t.contains("pay_req") -> {
+                                                onOpenAdmin?.invoke(0)
+                                                onDismiss()
+                                            }
+                                            notif.roomId.isNotBlank() -> {
+                                                onOpenRoom?.invoke(notif.roomId)
+                                                onDismiss()
+                                            }
+                                            t.contains("intimacy") || t.contains("ring") || t.contains("purchase") || t.contains("vip") -> {
+                                                onOpenProfile?.invoke()
+                                                onDismiss()
+                                            }
+                                            notif.senderId.isNotBlank() && notif.senderId != "system_livetogather" && notif.senderId != currentUserId -> {
+                                                onOpenChat?.invoke(notif.senderId)
+                                                onDismiss()
+                                            }
+                                            else -> {
+                                                onOpenInbox?.invoke()
+                                                Toast.makeText(context, notif.message.ifBlank { notif.title }, Toast.LENGTH_SHORT).show()
+                                                onDismiss()
+                                            }
+                                        }
+                                    }
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val giftThumbnailResId = if (notif.giftId.isNotBlank()) {
+                                    giftThumbnailResourceId(notif.giftId)
+                                } else {
+                                    0
+                                }
+                                if (giftThumbnailResId != 0) {
+                                    Image(
+                                        painter = painterResource(id = giftThumbnailResId),
+                                        contentDescription = notif.giftName,
+                                        modifier = Modifier.size(46.dp).clip(RoundedCornerShape(12.dp)),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
+                                    AsyncImage(
+                                        model = notif.senderPhoto.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80" },
+                                        contentDescription = null,
+                                        modifier = Modifier.size(46.dp).clip(CircleShape),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = notif.title.ifBlank { "LiveTogather Alert" },
+                                        color = Color(0xFF151726),
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 14.5.sp,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = notif.message,
+                                        color = Color(0xFF6B7088),
+                                        fontSize = 12.5.sp,
+                                        maxLines = 2,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column(horizontalAlignment = Alignment.End) {
+                                    if (timeLabel.isNotBlank()) {
+                                        Text(
+                                            text = timeLabel,
+                                            color = Color(0xFF8B90A7),
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(5.dp))
+                                    if (isUnseen) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(9.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(0xFFFF3B5C))
+                                        )
+                                    } else {
+                                        Text("›", color = Color(0xFFB4B8C9), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                            HorizontalDivider(
+                                color = Color(0xFFF0F1F7),
+                                thickness = 0.8.dp,
+                                modifier = Modifier.padding(start = 74.dp)
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -9584,17 +11838,25 @@ fun PostMomentDialog(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    val multiMediaPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetMultipleContents()
-    ) { uris: List<Uri> ->
+    val handleSelectedUris: (List<Uri>) -> Unit = { uris ->
         if (uris.isNotEmpty()) {
             isUploading = true
-            uploadStatusText = "Uploading 1/${uris.size}..."
+            uploadStatusText = "Checking media..."
             coroutineScope.launch(Dispatchers.IO) {
                 try {
                     val batch = uris.take(6)
                     val newUrls = mutableListOf<String>()
+                    var rejectedLongVideoSec: Int? = null
                     batch.forEachIndexed { index, uri ->
+                        val mime = context.contentResolver.getType(uri).orEmpty().lowercase()
+                        val isVideoPick = mime.startsWith("video/") || isInstagramMomentVideo(uri.toString())
+                        if (isVideoPick) {
+                            val (isValidDuration, durationSec) = validateReelVideoDuration(context, uri)
+                            if (!isValidDuration) {
+                                rejectedLongVideoSec = durationSec
+                                return@forEachIndexed
+                            }
+                        }
                         withContext(Dispatchers.Main) {
                             uploadStatusText = "Uploading ${index + 1}/${batch.size}..."
                         }
@@ -9604,15 +11866,22 @@ fun PostMomentDialog(
                         }
                     }
                     withContext(Dispatchers.Main) {
+                        if (rejectedLongVideoSec != null) {
+                            Toast.makeText(
+                                context,
+                                "⚠️ Reel video maximum 1.5 minutes (90 sec) allowed! Selected video is ${rejectedLongVideoSec}s.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
                         if (newUrls.isNotEmpty()) {
                             pickedMediaUrls.addAll(newUrls)
                             Toast.makeText(context, "${newUrls.size} media item(s) ready to share!", Toast.LENGTH_SHORT).show()
-                        } else {
-                            Toast.makeText(context, "Media upload failed. Choose an image or video.", Toast.LENGTH_SHORT).show()
+                        } else if (rejectedLongVideoSec == null) {
+                            Toast.makeText(context, "Media upload failed. Choose a photo or ≤1.5 min Reel video.", Toast.LENGTH_SHORT).show()
                         }
                     }
                 } catch (e: Throwable) {
-                    Log.e("Moments", "Image upload failed: ${e.message}", e)
+                    Log.e("Moments", "Media upload failed: ${e.message}", e)
                 } finally {
                     withContext(Dispatchers.Main) {
                         isUploading = false
@@ -9621,6 +11890,18 @@ fun PostMomentDialog(
                 }
             }
         }
+    }
+
+    val multiMediaPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        handleSelectedUris(uris)
+    }
+
+    val singleReelVideoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) handleSelectedUris(listOf(uri))
     }
 
     val isKeyboardOpen = WindowInsets.isImeVisible
@@ -9652,7 +11933,7 @@ fun PostMomentDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .imePadding(),
-            colors = CardDefaults.cardColors(containerColor = BrandCard),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
             shape = RoundedCornerShape(20.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -9661,52 +11942,91 @@ fun PostMomentDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Share a Moment", color = BrandCoral, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("Share Moment or Reel", color = Color(0xFF151726), fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
                     if (pickedMediaUrls.isNotEmpty()) {
-                        Text("${pickedMediaUrls.size} Photo${if (pickedMediaUrls.size > 1) "s" else ""}", color = BrandGold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("${pickedMediaUrls.size} Selected", color = Color(0xFF7C3AED), fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
                     }
                 }
 
                 OutlinedTextField(
                     value = caption,
                     onValueChange = { caption = it },
-                    placeholder = { Text("What's on your mind? (Optional or type message...)", color = Color.Gray, fontSize = 12.sp) },
-                    colors = outlinedFieldColors(),
+                    placeholder = { Text("Write a caption...", color = Color(0xFF8B90A7), fontSize = 13.sp) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color(0xFF151726),
+                        unfocusedTextColor = Color(0xFF151726),
+                        focusedBorderColor = Color(0xFF7C3AED),
+                        unfocusedBorderColor = Color(0xFFE2E0F0),
+                        focusedContainerColor = Color(0xFFF8F7FC),
+                        unfocusedContainerColor = Color(0xFFF8F7FC)
+                    ),
+                    shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
 
                 if (pickedMediaUrls.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(140.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(BrandCardSubtle)
-                            .border(1.dp, BrandBorder, RoundedCornerShape(14.dp))
-                            .clickable(enabled = !isUploading) {
-                                multiMediaPickerLauncher.launch("*/*")
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (isUploading) {
+                    if (isUploading) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(132.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Color(0xFFF6F3FF)),
+                            contentAlignment = Alignment.Center
+                        ) {
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                CircularProgressIndicator(
-                                    color = BrandCoral,
-                                    modifier = Modifier.size(32.dp),
-                                    strokeWidth = 3.dp
-                                )
-                                Text(uploadStatusText.ifEmpty { "Uploading..." }, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                CircularProgressIndicator(color = Color(0xFF7C3AED), modifier = Modifier.size(30.dp), strokeWidth = 3.dp)
+                                Text(uploadStatusText.ifEmpty { "Uploading..." }, color = Color(0xFF151726), fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
                             }
-                        } else {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = BrandCoral, modifier = Modifier.size(36.dp))
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text("Select Photos or Videos (up to 6)", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text("Choose from Gallery / Camera", color = Color.Gray, fontSize = 10.sp)
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            // Photos Picker
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(124.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(Color(0xFFF6F3FF))
+                                    .border(1.dp, Color(0xFFE3DCFA), RoundedCornerShape(14.dp))
+                                    .clickable(enabled = !isUploading) {
+                                        multiMediaPickerLauncher.launch("image/*")
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(8.dp)) {
+                                    Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = Color(0xFF7C3AED), modifier = Modifier.size(30.dp))
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text("Photos", color = Color(0xFF151726), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    Text("Up to 6 images", color = Color(0xFF8B90A7), fontSize = 10.5.sp)
+                                }
+                            }
+
+                            // Reel Video Picker (Strict 1.5 min / 90 sec max!)
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(124.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(Color(0xFFFFF1F5))
+                                    .border(1.dp, Color(0xFFFBCFE8), RoundedCornerShape(14.dp))
+                                    .clickable(enabled = !isUploading) {
+                                        singleReelVideoPickerLauncher.launch("video/*")
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(8.dp)) {
+                                    Text("🎬", fontSize = 26.sp)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("Reel Video", color = Color(0xFF151726), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    Text("Max 1.5 min (90s)", color = Color(0xFFFF2E63), fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold)
+                                }
                             }
                         }
                     }
@@ -11256,6 +13576,14 @@ fun IntimacyRequestsDialog(
                                                 val sortedKey = listOf(senderId, currentUser.uid).sorted().joinToString("_")
                                                 val bondId = sortedKey
                                                 val ringGiftId = ((req["giftId"] as? String) ?: (req["ringId"] as? String) ?: "proposal_ring_golden_rose").ifBlank { "proposal_ring_golden_rose" }
+                                                val isProposalRing = ringGiftId.contains("ring", ignoreCase = true) || ringGiftId.contains("proposal", ignoreCase = true)
+                                                val resolvedBondType = when {
+                                                    isProposalRing -> "couple"
+                                                    bondType.isNotBlank() -> bondType
+                                                    ringGiftId.contains("bestie", ignoreCase = true) -> "bestie"
+                                                    ringGiftId.contains("cyber", ignoreCase = true) -> "cyber"
+                                                    else -> "couple"
+                                                }
                                                 val newBond = IntimacyBond(
                                                     bondId = bondId,
                                                     user1Id = senderId,
@@ -11264,7 +13592,7 @@ fun IntimacyRequestsDialog(
                                                     user2Name = currentUser.name,
                                                     user1Photo = senderPhoto,
                                                     user2Photo = currentUser.photo,
-                                                    bondType = if (bondType.isBlank()) "couple" else bondType,
+                                                    bondType = resolvedBondType,
                                                     intimacyLevel = 1,
                                                     streakDays = 1,
                                                     status = "active",

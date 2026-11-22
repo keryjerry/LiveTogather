@@ -145,6 +145,7 @@ fun VideoHangoutRoomDialog(
     var showSafetyWarningDialog by remember { mutableStateOf(isUserHost) }
     var showExitOrKeepDialog by remember { mutableStateOf(false) }
     var showRoomSettingsDialog by remember { mutableStateOf(false) }
+    var showRoomInfoOnlyDialog by remember { mutableStateOf(false) }
     var showShareInviteDialog by remember { mutableStateOf(false) }
     var showCommentInputDialog by remember { mutableStateOf(false) }
     var showInRoomInboxDialog by remember { mutableStateOf(false) }
@@ -192,6 +193,11 @@ fun VideoHangoutRoomDialog(
     var userHasRecharged by remember { mutableStateOf(currentUser.hasRecharged) }
     var userRechargeCount by remember { mutableStateOf(currentUser.rechargeCount) }
     var userTotalRoomTimeSeconds by remember { mutableStateOf(currentUser.totalRoomTimeSeconds) }
+    var currentRoomStaySeconds by remember(room.id) { mutableStateOf(0L) }
+    var lastObservedWealthLevel by remember(currentUser.uid, room.id) { mutableStateOf(-1) }
+    val levelUpEventQueue = remember(room.id) { mutableStateListOf<RoomLevelUpEvent>() }
+    val seenLevelUpCommentIds = remember(room.id) { mutableSetOf<String>() }
+    val pendingRevealLevelUpIds = remember(room.id) { mutableStateListOf<String>() }
     var showGuestLimitExpiredDialog by remember { mutableStateOf(false) }
 
     // Comments State
@@ -329,8 +335,9 @@ fun VideoHangoutRoomDialog(
                 return@addSnapshotListener
             }
             // Real-Time Room Close Check: When host goes OFFLINE or exits, dismiss viewers from the live stage
-            if (!updated.isLive || updated.statusMessage.equals("CLOSED", ignoreCase = true) || updated.statusMessage.equals("ENDED", ignoreCase = true) || (!updated.isHostLive && !isUserHost)) {
+            if (!updated.isLive || updated.isEnded || updated.statusMessage.equals("OFFLINE", ignoreCase = true) || updated.statusMessage.equals("CLOSED", ignoreCase = true) || updated.statusMessage.equals("ENDED", ignoreCase = true) || (!updated.isHostLive && !isUserHost)) {
                 if (!isUserHost) {
+                    db.collection("users").document(currentUser.uid).update("current_room", "")
                     Toast.makeText(context, "🔴 The host has ended this live broadcast.", Toast.LENGTH_LONG).show()
                     AgoraVideoManager.leaveRoom()
                     onDismiss()
@@ -453,11 +460,30 @@ fun VideoHangoutRoomDialog(
                         .filter { comment ->
                             if (isUserHost) comment.timestamp >= roomSessionStartMs else true
                         }
+                    val nowMs = System.currentTimeMillis()
+                    list.forEach { c ->
+                        if (RoomLevelUpEngine.isLevelUpSystemComment(c)) {
+                            val eventKey = c.id.ifBlank { "${c.userId}_${c.timestamp}" }
+                            if (eventKey !in seenLevelUpCommentIds) {
+                                seenLevelUpCommentIds.add(eventKey)
+                                if (nowMs - c.timestamp < 15_000L && c.timestamp >= roomSessionStartMs - 5_000L) {
+                                    if (eventKey !in pendingRevealLevelUpIds) {
+                                        pendingRevealLevelUpIds.add(eventKey)
+                                    }
+                                    levelUpEventQueue.add(RoomLevelUpEngine.toEvent(c))
+                                }
+                            }
+                        }
+                    }
                     liveComments.clear()
                     liveComments.addAll(list)
-                    if (list.isNotEmpty()) {
+                    val visibleCount = list.count { c ->
+                        val k = c.id.ifBlank { "${c.userId}_${c.timestamp}" }
+                        k !in pendingRevealLevelUpIds
+                    }
+                    if (visibleCount > 0) {
                         coroutineScope.launch {
-                            commentsListState.animateScrollToItem(list.size - 1)
+                            commentsListState.animateScrollToItem(visibleCount - 1)
                         }
                     }
                 }
@@ -500,9 +526,10 @@ fun VideoHangoutRoomDialog(
         onDispose { giftsListener.remove() }
     }
 
-    // 6. User Diamonds, Wealth & Swords Real-Time Listener
-    LaunchedEffect(currentUser.uid) {
+    // 6. User Diamonds, Wealth & Per-Room Stay Real-Time Listener
+    LaunchedEffect(currentUser.uid, room.id) {
         if (currentUser.uid.isNotBlank()) {
+            val safeRoomKey = RoomLevelUpEngine.sanitizeRoomKey(room.id)
             db.collection("users").document(currentUser.uid)
                 .addSnapshotListener { snap, _ ->
                     if (snap != null && snap.exists()) {
@@ -512,14 +539,40 @@ fun VideoHangoutRoomDialog(
                         userRechargeCount = snap.getLong("rechargeCount")?.toInt() ?: 0
                         userTotalRoomTimeSeconds = snap.getLong("totalRoomTimeSeconds") ?: 0L
                         @Suppress("UNCHECKED_CAST")
+                        val stayMap = snap.get("roomStaySecondsMap") as? Map<String, Any>
+                        val remoteRoomStay = (stayMap?.get(safeRoomKey) as? Number)?.toLong() ?: 0L
+                        if (remoteRoomStay > currentRoomStaySeconds) {
+                            currentRoomStaySeconds = remoteRoomStay
+                        }
+                        val snapWealthXp = snap.getLong("wealthXp") ?: 0L
+                        val snapWealthLvl = maxOf(
+                            (snap.getLong("wealthLevel") ?: 1L).toInt(),
+                            LevelBadgeSystem.calculateLevelFromXp(snapWealthXp)
+                        )
+                        if (lastObservedWealthLevel == -1) {
+                            lastObservedWealthLevel = snapWealthLvl
+                        } else if (snapWealthLvl > lastObservedWealthLevel) {
+                            lastObservedWealthLevel = snapWealthLvl
+                            if (room.id.isNotBlank()) {
+                                RoomLevelUpEngine.dispatchRoomLevelUpComment(
+                                    db = db,
+                                    roomId = room.id,
+                                    currentUser = currentUser,
+                                    newLevel = snapWealthLvl,
+                                    isRoomStayLevel = false,
+                                    xpBonus = 0L
+                                )
+                            }
+                        }
+                        @Suppress("UNCHECKED_CAST")
                         userOwnedFrames = (snap.get("ownedFrames") as? List<String>) ?: emptyList()
                     }
                 }
         }
     }
 
-    // Live Room Time Tracking & Free 1-Hour Guest Limit for Unrecharged Users
-    LaunchedEffect(currentUser.uid, userHasRecharged, userRechargeCount, userDiamonds, currentUser.diamonds) {
+    // Live Room Time Tracking, Per-Room 5-Minute Level-Up Engine & Free 1-Hour Guest Limit
+    LaunchedEffect(currentUser.uid, room.id, userHasRecharged, userRechargeCount, userDiamonds, currentUser.diamonds) {
         val isFirstTimeFreeGuest = !userHasRecharged && !currentUser.hasRecharged
             && userRechargeCount == 0 && currentUser.rechargeCount == 0
             && userDiamonds <= 0L && currentUser.diamonds <= 0L
@@ -530,11 +583,9 @@ fun VideoHangoutRoomDialog(
         while (true) {
             delay(10000L) // every 10 seconds
             val newTime = userTotalRoomTimeSeconds + 10L
+            val newRoomStay = currentRoomStaySeconds + 10L
             userTotalRoomTimeSeconds = newTime
-            try {
-                db.collection("users").document(currentUser.uid)
-                    .update("totalRoomTimeSeconds", FieldValue.increment(10L))
-            } catch (_: Exception) {}
+            currentRoomStaySeconds = newRoomStay
 
             AutomatedRewardManager.checkRoomTimeRewards(
                 context = context,
@@ -542,6 +593,16 @@ fun VideoHangoutRoomDialog(
                 db = db,
                 onUpdateProfile = { userDiamonds = it.diamonds }
             )
+
+            if (currentUser.uid.isNotBlank() && room.id.isNotBlank()) {
+                RoomLevelUpEngine.recordRoomStayTick(
+                    context = context,
+                    db = db,
+                    roomId = room.id,
+                    currentUser = currentUser,
+                    newRoomStaySeconds = newRoomStay
+                )
+            }
 
             // STRICTLY apply 1-hour limit ONLY to first-time free guests with 0 coins, 0 recharge, no VIP
             if (isFirstTimeFreeGuest && newTime >= 3600L) {
@@ -551,11 +612,10 @@ fun VideoHangoutRoomDialog(
         }
     }
 
-    // 7. Follow State Listener
-    LaunchedEffect(room.hostUid, room.hostId, currentUserId) {
-        val targetHostId = room.hostUid.ifBlank { room.hostId }
-        if (targetHostId.isNotBlank() && currentUserId.isNotBlank() && targetHostId != currentUserId) {
-            db.collection("users").document(targetHostId)
+    // 7. Room Follow State Listener (Separate from User Followers — strictly scoped to rooms/{roomId}/followers)
+    LaunchedEffect(room.id, currentUserId) {
+        if (room.id.isNotBlank() && currentUserId.isNotBlank()) {
+            db.collection("rooms").document(room.id)
                 .collection("followers").document(currentUserId)
                 .addSnapshotListener { snap, _ ->
                     isFollowingHost = snap != null && snap.exists()
@@ -753,33 +813,36 @@ fun VideoHangoutRoomDialog(
                 .collection("members").document(currentUser.uid).update("role", "viewer")
         }
         db.collection("rooms").document(room.id).collection("members").document(currentUser.uid).delete()
+        db.collection("users").document(currentUser.uid).update("current_room", "")
         AgoraVideoManager.leaveRoom()
         onDismiss()
     }
 
     fun toggleFollowHost() {
         val targetHostId = room.hostUid.ifBlank { room.hostId }
-        if (targetHostId.isBlank() || targetHostId == currentUserId) return
+        if (room.id.isBlank() || currentUserId.isBlank() || targetHostId == currentUserId) return
 
-        val followDoc = db.collection("users").document(targetHostId)
+        val followDoc = db.collection("rooms").document(room.id)
             .collection("followers").document(currentUserId)
 
         if (isFollowingHost) {
             followDoc.delete().addOnSuccessListener {
                 isFollowingHost = false
-                Toast.makeText(context, "Unfollowed ${room.hostName}", Toast.LENGTH_SHORT).show()
+                db.collection("rooms").document(room.id).update("roomFollowerCount", FieldValue.increment(-1))
+                Toast.makeText(context, "Unfollowed Room", Toast.LENGTH_SHORT).show()
             }
         } else {
-            val followerData = mapOf(
-                "followerId" to currentUserId,
-                "followerName" to currentUser.name,
-                "followerPhoto" to currentUser.photo,
-                "timestamp" to System.currentTimeMillis()
+            val record = FollowerRecord(
+                uid = currentUserId,
+                name = currentUser.name,
+                photo = currentUser.photo,
+                timestamp = System.currentTimeMillis()
             )
-            followDoc.set(followerData).addOnSuccessListener {
+            followDoc.set(record).addOnSuccessListener {
                 isFollowingHost = true
                 showFollowCelebrationDialog = true
-                Toast.makeText(context, "⭐ Followed ${room.hostName}!", Toast.LENGTH_SHORT).show()
+                db.collection("rooms").document(room.id).update("roomFollowerCount", FieldValue.increment(1))
+                Toast.makeText(context, "⭐ Followed Room!", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -971,15 +1034,7 @@ fun VideoHangoutRoomDialog(
                             modifier = Modifier
                                 .height(38.dp)
                                 .clickable {
-                                    val targetHostUid = room.hostUid.ifBlank { room.hostId }
-                                    val hostMember = activeMembers.find { it.uid == targetHostUid } ?: RoomMember(
-                                        uid = targetHostUid,
-                                        userId = room.hostId,
-                                        name = room.hostName,
-                                        photoUrl = room.hostPhotoUrl,
-                                        role = "host"
-                                    )
-                                    selectedMemberForProfile = hostMember
+                                    showRoomInfoOnlyDialog = true
                                 }
                         ) {
                             Row(
@@ -1030,22 +1085,51 @@ fun VideoHangoutRoomDialog(
                                     }
                                 }
 
-                                if (!isUserHost) {
-                                    Spacer(modifier = Modifier.width(5.dp))
-                                    Surface(
-                                        color = if (isFollowingHost) Color.White.copy(alpha = 0.2f) else BrandCoral,
-                                        shape = RoundedCornerShape(50),
-                                        modifier = Modifier.clickable { toggleFollowHost() }
-                                    ) {
+                                // Circular '+' Follow Icon Button right on Top-Left Host Header Pill (Visible on EVERY Video Room)
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (isFollowingHost && !isUserHost) {
+                                                Brush.horizontalGradient(listOf(Color(0xFF15803D), Color(0xFF22C55E)))
+                                            } else {
+                                                Brush.horizontalGradient(listOf(Color(0xFF7C3AED), Color(0xFF2563EB)))
+                                            }
+                                        )
+                                        .border(
+                                            width = 1.dp,
+                                            color = if (isFollowingHost && !isUserHost) Color(0xFF86EFAC) else Color.White.copy(alpha = 0.75f),
+                                            shape = CircleShape
+                                        )
+                                        .clickable {
+                                            if (isUserHost) {
+                                                Toast.makeText(context, "👑 Your Live Room", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                toggleFollowHost()
+                                            }
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isFollowingHost && !isUserHost) {
                                         Text(
-                                            text = if (isFollowingHost) "✓ Following" else "+ Follow",
+                                            text = "✓",
                                             color = Color.White,
-                                            fontSize = 9.5.sp,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Black
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.Add,
+                                            contentDescription = "Follow Room",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(15.dp)
                                         )
                                     }
-                                } else {
+                                }
+
+                                if (isUserHost) {
                                     Spacer(modifier = Modifier.width(5.dp))
                                     Surface(
                                         color = Color(0xFFFF1744).copy(alpha = 0.25f),
@@ -1212,7 +1296,28 @@ fun VideoHangoutRoomDialog(
                         .fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    items(liveComments) { comment ->
+                    items(
+                        liveComments.filter { c ->
+                            val key = c.id.ifBlank { "${c.userId}_${c.timestamp}" }
+                            key !in pendingRevealLevelUpIds
+                        }
+                    ) { comment ->
+                        if (RoomLevelUpEngine.isLevelUpSystemComment(comment)) {
+                            RoomLevelUpSystemCommentCard(
+                                comment = comment,
+                                onClick = {
+                                    val member = activeMembers.find { it.uid == comment.userId } ?: RoomMember(
+                                        uid = comment.userId,
+                                        name = comment.userName,
+                                        photoUrl = comment.userPhoto,
+                                        tier = comment.tier
+                                    )
+                                    selectedMemberForProfile = member
+                                },
+                                modifier = Modifier.padding(vertical = 2.dp)
+                            )
+                            return@items
+                        }
                         val commenterProfile = (if (comment.userId == currentUser.uid) currentUser else null)
                             ?: allProfiles.find { it.uid == comment.userId || it.name.equals(comment.userName, true) }
                         val isCommenterHost = comment.userId == room.hostId || (room.hostName.isNotBlank() && comment.userName.equals(room.hostName, true))
@@ -1414,22 +1519,28 @@ fun VideoHangoutRoomDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // 1. Comment Button
-                    Box(
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.12f))
-                            .border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape)
-                            .clickable { showCommentInputDialog = true },
-                        contentAlignment = Alignment.Center
+                    // 1. Comment Button with "Comment" label
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.clickable { showCommentInputDialog = true }
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.ChatBubbleOutline,
-                            contentDescription = "Chat",
-                            tint = Color.White,
-                            modifier = Modifier.size(19.dp)
-                        )
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.12f))
+                                .border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ChatBubbleOutline,
+                                contentDescription = "Comment",
+                                tint = Color.White,
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text("Comment", color = Color.White.copy(alpha = 0.9f), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
                     }
 
                     // 2. Stage Mic / Request Button
@@ -1505,25 +1616,31 @@ fun VideoHangoutRoomDialog(
                         }
                     }
 
-                    // 3. Audio Speaker Button (Both)
-                    Box(
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.12f))
-                            .border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape)
-                            .clickable {
-                                isSpeakerOn = !isSpeakerOn
-                                Toast.makeText(context, if (isSpeakerOn) "Speaker Output" else "Earpiece Output", Toast.LENGTH_SHORT).show()
-                            },
-                        contentAlignment = Alignment.Center
+                    // 3. Audio Speaker / Volume Button with "Volume" label
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.clickable {
+                            isSpeakerOn = !isSpeakerOn
+                            Toast.makeText(context, if (isSpeakerOn) "Speaker Output" else "Earpiece Output", Toast.LENGTH_SHORT).show()
+                        }
                     ) {
-                        Icon(
-                            imageVector = if (isSpeakerOn) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
-                            contentDescription = "Speaker",
-                            tint = Color.White,
-                            modifier = Modifier.size(19.dp)
-                        )
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.12f))
+                                .border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (isSpeakerOn) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
+                                contentDescription = "Volume",
+                                tint = Color.White,
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text("Volume", color = Color.White.copy(alpha = 0.9f), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
                     }
 
                     if (isUserHost) {
@@ -1559,17 +1676,23 @@ fun VideoHangoutRoomDialog(
                             Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White, modifier = Modifier.size(19.dp))
                         }
 
-                        // 6. HOST: Inbox / Gifting Overview
-                        Box(
-                            modifier = Modifier
-                                .size(38.dp)
-                                .clip(CircleShape)
-                                .background(Color.White.copy(alpha = 0.12f))
-                                .border(1.dp, BrandGold.copy(alpha = 0.6f), CircleShape)
-                                .clickable { showInRoomInboxDialog = true },
-                            contentAlignment = Alignment.Center
+                        // 6. HOST: Stylish Inbox Button with "Inbox" label
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.clickable { showInRoomInboxDialog = true }
                         ) {
-                            Icon(Icons.Default.Mail, contentDescription = "Inbox", tint = BrandGold, modifier = Modifier.size(19.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(Brush.linearGradient(listOf(Color(0xFF6D28D9), Color(0xFFEC4899))))
+                                    .border(1.2.dp, BrandGold, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Inbox", tint = Color.White, modifier = Modifier.size(17.dp))
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("Inbox", color = BrandGold, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                         }
 
                         // 6B. HOST: Luxury Store (Avatar Frames, Rings, Mic Links)
@@ -1607,19 +1730,44 @@ fun VideoHangoutRoomDialog(
                             Text("🎁", fontSize = 19.sp)
                         }
                     } else {
-                        // 4. VIEWER: Floating Hearts / Like Reaction Button
-                        Box(
-                            modifier = Modifier
-                                .size(38.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFFFF1744).copy(alpha = 0.15f))
-                                .border(1.dp, Color(0xFFFF1744).copy(alpha = 0.5f), CircleShape)
-                                .clickable {
-                                    floatingEmojis.add(Pair("❤️", System.currentTimeMillis()))
-                                },
-                            contentAlignment = Alignment.Center
+                        // 4. VIEWER: Stylish Inbox Button with "Inbox" label
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.clickable { showInRoomInboxDialog = true }
                         ) {
-                            Text("❤️", fontSize = 17.sp)
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(Brush.linearGradient(listOf(Color(0xFF6D28D9), Color(0xFFEC4899))))
+                                    .border(1.2.dp, BrandGold, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Inbox", tint = Color.White, modifier = Modifier.size(17.dp))
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("Inbox", color = BrandGold, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        // 4B. VIEWER: Emoji / Like Reaction Button with "Emoji" label
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.clickable {
+                                floatingEmojis.add(Pair("❤️", System.currentTimeMillis()))
+                            }
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFFF1744).copy(alpha = 0.15f))
+                                    .border(1.dp, Color(0xFFFF1744).copy(alpha = 0.5f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("😊", fontSize = 17.sp)
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("Emoji", color = Color.White.copy(alpha = 0.9f), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
                         }
 
                         // 5. VIEWER: Share Stream Button
@@ -1800,6 +1948,31 @@ fun VideoHangoutRoomDialog(
             }
 
             // -------------------------------------------------------------
+            // LAYER 5B: LUXURY 2.8s IN-ROOM LEVEL-UP CELEBRATION POPUP OVERLAY
+            // -------------------------------------------------------------
+            levelUpEventQueue.firstOrNull()?.let { levelUpEvent ->
+                RoomLevelUpCelebrationPopup(
+                    event = levelUpEvent,
+                    isCurrentUser = levelUpEvent.userId == currentUser.uid,
+                    onFinished = {
+                        pendingRevealLevelUpIds.remove(levelUpEvent.id)
+                        levelUpEventQueue.removeAll { it.id == levelUpEvent.id }
+                        val visibleCount = liveComments.count { c ->
+                            val k = c.id.ifBlank { "${c.userId}_${c.timestamp}" }
+                            k !in pendingRevealLevelUpIds
+                        }
+                        if (visibleCount > 0) {
+                            coroutineScope.launch {
+                                commentsListState.animateScrollToItem(visibleCount - 1)
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 92.dp)
+                )
+            }
+
             // LAYER 6: FULL-SCREEN 3D GIFT ANIMATION OVERLAY
             // -------------------------------------------------------------
             activeGiftEvent?.let { giftEvent ->
@@ -2121,7 +2294,7 @@ fun VideoHangoutRoomDialog(
             }
 
             if (showInRoomInboxDialog) {
-                InRoomInboxDialog(
+                SyncedBrightInRoomInboxDialog(
                     currentUser = currentUser,
                     allProfiles = allProfiles,
                     activeMembers = activeMembers,
@@ -2503,6 +2676,23 @@ fun VideoHangoutRoomDialog(
                         showTrackSelectorDialog = false
                         Toast.makeText(context, "Streaming: $title by $artist 🎵", Toast.LENGTH_SHORT).show()
                     }
+                )
+            }
+
+            if (showRoomInfoOnlyDialog) {
+                RoomInfoOnlyDialog(
+                    room = room,
+                    displayRoomId = displayRoomId,
+                    roomPhotoUrl = room.hostPhotoUrl,
+                    currentRoomLevel = 1,
+                    hostFollowerCount = 0,
+                    targetHostId = room.hostUid.ifBlank { room.hostId },
+                    canEditRoom = isUserHost || currentUser.hasRoomModerationAuthority(),
+                    db = db,
+                    onOpenEditRoomSettings = { showRoomSettingsDialog = true },
+                    onDismiss = { showRoomInfoOnlyDialog = false },
+                    currentUser = currentUser,
+                    onRoomUpdated = { updatedRoom -> room = updatedRoom }
                 )
             }
 
@@ -3941,9 +4131,9 @@ fun ViewerRoomMenuDialog(
         )
     ) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = BrandCard),
-            shape = RoundedCornerShape(22.dp),
-            border = BorderStroke(1.2.dp, BrandBorder),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF0E0D15)),
+            shape = RoundedCornerShape(24.dp),
+            border = BorderStroke(1.4.dp, Color(0x66F5C451)),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp)
@@ -3959,13 +4149,13 @@ fun ViewerRoomMenuDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "📹 Viewer Options",
-                        color = Color.White,
+                        text = "📹 Viewer Command & Options",
+                        color = Color(0xFFF5C451),
                         fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.ExtraBold
                     )
                     IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color(0xFFF5C451), modifier = Modifier.size(18.dp))
                     }
                 }
 
@@ -4223,21 +4413,120 @@ fun VideoRoomSettingsSheet(
         }
     }
 
+    val obsidianBg = Color(0xFF0E0D15)
+    val cardObsidian = Color(0xFF181624)
+    val rowObsidian = Color(0xFF1E1C2E)
+    val goldPrimary = Color(0xFFF5C451)
+    val goldBorder = Color(0x66F5C451)
+    val subtleBorder = Color(0x26FFFFFF)
+    val mutedText = Color(0xFFA3A0B8)
+
+    var showFullRoomProfileHub by remember { mutableStateOf(false) }
+    var liveKickedIds by remember(room.id) { mutableStateOf(room.kickedUserIds) }
+    var liveBannedIds by remember(room.id) { mutableStateOf(room.bannedUserIds) }
+    var liveRoomXp by remember(room.id) { mutableLongStateOf(0L) }
+    var liveRoomLvl by remember(room.id) { mutableStateOf(1) }
+    var liveFollowerCount by remember(room.id) { mutableStateOf(0) }
+    var showBlockedSubView by remember { mutableStateOf(false) }
+    var blockedUserNames by remember(room.id) { mutableStateOf<Map<String, String>>(emptyMap()) }
+
+    DisposableEffect(room.id) {
+        if (room.id.isBlank()) return@DisposableEffect onDispose {}
+        val rReg = db.collection("rooms").document(room.id).addSnapshotListener { snap, _ ->
+            if (snap != null && snap.exists()) {
+                @Suppress("UNCHECKED_CAST")
+                liveKickedIds = (snap.get("kickedUserIds") as? List<String>) ?: emptyList()
+                @Suppress("UNCHECKED_CAST")
+                liveBannedIds = (snap.get("bannedUserIds") as? List<String>) ?: emptyList()
+                val dXp = snap.getLong("roomActivityXp") ?: 0L
+                if (dXp > liveRoomXp) liveRoomXp = dXp
+                val dLvl = (snap.getLong("roomLevel") ?: 1L).toInt()
+                liveRoomLvl = maxOf(liveRoomLvl, dLvl, RoomLevelUpEngine.calculateOfficialRoomPersonalLevel(liveRoomXp))
+            }
+        }
+        val mReg = db.collection("rooms").document(room.id).collection("games").document("room_level_meta")
+            .addSnapshotListener { snap, _ ->
+                if (snap != null && snap.exists()) {
+                    val mXp = snap.getLong("roomActivityXp") ?: 0L
+                    if (mXp > liveRoomXp) liveRoomXp = mXp
+                    val mLvl = (snap.getLong("roomLevel") ?: 1L).toInt()
+                    liveRoomLvl = maxOf(liveRoomLvl, mLvl, RoomLevelUpEngine.calculateOfficialRoomPersonalLevel(liveRoomXp))
+                }
+            }
+        val fReg = db.collection("rooms").document(room.id).collection("followers").addSnapshotListener { snap, _ ->
+            if (snap != null) {
+                liveFollowerCount = snap.documents.count { doc ->
+                    val id = doc.id
+                    id.isNotBlank() &&
+                        !id.startsWith("companion_", ignoreCase = true) &&
+                        !id.startsWith("dummy_", ignoreCase = true) &&
+                        !id.startsWith("seed_", ignoreCase = true) &&
+                        !id.startsWith("bot_", ignoreCase = true)
+                }
+            }
+        }
+        onDispose {
+            rReg.remove()
+            mReg.remove()
+            fReg?.remove()
+        }
+    }
+
+    LaunchedEffect(liveKickedIds, liveBannedIds, showBlockedSubView) {
+        val allB = (liveKickedIds + liveBannedIds).distinct()
+        if (showBlockedSubView && allB.isNotEmpty()) {
+            val map = mutableMapOf<String, String>()
+            allB.forEach { uid ->
+                db.collection("users").document(uid).get().addOnSuccessListener { d ->
+                    map[uid] = d?.getString("name")?.takeIf { it.isNotBlank() } ?: "User (${uid.take(6)})"
+                    blockedUserNames = map.toMap()
+                }
+            }
+        }
+    }
+
+    val displayRoomId = remember(room.roomId, room.id) {
+        if (room.roomId.length == 8 && room.roomId.all { it.isDigit() }) room.roomId
+        else (10000000 + kotlin.math.abs(room.id.hashCode()) % 90000000).toString()
+    }
+    val nextTargetXp = RoomLevelUpEngine.getNextRoomLevelThreshold(liveRoomLvl)
+    val startXp = RoomLevelUpEngine.getThresholdForRoomLevel(liveRoomLvl)
+    val lvlProgress = ((liveRoomXp - startXp).coerceAtLeast(0L).toFloat() / (nextTargetXp - startXp).coerceAtLeast(1L).toFloat()).coerceIn(0f, 1f)
+
+    if (showFullRoomProfileHub) {
+        RoomInfoOnlyDialog(
+            room = room,
+            displayRoomId = displayRoomId,
+            roomPhotoUrl = room.hostPhotoUrl,
+            currentRoomLevel = liveRoomLvl,
+            hostFollowerCount = liveFollowerCount,
+            targetHostId = room.hostUid.ifBlank { room.hostId },
+            canEditRoom = isHost || currentUser.hasRoomModerationAuthority(),
+            db = db,
+            onOpenEditRoomSettings = { showFullRoomProfileHub = false },
+            onDismiss = { showFullRoomProfileHub = false },
+            currentUser = currentUser
+        )
+    }
+
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (showBlockedSubView) showBlockedSubView = false else onDismiss()
+        },
         properties = DialogProperties(
+            usePlatformDefaultWidth = false,
             dismissOnBackPress = true,
             dismissOnClickOutside = true
         )
     ) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF141720)),
-            shape = RoundedCornerShape(22.dp),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+            colors = CardDefaults.cardColors(containerColor = obsidianBg),
+            shape = RoundedCornerShape(26.dp),
+            border = BorderStroke(1.4.dp, goldBorder),
             modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.85f)
-                .padding(vertical = 10.dp)
+                .fillMaxWidth(0.94f)
+                .fillMaxHeight(0.88f)
+                .padding(vertical = 8.dp)
         ) {
             Column(
                 modifier = Modifier
@@ -4249,9 +4538,22 @@ fun VideoRoomSettingsSheet(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("⚙️ Video Room Settings", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (showBlockedSubView) {
+                            IconButton(onClick = { showBlockedSubView = false }, modifier = Modifier.size(28.dp)) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = goldPrimary)
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
+                        Text(
+                            text = if (showBlockedSubView) "Blocked list (Kick Out)" else "⚙️ Video Room Command & Settings",
+                            color = goldPrimary,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = goldPrimary)
                     }
                 }
 
@@ -4259,8 +4561,103 @@ fun VideoRoomSettingsSheet(
 
                 LazyColumn(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    // 00-TOP: OBSIDIAN & ROYAL GOLD ROOM PROFILE HEADER + LEVEL BAR + BLOCKED LIST ROW
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Surface(
+                                shape = RoundedCornerShape(18.dp),
+                                color = cardObsidian,
+                                border = BorderStroke(1.2.dp, goldBorder),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { showFullRoomProfileHub = true }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(58.dp)
+                                            .clip(RoundedCornerShape(14.dp))
+                                            .border(1.4.dp, goldPrimary, RoundedCornerShape(14.dp))
+                                    ) {
+                                        AsyncImage(
+                                            model = room.hostPhotoUrl.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                                            contentDescription = room.title,
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = room.title.ifBlank { room.roomName.ifBlank { "Live Video Room" } },
+                                            color = Color.White,
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = "ID: $displayRoomId  •  👥 $liveFollowerCount Followers",
+                                            color = mutedText,
+                                            fontSize = 11.5.sp
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Text("LV.$liveRoomLvl", color = goldPrimary, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .height(6.dp)
+                                                    .clip(RoundedCornerShape(50))
+                                                    .background(Color(0xFF2C283E))
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth(lvlProgress.coerceAtLeast(0.05f))
+                                                        .height(6.dp)
+                                                        .clip(RoundedCornerShape(50))
+                                                        .background(Brush.horizontalGradient(listOf(Color(0xFFFFE082), goldPrimary, Color(0xFF9333EA))))
+                                                )
+                                            }
+                                            Text("LV.${(liveRoomLvl + 1).coerceAtMost(100)}", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+
+                            val blockedCount = (liveKickedIds + liveBannedIds).distinct().size
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = rowObsidian,
+                                border = BorderStroke(1.dp, subtleBorder),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { showFullRoomProfileHub = true }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("🚫 Blocked list (Kick Out) & Full Room Profile", color = Color.White, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        text = "Blocked ($blockedCount) ›",
+                                        color = if (blockedCount > 0) Color(0xFFFF6B6B) else goldPrimary,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
 
                     // 00. ROOM MODE CONVERSION: VIDEO STREAM -> AUDIO LOUNGE (HOST & ADMIN)
                     val canConvertMode = isHost || currentUser.isAdmin || currentUser.isOfficialAdmin(currentUser.uid) || currentUser.uid in room.adminUserIds
@@ -4333,12 +4730,12 @@ fun VideoRoomSettingsSheet(
                                                 onStartPk()
                                                 onDismiss()
                                             },
-                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF331E26)),
-                                            border = BorderStroke(1.dp, Color(0xFF8F384C)),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF232938)),
+                                            border = BorderStroke(1.dp, Color(0xFF334155)),
                                             shape = RoundedCornerShape(10.dp),
                                             modifier = Modifier.fillMaxWidth().height(40.dp)
                                         ) {
-                                            Text("⚔️ Start 5-Minute PK Battle", color = Color(0xFFFF859E), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                            Text("Start 5-Minute PK Battle", color = Color(0xFFF8FAFC), fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                                         }
                                     } else {
                                         Button(
@@ -4346,12 +4743,12 @@ fun VideoRoomSettingsSheet(
                                                 onEndPk()
                                                 onDismiss()
                                             },
-                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF252A36)),
-                                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF232938)),
+                                            border = BorderStroke(1.dp, Color(0xFF334155)),
                                             shape = RoundedCornerShape(10.dp),
                                             modifier = Modifier.fillMaxWidth().height(40.dp)
                                         ) {
-                                            Text("⏹️ Conclude Active PK Battle", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                            Text("Conclude Active PK Battle", color = Color(0xFFF8FAFC), fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                                         }
                                     }
                                 }
@@ -4376,7 +4773,7 @@ fun VideoRoomSettingsSheet(
                                     if (isHost && announcementText.isNotBlank()) {
                                         Text(
                                             text = "Clear",
-                                            color = Color(0xFFFF8A80),
+                                            color = Color(0xFF94A3B8),
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold,
                                             modifier = Modifier.clickable {
@@ -4398,7 +4795,7 @@ fun VideoRoomSettingsSheet(
                                         colors = OutlinedTextFieldDefaults.colors(
                                             focusedTextColor = Color.White,
                                             unfocusedTextColor = Color.White,
-                                            focusedBorderColor = Color(0xFF4A5568),
+                                            focusedBorderColor = Color(0xFF475569),
                                             unfocusedBorderColor = Color.White.copy(alpha = 0.12f),
                                             focusedContainerColor = Color(0xFF12151E),
                                             unfocusedContainerColor = Color(0xFF12151E)
@@ -4424,12 +4821,12 @@ fun VideoRoomSettingsSheet(
                                                 Toast.makeText(context, "Announcement broadcasted! 📢", Toast.LENGTH_SHORT).show()
                                             }
                                         },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A281E)),
-                                        border = BorderStroke(1.dp, Color(0xFF8C7A3E)),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF232938)),
+                                        border = BorderStroke(1.dp, Color(0xFF334155)),
                                         shape = RoundedCornerShape(10.dp),
                                         modifier = Modifier.fillMaxWidth().height(40.dp)
                                     ) {
-                                        Text("Broadcast Announcement 📢", color = Color(0xFFFFD54F), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        Text("Broadcast Announcement", color = Color(0xFFF8FAFC), fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                                     }
                                 } else {
                                     Text(
@@ -4490,13 +4887,13 @@ fun VideoRoomSettingsSheet(
                                                 Toast.makeText(context, "Room is now LIVE! Video publishing enabled.", Toast.LENGTH_SHORT).show()
                                             },
                                             colors = ButtonDefaults.buttonColors(
-                                                containerColor = if (room.isHostLive) Color(0xFF1C3829) else Color(0xFF1F2432)
+                                                containerColor = if (room.isHostLive) Color(0xFF232938) else Color(0xFF1A1E29)
                                             ),
-                                            border = BorderStroke(1.dp, if (room.isHostLive) Color(0xFF2E8551) else Color.White.copy(alpha = 0.1f)),
+                                            border = BorderStroke(1.dp, if (room.isHostLive) Color(0xFF64748B) else Color.White.copy(alpha = 0.1f)),
                                             shape = RoundedCornerShape(10.dp),
                                             modifier = Modifier.weight(1f).height(40.dp)
                                         ) {
-                                            Text("🔴 Go Live", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (room.isHostLive) Color(0xFF69F0AE) else Color.LightGray)
+                                            Text("Go Live", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (room.isHostLive) Color(0xFFF8FAFC) else Color(0xFF94A3B8))
                                         }
 
                                         Button(
@@ -4514,13 +4911,13 @@ fun VideoRoomSettingsSheet(
                                                 Toast.makeText(context, "Stream paused. Room status set to OFFLINE.", Toast.LENGTH_SHORT).show()
                                             },
                                             colors = ButtonDefaults.buttonColors(
-                                                containerColor = if (!room.isHostLive) Color(0xFF332D1C) else Color(0xFF1F2432)
+                                                containerColor = if (!room.isHostLive) Color(0xFF232938) else Color(0xFF1F2432)
                                             ),
-                                            border = BorderStroke(1.dp, if (!room.isHostLive) Color(0xFF8C7838) else Color.White.copy(alpha = 0.1f)),
+                                            border = BorderStroke(1.dp, if (!room.isHostLive) Color(0xFF64748B) else Color.White.copy(alpha = 0.1f)),
                                             shape = RoundedCornerShape(10.dp),
                                             modifier = Modifier.weight(1f).height(40.dp)
                                         ) {
-                                            Text("⏳ Set Offline", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (!room.isHostLive) Color(0xFFFFD54F) else Color.LightGray)
+                                            Text("Set Offline", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (!room.isHostLive) Color(0xFFF8FAFC) else Color(0xFF94A3B8))
                                         }
                                     }
                                 }
@@ -4623,7 +5020,7 @@ fun VideoRoomSettingsSheet(
                                                     db.collection("rooms").document(room.id).update("privacy", key)
                                                 }
                                             },
-                                            colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF8B5CF6))
+                                            colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF94A3B8))
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text(label, color = if (isSelected) Color.White else Color.LightGray, fontSize = 12.sp, fontWeight = FontWeight.Medium)
@@ -4644,8 +5041,8 @@ fun VideoRoomSettingsSheet(
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text("🔒 Lock Room", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                             Text(
-                                                text = if (isRoomLocked) "Room is currently locked 🔒" else "Room is open for everyone",
-                                                color = if (isRoomLocked) Color(0xFFFF8A80) else Color.Gray,
+                                                text = if (isRoomLocked) "Room is currently locked" else "Room is open for everyone",
+                                                color = Color(0xFF94A3B8),
                                                 fontSize = 10.sp
                                             )
                                         }
@@ -4658,7 +5055,7 @@ fun VideoRoomSettingsSheet(
                                             },
                                             colors = SwitchDefaults.colors(
                                                 checkedThumbColor = Color.White,
-                                                checkedTrackColor = Color(0xFF388E3C)
+                                                checkedTrackColor = Color(0xFF475569)
                                             )
                                         )
                                     }
@@ -4674,8 +5071,8 @@ fun VideoRoomSettingsSheet(
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text("⭐ Room Premium (VIP)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                             Text(
-                                                text = if (isRoomVip) "Exclusive VIP room mode enabled ⭐" else "Standard room mode",
-                                                color = if (isRoomVip) Color(0xFFC084FC) else Color.Gray,
+                                                text = if (isRoomVip) "Exclusive VIP room mode enabled" else "Standard room mode",
+                                                color = Color(0xFF94A3B8),
                                                 fontSize = 10.sp
                                             )
                                         }
@@ -4693,7 +5090,7 @@ fun VideoRoomSettingsSheet(
                                             },
                                             colors = SwitchDefaults.colors(
                                                 checkedThumbColor = Color.White,
-                                                checkedTrackColor = Color(0xFF388E3C)
+                                                checkedTrackColor = Color(0xFF475569)
                                             )
                                         )
                                     }

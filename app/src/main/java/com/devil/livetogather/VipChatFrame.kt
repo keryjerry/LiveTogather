@@ -399,7 +399,7 @@ fun EntranceBannerBottomCrest(
 }
 
 // -------------------------------------------------------------
-// VIP ROOM CHAT BAR ENTRANCE COMPOSABLE (Matches Master 3D VIP Chat Frame Asset)
+// VIP ROOM CHAT BAR ENTRANCE COMPOSABLE (Clean Unbroken Luxury Pill)
 // -------------------------------------------------------------
 @Composable
 fun VipRoomChatBarEntry(
@@ -417,121 +417,129 @@ fun VipRoomChatBarEntry(
         else -> 1
     }
 
-    val bannerRes = getVipEntryBannerDrawable(effVip)
-
-    val vipBadgeLabel = when (effVip) {
-        1 -> "VIP 1"
-        2 -> "VIP 2"
-        3 -> "VIP 3"
-        4 -> "VIP 4"
-        5 -> "VIP 5"
-        else -> "VIP"
+    val vipBadgeLabel = when {
+        isFounder && vipLevel !in 1..5 -> "FOUNDER"
+        vipLevel in 1..5 -> "VIP $vipLevel"
+        else -> "MEMBER"
     }
 
-    val vipBadgeColor = when (effVip) {
-        1 -> Color(0xFF94A3B8)
-        2 -> Color(0xFFFFB300)
-        3 -> Color(0xFFA855F7)
-        4 -> Color(0xFFFF1744)
-        5 -> Color(0xFF00E5FF)
-        else -> Color(0xFFFFB300)
-    }
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(vertical = 3.dp)
-            .height(56.dp),
-        contentAlignment = Alignment.CenterStart
-    ) {
-        // Master 3D VIP Entry Banner Graphic
-        Image(
-            painter = painterResource(id = bannerRes),
-            contentDescription = "VIP Entry Banner",
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.FillBounds
+    val (vipBadgeColor, bgGradient, borderColor) = when (effVip) {
+        1 -> Triple(
+            Color(0xFF94A3B8),
+            listOf(Color(0xE60F172A), Color(0xD91E293B)),
+            Color(0x9994A3B8)
         )
+        2 -> Triple(
+            Color(0xFFFFB300),
+            listOf(Color(0xE61F1402), Color(0xD9382304)),
+            Color(0xAAFFB300)
+        )
+        3 -> Triple(
+            Color(0xFFA855F7),
+            listOf(Color(0xE61B0733), Color(0xD92E0D54)),
+            Color(0xAAA855F7)
+        )
+        4 -> Triple(
+            Color(0xFFFF1744),
+            listOf(Color(0xE62B040D), Color(0xD9450716)),
+            Color(0xAAFF5252)
+        )
+        5 -> Triple(
+            Color(0xFF00E5FF),
+            listOf(Color(0xE6041B29), Color(0xD9072E45)),
+            Color(0xAA00E5FF)
+        )
+        else -> Triple(
+            Color(0xFFFFB300),
+            listOf(Color(0xE6111827), Color(0xD91E293B)),
+            Color(0x8894A3B8)
+        )
+    }
 
-        // Content Row: Profile avatar set squarely inside the banner's aperture on left + details
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = Color.Transparent,
+        border = BorderStroke(1.dp, borderColor),
+        modifier = modifier.padding(vertical = 2.dp)
+    ) {
         Row(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(start = 14.dp, end = 16.dp),
+                .background(Brush.horizontalGradient(bgGradient))
+                .padding(horizontal = 10.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // User Avatar sitting inside the banner circular crest
+            // User Avatar inside crisp circular ring
             Box(
-                modifier = Modifier.size(34.dp),
+                modifier = Modifier
+                    .size(30.dp)
+                    .clip(CircleShape)
+                    .border(1.dp, vipBadgeColor, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 AsyncImage(
                     model = avatarUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
                     contentDescription = userName,
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clip(CircleShape),
+                    modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
             }
 
-            Spacer(modifier = Modifier.width(10.dp))
+            Spacer(modifier = Modifier.width(8.dp))
 
             Column(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f, fill = false),
                 verticalArrangement = Arrangement.Center
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = userName,
+                        text = userName.ifBlank { "Member" },
                         color = Color.White,
-                        fontSize = 12.sp,
+                        fontSize = 11.5.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(5.dp))
                     Surface(
-                        color = vipBadgeColor.copy(alpha = 0.25f),
+                        color = vipBadgeColor.copy(alpha = 0.22f),
                         shape = RoundedCornerShape(4.dp),
                         border = BorderStroke(0.6.dp, vipBadgeColor)
                     ) {
                         Text(
                             text = vipBadgeLabel,
                             color = vipBadgeColor,
-                            fontSize = 9.sp,
+                            fontSize = 8.sp,
                             fontWeight = FontWeight.ExtraBold,
                             modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                         )
                     }
-                }
-
-                if (badges.isNotEmpty()) {
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(3.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(vertical = 1.dp)
-                    ) {
-                        items(badges) { bRes ->
-                            Image(
-                                painter = painterResource(id = bRes),
-                                contentDescription = "Badge",
-                                modifier = Modifier.size(16.dp),
-                                contentScale = ContentScale.Fit
-                            )
+                    if (badges.isNotEmpty()) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            badges.take(3).forEach { bRes ->
+                                Image(
+                                    painter = painterResource(id = bRes),
+                                    contentDescription = "Badge",
+                                    modifier = Modifier.size(13.dp),
+                                    contentScale = ContentScale.Fit
+                                )
+                            }
                         }
                     }
                 }
 
-                if (actionText.isNotBlank()) {
-                    Text(
-                        text = actionText,
-                        color = Color(0xFFFFD700),
-                        fontSize = 10.5.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
+                Text(
+                    text = actionText.ifBlank { "entered the room" },
+                    color = Color(0xFFFDE68A),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }
@@ -576,23 +584,32 @@ fun VipStyledChatBubble(
             modifier = modifier.padding(vertical = 3.dp),
             verticalAlignment = Alignment.Top
         ) {
-            // 1. Profile Photo embedded inside VIP circular crest
+            // 1. Real User Profile Photo embedded inside VIP circular crest (ZERO fake/dummy Unsplash avatar!)
             Box(
                 modifier = Modifier
                     .size(36.dp)
                     .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.6f))
+                    .background(Brush.linearGradient(listOf(primaryColor.copy(alpha = 0.35f), accentColor.copy(alpha = 0.25f))))
                     .border(1.5.dp, Brush.sweepGradient(listOf(primaryColor, accentColor, primaryColor)), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                AsyncImage(
-                    model = avatarUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
-                    contentDescription = userName,
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clip(CircleShape),
-                    contentScale = ContentScale.Crop
-                )
+                if (avatarUrl.isNotBlank()) {
+                    AsyncImage(
+                        model = avatarUrl,
+                        contentDescription = userName,
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Text(
+                        text = userName.trim().take(1).uppercase().ifBlank { "U" },
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Black
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.width(6.dp))
@@ -778,288 +795,141 @@ fun OrnateLuxuryEntranceCard(
 ) {
     val isApexFounder = isFounder || userProfile?.isFounder() == true
     val isApexCeo = !isApexFounder && userProfile?.isCeo() == true
-    val effVip = if (vipLevel > 0) vipLevel else if (isApexFounder) 10 else 1
+    val effVip = if (vipLevel in 1..5) vipLevel else if (isApexFounder) 5 else 1
     val tierInfo = LevelBadgeSystem.getLevelTierInfo(level)
 
-    val infiniteTransition = rememberInfiniteTransition(label = "EntranceCardGlow")
-    val borderGlow by infiniteTransition.animateFloat(
-        initialValue = 0.85f,
-        targetValue = 1.0f,
-        animationSpec = infiniteRepeatable(tween(1000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "BorderGlow"
-    )
+    val (borderBrush, bgBrush, accentGold) = when {
+        isApexFounder -> Triple(
+            Brush.horizontalGradient(listOf(Color(0xFFFFD700), Color(0xFFFF1744), Color(0xFFFFEA00))),
+            Brush.horizontalGradient(listOf(Color(0xF22E0938), Color(0xE61B0522), Color(0xE6330C16))),
+            Color(0xFFFFEA00)
+        )
+        effVip == 5 -> Triple(
+            Brush.horizontalGradient(listOf(Color(0xFF00E5FF), Color(0xFF38BDF8), Color(0xFF00E5FF))),
+            Brush.horizontalGradient(listOf(Color(0xF2041B29), Color(0xE6082F49))),
+            Color(0xFF7DD3FC)
+        )
+        effVip == 4 -> Triple(
+            Brush.horizontalGradient(listOf(Color(0xFFFF5252), Color(0xFFFFD700), Color(0xFFFF5252))),
+            Brush.horizontalGradient(listOf(Color(0xF22D0610), Color(0xE6450A18))),
+            Color(0xFFFFD700)
+        )
+        effVip == 3 -> Triple(
+            Brush.horizontalGradient(listOf(Color(0xFFA855F7), Color(0xFFD8B4FE), Color(0xFFA855F7))),
+            Brush.horizontalGradient(listOf(Color(0xF21E0836), Color(0xE62E1065))),
+            Color(0xFFE9D5FF)
+        )
+        effVip == 2 -> Triple(
+            Brush.horizontalGradient(listOf(Color(0xFFFFB300), Color(0xFFFFE082), Color(0xFFFFB300))),
+            Brush.horizontalGradient(listOf(Color(0xF2271703), Color(0xE63B2306))),
+            Color(0xFFFFE082)
+        )
+        else -> Triple(
+            Brush.horizontalGradient(listOf(Color(0xFF64748B), Color(0xFFCBD5E1), Color(0xFF64748B))),
+            Brush.horizontalGradient(listOf(Color(0xF20F172A), Color(0xE61E293B))),
+            Color(0xFFE2E8F0)
+        )
+    }
 
-    Box(
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = Color.Transparent,
+        border = BorderStroke(1.2.dp, borderBrush),
+        shadowElevation = 6.dp,
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 6.dp, horizontal = 2.dp)
-            .shadow(
-                elevation = 12.dp,
-                shape = RoundedCornerShape(16.dp),
-                ambientColor = if (isApexFounder) Color(0xFFFF1744) else Color(0xFFFFD700),
-                spotColor = Color(0xFFFFD700)
-            )
+            .padding(vertical = 3.dp, horizontal = 2.dp)
     ) {
-        // If user has VIP 1..5, render the authentic 3D Entry Announcement Banner
-        val entryBannerRes = getVipEntryBannerDrawable(effVip)
-        if (entryBannerRes != 0) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(16f / 7.5f)
-                    .clip(RoundedCornerShape(16.dp))
-            ) {
-                Image(
-                    painter = painterResource(id = entryBannerRes),
-                    contentDescription = "VIP $effVip Entry Banner",
-                    contentScale = ContentScale.FillBounds,
-                    modifier = Modifier.fillMaxSize()
-                )
-                // Overlay user identity on the entry banner
-                Row(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    FlowingAvatarFrame(
-                        photoUrl = avatarUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
-                        frameId = "vip_suite_frame_$effVip",
-                        avatarSize = 46.dp,
-                        frameSize = 78.dp,
-                        vipLevel = effVip
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = userName,
-                            color = Color.White,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 15.sp,
-                            maxLines = 1
-                        )
-                        Text(
-                            text = "👑 Entered the room in VIP $effVip Majesty!",
-                            color = Color(0xFFFFD700),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp,
-                            maxLines = 1
-                        )
-                    }
-                }
-            }
-        } else {
-        // Main Container Card with Golden Filigree Metallic Border
-        Box(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(
-                    Brush.linearGradient(
-                        if (isApexFounder) listOf(Color(0xFF2E0938), Color(0xFF1B0522), Color(0xFF330C16))
-                        else listOf(Color(0xFF3B2207), Color(0xFF241403), Color(0xFF1A0E02))
-                    )
-                )
-                .border(
-                    BorderStroke(
-                        width = 2.2.dp,
-                        brush = Brush.linearGradient(
-                            if (isApexFounder) listOf(Color(0xFFFFD700), Color(0xFFFF1744), Color(0xFFFFEA00), Color(0xFFFFD700))
-                            else listOf(Color(0xFFFFE082), Color(0xFFFFB300), Color(0xFFFFD700), Color(0xFFFF8F00))
-                        )
-                    ),
-                    shape = RoundedCornerShape(16.dp)
-                )
-                .padding(horizontal = 12.dp, vertical = 12.dp)
+                .background(bgBrush)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .border(1.2.dp, accentGold, CircleShape),
+                contentAlignment = Alignment.Center
             ) {
-                // 1. User Avatar with Ornate Frame
-                FlowingAvatarFrame(
-                    photoUrl = avatarUrl,
-                    frameId = run {
-                        val af = userProfile?.activeFrame ?: ""
-                        if (af.isNotBlank()) af else if (isApexFounder) "frame_livetogather_founder" else "frame_imperial_gold"
-                    },
-                    avatarSize = 36.dp,
-                    frameSize = 54.dp,
-                    showMicEffect = false
+                AsyncImage(
+                    model = avatarUrl.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                    contentDescription = userName,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
                 )
+            }
 
-                Spacer(modifier = Modifier.width(10.dp))
+            Spacer(modifier = Modifier.width(10.dp))
 
-                // 2. Identity Column
-                Column(modifier = Modifier.weight(1f)) {
-                    // Line 1: Username with sparkles & crown
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Text(
+                        text = userName.ifBlank { "Member" },
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (isApexFounder) {
+                        Image(
+                            painter = painterResource(id = R.drawable.badge_livetogather_founder),
+                            contentDescription = "Founder Badge",
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.height(18.dp)
+                        )
+                    } else if (isApexCeo) {
+                        Image(
+                            painter = painterResource(id = R.drawable.badge_livetogather_ceo),
+                            contentDescription = "CEO Badge",
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.height(18.dp)
+                        )
+                    }
+                    Image(
+                        painter = painterResource(id = tierInfo.badgeDrawableRes),
+                        contentDescription = tierInfo.tierName,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.height(16.dp)
+                    )
+                    Surface(
+                        color = Color.Black.copy(alpha = 0.35f),
+                        shape = RoundedCornerShape(50),
+                        border = BorderStroke(0.7.dp, accentGold)
                     ) {
                         Text(
-                            text = "★ ${userName.uppercase()} ★",
-                            color = if (isApexFounder) Color(0xFFFFEA00) else Color(0xFFFFD700),
-                            fontSize = 13.5.sp,
+                            text = if (isApexFounder) "👑 FOUNDER" else "👑 VIP $effVip",
+                            fontSize = 8.5.sp,
                             fontWeight = FontWeight.Black,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            color = accentGold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
                         )
-                        if (isApexFounder) {
-                            Text(text = "👑", fontSize = 12.sp)
-                        }
                     }
-
-                    Spacer(modifier = Modifier.height(3.dp))
-
-                    // Line 2: 3D Badges Row (Founder, CEO, Tier, VIP)
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        if (isApexFounder) {
-                            Image(
-                                painter = painterResource(id = R.drawable.badge_livetogather_founder),
-                                contentDescription = "Founder Badge",
-                                contentScale = ContentScale.Fit,
-                                modifier = Modifier.height(26.dp)
-                            )
-                        }
-                        if (isApexCeo || isApexFounder) {
-                            Image(
-                                painter = painterResource(id = R.drawable.badge_livetogather_ceo),
-                                contentDescription = "CEO Badge",
-                                contentScale = ContentScale.Fit,
-                                modifier = Modifier.height(24.dp)
-                            )
-                        }
-                        Image(
-                            painter = painterResource(id = tierInfo.badgeDrawableRes),
-                            contentDescription = tierInfo.tierName,
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.height(22.dp)
-                        )
-                        Surface(
-                            color = if (isApexFounder) Color(0xFF8B1838) else Color(0xFFB45309),
-                            shape = RoundedCornerShape(50),
-                            border = BorderStroke(0.8.dp, BrandGold),
-                            modifier = Modifier.height(18.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = if (isApexFounder) "👑 VIP 10" else "👑 VIP $effVip",
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Black,
-                                    color = Color.White
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(3.dp))
-
-                    // Line 3: "entered the room" or custom broadcast arrival action subtitle
-                    Text(
-                        text = if (actionText.isNotBlank()) actionText
-                               else if (isApexFounder) "LiveTogather Founder has entered the room. Supreme Authority Active."
-                               else if (isApexCeo) "LiveTogather CEO has entered the room. Supreme Leadership Active."
-                               else "entered the room",
-                        color = if (isApexFounder) Color(0xFFFFD700) else Color(0xFFFFE082).copy(alpha = 0.95f),
-                        fontSize = if (actionText.length > 50) 10.5.sp else 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        lineHeight = 14.sp,
-                        softWrap = true,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis
-                    )
                 }
 
-                Spacer(modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.height(2.dp))
 
-                // 3. Right Icon: Audio / Mic wave button (matching Image 2)
-                Box(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .clip(CircleShape)
-                        .background(
-                            Brush.linearGradient(
-                                if (isApexFounder) listOf(Color(0xFFFF1744), Color(0xFF8B1838))
-                                else listOf(Color(0xFF7C3AED), Color(0xFF4F46E5))
-                            )
-                        )
-                        .border(1.dp, BrandGold.copy(alpha = 0.8f), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Mic,
-                        contentDescription = "Voice",
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
+                Text(
+                    text = when {
+                        actionText.isNotBlank() -> actionText
+                        isApexFounder -> "LiveTogather Founder has entered the room"
+                        isApexCeo -> "LiveTogather CEO has entered the room"
+                        else -> "entered the room ✨"
+                    },
+                    color = accentGold,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
-        }
-
-        // Top Golden Winged Crest with Emblem Number
-        EntranceBannerTopCrest(
-            emblemText = if (isApexFounder) "👑" else "$effVip",
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .offset(y = (-8).dp)
-        )
-
-        // Bottom Golden Winged Crest with Emblem Number
-        EntranceBannerBottomCrest(
-            emblemText = if (isApexFounder) "👑" else "$effVip",
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .offset(y = 8.dp)
-        )
-
-        // 4 Golden Corner Ornaments
-        OrnateCornerFlourish(
-            isTop = true,
-            isLeft = true,
-            primaryColor = Color(0xFFFFD700),
-            accentColor = Color(0xFFFF8F00),
-            gemColor = Color(0xFFFFEA00),
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .offset(x = (-3).dp, y = (-3).dp)
-        )
-        OrnateCornerFlourish(
-            isTop = true,
-            isLeft = false,
-            primaryColor = Color(0xFFFFD700),
-            accentColor = Color(0xFFFF8F00),
-            gemColor = Color(0xFFFFEA00),
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .offset(x = 3.dp, y = (-3).dp)
-        )
-        OrnateCornerFlourish(
-            isTop = false,
-            isLeft = true,
-            primaryColor = Color(0xFFFFD700),
-            accentColor = Color(0xFFFF8F00),
-            gemColor = Color(0xFFFFEA00),
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .offset(x = (-3).dp, y = 3.dp)
-        )
-        OrnateCornerFlourish(
-            isTop = false,
-            isLeft = false,
-            primaryColor = Color(0xFFFFD700),
-            accentColor = Color(0xFFFF8F00),
-            gemColor = Color(0xFFFFEA00),
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .offset(x = 3.dp, y = 3.dp)
-        )
         }
     }
 }
@@ -1432,9 +1302,31 @@ fun VipCenterDialog(
                 },
                 onSuccess = {
                     showPaymentModal = false
-                    pendingVipLevels = pendingVipLevels + currentTier.level
+                    val vipLvl = currentTier.level
+                    val now = System.currentTimeMillis()
+                    val thirtyDaysMs = 30L * 24 * 60 * 60 * 1000
+                    val expiry = now + thirtyDaysMs
+                    val updates = getVipSuiteUpdates(vipLvl, equip = true).toMutableMap()
+                    updates["vip_level"] = vipLvl
+                    updates["profile_vip_level"] = vipLvl
+                    updates["profile_plan"] = "VIP $vipLvl"
+                    updates["vip_expires_at"] = expiry
+                    updates["hasRecharged"] = true
+                    updates["vipExpiries.vip_$vipLvl"] = expiry
+                    db.collection("users").document(vipUser.uid).update(updates)
+                    val prefs = context.getSharedPreferences("livetogather_user_prefs", android.content.Context.MODE_PRIVATE)
+                    prefs.edit()
+                        .putString("profile_active_frame", "vip_suite_frame_$vipLvl")
+                        .putString("profile_active_border_frame", "vip_border_$vipLvl")
+                        .putString("profile_active_chat_frame", getVipChatFrameForLevel(vipLvl))
+                        .putInt("profile_vip_level", vipLvl)
+                        .putString("profile_plan", "VIP $vipLvl")
+                        .apply()
+                    val updatedUser = vipUser.applyVipSuite(vipLvl, equip = true)
+                    liveUser = updatedUser
+                    onProfileUpdated(updatedUser)
                     checkoutPackage = null
-                    Toast.makeText(context, "VIP purchase submitted and pending admin approval.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "👑 Google Play Payment Successful! VIP ${currentTier.name} 30-Day Suite Activated!", Toast.LENGTH_LONG).show()
                 }
             )
         }
@@ -1571,7 +1463,9 @@ fun VipCenterDialog(
                                             text = "Price: ${currentTier.formattedPrice} / 30 Days",
                                             color = Color(0xFFFFD700),
                                             fontWeight = FontWeight.ExtraBold,
-                                            fontSize = 13.5.sp
+                                            fontSize = 13.sp,
+                                            maxLines = 1,
+                                            softWrap = false
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Surface(
@@ -1990,9 +1884,10 @@ fun VipCenterDialog(
                 val hasPurchasedTier = vipUser.hasActiveVipTier(currentTier.level)
                 val remainingDays = vipUser.getVipTierRemainingDays(currentTier.level)
 
-                val isWorn = (vipUser.activeFrame == currentTier.frameId &&
-                    vipUser.activeChatFrame == currentTier.chatFrameId) ||
-                    (vipUser.activeFrame == currentTier.frameId)
+                val isWorn = vipUser.getVipLevel() == currentTier.level &&
+                    (vipUser.activeFrame.contains("vip${currentTier.level}", ignoreCase = true) ||
+                     vipUser.activeFrame.contains("vip_suite_frame_${currentTier.level}", ignoreCase = true) ||
+                     vipUser.activeProfileBorderFrame == "vip_border_${currentTier.level}")
 
                 Surface(
                     color = Color(0xFF08060D),
@@ -2091,50 +1986,33 @@ fun VipCenterDialog(
                             }
                             Button(
                                 onClick = {
+                                    val prefs = context.getSharedPreferences("livetogather_user_prefs", android.content.Context.MODE_PRIVATE)
                                     if (isWorn) {
                                         // Unwear: Remove VIP dressing up suite
-                                        val updates = mapOf(
-                                            "activeFrame" to "",
-                                            "activeChatFrame" to "",
-                                            "activeChatBar" to "",
-                                            "activeProfileArch" to "",
-                                            "activeProfileCover" to "",
-                                            "activeEntranceEffect" to "",
-                                            "activeProfileBorderFrame" to ""
-                                        )
+                                        val updates = getVipSuiteUpdates(currentTier.level, equip = false)
                                         db.collection("users").document(vipUser.uid).update(updates)
-                                        val updatedUser = vipUser.copy(
-                                            activeFrame = "",
-                                            activeChatFrame = "",
-                                            activeProfileBorderFrame = ""
-                                        )
+                                        prefs.edit()
+                                            .putString("profile_active_frame", "")
+                                            .putString("profile_active_border_frame", "")
+                                            .putString("profile_active_chat_frame", "")
+                                            .apply()
+                                        val updatedUser = vipUser.applyVipSuite(currentTier.level, equip = false)
+                                        liveUser = updatedUser
                                         onProfileUpdated(updatedUser)
                                         Toast.makeText(context, "VIP Suite Unworn (हटा दिया गया)", Toast.LENGTH_SHORT).show()
                                     } else {
-                                        // Wear: Equip entire VIP suite
-                                        val newFrame = currentTier.frameId
-                                        val newChatFrame = currentTier.chatFrameId
-                                        val newChatBar = "chat_sword_vip_${currentTier.level}"
-                                        val newArch = "arch_vip_${currentTier.level}"
-                                        val newCover = "cover_vip_${currentTier.level}"
-                                        val newEntrance = "entrance_vip_${currentTier.level}"
-                                        val newBorder = "vip_border_${currentTier.level}"
-
-                                        val updates = mapOf(
-                                            "activeFrame" to newFrame,
-                                            "activeChatFrame" to newChatFrame,
-                                            "activeChatBar" to newChatBar,
-                                            "activeProfileArch" to newArch,
-                                            "activeProfileCover" to newCover,
-                                            "activeEntranceEffect" to newEntrance,
-                                            "activeProfileBorderFrame" to newBorder
-                                        )
+                                        // Wear: Equip entire VIP suite (Frame, Border, Chat Frame, Arch, Cover, Entrance, Level)
+                                        val updates = getVipSuiteUpdates(currentTier.level, equip = true)
                                         db.collection("users").document(vipUser.uid).update(updates)
-                                        val updatedUser = vipUser.copy(
-                                            activeFrame = newFrame,
-                                            activeChatFrame = newChatFrame,
-                                            activeProfileBorderFrame = newBorder
-                                        )
+                                        prefs.edit()
+                                            .putString("profile_active_frame", "vip_suite_frame_${currentTier.level}")
+                                            .putString("profile_active_border_frame", "vip_border_${currentTier.level}")
+                                            .putString("profile_active_chat_frame", getVipChatFrameForLevel(currentTier.level))
+                                            .putInt("profile_vip_level", currentTier.level)
+                                            .putString("profile_plan", "VIP ${currentTier.level}")
+                                            .apply()
+                                        val updatedUser = vipUser.applyVipSuite(currentTier.level, equip = true)
+                                        liveUser = updatedUser
                                         onProfileUpdated(updatedUser)
                                         Toast.makeText(context, "👑 ${currentTier.name} Suite Worn (वियर हो गया)!", Toast.LENGTH_SHORT).show()
                                     }
@@ -2178,7 +2056,9 @@ fun VipCenterDialog(
                                 Text(
                                     text = "Renew Subscription • ${currentTier.formattedPrice}",
                                     fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    softWrap = false
                                 )
                             }
                         }

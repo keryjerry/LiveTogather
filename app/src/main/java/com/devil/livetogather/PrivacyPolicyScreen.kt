@@ -183,9 +183,10 @@ fun PrivacyPolicyScreen(onBack: () -> Unit) {
 
                     PolicyMetaItem(label = "Application", value = "LiveTogather")
                     PolicyMetaItem(label = "Organization", value = "AYAD Creations")
+                    PolicyMetaItem(label = "Official Website", value = "ayadcreation.online")
                     PolicyMetaItem(label = "Lead Developer", value = "MD Dilshad Warsi")
                     PolicyMetaItem(label = "Official Inquiries", value = "servicesecure822@gmail.com")
-                    PolicyMetaItem(label = "Effective Date", value = "October 15, 2026")
+                    PolicyMetaItem(label = "Effective Date", value = "November 12, 2026")
                     PolicyMetaItem(label = "Platform", value = "Android (Native Compose)")
                 }
             }
@@ -222,7 +223,7 @@ fun PrivacyPolicyScreen(onBack: () -> Unit) {
                 icon = Icons.Default.FolderShared
             ) {
                 Text(
-                    text = "To power dynamic matchmaking, audio hangout presence, and safe user interactions, LiveTogather collects specific categories of user information:",
+                    text = "To deliver dynamic proximity matchmaking, live audio/video broadcast rooms, secure direct messaging, and interactive in-room gaming, LiveTogather collects the following categories of data:",
                     color = PolicyTextLight,
                     fontSize = 13.sp,
                     lineHeight = 19.sp
@@ -231,43 +232,108 @@ fun PrivacyPolicyScreen(onBack: () -> Unit) {
 
                 PolicySubclauseBox(
                     title = "1. Profile & Account Information",
-                    description = "When you create or update your profile, we collect your chosen display name, age, gender identity, dating intent and preferences (\"Interested In\"), professional title, education, city, location name, personal bio quote, lifestyle tags, zodiac sign, languages spoken, and communication habits."
+                    description = "When setting up your profile, we collect your display name, age, gender identity, dating intent and preferences (\"Interested In\"), occupation, education, city, location name, bio quote, lifestyle tags, zodiac sign, languages spoken, and communication habits."
                 )
 
                 PolicySubclauseBox(
-                    title = "2. Photos & Media Content",
-                    description = "We store profile pictures and user-submitted multimedia posts published to the Moments feed, including associated captions, likes count, and upload timestamps. Media is compressed and stored securely to facilitate visual identity without capturing unrequested background camera footage."
+                    title = "2. Photos, Avatars & Moments Media",
+                    description = "We securely store profile pictures, luxury avatar frames, and user-submitted multimedia posts published to the Moments feed, including captions, likes count, and upload timestamps. Media files are compressed and securely hosted on Google Cloud Storage."
                 )
 
                 PolicySubclauseBox(
-                    title = "3. 1-on-1 Direct Chats & Conversations",
-                    description = "When matched members communicate via direct chat, we store message strings, transmission timestamps, delivery statuses, sender IDs, recipient IDs, and read receipts. Direct chat messages remain private between matched participants."
+                    title = "3. 1-on-1 Direct Chats & Messaging",
+                    description = "When matched members communicate via direct chat, we store message texts, transmission timestamps, delivery statuses, sender and recipient UIDs, and read receipts. Chat content remains private between the conversation participants."
                 )
 
                 PolicySubclauseBox(
-                    title = "4. Audio Hangout Activity & Intent Room Presence",
-                    description = "When joining or hosting an Intent Room (such as Free Tonight, Coffee Catchup, Late Night Talks, or Gaming Hubs), we track your active presence marker, listener/speaker role, mute status, and synchronized audio playback state in real-time. Audio streams are ephemeral and transmitted live for communication purposes."
+                    title = "4. Real-Time Room Activity & Presence",
+                    description = "When hosting or joining an Intent Room (Audio or Video Hangout), we track your active presence marker, role (host, co-host, speaker, or listener), mute state, and synchronized background music queue. Audio and video streams are live and ephemeral."
                 )
 
                 PolicySubclauseBox(
                     title = "5. Geolocation Data (GPS)",
-                    description = "With your explicit runtime consent, we collect your precise geographical coordinates (latitude and longitude) and locality name to compute proximity distances to nearby members and filter local Intent Rooms. Location is never continuously tracked in the background when the app is closed."
+                    description = "With your explicit runtime consent, we collect precise latitude and longitude coordinates and locality names to compute proximity distances to nearby members and filter local rooms. Location is never tracked in the background when the application is closed."
                 )
 
                 PolicySubclauseBox(
-                    title = "6. Device Identifiers & Technical Telemetry",
-                    description = "For persistent account authentication, fraud prevention, and session recovery across app restarts, we collect your hardware device identifier (Android ID), device brand and model, operating system version, and anonymous crash telemetry."
+                    title = "6. Device Identifiers & Hardware Telemetry",
+                    description = "To ensure persistent authentication, prevent fraud, enforce device-level bans against abusive actors, and recover sessions across app restarts, we collect hardware device identifiers (Android ID), device brand/model, OS version, and anonymous crash telemetry."
+                )
+
+                PolicySubclauseBox(
+                    title = "7. Push Notification Tokens",
+                    description = "We generate and store anonymous Firebase Cloud Messaging (FCM) registration tokens to deliver real-time notifications for incoming direct messages, room invitations, gift receipts, and security alerts."
                 )
             }
 
-            // SECTION 2: HOW WE USE INFORMATION
+            // SECTION 2: REAL-TIME AUDIO & VIDEO STREAMING (AGORA RTC)
             PolicySectionCard(
                 sectionNumber = "02",
+                sectionTitle = "Real-Time Audio & Video Streaming (Agora RTC)",
+                icon = Icons.Default.Videocam
+            ) {
+                Text(
+                    text = "LiveTogather features ultra-low latency real-time audio and video communications powered by the industry-standard Agora RTC SDK:",
+                    color = PolicyTextLight,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                PolicySubclauseBox(
+                    title = "1. Live Ephemeral Transmission",
+                    description = "All live voice conversations, video broadcasts, and microphone links inside Intent Rooms are transmitted dynamically through Agora RTC infrastructure in real-time. Media streams are ephemeral and delivered solely for active participants in the room."
+                )
+
+                PolicySubclauseBox(
+                    title = "2. No Unauthorized Server Recording",
+                    description = "AYAD Creations does NOT continuously record, archive, or store your live audio or video streams on our servers. When you leave a broadcast room or end a call, the live media session terminates immediately."
+                )
+
+                PolicySubclauseBox(
+                    title = "3. Cryptographic Token Protection",
+                    description = "RTC room access is protected by dynamic, time-limited cryptographic tokens (RtcTokenBuilder2) generated securely per user session to prevent unauthorized eavesdropping or room hijacking."
+                )
+            }
+
+            // SECTION 3: PROFILE VERIFICATION & IDENTITY AUTHENTICITY (CAMERAX & AUDIO)
+            PolicySectionCard(
+                sectionNumber = "03",
+                sectionTitle = "Profile Verification & Anti-Catfishing Authenticity",
+                icon = Icons.Default.CameraAlt
+            ) {
+                Text(
+                    text = "To protect our community from impersonation, catfishing, bots, and fraudulent profiles, LiveTogather provides advanced user verification mechanisms:",
+                    color = PolicyTextLight,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                PolicySubclauseBox(
+                    title = "1. Real-Time Front-Camera Selfie Verification",
+                    description = "Users may voluntarily undergo photo verification via an interactive circular front-camera capture (powered by CameraX). The real-time selfie is verified against existing profile photos to award the official \"Photo-Verified ★\" badge."
+                )
+
+                PolicySubclauseBox(
+                    title = "2. Voice Sample Badge Verification",
+                    description = "Users can record a short authentic voice greeting using the microphone to obtain a verified voice badge. Voice samples are accessible on your profile for prospective matches to hear your real voice."
+                )
+
+                PolicySubclauseBox(
+                    title = "3. Verification Data Security",
+                    description = "Verification media is stored securely on encrypted Google Cloud Storage and is never shared, leased, or sold to third-party facial recognition brokers or commercial AI trainers."
+                )
+            }
+
+            // SECTION 4: HOW WE USE INFORMATION
+            PolicySectionCard(
+                sectionNumber = "04",
                 sectionTitle = "How We Use Information",
                 icon = Icons.Default.SettingsSuggest
             ) {
                 Text(
-                    text = "All collected data is utilized exclusively for core functional requirements and safety protocols within the LiveTogather platform:",
+                    text = "All collected data is utilized exclusively for core functional requirements and community safety protocols within the LiveTogather platform:",
                     color = PolicyTextLight,
                     fontSize = 13.sp,
                     lineHeight = 19.sp
@@ -280,7 +346,7 @@ fun PrivacyPolicyScreen(onBack: () -> Unit) {
                 )
 
                 PolicySubclauseBox(
-                    title = "2. Real-Time Audio Hangout Synchronization",
+                    title = "2. Real-Time Room Synchronization",
                     description = "We synchronize live listener lists, active host statuses, participant queues, and collaborative background music streaming across all participants inside an intent room."
                 )
 
@@ -290,14 +356,14 @@ fun PrivacyPolicyScreen(onBack: () -> Unit) {
                 )
 
                 PolicySubclauseBox(
-                    title = "4. Community Safety & Ban Enforcement",
-                    description = "We use device identifiers and profile data to detect abusive behavior, prevent spam or harassment, maintain platform integrity, and enforce device-level bans against bad actors who violate Community Guidelines."
+                    title = "4. Community Safety & Behavioral Scoring",
+                    description = "We compute user safety scores through our HonorSystem to detect spam, harassment, or abusive conduct, enforce automated keyword masking, and apply device-level bans against bad actors who violate Community Guidelines."
                 )
             }
 
-            // SECTION 3: DATA STORAGE, FIREBASE & SECURITY
+            // SECTION 5: DATA STORAGE, FIREBASE & SECURITY
             PolicySectionCard(
-                sectionNumber = "03",
+                sectionNumber = "05",
                 sectionTitle = "Data Storage, Firebase Infrastructure & Security",
                 icon = Icons.Default.CloudQueue
             ) {
@@ -330,10 +396,140 @@ fun PrivacyPolicyScreen(onBack: () -> Unit) {
                 )
             }
 
-            // SECTION 4: DEVICE PERMISSIONS
+            // SECTION 6: GOOGLE PLAY IN-APP BILLING & FINANCIAL SECURITY
             PolicySectionCard(
-                sectionNumber = "04",
-                sectionTitle = "Device Permissions",
+                sectionNumber = "06",
+                sectionTitle = "Google Play In-App Billing & Payment Exclusivity",
+                icon = Icons.Default.Payments
+            ) {
+                Text(
+                    text = "LiveTogather enforces 100% compliance with Google Play Developer Program Policies for all in-app purchases and digital goods:",
+                    color = PolicyTextLight,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                PolicySubclauseBox(
+                    title = "1. Exclusive Google Play Billing Integration",
+                    description = "All in-app purchases within LiveTogather (including Diamond Packs, VIP Memberships, and Luxury Avatar Frames) are processed exclusively through Google Play In-App Billing (com.android.billingclient). The application does NOT contain, use, or display any direct UPI QR codes, personal UPI IDs, or custom off-store payment gateways."
+                )
+
+                PolicySubclauseBox(
+                    title = "2. Absolute Financial Data Privacy",
+                    description = "AYAD Creations does NOT receive, process, or store your credit/debit card numbers, UPI PINs, bank accounts, or CVV codes for purchases. All billing transactions are encrypted and secured directly on Google Play's PCI-DSS compliant infrastructure."
+                )
+
+                PolicySubclauseBox(
+                    title = "3. Virtual Goods & In-App Economy",
+                    description = "Diamonds and coins purchased inside LiveTogather are strictly digital goods intended for interactive room gifting, profile customization, and in-game participation. All purchases are final and governed by Google Play Refund Policies."
+                )
+            }
+
+            // SECTION 7: CREATOR EARNINGS & PAYOUT TERMS
+            PolicySectionCard(
+                sectionNumber = "07",
+                sectionTitle = "Creator Earnings & Payout Terms",
+                icon = Icons.Default.CardGiftcard
+            ) {
+                Text(
+                    text = "LiveTogather supports an authentic creator economy where live audio and video broadcasters can earn real-world rewards from audience gifts:",
+                    color = PolicyTextLight,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                PolicySubclauseBox(
+                    title = "1. Virtual Gifts & Earning Wallet Accumulation",
+                    description = "When room listeners appreciate your broadcast, they send animated virtual gifts powered by diamonds. These gifts convert into accumulated host commissions inside your dedicated Earning Wallet according to established platform commission tiers."
+                )
+
+                PolicySubclauseBox(
+                    title = "2. Fixed Monthly Payout Cycle (7th - 10th of Every Month)",
+                    description = "LiveTogather operates on a regular, predictable Monthly Payout Cycle. All eligible creator earnings accrued during the previous calendar month are audited and transferred directly to creators' verified Indian Bank Accounts or UPI IDs between the 7th and 10th of every month."
+                )
+
+                PolicySubclauseBox(
+                    title = "3. 100% Voluntary (Optional) Participation",
+                    description = "Creator monetization is completely voluntary. Users who stream, join audio/video rooms, play casual games, or chat for personal fun and friendship are NEVER required to submit any banking, PAN, or financial details. Financial credentials are only requested from creators who actively choose to withdraw their virtual earnings as real money."
+                )
+
+                PolicySubclauseBox(
+                    title = "4. Government & KYC Compliance (PAN Card Requirement)",
+                    description = "To comply with Indian statutory financial regulations, tax laws, and anti-money laundering (AML) guidelines, creators requesting cash withdrawals must provide a valid Indian PAN Card alongside a matching verified Bank Account (with IFSC) or UPI ID. This securely verifies the creator's identity for lawful disbursements."
+                )
+
+                PolicySubclauseBox(
+                    title = "5. Transparent Tax Compliance & Friendly Processing",
+                    description = "All payouts are processed transparently in accordance with applicable tax regulations (such as TDS guidelines). Submitting a valid PAN ensures your transfers are processed seamlessly at standard statutory rates without unnecessary withholding deductions. The process is straightforward, reassuring, and designed to protect your hard-earned rewards."
+                )
+            }
+
+            // SECTION 8: IN-ROOM MULTIPLAYER GAMES (CARROM & MINI-GAMES)
+            PolicySectionCard(
+                sectionNumber = "08",
+                sectionTitle = "In-Room Multiplayer Games & Entertainment Mechanics",
+                icon = Icons.Default.SportsEsports
+            ) {
+                Text(
+                    text = "LiveTogather integrates interactive multiplayer casual board games (such as Carrom) directly inside audio and video hangout rooms:",
+                    color = PolicyTextLight,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                PolicySubclauseBox(
+                    title = "1. Real-Time Board State Synchronization",
+                    description = "Multiplayer game physics, striker coordinates, puck positions, turn timers, and player join events are synchronized across participants via real-time cloud room documents."
+                )
+
+                PolicySubclauseBox(
+                    title = "2. Virtual Currency Wagering (Pure Entertainment)",
+                    description = "In-game stakes and wagers using coins or diamonds are purely virtual entertainment mechanics intended to foster social competition. These virtual tokens hold no external fiat currency value and cannot be withdrawn as real-world gambling winnings."
+                )
+
+                PolicySubclauseBox(
+                    title = "3. Fair Play & Anti-Cheat Telemetry",
+                    description = "We log game turn durations and match outcomes to detect automated bots, unnatural click intervals, or game tampering to ensure a fair playing field for all users."
+                )
+            }
+
+            // SECTION 9: THIRD-PARTY AUTHENTICATION & SERVICE PROVIDERS
+            PolicySectionCard(
+                sectionNumber = "09",
+                sectionTitle = "Third-Party Authentication & Service Providers",
+                icon = Icons.Default.AccountCircle
+            ) {
+                Text(
+                    text = "LiveTogather enables frictionless login via trusted identity providers and integrates specialized infrastructure SDKs:",
+                    color = PolicyTextLight,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                PolicySubclauseBox(
+                    title = "1. Google Sign-In Data",
+                    description = "When signing in with Google, we access your basic public profile (name, verified email address, profile picture URL, and Google Account ID). We never access your Google Drive, Gmail messages, or search history."
+                )
+
+                PolicySubclauseBox(
+                    title = "2. Facebook (Meta) Login Data",
+                    description = "When signing in with Facebook, we retrieve your public profile name, public avatar, and Facebook User ID solely to authenticate your account. We never post to your timeline or access your friend lists."
+                )
+
+                PolicySubclauseBox(
+                    title = "3. Essential SDK Partners",
+                    description = "We partner exclusively with reputable industry service providers: Google Firebase (database, auth, storage), Agora RTC (audio/video streaming), and Google Play Services (billing & security). All partners operate under strict enterprise data processing agreements."
+                )
+            }
+
+            // SECTION 10: DEVICE PERMISSIONS & HARDWARE ACCESS
+            PolicySectionCard(
+                sectionNumber = "10",
+                sectionTitle = "Device Permissions & Hardware Access",
                 icon = Icons.Default.PermDeviceInformation
             ) {
                 Text(
@@ -345,29 +541,69 @@ fun PrivacyPolicyScreen(onBack: () -> Unit) {
                 Spacer(modifier = Modifier.height(10.dp))
 
                 PolicySubclauseBox(
-                    title = "1. Location (ACCESS_FINE_LOCATION & ACCESS_COARSE_LOCATION)",
+                    title = "1. Camera (CAMERA)",
+                    description = "Used for real-time front-camera selfie verification (CameraX) and capturing photos for your profile and Moments feed. The camera is never accessed in the background."
+                )
+
+                PolicySubclauseBox(
+                    title = "2. Microphone (RECORD_AUDIO & MODIFY_AUDIO_SETTINGS)",
+                    description = "Required to broadcast your voice when speaking in audio/video hangouts, recording voice verification greetings, and engaging with room participants. The microphone is never recorded in the background."
+                )
+
+                PolicySubclauseBox(
+                    title = "3. Bluetooth (BLUETOOTH_CONNECT)",
+                    description = "Used to seamlessly route high-fidelity hangout audio to your connected wireless Bluetooth headphones, headsets, or car audio systems."
+                )
+
+                PolicySubclauseBox(
+                    title = "4. Location (ACCESS_FINE_LOCATION & ACCESS_COARSE_LOCATION)",
                     description = "Used to determine your approximate or precise city and coordinates so that nearby profiles and local Intent Rooms can be discovered. Never tracked when the application is completely closed."
                 )
 
                 PolicySubclauseBox(
-                    title = "2. Media & Storage (READ_MEDIA_IMAGES / READ_EXTERNAL_STORAGE)",
+                    title = "5. Media & Storage (READ_MEDIA_IMAGES / READ_EXTERNAL_STORAGE)",
                     description = "Required when you intentionally pick a picture from your device gallery to set your profile avatar or publish a photo to the Moments feed."
                 )
 
                 PolicySubclauseBox(
-                    title = "3. Microphone (RECORD_AUDIO & MODIFY_AUDIO_SETTINGS)",
-                    description = "Required solely to capture and transmit your voice when you are an active speaker or host in a LiveTogather Audio Hangout room. The microphone is never accessed in the background."
-                )
-
-                PolicySubclauseBox(
-                    title = "4. Notifications (POST_NOTIFICATIONS)",
-                    description = "Used to alert you in real-time when you receive a new match, an incoming 1-on-1 chat message, or when followed creators initiate an audio hangout broadcast."
+                    title = "6. Notifications (POST_NOTIFICATIONS)",
+                    description = "Used to alert you in real-time when you receive a new match, an incoming 1-on-1 chat message, a virtual gift, or when followed creators initiate an audio hangout broadcast."
                 )
             }
 
-            // SECTION 5: AGE RESTRICTION (STRICTLY 18+ ONLY)
+            // SECTION 11: USER-GENERATED CONTENT (UGC) & COMMUNITY SAFETY
             PolicySectionCard(
-                sectionNumber = "05",
+                sectionNumber = "11",
+                sectionTitle = "User-Generated Content (UGC) & Community Safety",
+                icon = Icons.Default.Shield
+            ) {
+                Text(
+                    text = "LiveTogather maintains zero tolerance for objectionable content, harassment, hate speech, explicit sexual material, or fraudulent behavior:",
+                    color = PolicyTextLight,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                PolicySubclauseBox(
+                    title = "1. Automated Profanity & Abuse Filter",
+                    description = "Our integrated AbuseFilterEngine actively scans text messages in 1-on-1 chats and live room feeds, automatically detecting and masking abusive keywords, offensive language, and harassment in real time."
+                )
+
+                PolicySubclauseBox(
+                    title = "2. In-App Immediate User Reporting & Blocking",
+                    description = "Users can report any offensive participant, inappropriate photo, or abusive message directly within the app with a single tap. Blocking a user instantly prevents further messaging and room interactions."
+                )
+
+                PolicySubclauseBox(
+                    title = "3. 24-Hour Moderation Action & Permanent Bans",
+                    description = "All user reports are investigated by our safety team within 24 hours. Violators face immediate content removal, account suspension, and permanent hardware device-level bans."
+                )
+            }
+
+            // SECTION 12: AGE RESTRICTION (STRICTLY 18+ ONLY)
+            PolicySectionCard(
+                sectionNumber = "12",
                 sectionTitle = "Age Restriction (Strictly 18+ Only)",
                 icon = Icons.Default.Warning
             ) {
@@ -408,14 +644,14 @@ fun PrivacyPolicyScreen(onBack: () -> Unit) {
                 )
             }
 
-            // SECTION 6: USER RIGHTS & COMPLETE ACCOUNT DELETION
+            // SECTION 13: USER RIGHTS & COMPLETE ACCOUNT DELETION
             PolicySectionCard(
-                sectionNumber = "06",
+                sectionNumber = "13",
                 sectionTitle = "User Rights & Complete Account / Data Deletion",
                 icon = Icons.Default.DeleteSweep
             ) {
                 Text(
-                    text = "You maintain full autonomy and legal rights over your personal data at all times, including the rights to access, rectify, or completely delete your personal information:",
+                    text = "You maintain full autonomy and legal rights over your personal data at all times, including the rights to access, rectify, export, or completely delete your personal information:",
                     color = PolicyTextLight,
                     fontSize = 13.sp,
                     lineHeight = 19.sp
@@ -424,12 +660,12 @@ fun PrivacyPolicyScreen(onBack: () -> Unit) {
 
                 PolicySubclauseBox(
                     title = "1. In-App Immediate Self-Service Deletion",
-                    description = "You can delete your account instantly at any time from within the application. Simply open the Profile tab, navigate to the Safety & Account section at the bottom, and tap \"Delete Account\". This permanently removes your profile record, matches, moments, and cached records."
+                    description = "You can delete your account instantly at any time from within the application. Simply open the Profile tab, navigate to the Safety & Account section at the bottom, and tap \"Delete Account\". This permanently purges your profile, matches, moments, and chat records from live servers."
                 )
 
                 PolicySubclauseBox(
-                    title = "2. Complete Data Purge via Dedicated Email",
-                    description = "For full archival data purges, server audit logs, or manual data erasure verification, you can contact our dedicated data deletion desk directly via email at:"
+                    title = "2. Online Data Deletion Desk & Dedicated Email",
+                    description = "For external data purges, server audit logs, or manual data erasure verification without opening the app, you can submit a deletion request via our official portal or email:"
                 )
 
                 Surface(
@@ -440,18 +676,29 @@ fun PrivacyPolicyScreen(onBack: () -> Unit) {
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Language, contentDescription = null, tint = PolicyGold, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "https://ayadcreation.online/data-deletion",
+                                color = PolicyGold,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Email, contentDescription = null, tint = PolicyGold, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "servicesecure822@gmail.com",
                                 color = PolicyGold,
-                                fontSize = 13.sp,
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Subject: \"LiveTogather Data Deletion Request\"\nInclude your registered display name or UID. Deletion requests are processed and verified within 30 business days.",
+                            text = "Subject: \"LiveTogather Data Deletion Request\"\nInclude your registered display name or UID. Deletion requests are processed and verified within 48 to 72 business hours.",
                             color = PolicyTextLight,
                             fontSize = 11.sp,
                             lineHeight = 16.sp
@@ -460,14 +707,14 @@ fun PrivacyPolicyScreen(onBack: () -> Unit) {
                 }
             }
 
-            // SECTION 7: DEVELOPER & ORGANIZATION CONTACT DETAILS
+            // SECTION 14: DEVELOPER, ORGANIZATION & STATUTORY GRIEVANCE REDRESSAL
             PolicySectionCard(
-                sectionNumber = "07",
-                sectionTitle = "Developer & Organization Contact Details",
+                sectionNumber = "14",
+                sectionTitle = "Organization & Grievance Redressal Officer",
                 icon = Icons.AutoMirrored.Filled.ContactSupport
             ) {
                 Text(
-                    text = "If you have questions, feedback, or legal inquiries regarding this Privacy Policy or our data protection practices, please contact us directly:",
+                    text = "In compliance with the Information Technology (Intermediary Guidelines and Digital Media Ethics Code) Rules, 2021 and Digital Personal Data Protection Act, 2023, AYAD Creations has designated a formal Grievance Redressal Officer:",
                     color = PolicyTextLight,
                     fontSize = 13.sp,
                     lineHeight = 19.sp
@@ -481,11 +728,12 @@ fun PrivacyPolicyScreen(onBack: () -> Unit) {
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        PolicyContactRow(icon = Icons.Default.Business, label = "Organization", value = "AYAD Creations")
-                        PolicyContactRow(icon = Icons.Default.Person, label = "Lead Developer", value = "MD Dilshad Warsi")
-                        PolicyContactRow(icon = Icons.Default.Email, label = "Official Contact Email", value = "servicesecure822@gmail.com")
-                        PolicyContactRow(icon = Icons.Default.Event, label = "Policy Date", value = "October 15, 2026")
-                        PolicyContactRow(icon = Icons.Default.Gavel, label = "Legal Status", value = "Binding Digital Privacy Policy")
+                        PolicyContactRow(icon = Icons.Default.Business, label = "Publishing Organization", value = "AYAD Creations")
+                        PolicyContactRow(icon = Icons.Default.Language, label = "Official Website", value = "https://ayadcreation.online")
+                        PolicyContactRow(icon = Icons.Default.Person, label = "Lead Developer & Grievance Officer", value = "MD Dilshad Warsi")
+                        PolicyContactRow(icon = Icons.Default.Email, label = "Official Grievance Email", value = "servicesecure822@gmail.com")
+                        PolicyContactRow(icon = Icons.Default.Event, label = "Policy Effective Date", value = "November 12, 2026")
+                        PolicyContactRow(icon = Icons.Default.Gavel, label = "Legal Status", value = "Binding Digital Privacy Agreement")
                     }
                 }
             }

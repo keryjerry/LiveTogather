@@ -286,8 +286,8 @@ fun FlowingAvatarFrame(
     val targetFrameSize = if (frameId.isNotBlank()) {
         if (isVipSuiteFrame) targetAvatarSize / vipApertureRatio
         else avatarSize * minScale
-    } else if (micEffectId.isNotBlank() && isSpeaking) {
-        avatarSize + 16.dp
+    } else if (micEffectId.isNotBlank() && showMicEffect) {
+        avatarSize + 36.dp
     } else {
         avatarSize
     }
@@ -310,8 +310,8 @@ fun FlowingAvatarFrame(
             modifier = Modifier.size(width = boxW, height = boxH),
             contentAlignment = Alignment.Center
         ) {
-            // 3D Transparent Video Magic Mic Effect (Strictly ONLY when actively equipped AND user is actively speaking)
-            val activeVideoRes = if (micEffectId.isNotBlank() && isSpeaking) {
+            // 3D Transparent Video Magic Mic Effect (Triggered when user speaks OR when in-app music is playing)
+            val activeVideoRes = if (micEffectId.isNotBlank() && (showMicEffect || isSpeaking)) {
                 getMicEffectVideoRes(micEffectId)
             } else {
                 0
@@ -332,7 +332,7 @@ fun FlowingAvatarFrame(
                 VideoMicMagicEffectOverlay(
                     videoRes = activeVideoRes,
                     avatarSize = targetAvatarSize,
-                    effectSize = targetAvatarSize + 16.dp
+                    effectSize = targetAvatarSize + 36.dp
                 )
             }
 
@@ -368,13 +368,13 @@ fun FlowingAvatarFrame(
                 )
             }
 
-            // BASE LAYER: Uncropped, Clear Profile Picture (Fits snugly into frame hole without double border)
+            // BASE LAYER: Uncropped, Clear Profile Picture (Fits snugly into frame hole without double border or blue border when mic effect is active)
             Box(
                 modifier = Modifier
                     .size(targetAvatarSize)
                     .clip(CircleShape)
                     .then(
-                        if (!isVipSuiteFrame) {
+                        if (!isVipSuiteFrame && activeVideoRes == 0) {
                             Modifier.border(
                                 width = 1.5.dp,
                                 color = if (isSpeaking) {
@@ -879,15 +879,13 @@ fun VideoMicMagicEffectOverlay(
     if (videoRes == 0) return
 
     Box(
-        modifier = modifier
-            .size(effectSize)
-            .clip(CircleShape), // 1. COMPLETELY REMOVES 4 SQUARE CORNERS
+        modifier = modifier.requiredSize(effectSize), // Broad outer reach while keeping inner aperture locked to avatarSize!
         contentAlignment = Alignment.Center
     ) {
         AndroidView(
             factory = { ctx ->
                 TextureView(ctx).apply {
-                    isOpaque = false // Enables transparency
+                    isOpaque = false
                     surfaceTextureListener = object : TextureView.SurfaceTextureListener {
                         var mediaPlayer: MediaPlayer? = null
                         override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
@@ -918,14 +916,24 @@ fun VideoMicMagicEffectOverlay(
                 .fillMaxSize()
                 .graphicsLayer(
                     compositingStrategy = CompositingStrategy.Offscreen,
-                    blendMode = BlendMode.Screen // 2. REMOVES BLACK BACKGROUND (#000000 -> 100% TRANSPARENT)
+                    alpha = 0.98f
                 )
                 .drawWithContent {
                     drawContent()
-                    // 3. PUNCH OUT 100% TRANSPARENT CIRCULAR HOLE FOR AVATAR FACE
+                    // Broad solid radial band (0.0f..0.90f solid) within the exact circle size
+                    drawRect(
+                        brush = Brush.radialGradient(
+                            0.0f to Color.Black,
+                            0.90f to Color.Black,
+                            1.0f to Color.Transparent,
+                            radius = size.minDimension / 2f
+                        ),
+                        blendMode = BlendMode.DstIn
+                    )
+                    // Exact circular aperture matching the profile photo circle with zero gap
                     drawCircle(
                         color = Color.Transparent,
-                        radius = (avatarSize.toPx() / 2f),
+                        radius = (avatarSize.toPx() / 2f) - 1.dp.toPx(),
                         blendMode = BlendMode.Clear
                     )
                 }

@@ -221,15 +221,18 @@ fun LuxuryStoreDialog(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 9.dp),
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Text(
                             text = "Balance:",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFFB3A1D6)
+                            color = Color(0xFFB3A1D6),
+                            maxLines = 1,
+                            softWrap = false
                         )
 
                         // Diamonds
@@ -246,9 +249,11 @@ fun LuxuryStoreDialog(
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = String.format("%,d", currentUser.diamonds),
-                                fontSize = 13.sp,
+                                fontSize = 12.5.sp,
                                 fontWeight = FontWeight.Black,
-                                color = Color(0xFFE9D5FF)
+                                color = Color(0xFFE9D5FF),
+                                maxLines = 1,
+                                softWrap = false
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text("+", fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color(0xFFFFD700))
@@ -268,27 +273,32 @@ fun LuxuryStoreDialog(
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = String.format("%,d", currentUser.coins),
-                                fontSize = 13.sp,
+                                fontSize = 12.5.sp,
                                 fontWeight = FontWeight.Black,
-                                color = Color(0xFFFEF08A)
+                                color = Color(0xFFFEF08A),
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
 
-                        // Crown Points
+                        // Crown Points / VIP Badge
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(Color(0xFF2A203F))
-                                .padding(horizontal = 7.dp, vertical = 4.dp)
+                                .border(1.dp, Color(0xFFFFD700).copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
                         ) {
                             Text("👑", fontSize = 13.sp)
-                            Spacer(modifier = Modifier.width(3.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = "VIP ${currentUser.getVipLevel()}",
                                 fontSize = 11.5.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFFFFD700)
+                                color = Color(0xFFFFD700),
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
                     }
@@ -458,26 +468,50 @@ fun LuxuryStoreDialog(
                                             if (isMicLink) {
                                                 updates["activeIntimacyBadge"] = targetEquipId
                                             }
+                                            val vipLvl = if (isAvatarFrame) extractVipLevelFromId(targetItem.id) else 0
+                                            if (vipLvl in 1..5) {
+                                                updates.putAll(getVipSuiteUpdates(vipLvl, targetEquipId.isNotBlank()))
+                                            }
                                             db.collection("users").document(currentUser.uid).update(updates)
                                             val prefs = context.getSharedPreferences("livetogather_user_prefs", android.content.Context.MODE_PRIVATE)
                                             when {
                                                 isMicEffect -> prefs.edit().putString("profile_active_mic_effect", targetEquipId).apply()
                                                 isMicLink -> prefs.edit().putString("profile_active_mic_link", targetEquipId).putString("profile_active_intimacy_badge", targetEquipId).apply()
-                                                isAvatarFrame -> prefs.edit().putString("profile_active_frame", targetEquipId).apply()
+                                                isAvatarFrame -> {
+                                                    val pe = prefs.edit().putString("profile_active_frame", targetEquipId)
+                                                    if (vipLvl in 1..5) {
+                                                        if (targetEquipId.isNotBlank()) {
+                                                            pe.putString("profile_active_border_frame", "vip_border_$vipLvl")
+                                                              .putString("profile_active_chat_frame", getVipChatFrameForLevel(vipLvl))
+                                                              .putInt("profile_vip_level", vipLvl)
+                                                              .putString("profile_plan", "VIP $vipLvl")
+                                                        } else {
+                                                            pe.putString("profile_active_border_frame", "")
+                                                              .putString("profile_active_chat_frame", "")
+                                                        }
+                                                    }
+                                                    pe.apply()
+                                                }
                                                 isRing -> prefs.edit().putString("profile_active_intimacy_badge", targetEquipId).apply()
                                             }
                                             withContext(Dispatchers.Main) {
                                                 val updatedUser = when {
                                                     isMicEffect -> currentUser.copy(activeMicEffect = targetEquipId)
                                                     isMicLink -> currentUser.copy(activeMicLinkId = targetEquipId, activeIntimacyBadge = targetEquipId)
-                                                    isAvatarFrame -> currentUser.copy(activeFrame = targetEquipId)
+                                                    isAvatarFrame -> {
+                                                        if (vipLvl in 1..5) {
+                                                            currentUser.applyVipSuite(vipLvl, targetEquipId.isNotBlank())
+                                                        } else {
+                                                            currentUser.copy(activeFrame = targetEquipId)
+                                                        }
+                                                    }
                                                     isRing -> currentUser.copy(activeIntimacyBadge = targetEquipId)
                                                     else -> currentUser
                                                 }
                                                 onProfileUpdated(updatedUser)
                                                 Toast.makeText(
                                                     context,
-                                                    if (targetEquipId.isNotBlank()) "✨ Wearing ${targetItem.name}!" else "${targetItem.name} removed",
+                                                    if (targetEquipId.isNotBlank()) "👑 VIP $vipLvl Suite & Frame Applied!" else "${targetItem.name} removed",
                                                     Toast.LENGTH_SHORT
                                                 ).show()
                                             }
@@ -692,8 +726,8 @@ fun StoreItemCard(
     val isMicLink = item.category == "mic_link" || item.subCategory.contains("Mic Link", ignoreCase = true) || item.id.startsWith("mic_link_")
     val isAvatarFrame = item.category == "avatar_frame"
     val isRing = item.category == "ring" || item.category == "proposal_ring"
-    val isEquippable = isMicEffect || isAvatarFrame || isMicLink
-    val isIntimacySendable = isRing && !isMicLink
+    val isEquippable = isMicEffect || isAvatarFrame
+    val isIntimacySendable = isRing || isMicLink
     val expiry = when {
         isMicEffect -> currentUser.micEffectExpiries[item.id] ?: 0L
         isMicLink -> currentUser.micLinkExpiries[item.id] ?: 0L
@@ -702,15 +736,13 @@ fun StoreItemCard(
     }
     val isExpired = expiry > 0L && now > expiry
     val isSupremeAccess = currentUser.isFounder()
-    val isOwned = isSupremeAccess || (isEquippable && !isExpired && (when {
+    val isOwned = !isMicLink && (isSupremeAccess || (isEquippable && !isExpired && (when {
         isMicEffect -> currentUser.ownedMicEffects.contains(item.id) || currentUser.activeMicEffect == item.id
-        isMicLink -> currentUser.ownedMicLinks.contains(item.id) || currentUser.activeMicLinkId == item.id || currentUser.activeIntimacyBadge == item.id
         isAvatarFrame -> currentUser.ownedFrames.contains(item.id) || currentUser.activeFrame == item.id
         else -> false
-    }))
-    val isEquipped = when {
+    })))
+    val isEquipped = !isMicLink && when {
         isMicEffect -> currentUser.activeMicEffect == item.id
-        isMicLink -> currentUser.activeMicLinkId == item.id || currentUser.activeIntimacyBadge == item.id
         isAvatarFrame -> currentUser.activeFrame == item.id
         else -> false
     }
@@ -1007,7 +1039,7 @@ fun StoreItemCard(
                 }
                 isIntimacySendable -> {
                     Surface(
-                        color = Color(0xFFE040FB),
+                        color = if (isMicLink) Color(0xFF9333EA) else Color(0xFFE040FB),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1016,7 +1048,7 @@ fun StoreItemCard(
                             }
                     ) {
                         Text(
-                            text = "Send 💍",
+                            text = if (isMicLink) "Invite 🔗" else "Send 💍",
                             fontSize = 9.5.sp,
                             fontWeight = FontWeight.Black,
                             color = Color.White,
@@ -1311,25 +1343,49 @@ fun InventoryBackpackDialog(
                                                         if (isMicLink) {
                                                             updates["activeIntimacyBadge"] = targetEquipId
                                                         }
+                                                        val vipLvl = if (isAvatarFrame) extractVipLevelFromId(item.id) else 0
+                                                        if (vipLvl in 1..5) {
+                                                            updates.putAll(getVipSuiteUpdates(vipLvl, targetEquipId.isNotBlank()))
+                                                        }
                                                         db.collection("users").document(currentUser.uid)
                                                             .update(updates)
                                                         val prefs = context.getSharedPreferences("livetogather_user_prefs", android.content.Context.MODE_PRIVATE)
                                                         when {
                                                             isMicEffect -> prefs.edit().putString("profile_active_mic_effect", targetEquipId).apply()
                                                             isMicLink -> prefs.edit().putString("profile_active_mic_link", targetEquipId).putString("profile_active_intimacy_badge", targetEquipId).apply()
-                                                            isAvatarFrame -> prefs.edit().putString("profile_active_frame", targetEquipId).apply()
+                                                            isAvatarFrame -> {
+                                                                val pe = prefs.edit().putString("profile_active_frame", targetEquipId)
+                                                                if (vipLvl in 1..5) {
+                                                                    if (targetEquipId.isNotBlank()) {
+                                                                        pe.putString("profile_active_border_frame", "vip_border_$vipLvl")
+                                                                          .putString("profile_active_chat_frame", getVipChatFrameForLevel(vipLvl))
+                                                                          .putInt("profile_vip_level", vipLvl)
+                                                                          .putString("profile_plan", "VIP $vipLvl")
+                                                                    } else {
+                                                                        pe.putString("profile_active_border_frame", "")
+                                                                          .putString("profile_active_chat_frame", "")
+                                                                    }
+                                                                }
+                                                                pe.apply()
+                                                            }
                                                         }
                                                         withContext(Dispatchers.Main) {
                                                             val updated = when {
                                                                 isMicEffect -> currentUser.copy(activeMicEffect = targetEquipId)
                                                                 isMicLink -> currentUser.copy(activeMicLinkId = targetEquipId, activeIntimacyBadge = targetEquipId)
-                                                                isAvatarFrame -> currentUser.copy(activeFrame = targetEquipId)
+                                                                isAvatarFrame -> {
+                                                                    if (vipLvl in 1..5) {
+                                                                        currentUser.applyVipSuite(vipLvl, targetEquipId.isNotBlank())
+                                                                    } else {
+                                                                        currentUser.copy(activeFrame = targetEquipId)
+                                                                    }
+                                                                }
                                                                 else -> currentUser
                                                             }
                                                             onProfileUpdated(updated)
                                                             Toast.makeText(
                                                                 context,
-                                                                if (targetEquipId.isNotBlank()) "Equipped ${item.name}!" else "Unequipped!",
+                                                                if (targetEquipId.isNotBlank()) "👑 VIP $vipLvl Suite & Frame Applied!" else "Unequipped!",
                                                                 Toast.LENGTH_SHORT
                                                             ).show()
                                                         }
@@ -1641,7 +1697,9 @@ fun IntimacyRecipientSelectorDialog(
                                             val requestRef = db.collection("intimacy_requests").document(requestId)
 
                                             val bondType = when {
+                                                ringItem.id.contains("ring", true) || ringItem.id.contains("proposal", true) -> "couple"
                                                 ringItem.id.contains("bestie", true) -> "bestie"
+                                                ringItem.id.contains("cyber", true) -> "cyber"
                                                 ringItem.id.contains("soulmate", true) -> "soulmate"
                                                 ringItem.id.contains("eternal", true) -> "eternal"
                                                 else -> "couple"
@@ -1651,8 +1709,14 @@ fun IntimacyRecipientSelectorDialog(
                                                 val sortedKey = listOf(currentUser.uid, friend.uid).sorted().joinToString("_")
                                                 val b1 = transaction.get(db.collection("intimacy_bonds").document(sortedKey))
                                                 val b2 = transaction.get(db.collection("intimacy_bonds").document("bond_$sortedKey"))
-                                                if (b1.exists() || b2.exists()) {
-                                                    throw IllegalStateException("ALREADY_SOULMATES")
+                                                val existingSnap = when {
+                                                    b1.exists() && b1.getString("status") == "active" -> b1
+                                                    b2.exists() && b2.getString("status") == "active" -> b2
+                                                    else -> null
+                                                }
+                                                if (existingSnap != null) {
+                                                    val existingType = existingSnap.getString("bondType") ?: "couple"
+                                                    throw IllegalStateException("ALREADY_BONDED:$existingType")
                                                 }
                                                 val senderSnap = transaction.get(senderRef)
                                                 if (!senderSnap.exists()) throw IllegalStateException("Sender profile unavailable")
@@ -1718,8 +1782,15 @@ fun IntimacyRecipientSelectorDialog(
                                                 }
                                             }.addOnFailureListener { err ->
                                                 isSending = false
-                                                if (err.message?.contains("ALREADY_SOULMATES") == true) {
-                                                    Toast.makeText(context, "You are already soulmates with this person", Toast.LENGTH_LONG).show()
+                                                val msg = err.message ?: ""
+                                                if (msg.contains("ALREADY_BONDED:") || msg.contains("ALREADY_SOULMATES")) {
+                                                    val existingType = msg.substringAfter("ALREADY_BONDED:", "couple")
+                                                    val label = when {
+                                                        existingType.equals("bestie", ignoreCase = true) -> "Besties"
+                                                        existingType.equals("cyber", ignoreCase = true) -> "Cyber Linked"
+                                                        else -> "bonded as Couple"
+                                                    }
+                                                    Toast.makeText(context, "You are already $label with ${friend.name}! End it in Profile first.", Toast.LENGTH_LONG).show()
                                                     onDismiss()
                                                 } else {
                                                     Toast.makeText(context, "Failed: ${err.message}", Toast.LENGTH_SHORT).show()

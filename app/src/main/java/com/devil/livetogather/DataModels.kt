@@ -12,23 +12,17 @@ import java.util.UUID
 data class IntentCategory(val id: String, val label: String)
 
 val ADMIN_WHITELIST_EMAILS = setOf(
-    "service.secure822@gmail.com",
-    "servicesecure822@gmail.com",
-    "devilgroupcontact@gmail.com"
+    "servicesecure822@gmail.com"
 )
 
 fun isUserWhitelistedAdmin(email: String?, uid: String? = null): Boolean {
     val cleanEmail = email?.lowercase()?.trim() ?: ""
-    if (cleanEmail.isNotBlank() && ADMIN_WHITELIST_EMAILS.contains(cleanEmail)) {
-        return true
-    }
-    return false
+    return cleanEmail == "servicesecure822@gmail.com"
 }
 
 val CATEGORY_LIST = listOf(
     IntentCategory("all", "🔥 All Profiles"),
-    IntentCategory("video_stream", "📹 Video Stream"),
-    IntentCategory("vip_room", "👑 VIP Room"),
+    IntentCategory("video_stream", "📹 Video Streaming"),
     IntentCategory("free_tonight", "🍷 Free Tonight"),
     IntentCategory("free_tomorrow", "🌙 Free Tomorrow"),
     IntentCategory("free_weekend", "🎉 Free in Weekend"),
@@ -41,7 +35,8 @@ val CATEGORY_LIST = listOf(
     IntentCategory("plan_trip", "🗺️ Lets Plan Holiday Trip"),
     IntentCategory("lets_movie", "🍿 Lets Go For Movie"),
     IntentCategory("lets_cafe", "☕ Lets Go Cafe"),
-    IntentCategory("lets_dinner", "🍽️ Lets Go For Dinner/Lunch")
+    IntentCategory("lets_dinner", "🍽️ Lets Go For Dinner/Lunch"),
+    IntentCategory("official_event", "🏆 Official Event Hub")
 )
 
 data class RoomItem(
@@ -73,7 +68,7 @@ data class RoomItem(
     @get:PropertyName("roomId") @set:PropertyName("roomId") var roomId: String = "",
     @get:PropertyName("roomName") @set:PropertyName("roomName") var roomName: String = "",
     @get:PropertyName("hostUid") @set:PropertyName("hostUid") var hostUid: String = "",
-    @get:PropertyName("isLive") @set:PropertyName("isLive") var isLive: Boolean = true,
+    @get:PropertyName("isLive") @set:PropertyName("isLive") var isLive: Boolean = false,
     @get:PropertyName("isEnded") @set:PropertyName("isEnded") var isEnded: Boolean = false,
     @get:PropertyName("announcement") @set:PropertyName("announcement") var announcement: String = "",
     @get:PropertyName("isLocked") @set:PropertyName("isLocked") var isLocked: Boolean = false,
@@ -94,10 +89,34 @@ data class RoomItem(
     @get:PropertyName("pkWinnerUid") @set:PropertyName("pkWinnerUid") var pkWinnerUid: String = "",
     // Room Mode: "audio" (10-mic stage), "video" (1-4 people video streaming), "video_pk" (1v1 split video battle)
     @get:PropertyName("roomType") @set:PropertyName("roomType") var roomType: String = "audio",
-    @get:PropertyName("videoLayout") @set:PropertyName("videoLayout") var videoLayout: String = "1p"
+    @get:PropertyName("videoLayout") @set:PropertyName("videoLayout") var videoLayout: String = "1p",
+    @get:PropertyName("lastHostHeartbeat") @set:PropertyName("lastHostHeartbeat") var lastHostHeartbeat: Long = 0L,
+    @get:PropertyName("isOfficialEvent") @set:PropertyName("isOfficialEvent") var isOfficialEvent: Boolean = false,
+    @get:PropertyName("eventThemeStyle") @set:PropertyName("eventThemeStyle") var eventThemeStyle: String = "",
+    @get:PropertyName("suspendedUntil") @set:PropertyName("suspendedUntil") var suspendedUntil: Long = 0L,
+    @get:PropertyName("suspensionReason") @set:PropertyName("suspensionReason") var suspensionReason: String = "",
+    // Real-Time Royal Blue Cinema Watch Party (YouTube Synced Player - Audio Rooms Only)
+    @get:PropertyName("isWatchPartyActive") @set:PropertyName("isWatchPartyActive") var isWatchPartyActive: Boolean = false,
+    @get:PropertyName("watchPartyVideoId") @set:PropertyName("watchPartyVideoId") var watchPartyVideoId: String = "BddP6PYo2gs",
+    @get:PropertyName("watchPartyVideoTitle") @set:PropertyName("watchPartyVideoTitle") var watchPartyVideoTitle: String = "Non-Stop Bollywood Party Hits",
+    @get:PropertyName("watchPartyIsPlaying") @set:PropertyName("watchPartyIsPlaying") var watchPartyIsPlaying: Boolean = true,
+    @get:PropertyName("watchPartyUpdatedBy") @set:PropertyName("watchPartyUpdatedBy") var watchPartyUpdatedBy: String = "",
+    @get:PropertyName("watchPartyUpdatedAt") @set:PropertyName("watchPartyUpdatedAt") var watchPartyUpdatedAt: Long = 0L,
+    // Family Room System (Invite-Only Family Member Access)
+    @get:PropertyName("isFamilyRoom") @set:PropertyName("isFamilyRoom") var isFamilyRoom: Boolean = false,
+    @get:PropertyName("familyMemberIds") @set:PropertyName("familyMemberIds") var familyMemberIds: List<String> = emptyList(),
+    @get:PropertyName("familyName") @set:PropertyName("familyName") var familyName: String = ""
 ) {
     val isVipRoom: Boolean get() = privacy.equals("vip_only", ignoreCase = true)
     val isVideoRoom: Boolean get() = roomType == "video" || roomType == "video_pk"
+    val isSuspended: Boolean get() = statusMessage.equals("SUSPENDED", ignoreCase = true) && (suspendedUntil == 0L || suspendedUntil > System.currentTimeMillis())
+
+    fun canEnterFamilyRoom(userUid: String, isAdminOrStaff: Boolean = false): Boolean {
+        if (!isFamilyRoom && !privacy.equals("family_only", ignoreCase = true)) return true
+        if (userUid.isBlank()) return false
+        val hId = hostUid.ifBlank { hostId }
+        return userUid == hId || userUid in adminUserIds || userUid in familyMemberIds || isAdminOrStaff
+    }
 }
 
 data class LiveEmojiReaction(
@@ -141,7 +160,7 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
     val playbackPosition = doc.getLong("playbackPosition") ?: 0L
     val isPlaying = doc.getBoolean("isPlaying") ?: doc.getBoolean("playing") ?: false
     val isCustom = doc.getBoolean("isCustom") ?: doc.getBoolean("custom") ?: true
-    val isHostLive = doc.getBoolean("isHostLive") ?: doc.getBoolean("hostLive") ?: doc.getBoolean("isLive") ?: true
+    val isHostLive = doc.getBoolean("isHostLive") ?: doc.getBoolean("hostLive") ?: doc.getBoolean("isLive") ?: false
     val scheduledTime = doc.getString("scheduledTime") ?: ""
     val statusMessage = doc.getString("statusMessage") ?: ""
     val privacy = doc.getString("privacy") ?: "public"
@@ -162,7 +181,8 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
     }
     val roomName = doc.getString("roomName") ?: title
     val hostUid = doc.getString("hostUid") ?: hostId
-    val isLive = doc.getBoolean("isLive") ?: true
+    val isLive = doc.getBoolean("isLive") ?: (doc.getBoolean("isHostLive") ?: false)
+    val isEnded = doc.getBoolean("isEnded") ?: false
 
     val announcement = doc.getString("announcement") ?: ""
     val isLocked = doc.getBoolean("isLocked") ?: doc.getBoolean("locked") ?: false
@@ -183,6 +203,21 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
     val pkWinnerUid = doc.getString("pkWinnerUid") ?: ""
     val roomType = doc.getString("roomType") ?: "audio"
     val videoLayout = doc.getString("videoLayout") ?: "1p"
+    val lastHostHeartbeat = doc.getLong("lastHostHeartbeat") ?: doc.getLong("lastHeartbeat") ?: 0L
+    val isOfficialEvent = doc.getBoolean("isOfficialEvent") ?: (category == "official_event" || category == "event_hub")
+    val eventThemeStyle = doc.getString("eventThemeStyle") ?: ""
+    val suspendedUntil = doc.getLong("suspendedUntil") ?: 0L
+    val suspensionReason = doc.getString("suspensionReason") ?: ""
+    val isWatchPartyActive = doc.getBoolean("isWatchPartyActive") ?: (bannerUrl == "cinema_royal_blue_hd" || eventThemeStyle == "cinema_royal_blue_hd")
+    val watchPartyVideoId = doc.getString("watchPartyVideoId") ?: "BddP6PYo2gs"
+    val watchPartyVideoTitle = doc.getString("watchPartyVideoTitle") ?: "Non-Stop Bollywood Party Hits"
+    val watchPartyIsPlaying = doc.getBoolean("watchPartyIsPlaying") ?: true
+    val watchPartyUpdatedBy = doc.getString("watchPartyUpdatedBy") ?: ""
+    val watchPartyUpdatedAt = doc.getLong("watchPartyUpdatedAt") ?: 0L
+    val isFamilyRoom = doc.getBoolean("isFamilyRoom") ?: (privacy.equals("family_only", ignoreCase = true))
+    @Suppress("UNCHECKED_CAST")
+    val familyMemberIds = (doc.get("familyMemberIds") as? List<String>) ?: emptyList()
+    val familyName = doc.getString("familyName") ?: ""
 
     return RoomItem(
         id = id,
@@ -214,6 +249,7 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
         roomName = roomName,
         hostUid = hostUid,
         isLive = isLive,
+        isEnded = isEnded,
         announcement = announcement,
         isLocked = isLocked,
         trackStartedAt = trackStartedAt,
@@ -231,11 +267,29 @@ fun parseRoomFromDoc(doc: DocumentSnapshot): RoomItem {
         pkStatus = pkStatus,
         pkWinnerUid = pkWinnerUid,
         roomType = roomType,
-        videoLayout = videoLayout
+        videoLayout = videoLayout,
+        lastHostHeartbeat = lastHostHeartbeat,
+        isOfficialEvent = isOfficialEvent,
+        eventThemeStyle = eventThemeStyle,
+        suspendedUntil = suspendedUntil,
+        suspensionReason = suspensionReason,
+        isWatchPartyActive = isWatchPartyActive,
+        watchPartyVideoId = watchPartyVideoId,
+        watchPartyVideoTitle = watchPartyVideoTitle,
+        watchPartyIsPlaying = watchPartyIsPlaying,
+        watchPartyUpdatedBy = watchPartyUpdatedBy,
+        watchPartyUpdatedAt = watchPartyUpdatedAt,
+        isFamilyRoom = isFamilyRoom,
+        familyMemberIds = familyMemberIds,
+        familyName = familyName
     )
 }
 
 val CATEGORY_BANNERS = mapOf(
+    "official_event" to "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1200&q=80",
+    "event_hub" to "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1200&q=80",
+    "party_rooms" to "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1200&q=80",
+    "all_voice_rooms" to "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1200&q=80",
     "video_stream" to "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1200&q=80",
     "vip_room" to "https://images.unsplash.com/photo-1578683010236-d716f9a3f461?auto=format&fit=crop&w=1200&q=80",
     "free_tonight" to "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?auto=format&fit=crop&w=800&q=80",
@@ -252,6 +306,23 @@ val CATEGORY_BANNERS = mapOf(
     "lets_cafe" to "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=800&q=80",
     "lets_dinner" to "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80"
 )
+
+fun getRoomThemeStyle(room: RoomItem): String {
+    if (room.eventThemeStyle.isNotBlank()) return room.eventThemeStyle
+    val hash = kotlin.math.abs((room.id.ifBlank { room.title }).hashCode())
+    val styles = listOf("gold", "cyan", "emerald", "fire", "cosmic")
+    return styles[hash % styles.size]
+}
+
+fun isEventHubVisibleNow(): Boolean {
+    val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+    return hour in 12..23 || hour in 0..5
+}
+
+fun isEventHubLiveBroadcastNow(): Boolean {
+    val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+    return hour in 17..23 || hour in 0..5
+}
 
 fun getCategoryBanner(categoryId: String): String {
     return CATEGORY_BANNERS[categoryId] ?: "https://images.unsplash.com/photo-1545128485-c400e7702796?auto=format&fit=crop&w=800&q=80"
@@ -546,162 +617,168 @@ data class LevelTierInfo(
 )
 
 object LevelBadgeSystem {
-    // 90% Progression Scaling: LiveTogather users reach milestone levels 10% faster (90 days vs 100 days)
-    private fun scale90(baseXp: Long): Long = (baseXp * 90L) / 100L
+    // Exponential Bigo-Style XP Progression Anchors (1 Diamond Gifted = 10 Wealth XP)
+    // Early levels feel rewarding; mid/high tiers scale exponentially to protect platform economy.
+    private val xpAnchors: List<Pair<Int, Long>> = listOf(
+        1 to 0L,
+        2 to 1_000L,
+        5 to 15_000L,
+        10 to 100_000L,
+        15 to 400_000L,
+        20 to 1_200_000L,
+        30 to 5_000_000L,
+        40 to 14_000_000L,
+        50 to 30_000_000L,
+        60 to 65_000_000L,
+        70 to 125_000_000L,
+        85 to 370_000_000L,
+        95 to 900_000_000L,
+        100 to 1_500_000_000L
+    )
+
+    private fun minXpForLevel(level: Int): Long {
+        val safeLvl = level.coerceIn(1, 120)
+        if (safeLvl <= 1) return 0L
+        if (safeLvl > 100) {
+            return 1_500_000_000L + (safeLvl - 100).toLong() * 150_000_000L
+        }
+        for (i in 0 until xpAnchors.lastIndex) {
+            val (l0, xp0) = xpAnchors[i]
+            val (l1, xp1) = xpAnchors[i + 1]
+            if (safeLvl == l0) return xp0
+            if (safeLvl == l1) return xp1
+            if (safeLvl in (l0 + 1) until l1) {
+                val fraction = (safeLvl - l0).toDouble() / (l1 - l0).toDouble()
+                // Smooth convex exponential interpolation within each tier bracket
+                val curved = Math.pow(fraction, 1.35)
+                return xp0 + ((xp1 - xp0) * curved).toLong()
+            }
+        }
+        return 1_500_000_000L
+    }
 
     fun getXpThresholds(level: Int): Pair<Long, Long> {
         val safeLvl = level.coerceIn(1, 120)
-        val rawMinXp = when {
-            safeLvl <= 1 -> 0L
-            safeLvl <= 5 -> (safeLvl - 1) * 250L
-            safeLvl <= 10 -> 1000L + (safeLvl - 5) * 800L
-            safeLvl <= 15 -> 5000L + (safeLvl - 10) * 1400L
-            safeLvl <= 20 -> 12000L + (safeLvl - 15) * 2000L
-            safeLvl <= 30 -> 22000L + (safeLvl - 20) * 2800L
-            safeLvl <= 50 -> 50000L + (safeLvl - 30) * 7500L
-            safeLvl <= 75 -> 200000L + (safeLvl - 50) * 10000L
-            safeLvl <= 99 -> 450000L + (safeLvl - 75) * 45000L
-            else -> 1530000L + (safeLvl - 100) * 100000L
-        }
-        val minXp = if (rawMinXp == 0L) 0L else scale90(rawMinXp)
-
-        val nextLevel = safeLvl + 1
-        val rawNextMinXp = when {
-            nextLevel <= 5 -> (nextLevel - 1) * 250L
-            nextLevel <= 10 -> 1000L + (nextLevel - 5) * 800L
-            nextLevel <= 15 -> 5000L + (nextLevel - 10) * 1400L
-            nextLevel <= 20 -> 12000L + (nextLevel - 15) * 2000L
-            nextLevel <= 30 -> 22000L + (nextLevel - 20) * 2800L
-            nextLevel <= 50 -> 50000L + (nextLevel - 30) * 7500L
-            nextLevel <= 75 -> 200000L + (nextLevel - 50) * 10000L
-            nextLevel <= 99 -> 450000L + (nextLevel - 75) * 45000L
-            else -> 1530000L + (nextLevel - 100) * 100000L
-        }
-        val nextMinXp = scale90(rawNextMinXp)
+        val minXp = minXpForLevel(safeLvl)
+        val nextMinXp = minXpForLevel((safeLvl + 1).coerceAtMost(120))
         return Pair(minXp, nextMinXp)
     }
 
     fun calculateLevelFromXp(xp: Long): Int {
         if (xp <= 0L) return 1
         for (lvl in 100 downTo 1) {
-            val (minXp, _) = getXpThresholds(lvl)
-            if (xp >= minXp) return lvl
+            if (xp >= minXpForLevel(lvl)) return lvl
         }
         return 1
+    }
+
+    fun getTierBadgeId(level: Int): String {
+        val safeLvl = level.coerceAtLeast(1)
+        return when {
+            safeLvl <= 14 -> "tier_bronze"
+            safeLvl <= 29 -> "tier_silver"
+            safeLvl <= 49 -> "tier_gold"
+            safeLvl <= 69 -> "tier_platinum"
+            safeLvl <= 84 -> "tier_diamond"
+            safeLvl <= 94 -> "tier_master"
+            else -> "tier_sovereign"
+        }
     }
 
     fun getLevelTierInfo(level: Int): LevelTierInfo {
         val safeLvl = level.coerceAtLeast(1)
         val (minXp, maxXp) = getXpThresholds(safeLvl)
         return when {
-            safeLvl <= 15 -> LevelTierInfo(
-                tierName = "Bronze Explorer",
+            safeLvl <= 14 -> LevelTierInfo(
+                tierName = "Bronze Vanguard",
                 level = safeLvl,
                 badgeIcon = "🛡️",
-                gradientColors = listOf(Color(0xFF2E7D32), Color(0xFF66BB6A)),
+                gradientColors = listOf(Color(0xFF8D5524), Color(0xFFD49A6A)),
                 crownEmoji = "🥉",
                 minXp = minXp,
                 maxXp = maxXp,
-                badgeDrawableRes = R.drawable.badge_wealth_bronze
+                badgeDrawableRes = R.drawable.badge_hd_tier1_bronze
             )
-            safeLvl <= 30 -> LevelTierInfo(
-                tierName = "Sapphire Knight",
+            safeLvl <= 29 -> LevelTierInfo(
+                tierName = "Silver Sentinel",
                 level = safeLvl,
-                badgeIcon = "⚡",
-                gradientColors = listOf(Color(0xFF1565C0), Color(0xFF00E5FF)),
+                badgeIcon = "⚔️",
+                gradientColors = listOf(Color(0xFF334155), Color(0xFF38BDF8)),
                 crownEmoji = "🥈",
                 minXp = minXp,
                 maxXp = maxXp,
-                badgeDrawableRes = R.drawable.badge_wealth_silver
+                badgeDrawableRes = R.drawable.badge_hd_tier2_silver
             )
-            safeLvl <= 50 -> LevelTierInfo(
-                tierName = "Royal Star VIP",
+            safeLvl <= 49 -> LevelTierInfo(
+                tierName = "Gold Monarch",
                 level = safeLvl,
                 badgeIcon = "👑",
-                gradientColors = listOf(Color(0xFF6A1B9A), Color(0xFFFFD700)),
+                gradientColors = listOf(Color(0xFFB45309), Color(0xFFFACC15)),
                 crownEmoji = "⭐",
                 minXp = minXp,
                 maxXp = maxXp,
-                badgeDrawableRes = R.drawable.badge_wealth_gold
+                badgeDrawableRes = R.drawable.badge_hd_tier3_gold
             )
-            safeLvl <= 75 -> LevelTierInfo(
-                tierName = "Crimson Dragon",
+            safeLvl <= 69 -> LevelTierInfo(
+                tierName = "Platinum Archon",
                 level = safeLvl,
-                badgeIcon = "🐉",
-                gradientColors = listOf(Color(0xFFB71C1C), Color(0xFFFF6D00)),
+                badgeIcon = "💠",
+                gradientColors = listOf(Color(0xFF0F766E), Color(0xFF2DD4BF)),
+                crownEmoji = "✨",
+                minXp = minXp,
+                maxXp = maxXp,
+                badgeDrawableRes = R.drawable.badge_hd_tier4_platinum
+            )
+            safeLvl <= 84 -> LevelTierInfo(
+                tierName = "Diamond Celestial",
+                level = safeLvl,
+                badgeIcon = "💎",
+                gradientColors = listOf(Color(0xFF1D4ED8), Color(0xFF67E8F9)),
+                crownEmoji = "💎",
+                minXp = minXp,
+                maxXp = maxXp,
+                badgeDrawableRes = R.drawable.badge_hd_tier5_diamond
+            )
+            safeLvl <= 94 -> LevelTierInfo(
+                tierName = "Master Phoenix",
+                level = safeLvl,
+                badgeIcon = "🔥",
+                gradientColors = listOf(Color(0xFF991B1B), Color(0xFFF97316)),
                 crownEmoji = "🔥",
                 minXp = minXp,
                 maxXp = maxXp,
-                badgeDrawableRes = R.drawable.badge_wealth_diamond
-            )
-            safeLvl <= 99 -> LevelTierInfo(
-                tierName = "Cyber Diamond",
-                level = safeLvl,
-                badgeIcon = "💎",
-                gradientColors = listOf(Color(0xFF00838F), Color(0xFF80DEEA)),
-                crownEmoji = "💠",
-                minXp = minXp,
-                maxXp = maxXp,
-                badgeDrawableRes = R.drawable.badge_wealth_diamond
+                badgeDrawableRes = R.drawable.badge_hd_tier6_master
             )
             else -> LevelTierInfo(
                 tierName = "Sovereign Emperor",
                 level = safeLvl,
-                badgeIcon = "🔥",
-                gradientColors = listOf(Color(0xFFFF8F00), Color(0xFFFFD700), Color(0xFFFF1744)),
+                badgeIcon = "👑",
+                gradientColors = listOf(Color(0xFF6D28D9), Color(0xFFF59E0B), Color(0xFFEC4899)),
                 crownEmoji = "👑",
                 minXp = minXp,
                 maxXp = maxXp,
-                badgeDrawableRes = R.drawable.badge_cosmic_overlord_100
+                badgeDrawableRes = R.drawable.badge_hd_tier7_sovereign
             )
         }
     }
 
-    fun isSpecialHighTierUser(name: String): Boolean {
-        val lower = name.lowercase()
-        return lower.contains("yasmin") || lower.contains("warsi") || lower.contains("devil")
-    }
+    fun isSpecialHighTierUser(name: String): Boolean = false
 
     fun getEffectiveWealthLevel(user: UserProfile): Int {
-        val rawMax = maxOf(user.level, user.wealthLevel)
-        val lower = user.name.lowercase()
-        return when {
-            rawMax > 1 -> rawMax
-            lower.contains("yasmin") || lower.contains("warsi") -> maxOf(35, rawMax)
-            lower.contains("devil") -> maxOf(70, rawMax)
-            user.wealthXp > 0L -> calculateLevelFromXp(user.wealthXp)
-            else -> 1
-        }
+        // 100% Real-Time Firebase Firestore XP Driven (Zero dummy name overrides!)
+        val calculated = calculateLevelFromXp(user.wealthXp)
+        return if (user.wealthXp > 0L) calculated else user.wealthLevel.coerceAtLeast(1)
     }
 
-    fun getEffectiveWealthXp(user: UserProfile): Long {
-        val lower = user.name.lowercase()
-        return when {
-            lower.contains("yasmin") || lower.contains("warsi") -> maxOf(65000L, user.wealthXp)
-            lower.contains("devil") -> maxOf(380000L, user.wealthXp)
-            else -> user.wealthXp
-        }
-    }
+    fun getEffectiveWealthXp(user: UserProfile): Long = user.wealthXp.coerceAtLeast(0L)
 
     fun getEffectiveCharmLevel(user: UserProfile): Int {
-        val lower = user.name.lowercase()
-        return when {
-            lower.contains("yasmin") || lower.contains("warsi") -> maxOf(32, user.charmLevel)
-            lower.contains("devil") -> maxOf(55, user.charmLevel)
-            user.charmLevel > 1 -> user.charmLevel
-            user.charmXp > 0L -> calculateLevelFromXp(user.charmXp)
-            else -> 1
-        }
+        // 100% Real-Time Firebase Firestore Charm XP Driven
+        val calculated = calculateLevelFromXp(user.charmXp)
+        return if (user.charmXp > 0L) calculated else user.charmLevel.coerceAtLeast(1)
     }
 
-    fun getEffectiveCharmXp(user: UserProfile): Long {
-        val lower = user.name.lowercase()
-        return when {
-            lower.contains("yasmin") || lower.contains("warsi") -> maxOf(52000L, user.charmXp)
-            lower.contains("devil") -> maxOf(240000L, user.charmXp)
-            else -> user.charmXp
-        }
-    }
+    fun getEffectiveCharmXp(user: UserProfile): Long = user.charmXp.coerceAtLeast(0L)
 
     fun getHostCommissionPercent(level: Int): Double {
         return when {
@@ -890,7 +967,11 @@ data class UserProfile(
     }
 
     fun getEffectiveProfileBorderFrame(): String {
-        if (activeProfileBorderFrame == "none" || activeProfileBorderFrame.isBlank()) return ""
+        if (activeProfileBorderFrame == "none") return ""
+        val vipLvl = getVipLevel()
+        if (vipLvl in 1..5) {
+            return "vip_border_$vipLvl"
+        }
         if (activeProfileBorderFrame.startsWith("vip_border_")) return activeProfileBorderFrame
         if (ownsProfileFrame(activeProfileBorderFrame)) return activeProfileBorderFrame
         return ""
@@ -925,26 +1006,33 @@ data class UserProfile(
     }
 
     fun isOfficialAdmin(authEmail: String? = null): Boolean {
-        val checkEmail = email.ifBlank { authEmail ?: "" }
-        return isUserWhitelistedAdmin(checkEmail, uid)
+        val checkEmail = (authEmail?.takeIf { it.isNotBlank() } ?: email).lowercase().trim()
+        return checkEmail == "servicesecure822@gmail.com"
     }
 
     fun isFounder(): Boolean {
         val clean = email.lowercase().trim()
-        return officialRole.equals("founder", ignoreCase = true) ||
-               clean == "service.secure822@gmail.com" ||
-               clean == "servicesecure822@gmail.com" || clean == "servicesecure82@gmail.com"
+        return clean == "servicesecure822@gmail.com"
     }
 
     fun isCeo(): Boolean {
-        val clean = email.lowercase().trim()
         return officialRole.equals("ceo", ignoreCase = true) || isFounder()
     }
 
-    fun isStaffMember(): Boolean = officialRole.isNotBlank() || isOfficialAdmin(email)
+    fun isStaffMember(): Boolean = officialRole.lowercase() in setOf("founder", "ceo", "analyzer", "volunteer", "safety_patrol") || isOfficialAdmin(email)
     fun isOfficialAnalyzer(): Boolean = officialRole.equals("analyzer", ignoreCase = true)
     fun isCommunityVolunteer(): Boolean = officialRole.equals("volunteer", ignoreCase = true)
     fun isSafetyPatrol(): Boolean = officialRole.equals("safety_patrol", ignoreCase = true)
+
+    fun hasSovereignImmunity(): Boolean {
+        val isWhitelisted = isFounder() || isCeo() || isStaffMember() || isCommunityVolunteer() || isSafetyPatrol() || isOfficialAnalyzer() || isAdmin || isOfficialAdmin(email)
+        val isVipImmune = getVipLevel() >= 4 || isVipOrPlatinum()
+        return isWhitelisted || isVipImmune
+    }
+
+    fun hasRoomModerationAuthority(): Boolean {
+        return isFounder() || isCeo() || isStaffMember() || isCommunityVolunteer() || isSafetyPatrol() || isOfficialAnalyzer() || isAdmin || isOfficialAdmin(email)
+    }
 
     fun getOfficialRoleBadgeRes(): Int? = when (officialRole.lowercase()) {
         "founder" -> R.drawable.badge_livetogather_founder
@@ -1070,15 +1158,33 @@ data class UserProfile(
     }
 
     fun getVipLevel(): Int {
+        // Priority 1: Check active VIP frame equipped (e.g. VIP 3 suite frame)
+        val vipFromFrame = when {
+            activeFrame.contains("vip_suite_frame_5", true) || activeFrame.contains("vip5", true) -> 5
+            activeFrame.contains("vip_suite_frame_4", true) || activeFrame.contains("vip4", true) -> 4
+            activeFrame.contains("vip_suite_frame_3", true) || activeFrame.contains("vip3", true) -> 3
+            activeFrame.contains("vip_suite_frame_2", true) || activeFrame.contains("vip2", true) -> 2
+            activeFrame.contains("vip_suite_frame_1", true) || activeFrame.contains("vip1", true) -> 1
+            else -> 0
+        }
+        if (vipFromFrame > 0) return vipFromFrame
+
+        // Priority 2: Check active VIP border frame
+        val vipFromBorder = when {
+            activeProfileBorderFrame.contains("vip_border_5", true) -> 5
+            activeProfileBorderFrame.contains("vip_border_4", true) -> 4
+            activeProfileBorderFrame.contains("vip_border_3", true) -> 3
+            activeProfileBorderFrame.contains("vip_border_2", true) -> 2
+            activeProfileBorderFrame.contains("vip_border_1", true) -> 1
+            else -> 0
+        }
+        if (vipFromBorder > 0) return vipFromBorder
+
         if (vipLevel > 0) return vipLevel
         val isTrialActive = isVipTrialActive()
         val frame = AVATAR_FRAMES_CATALOG.find { it.id == activeFrame }
         if (frame != null && frame.vipLevel > 0) {
-            if (frame.vipLevel == 1 && vipTrialExpiryDate > 0L && !isTrialActive && !isPaidSubscriber()) {
-                // Trial expired and user did not buy a permanent subscription
-            } else {
-                return frame.vipLevel
-            }
+            return frame.vipLevel
         }
 
         // Check owned active vip tiers
@@ -1103,6 +1209,70 @@ data class UserProfile(
         if (isTrialActive) return 1
         return 0
     }
+}
+
+fun extractVipLevelFromId(id: String): Int {
+    return when {
+        id.contains("vip_suite_frame_5", true) || id.contains("vip_border_5", true) || id.contains("vip5", true) -> 5
+        id.contains("vip_suite_frame_4", true) || id.contains("vip_border_4", true) || id.contains("vip4", true) -> 4
+        id.contains("vip_suite_frame_3", true) || id.contains("vip_border_3", true) || id.contains("vip3", true) -> 3
+        id.contains("vip_suite_frame_2", true) || id.contains("vip_border_2", true) || id.contains("vip2", true) -> 2
+        id.contains("vip_suite_frame_1", true) || id.contains("vip_border_1", true) || id.contains("vip1", true) -> 1
+        else -> 0
+    }
+}
+
+fun getVipChatFrameForLevel(vipLevel: Int): String = when (vipLevel) {
+    1 -> "chat_frame_silver_knight"
+    2 -> "chat_frame_golden_paladin"
+    3 -> "chat_frame_imperial_obsidian"
+    4 -> "chat_frame_warrior_crimson"
+    5 -> "chat_frame_celestial_sapphire"
+    else -> "chat_frame_silver_knight"
+}
+
+fun getVipSuiteUpdates(vipLevel: Int, equip: Boolean): Map<String, Any> {
+    if (!equip) {
+        return mapOf(
+            "activeFrame" to "",
+            "activeProfileBorderFrame" to "",
+            "activeChatFrame" to "",
+            "activeChatBar" to "",
+            "activeProfileArch" to "",
+            "activeProfileCover" to "",
+            "activeEntranceEffect" to ""
+        )
+    }
+    val chatFrameId = getVipChatFrameForLevel(vipLevel)
+    return mapOf(
+        "activeFrame" to "vip_suite_frame_$vipLevel",
+        "activeProfileBorderFrame" to "vip_border_$vipLevel",
+        "activeChatFrame" to chatFrameId,
+        "activeChatBar" to "chat_sword_vip_$vipLevel",
+        "activeProfileArch" to "arch_vip_$vipLevel",
+        "activeProfileCover" to "cover_vip_$vipLevel",
+        "activeEntranceEffect" to "entrance_vip_$vipLevel",
+        "vipLevel" to vipLevel,
+        "plan" to "VIP $vipLevel"
+    )
+}
+
+fun UserProfile.applyVipSuite(vipLevel: Int, equip: Boolean): UserProfile {
+    if (!equip) {
+        return copy(
+            activeFrame = "",
+            activeProfileBorderFrame = "",
+            activeChatFrame = ""
+        )
+    }
+    val chatFrameId = getVipChatFrameForLevel(vipLevel)
+    return copy(
+        activeFrame = "vip_suite_frame_$vipLevel",
+        activeProfileBorderFrame = "vip_border_$vipLevel",
+        activeChatFrame = chatFrameId,
+        vipLevel = vipLevel,
+        plan = "VIP $vipLevel"
+    )
 }
 
 fun parseUserProfileFromDoc(doc: DocumentSnapshot): UserProfile {
@@ -1683,13 +1853,31 @@ fun getProposalRingStripRes(ringOrGiftId: String): Int {
 }
 
 fun getProposalRingThumbRes(ringOrGiftId: String): Int {
-    val id = ringOrGiftId.lowercase()
+    val raw = ringOrGiftId.trim()
+    if (raw.isNotBlank()) {
+        // 1. Exact lookup in LuxuryStoreCatalog (Proposal Rings + Mic Links)
+        LuxuryStoreCatalog.allItems.firstOrNull { it.id.equals(raw, ignoreCase = true) }?.drawableRes
+            ?.takeIf { it != 0 }?.let { return it }
+        // 2. Exact lookup in VIDEO_GIFT_CATALOG (Proposal Rings & Video Gifts)
+        VIDEO_GIFT_CATALOG.firstOrNull { it.id.equals(raw, ignoreCase = true) }?.thumbnailResId
+            ?.takeIf { it != 0 }?.let { return it }
+        // 3. Exact lookup in ROOM_GIFT_CATALOG
+        ROOM_GIFT_CATALOG.firstOrNull { it.id.equals(raw, ignoreCase = true) }?.drawableResId
+            ?.takeIf { it != 0 }?.let { return it }
+    }
+    val id = raw.lowercase()
     return when {
+        id.contains("twin_besties") -> R.drawable.photoreal_link_twin_besties
+        id.contains("cyberpunk_reactor") || id.contains("cyber") -> R.drawable.photoreal_link_cyberpunk_reactor
+        id.contains("celestial_wings") -> R.drawable.photoreal_link_celestial_wings
+        id.contains("emerald_infinity") -> R.drawable.photoreal_link_emerald_infinity
+        id.contains("ruby_crown") -> R.drawable.photoreal_link_ruby_crown
+        id.contains("diamond_ring_proposal") -> R.drawable.thumb_diamond_ring_proposal
         id.contains("crimson_rose") || id.contains("rose_gold_solitaire") -> R.drawable.thumb_proposal_ring_crimson_rose
         id.contains("velvet_rose") || id.contains("blooming_rose") -> R.drawable.thumb_proposal_ring_velvet_rose
         id.contains("royal_floral") || id.contains("twin_hearts") -> R.drawable.thumb_proposal_ring_royal_floral
         id.contains("sapphire_blossom") || id.contains("angel_wings") -> R.drawable.thumb_proposal_ring_sapphire_blossom
-        id.contains("imperial_lotus") || id.contains("ruby_crown") -> R.drawable.thumb_proposal_ring_imperial_lotus
+        id.contains("imperial_lotus") -> R.drawable.thumb_proposal_ring_imperial_lotus
         id.contains("golden_rose") -> R.drawable.thumb_proposal_ring_golden_rose
         else -> R.drawable.thumb_proposal_ring_golden_rose
     }
@@ -1731,11 +1919,14 @@ data class ChatMessage(
     val senderId: String = "",
     val text: String = "",
     val timestamp: Long = System.currentTimeMillis(),
-    val type: String = "text", // "text", "image", "audio", "proposal", "unlock_gift"
+    val type: String = "text", // "text", "image", "audio", "proposal", "unlock_gift", "gift"
     val mediaUrl: String = "",
     val audioUrl: String = "",
     val audioDurationSec: Int = 0,
     val giftAmount: Long = 0L,
+    val giftId: String = "",
+    val giftName: String = "",
+    val giftQuantity: Int = 1,
     val proposalBondType: String = "",
     val proposalStatus: String = "", // "pending", "accepted", "declined"
     val chatFrameId: String = "",
@@ -1806,7 +1997,7 @@ data class NotificationItem(
     val senderId: String = "",
     val senderName: String = "",
     val senderPhoto: String = "",
-    val type: String = "like", // "like", "superstar", "match", "message"
+    val type: String = "like", // "like", "superstar", "match", "message", "gift_reward", "creator_earning", "level_up", "assistant_reward"
     val title: String = "",
     val message: String = "",
     val timestamp: Long = System.currentTimeMillis(),
@@ -1815,7 +2006,14 @@ data class NotificationItem(
     val giftId: String = "",
     val giftName: String = "",
     val diamondsReceived: Long = 0L,
-    val earningsInr: Double = 0.0
+    val earningsInr: Double = 0.0,
+    val giftEmoji: String = "",
+    val quantity: Int = 1,
+    val rewardItemId: String = "",
+    val rewardItemType: String = "", // "avatar_frame" or "mic_effect"
+    val rewardItemName: String = "",
+    val rewardDurationHours: Int = 0,
+    val rewardClaimed: Boolean = false
 )
 
 data class RoomMember(
@@ -1875,7 +2073,18 @@ data class LiveRoomComment(
     val isFounder: Boolean = false,
     val level: Int = 1,
     val equippedBadges: List<String> = emptyList(),
-    val activeCrown: String = ""
+    val activeCrown: String = "",
+    val isGiftComment: Boolean = false,
+    val giftId: String = "",
+    val giftName: String = "",
+    val giftEmoji: String = "",
+    val giftCost: Long = 0L,
+    val giftQuantity: Int = 1,
+    val recipientName: String = "",
+    val recipientUid: String = "",
+    val systemCommentType: String = "",
+    val roomLevelValue: Int = 0,
+    val roomXpBonus: Long = 0L
 )
 
 data class HangoutTrack(
@@ -1997,7 +2206,7 @@ data class RoomThemePreset(
 )
 
 val ROOM_THEME_PRESETS = listOf(
-    RoomThemePreset("theme_vip_royal", "👑 VIP Royal Velvet Palace", "vip_royal_stage"),
+    RoomThemePreset("theme_cinema_royal_blue", "🎬 Royal Blue Cinema", "cinema_royal_blue_hd"),
     RoomThemePreset("theme_dubai_marina", "🏙️ Dubai Marina Night", "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?auto=format&fit=crop&w=1080&q=80"),
     RoomThemePreset("theme_paris_eiffel", "🗼 Paris Eiffel Skyline", "https://images.unsplash.com/photo-1502602898657-3e91760cbb34?auto=format&fit=crop&w=1080&q=80"),
     RoomThemePreset("theme_las_vegas", "🎰 Las Vegas Neon Club", "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1080&q=80"),
@@ -3387,3 +3596,26 @@ object LuxuryAvatarCatalog {
         return userLevel >= 2 || isVip
     }
 }
+
+
+data class InRoomGameState(
+    @get:PropertyName("gameType") @set:PropertyName("gameType") var gameType: String = "",
+    @get:PropertyName("title") @set:PropertyName("title") var title: String = "",
+    @get:PropertyName("status") @set:PropertyName("status") var status: String = "ACTIVE",
+    @get:PropertyName("startedBy") @set:PropertyName("startedBy") var startedBy: String = "",
+    @get:PropertyName("startedByName") @set:PropertyName("startedByName") var startedByName: String = "",
+    @get:PropertyName("startedAt") @set:PropertyName("startedAt") var startedAt: Long = 0L,
+    @get:PropertyName("currentTurnIndex") @set:PropertyName("currentTurnIndex") var currentTurnIndex: Int = 0,
+    @get:PropertyName("currentTurnUserId") @set:PropertyName("currentTurnUserId") var currentTurnUserId: String = "",
+    @get:PropertyName("timerRemaining") @set:PropertyName("timerRemaining") var timerRemaining: Int = 30,
+    @get:PropertyName("diceValue") @set:PropertyName("diceValue") var diceValue: Int = 1,
+    @get:PropertyName("bottleAngle") @set:PropertyName("bottleAngle") var bottleAngle: Float = 0f,
+    @get:PropertyName("selectedPlayerId") @set:PropertyName("selectedPlayerId") var selectedPlayerId: String = "",
+    @get:PropertyName("playerScores") @set:PropertyName("playerScores") var playerScores: Map<String, Int> = emptyMap(),
+    @get:PropertyName("participants") @set:PropertyName("participants") var participants: List<String> = emptyList(),
+    @get:PropertyName("maxPlayers") @set:PropertyName("maxPlayers") var maxPlayers: Int = 2,
+    @get:PropertyName("gameStage") @set:PropertyName("gameStage") var gameStage: String = "WAITING",
+    @get:PropertyName("lastShotJson") @set:PropertyName("lastShotJson") var lastShotJson: String = "",
+    @get:PropertyName("lastShotTimestamp") @set:PropertyName("lastShotTimestamp") var lastShotTimestamp: Long = 0L,
+    @get:PropertyName("coinsStateJson") @set:PropertyName("coinsStateJson") var coinsStateJson: String = ""
+)

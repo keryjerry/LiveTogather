@@ -1,6 +1,8 @@
 package com.devil.livetogather
 
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.style.TextOverflow
 
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -77,13 +79,113 @@ fun Advanced1v1ChatScreen(
     partner: UserProfile,
     db: FirebaseFirestore,
     onDismiss: () -> Unit,
-    onUpdateCurrentUser: (UserProfile) -> Unit
+    onUpdateCurrentUser: (UserProfile) -> Unit,
+    onJumpToRoom: (RoomItem) -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val matchId = remember(currentUserId, partner.uid) {
         listOf(currentUserId, partner.uid).sorted().joinToString("_")
     }
+
+    // Real-Time Live Partner State & Room Presence Tracker
+    var livePartner by remember(partner.uid) { mutableStateOf(partner) }
+    DisposableEffect(partner.uid) {
+        if (partner.uid.isBlank()) return@DisposableEffect onDispose {}
+        val listener = db.collection("users").document(partner.uid).addSnapshotListener { snap, _ ->
+            if (snap != null && snap.exists()) {
+                val u = parseUserProfileFromDoc(snap)
+                if (u != null) {
+                    livePartner = u
+                }
+            }
+        }
+        onDispose { listener.remove() }
+    }
+
+    var partnerActiveRoom by remember { mutableStateOf<RoomItem?>(null) }
+    DisposableEffect(livePartner.current_room, livePartner.uid) {
+        val targetRoomId = livePartner.current_room.trim()
+        if (targetRoomId.isNotBlank()) {
+            val listener = db.collection("rooms").document(targetRoomId).addSnapshotListener { snap, _ ->
+                if (snap != null && snap.exists()) {
+                    val r = parseRoomFromDoc(snap)
+                    if (r != null && !r.isEnded && (r.isLive || r.isHostLive) &&
+                        !r.statusMessage.equals("CLOSED", ignoreCase = true) &&
+                        !r.statusMessage.equals("OFFLINE", ignoreCase = true)
+                    ) {
+                        partnerActiveRoom = r
+                    } else {
+                        partnerActiveRoom = null
+                    }
+                } else {
+                    partnerActiveRoom = null
+                }
+            }
+            onDispose { listener.remove() }
+        } else if (livePartner.uid.isNotBlank()) {
+            // Real-time fallback detection across live rooms (checks hostUid, hostId, AND active room members so older APKs are also detected!)
+            val liveRoomsListener = db.collection("rooms")
+                .whereEqualTo("isLive", true)
+                .addSnapshotListener { snap, _ ->
+                    val liveDocs = snap?.documents?.mapNotNull { parseRoomFromDoc(it) }?.filter { r ->
+                        !r.isEnded && (r.isLive || r.isHostLive) &&
+                            !r.statusMessage.equals("CLOSED", ignoreCase = true) &&
+                            !r.statusMessage.equals("OFFLINE", ignoreCase = true) &&
+                            !r.statusMessage.equals("DELETED", ignoreCase = true)
+                    }.orEmpty()
+
+                    val hostedLive = liveDocs.firstOrNull { r ->
+                        r.hostUid == livePartner.uid || r.hostId == livePartner.uid
+                    }
+                    if (hostedLive != null) {
+                        partnerActiveRoom = hostedLive
+                    } else if (liveDocs.isNotEmpty()) {
+                        var found = false
+                        liveDocs.take(12).forEach { candidate ->
+                            db.collection("rooms").document(candidate.id)
+                                .collection("members").document(livePartner.uid)
+                                .get()
+                                .addOnSuccessListener { memSnap ->
+                                    if (!found && memSnap.exists()) {
+                                        found = true
+                                        partnerActiveRoom = candidate
+                                    }
+                                }
+                        }
+                        if (!found) partnerActiveRoom = null
+                    } else {
+                        partnerActiveRoom = null
+                    }
+                }
+            onDispose { liveRoomsListener.remove() }
+        } else {
+            partnerActiveRoom = null
+            onDispose {}
+        }
+    }
+
+    // Real-Time Blinking Online Indicator Animation
+    val isPartnerOnline = livePartner.isUserOnline()
+    val blinkAnim = rememberInfiniteTransition(label = "onlineBlink")
+    val blinkAlpha by blinkAnim.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(700, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "blinkAlpha"
+    )
+    val blinkScale by blinkAnim.animateFloat(
+        initialValue = 0.85f,
+        targetValue = 1.15f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(700, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "blinkScale"
+    )
 
     // Guarantee that matches collection document exists with users array so it shows in inbox for both users
     LaunchedEffect(matchId) {
@@ -338,7 +440,7 @@ fun Advanced1v1ChatScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(BrandDark)
+                .background(Color(0xFFF7F5FF))
         ) {
         Column(
             modifier = Modifier
@@ -346,18 +448,20 @@ fun Advanced1v1ChatScreen(
                 .imePadding()
         ) {
             // -------------------------------------------------------------
-            // 1. CHAT HEADER (BACK, AVATAR, STREAK BADGE, HEARTS & 3-DOTS)
+            // 1. BRIGHT CHAT HEADER (BACK, AVATAR, STREAK BADGE, HEARTS & 3-DOTS)
             // -------------------------------------------------------------
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(BrandCard)
+                    .background(
+                        Brush.verticalGradient(listOf(Color(0xFFEDE7FF), Color(0xFFFFFFFF)))
+                    )
                     .statusBarsPadding()
                     .padding(horizontal = 10.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onDismiss) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color(0xFF151726))
                 }
 
                 Box(
@@ -365,19 +469,21 @@ fun Advanced1v1ChatScreen(
                     contentAlignment = Alignment.BottomEnd
                 ) {
                     AsyncImage(
-                        model = partner.photo.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
-                        contentDescription = partner.name,
+                        model = livePartner.photo.ifEmpty { "https://images.unsplash.com/photo-1534528741775-53994a69daeb" },
+                        contentDescription = livePartner.name,
                         modifier = Modifier
                             .size(42.dp)
                             .clip(CircleShape)
-                            .border(1.5.dp, if (isDoubleHeartUnlocked) Color(0xFFFF4081) else Color(0xFFFFD700), CircleShape),
+                            .border(1.5.dp, if (isDoubleHeartUnlocked) Color(0xFFFF3B6B) else Color(0xFF7C3AED), CircleShape),
                         contentScale = ContentScale.Crop
                     )
                     Surface(
-                        color = Color(0xFF00E676),
+                        color = if (isPartnerOnline) Color(0xFF10B981).copy(alpha = blinkAlpha) else Color(0xFF94A3B8),
                         shape = CircleShape,
-                        border = BorderStroke(1.dp, Color.Black),
-                        modifier = Modifier.size(10.dp)
+                        border = BorderStroke(1.5.dp, Color.White),
+                        modifier = Modifier
+                            .size(11.dp)
+                            .graphicsLayer(scaleX = if (isPartnerOnline) blinkScale else 1f, scaleY = if (isPartnerOnline) blinkScale else 1f)
                     ) {}
                 }
 
@@ -388,27 +494,42 @@ fun Advanced1v1ChatScreen(
                         .weight(1f)
                         .clickable { showPartnerProfile = true }
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
                         Text(
-                            text = partner.name,
-                            color = Color.White,
+                            text = livePartner.name,
+                            color = Color(0xFF151726),
                             fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            maxLines = 1
+                            fontSize = 15.5.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
                         )
+                        BlueLevelBadgePill(level = livePartner.getEffectiveWealthLevel())
                         if (isBlocked) {
-                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 "[Blocked]",
-                                color = Color.Red,
+                                color = Color(0xFFDC2626),
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier
-                                    .background(Color.Red.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
+                                    .background(Color(0xFFFEE2E2), RoundedCornerShape(4.dp))
                                     .padding(horizontal = 4.dp, vertical = 1.dp)
                             )
                         }
                     }
+
+                    // Online Presence & Active Room Indicator
+                    Text(
+                        text = if (partnerActiveRoom != null) "🎙️ In Room: ${partnerActiveRoom!!.title.take(14)}" else if (isPartnerOnline) "🟢 Online" else "⚪ Offline",
+                        color = if (partnerActiveRoom != null) Color(0xFFDB2777) else if (isPartnerOnline) Color(0xFF059669) else Color(0xFF8B90A7),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
 
                     // Intimacy Streak & Level Badge
                     Row(
@@ -416,13 +537,13 @@ fun Advanced1v1ChatScreen(
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Surface(
-                            color = Color(0xFF221538),
+                            color = Color(0xFFFFF7E6),
                             shape = RoundedCornerShape(6.dp),
-                            border = BorderStroke(0.6.dp, Color(0xFFFFD700).copy(alpha = 0.7f))
+                            border = BorderStroke(0.8.dp, Color(0xFFF59E0B).copy(alpha = 0.55f))
                         ) {
                             Text(
                                 text = "🔥 Day $currentStreak • Lv.$currentIntimacyLevel",
-                                color = Color(0xFFFFD700),
+                                color = Color(0xFFB45309),
                                 fontSize = 9.5.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
@@ -470,16 +591,16 @@ fun Advanced1v1ChatScreen(
                 // 3-Dots Menu
                 Box {
                     IconButton(onClick = { showChatMenu = true }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = Color.White)
+                        Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = Color(0xFF151726))
                     }
                     DropdownMenu(
                         expanded = showChatMenu,
                         onDismissRequest = { showChatMenu = false },
-                        modifier = Modifier.background(Color(0xFF1E1430)),
+                        modifier = Modifier.background(Color.White),
                         properties = androidx.compose.ui.window.PopupProperties(focusable = true)
                     ) {
                         DropdownMenuItem(
-                            text = { Text("🧹 Clear Chat History", color = Color.White, fontSize = 13.sp) },
+                            text = { Text("🧹 Clear Chat History", color = Color(0xFF151726), fontSize = 13.sp) },
                             onClick = {
                                 showChatMenu = false
                                 showClearConfirmDialog = true
@@ -496,7 +617,7 @@ fun Advanced1v1ChatScreen(
                                 ) {
                                     Text(
                                         if (partnerAllowed) "📷 Allow ${partner.name} Media: ON" else "📷 Allow ${partner.name} Media: OFF",
-                                        color = if (partnerAllowed) Color(0xFF00E676) else Color.LightGray,
+                                        color = if (partnerAllowed) Color(0xFF059669) else Color(0xFF475569),
                                         fontSize = 12.5.sp
                                     )
                                 }
@@ -517,7 +638,7 @@ fun Advanced1v1ChatScreen(
                             text = {
                                 Text(
                                     if (isPermitted) "🛡️ Screenshots: PERMITTED" else "🔒 Screenshots: BLOCKED (Default)",
-                                    color = if (isPermitted) Color(0xFFFFB300) else Color(0xFF00E676),
+                                    color = if (isPermitted) Color(0xFFD97706) else Color(0xFF059669),
                                     fontSize = 12.5.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -531,20 +652,20 @@ fun Advanced1v1ChatScreen(
                         )
 
                         DropdownMenuItem(
-                            text = { Text("🚨 Report User", color = Color(0xFFFF9100), fontSize = 13.sp) },
+                            text = { Text("🚨 Report User", color = Color(0xFFEA580C), fontSize = 13.sp) },
                             onClick = {
                                 showChatMenu = false
                                 showReportConfirmDialog = true
                             }
                         )
 
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f), thickness = 0.5.dp)
+                        HorizontalDivider(color = Color(0xFFEAE8F2), thickness = 0.8.dp)
 
                         DropdownMenuItem(
                             text = {
                                 Text(
                                     if (isBlocked) "✅ Unblock User" else "🚫 Block User",
-                                    color = if (isBlocked) Color(0xFF00E676) else Color(0xFFFF5252),
+                                    color = if (isBlocked) Color(0xFF059669) else Color(0xFFDC2626),
                                     fontSize = 13.sp
                                 )
                             },
@@ -557,6 +678,114 @@ fun Advanced1v1ChatScreen(
                                 Toast.makeText(context, if (isBlocked) "${partner.name} unblocked" else "${partner.name} blocked", Toast.LENGTH_SHORT).show()
                             }
                         )
+                    }
+                }
+            }
+            HorizontalDivider(color = Color(0xFFECEAF5), thickness = 1.dp)
+
+            // -------------------------------------------------------------
+            // 1.5 INBOX REAL-TIME ROOM JUMP EQUALIZER BANNER (Room Name + 8-Digit ID + Live Equalizer + Jump)
+            // -------------------------------------------------------------
+            if (partnerActiveRoom != null) {
+                val currentTargetRoom = partnerActiveRoom!!
+                val isHost = currentTargetRoom.hostUid == livePartner.uid || currentTargetRoom.hostId == livePartner.uid
+                val publicRoomId = remember(currentTargetRoom.id, currentTargetRoom.roomId) {
+                    when {
+                        currentTargetRoom.roomId.length == 8 && currentTargetRoom.roomId.all { it.isDigit() } -> currentTargetRoom.roomId
+                        currentTargetRoom.id.length == 8 && currentTargetRoom.id.all { it.isDigit() } -> currentTargetRoom.id
+                        else -> (10000000 + kotlin.math.abs(currentTargetRoom.id.hashCode()) % 90000000).toString()
+                    }
+                }
+                Surface(
+                    color = Color(0xFFF3EEFF),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.2.dp, Brush.horizontalGradient(listOf(Color(0xFFEC4899), Color(0xFF7C3AED), Color(0xFF3B82F6)))),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                        .clickable {
+                            onDismiss()
+                            onJumpToRoom(currentTargetRoom)
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            // Animated Live Equalizer
+                            Box(
+                                modifier = Modifier
+                                    .size(width = 40.dp, height = 32.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(Color(0xFF7C3AED).copy(alpha = 0.14f))
+                                    .padding(4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                DenseGalaAudioEqualizer(
+                                    modifier = Modifier.fillMaxSize(),
+                                    barCount = 12,
+                                    styleTheme = "event_theme_cyber_neon"
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Surface(
+                                        color = Color(0xFFFF1744),
+                                        shape = RoundedCornerShape(4.dp)
+                                    ) {
+                                        Text(
+                                            text = if (isHost) "🔴 LIVE" else "🎙️ IN ROOM",
+                                            color = Color.White,
+                                            fontSize = 8.5.sp,
+                                            fontWeight = FontWeight.Black,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = currentTargetRoom.title.ifBlank { currentTargetRoom.roomName.ifBlank { "Live Room" } },
+                                        color = Color(0xFF151726),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.5.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                Text(
+                                    text = "ID: $publicRoomId • ${maxOf(1, currentTargetRoom.activeUserCount)} in room",
+                                    color = Color(0xFF6D28D9),
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        // Jump Action Pill
+                        Button(
+                            onClick = {
+                                onDismiss()
+                                onJumpToRoom(currentTargetRoom)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEC4899)),
+                            shape = RoundedCornerShape(50),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+                            modifier = Modifier.height(30.dp)
+                        ) {
+                            Text(
+                                text = "Jump 🚀",
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                        }
                     }
                 }
             }
@@ -759,6 +988,77 @@ fun Advanced1v1ChatScreen(
                     val isMe = msg.senderId == currentUserId
 
                     when (msg.type) {
+                        "gift" -> {
+                            val resolvedThumb = when {
+                                msg.giftId.isNotBlank() && giftThumbnailResourceId(msg.giftId) != 0 -> giftThumbnailResourceId(msg.giftId)
+                                msg.giftId.isNotBlank() && (msg.giftId.contains("ring", true) || msg.giftId.contains("proposal", true)) -> getProposalRingThumbRes(msg.giftId)
+                                msg.giftId.isNotBlank() -> LuxuryStoreCatalog.allItems.firstOrNull { it.id == msg.giftId }?.drawableRes ?: 0
+                                else -> 0
+                            }
+                            val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(msg.timestamp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start
+                            ) {
+                                Surface(
+                                    color = if (isMe) Color(0xFFF3EEFF) else Color.White,
+                                    shape = RoundedCornerShape(16.dp),
+                                    border = BorderStroke(1.2.dp, Color(0xFFF59E0B).copy(alpha = 0.7f)),
+                                    modifier = Modifier.widthIn(min = 190.dp, max = 270.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        if (resolvedThumb != 0) {
+                                            Image(
+                                                painter = painterResource(id = resolvedThumb),
+                                                contentDescription = msg.giftName.ifBlank { "Gift" },
+                                                modifier = Modifier
+                                                    .size(50.dp)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .border(1.dp, Color(0xFFF59E0B).copy(alpha = 0.6f), RoundedCornerShape(10.dp)),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                        } else {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(46.dp)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(Color(0xFFFFF7E6)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text("🎁", fontSize = 24.sp)
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = msg.giftName.ifBlank { msg.text.removePrefix("🎁 Sent ").ifBlank { "Luxury Gift" } },
+                                                color = Color(0xFFB45309),
+                                                fontWeight = FontWeight.ExtraBold,
+                                                fontSize = 13.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = "${msg.text} • %,d 💎".format(msg.giftAmount),
+                                                color = Color(0xFF151726),
+                                                fontSize = 11.5.sp,
+                                                maxLines = 2
+                                            )
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = timeStr,
+                                                color = Color(0xFF8B90A7),
+                                                fontSize = 9.5.sp
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         "unlock_gift" -> {
                             // Luxury Unlock Announcement
                             Row(
@@ -1021,7 +1321,7 @@ fun Advanced1v1ChatScreen(
                         }
 
                         else -> {
-                            // VIP Styled Text Bubble (Crystal beveled border & VIP badge pill)
+                            // Bright Mode Text Bubble (with VIP Styled Bubble preserved for VIP Frame users)
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start
@@ -1032,15 +1332,48 @@ fun Advanced1v1ChatScreen(
                                 val effectiveVipLvl = if (msg.vipLevel in 1..4) msg.vipLevel else if (isMe) currentUser.getVipLevel() else partner.getVipLevel()
                                 val effectiveIsFounder = msg.isFounder || (if (isMe) currentUser.isFounder() else partner.isFounder())
                                 val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(msg.timestamp))
+                                val hasVipBubble = effectiveFrameId.isNotBlank() || effectiveVipLvl in 1..5 || effectiveIsFounder
 
-                                VipStyledChatBubble(
-                                    messageText = msg.text,
-                                    isMe = isMe,
-                                    chatFrameId = effectiveFrameId,
-                                    vipLevel = effectiveVipLvl,
-                                    isFounder = effectiveIsFounder,
-                                    timestampText = timeStr
-                                )
+                                if (hasVipBubble) {
+                                    VipStyledChatBubble(
+                                        messageText = msg.text,
+                                        avatarUrl = if (isMe) currentUser.photo else livePartner.photo,
+                                        userName = if (isMe) currentUser.name else livePartner.name,
+                                        isMe = isMe,
+                                        chatFrameId = effectiveFrameId,
+                                        vipLevel = effectiveVipLvl,
+                                        isFounder = effectiveIsFounder,
+                                        timestampText = timeStr
+                                    )
+                                } else {
+                                    Surface(
+                                        color = if (isMe) Color(0xFF7C3AED) else Color.White,
+                                        shape = RoundedCornerShape(
+                                            topStart = 18.dp,
+                                            topEnd = 18.dp,
+                                            bottomStart = if (isMe) 18.dp else 4.dp,
+                                            bottomEnd = if (isMe) 4.dp else 18.dp
+                                        ),
+                                        border = if (isMe) null else BorderStroke(1.dp, Color(0xFFE6E2F5)),
+                                        modifier = Modifier.widthIn(max = 270.dp)
+                                    ) {
+                                        Column(modifier = Modifier.padding(horizontal = 13.dp, vertical = 9.dp)) {
+                                            Text(
+                                                text = msg.text,
+                                                color = if (isMe) Color.White else Color(0xFF151726),
+                                                fontSize = 14.sp,
+                                                lineHeight = 19.sp
+                                            )
+                                            Spacer(modifier = Modifier.height(3.dp))
+                                            Text(
+                                                text = timeStr,
+                                                color = if (isMe) Color.White.copy(alpha = 0.72f) else Color(0xFF8B90A7),
+                                                fontSize = 10.sp,
+                                                modifier = Modifier.align(Alignment.End)
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1109,8 +1442,9 @@ fun Advanced1v1ChatScreen(
                 }
             }
 
+            HorizontalDivider(color = Color(0xFFECEAF5), thickness = 1.dp)
             Surface(
-                color = BrandCard,
+                color = Color.White,
                 modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
@@ -1124,7 +1458,7 @@ fun Advanced1v1ChatScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
-                        Text("You have blocked ${partner.name}.", color = Color.LightGray, fontSize = 12.sp)
+                        Text("You have blocked ${partner.name}.", color = Color(0xFF64748B), fontSize = 12.sp)
                     }
                 } else if (isMutualFollow == false || !isChatUnlocked) {
                     // Input locked until mutual follow and unlock gift
@@ -1135,11 +1469,11 @@ fun Advanced1v1ChatScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
-                        Icon(Icons.Default.Lock, contentDescription = "Locked", tint = Color.Gray, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.Lock, contentDescription = "Locked", tint = Color(0xFF8B90A7), modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = if (isMutualFollow == false) "Follow each other to unlock chat" else "Send 5,000 💎 gift to unlock messaging",
-                            color = Color.Gray,
+                            color = Color(0xFF64748B),
                             fontSize = 11.5.sp
                         )
                     }
@@ -1148,7 +1482,7 @@ fun Advanced1v1ChatScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Color(0xFF261022))
+                            .background(Color(0xFFFFF1F5))
                             .padding(horizontal = 14.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
@@ -1164,7 +1498,7 @@ fun Advanced1v1ChatScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 "Recording... 0:${String.format(Locale.getDefault(), "%02d", voiceRecordDuration)}",
-                                color = Color.White,
+                                color = Color(0xFF151726),
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.5.sp
                             )
@@ -1237,12 +1571,12 @@ fun Advanced1v1ChatScreen(
                             },
                             modifier = Modifier
                                 .size(40.dp)
-                                .background(Color(0xFF261B36), CircleShape)
+                                .background(Color(0xFFF2EEFF), CircleShape)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.AttachFile,
                                 contentDescription = "Attach Media",
-                                tint = if (canSendMedia) Color(0xFF00E5FF) else Color.LightGray,
+                                tint = if (canSendMedia) Color(0xFF7C3AED) else Color(0xFF64748B),
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -1264,22 +1598,22 @@ fun Advanced1v1ChatScreen(
 
                         Spacer(modifier = Modifier.width(6.dp))
 
-                        // 2. Rounded Text Field with Enter-to-Send
+                        // 2. Rounded Text Field with Enter-to-Send (Bright Mode)
                         Surface(
-                            color = Color(0xFF1B1428),
+                            color = Color(0xFFF4F3FA),
                             shape = RoundedCornerShape(24.dp),
-                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+                            border = BorderStroke(1.dp, Color(0xFFE5E2F5)),
                             modifier = Modifier.weight(1f)
                         ) {
                             TextField(
                                 value = chatInput,
                                 onValueChange = { chatInput = it },
-                                placeholder = { Text("Type a message...", color = Color.Gray, fontSize = 13.sp) },
+                                placeholder = { Text("Type a message...", color = Color(0xFF8B90A7), fontSize = 13.sp) },
                                 colors = TextFieldDefaults.colors(
                                     focusedContainerColor = Color.Transparent,
                                     unfocusedContainerColor = Color.Transparent,
-                                    focusedTextColor = Color.White,
-                                    unfocusedTextColor = Color.White,
+                                    focusedTextColor = Color(0xFF151726),
+                                    unfocusedTextColor = Color(0xFF151726),
                                     focusedIndicatorColor = Color.Transparent,
                                     unfocusedIndicatorColor = Color.Transparent
                                 ),
@@ -1310,12 +1644,12 @@ fun Advanced1v1ChatScreen(
                             },
                             modifier = Modifier
                                 .size(40.dp)
-                                .background(Color(0xFF261B36), CircleShape)
+                                .background(Color(0xFFF2EEFF), CircleShape)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Mic,
                                 contentDescription = "Record Voice Clip",
-                                tint = Color(0xFFFFD700),
+                                tint = Color(0xFF7C3AED),
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -1330,15 +1664,15 @@ fun Advanced1v1ChatScreen(
                             modifier = Modifier
                                 .size(40.dp)
                                 .background(
-                                    if (hasSendText) Brush.linearGradient(listOf(BrandCoral, Color(0xFFFF4081)))
-                                    else Brush.linearGradient(listOf(Color(0xFF261B36), Color(0xFF261B36))),
+                                    if (hasSendText) Brush.linearGradient(listOf(Color(0xFF7C3AED), Color(0xFFEC4899)))
+                                    else Brush.linearGradient(listOf(Color(0xFFF2EEFF), Color(0xFFF2EEFF))),
                                     CircleShape
                                 )
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.Send,
                                 contentDescription = "Send",
-                                tint = if (hasSendText) Color.White else Color.Gray,
+                                tint = if (hasSendText) Color.White else Color(0xFF94A3B8),
                                 modifier = Modifier.size(19.dp)
                             )
                         }
@@ -1815,16 +2149,28 @@ fun Advanced1v1ChatScreen(
                                         }
                                         showChatGiftSheet = false
 
-                                        // Deduct from sender
+                                        // Deduct from sender & increment wealth XP
+                                        val nowTs = System.currentTimeMillis()
                                         val newBalance = currentUser.diamonds - totalCost
-                                        onUpdateCurrentUser(currentUser.copy(diamonds = newBalance))
+                                        val updatedSender = currentUser.copy(
+                                            diamonds = newBalance,
+                                            wealthXp = currentUser.wealthXp + (totalCost * 10L)
+                                        )
+                                        onUpdateCurrentUser(updatedSender)
                                         db.collection("users").document(currentUserId)
                                             .update(
-                                                "diamonds", newBalance,
-                                                "wealthXp", FieldValue.increment(totalCost * 10L)
+                                                mapOf(
+                                                    "diamonds" to newBalance,
+                                                    "diamondsSpentCount" to FieldValue.increment(1L),
+                                                    "wealthXp" to FieldValue.increment(totalCost * 10L)
+                                                )
                                             )
 
-                                        // Credit Charm XP to partner & deposit into partner's BACKPACK!
+                                        // Real-time financial settlement for partner:
+                                        // Monetized Host -> 5%-8% level-based INR real-money commission
+                                        // Normal User -> 70% deduction / 30% diamond wallet credit
+                                        val isPartnerMonetized = livePartner.isHostMonetized
+                                        val partnerCharmLevel = livePartner.getEffectiveCharmLevel()
                                         val partnerUpdates = mutableMapOf<String, Any>(
                                             "charmXp" to FieldValue.increment(totalCost * 10L)
                                         )
@@ -1833,29 +2179,121 @@ fun Advanced1v1ChatScreen(
                                         } else {
                                             partnerUpdates["backpack.$selectedGiftId"] = FieldValue.increment(selectedQuantity.toLong())
                                         }
-                                        db.collection("users").document(partner.uid).update(partnerUpdates)
 
-                                        // Post Chat Message
+                                        val notifId = java.util.UUID.randomUUID().toString()
+                                        val inboxNotif = if (isPartnerMonetized) {
+                                            val commPercent = LevelBadgeSystem.getHostCommissionPercent(livePartner.getEffectiveWealthLevel())
+                                            val creatorDiamonds = (totalCost * (commPercent / 100.0)).toLong()
+                                            val giftInr = totalCost * 0.01
+                                            val inrEarned = kotlin.math.round((giftInr * (commPercent / 100.0)) * 100.0) / 100.0
+                                            partnerUpdates["earningsInr"] = FieldValue.increment(inrEarned)
+                                            partnerUpdates["totalEarningsInr"] = FieldValue.increment(inrEarned)
+                                            if (creatorDiamonds > 0L) {
+                                                partnerUpdates["diamonds"] = FieldValue.increment(creatorDiamonds)
+                                            }
+
+                                            val histId = java.util.UUID.randomUUID().toString()
+                                            db.collection("users").document(partner.uid)
+                                                .collection("gift_earnings_history").document(histId)
+                                                .set(
+                                                    mapOf(
+                                                        "id" to histId,
+                                                        "senderUid" to currentUserId,
+                                                        "senderName" to currentUser.name,
+                                                        "giftId" to selectedGiftId,
+                                                        "giftName" to currentSelectedName,
+                                                        "quantity" to selectedQuantity,
+                                                        "grossDiamonds" to totalCost,
+                                                        "commissionPercent" to commPercent,
+                                                        "earningsInr" to inrEarned,
+                                                        "timestamp" to nowTs
+                                                    )
+                                                )
+
+                                            NotificationItem(
+                                                id = notifId,
+                                                targetUserId = partner.uid,
+                                                senderId = currentUserId,
+                                                senderName = currentUser.name,
+                                                senderPhoto = currentUser.photo,
+                                                type = "creator_earning",
+                                                title = "💰 Host Gift Earning!",
+                                                message = "${currentUser.name} sent you ${selectedQuantity}x $currentSelectedName in chat • +₹%.2f credited to your wallet!".format(inrEarned),
+                                                timestamp = nowTs,
+                                                isRead = false,
+                                                giftId = selectedGiftId,
+                                                giftName = currentSelectedName,
+                                                diamondsReceived = 0L,
+                                                earningsInr = inrEarned,
+                                                giftEmoji = "🎁",
+                                                quantity = selectedQuantity
+                                            )
+                                        } else {
+                                            val netDiamonds = (totalCost * 0.30).toLong().coerceAtLeast(1L)
+                                            partnerUpdates["diamonds"] = FieldValue.increment(netDiamonds)
+                                            NotificationItem(
+                                                id = notifId,
+                                                targetUserId = partner.uid,
+                                                senderId = currentUserId,
+                                                senderName = currentUser.name,
+                                                senderPhoto = currentUser.photo,
+                                                type = "gift_reward",
+                                                title = "🎁 Gift Received!",
+                                                message = "${currentUser.name} sent you ${selectedQuantity}x $currentSelectedName • +%,d 💎 added to your wallet!".format(netDiamonds),
+                                                timestamp = nowTs,
+                                                isRead = false,
+                                                giftId = selectedGiftId,
+                                                giftName = currentSelectedName,
+                                                diamondsReceived = netDiamonds,
+                                                earningsInr = 0.0,
+                                                giftEmoji = "🎁",
+                                                quantity = selectedQuantity
+                                            )
+                                        }
+
+                                        db.collection("users").document(partner.uid).update(partnerUpdates)
+                                        db.collection("users").document(partner.uid)
+                                            .collection("notifications").document(notifId)
+                                            .set(inboxNotif)
+                                        db.collection("users").document(partner.uid)
+                                            .collection("received_gifts").document(notifId)
+                                            .set(
+                                                mapOf(
+                                                    "id" to notifId,
+                                                    "giftId" to selectedGiftId,
+                                                    "giftName" to currentSelectedName,
+                                                    "senderId" to currentUserId,
+                                                    "senderName" to currentUser.name,
+                                                    "cost" to totalCost,
+                                                    "quantity" to selectedQuantity,
+                                                    "timestamp" to nowTs
+                                                )
+                                            )
+
+                                        // Post Chat Message with exact giftId & giftName for thumbnail rendering
                                         val giftMessage = ChatMessage(
                                             senderId = currentUserId,
                                             text = "🎁 Sent ${selectedQuantity}x $currentSelectedName",
                                             type = "gift",
                                             giftAmount = totalCost,
-                                                                                        mediaUrl = "🎁",
-                                            timestamp = System.currentTimeMillis()
+                                            giftId = selectedGiftId,
+                                            giftName = currentSelectedName,
+                                            giftQuantity = selectedQuantity,
+                                            mediaUrl = "🎁",
+                                            timestamp = nowTs
                                         )
                                         db.collection("matches").document(matchId).collection("messages").add(giftMessage)
                                         db.collection("matches").document(matchId).set(
                                             mapOf(
                                                 "matchId" to matchId,
                                                 "users" to listOf(currentUserId, partner.uid),
-                                                "lastMessage" to "🎁 Sent $currentSelectedName",
-                                                "timestamp" to System.currentTimeMillis()
+                                                "lastMessage" to "🎁 Sent ${selectedQuantity}x $currentSelectedName",
+                                                "timestamp" to nowTs
                                             ),
                                             SetOptions.merge()
                                         )
 
-                                        Toast.makeText(context, "🎉 Sent $currentSelectedName to ${partner.name}! Added to their Backpack 🎒", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "🎉 Sent ${selectedQuantity}x $currentSelectedName to ${partner.name}!", Toast.LENGTH_SHORT).show()
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
                                     contentPadding = PaddingValues(0.dp),
