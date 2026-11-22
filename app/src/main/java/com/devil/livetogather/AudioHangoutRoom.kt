@@ -6969,13 +6969,15 @@ fun AudioHangoutRoomDialog(
     }
 
     // Real-time listener for current user diamonds, active frame, wealth level & per-room stay seconds
-    LaunchedEffect(currentUser.uid, room.id) {
-        if (currentUser.uid.isNotBlank()) {
-            val safeRoomKey = RoomLevelUpEngine.sanitizeRoomKey(room.id)
-            db.collection("users").document(currentUser.uid)
-                .addSnapshotListener { snap, _ ->
-                    if (snap != null && snap.exists()) {
-                        userDiamonds = snap.getLong("diamonds") ?: 0L
+    DisposableEffect(currentUser.uid, room.id) {
+        if (currentUser.uid.isBlank()) {
+            return@DisposableEffect onDispose {}
+        }
+        val safeRoomKey = RoomLevelUpEngine.sanitizeRoomKey(room.id)
+        val userReg = db.collection("users").document(currentUser.uid)
+            .addSnapshotListener { snap, _ ->
+                if (snap != null && snap.exists()) {
+                    userDiamonds = snap.getLong("diamonds") ?: snap.getLong("coins") ?: 0L
                         activeUserFrame = snap.getString("activeFrame") ?: ""
                         userActiveMicEffect = snap.getString("activeMicEffect") ?: ""
                         userHasRecharged = snap.getBoolean("hasRecharged") ?: false
@@ -7021,7 +7023,7 @@ fun AudioHangoutRoomDialog(
                         userOwnedMicEffects = (snap.get("ownedMicEffects") as? List<String>) ?: emptyList()
                     }
                 }
-        }
+        onDispose { userReg.remove() }
     }
 
     // Live Room Time Tracking, Per-Room 5-Minute Level-Up Engine & Free 1-Hour Guest Limit
@@ -8521,14 +8523,28 @@ fun AudioHangoutRoomDialog(
                                                                     timestamp = System.currentTimeMillis()
                                                                 )
                                                                 db.collection("rooms").document(room.id).collection("followers").document(currentUser.uid).set(record)
-                                                                db.collection("rooms").document(room.id).update("roomFollowerCount", FieldValue.increment(1))
+                                                                    .addOnSuccessListener {
+                                                                        db.collection("rooms").document(room.id).update("roomFollowerCount", FieldValue.increment(1))
+                                                                    }
+                                                                    .addOnFailureListener { err ->
+                                                                        isFollowingHost = false
+                                                                        hostFollowerCount = (hostFollowerCount - 1).coerceAtLeast(0)
+                                                                        Toast.makeText(context, "Follow failed: ${err.localizedMessage ?: "Permission error"}", Toast.LENGTH_SHORT).show()
+                                                                    }
                                                             }
                                                             Toast.makeText(context, "🌟 Following Room!", Toast.LENGTH_SHORT).show()
                                                         } else {
                                                             hostFollowerCount = (hostFollowerCount - 1).coerceAtLeast(0)
                                                             if (room.id.isNotBlank() && currentUser.uid.isNotBlank()) {
                                                                 db.collection("rooms").document(room.id).collection("followers").document(currentUser.uid).delete()
-                                                                db.collection("rooms").document(room.id).update("roomFollowerCount", FieldValue.increment(-1))
+                                                                    .addOnSuccessListener {
+                                                                        db.collection("rooms").document(room.id).update("roomFollowerCount", FieldValue.increment(-1))
+                                                                    }
+                                                                    .addOnFailureListener { err ->
+                                                                        isFollowingHost = true
+                                                                        hostFollowerCount += 1
+                                                                        Toast.makeText(context, "Unfollow failed: ${err.localizedMessage ?: "Permission error"}", Toast.LENGTH_SHORT).show()
+                                                                    }
                                                             }
                                                         }
                                                     }

@@ -253,7 +253,17 @@ service cloud.firestore {
     }
 
     function mayEquipVipFrame() {
-      return (
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'activeFrame',
+        'activeChatFrame',
+        'activeChatBar',
+        'activeProfileArch',
+        'activeProfileCover',
+        'activeEntranceEffect',
+        'ownedFrames',
+        'ownedChatFrames'
+      ]) || (
+      (
         request.resource.data.get('activeFrame', '') != 'vip_suite_frame_1' ||
         hasApprovedVipLevel(1)
       ) && (
@@ -334,6 +344,7 @@ service cloud.firestore {
           (!request.resource.data.get('ownedChatFrames', []).hasAny(['chat_frame_imperial_amethyst']) || hasApprovedVipLevel(3)) &&
           (!request.resource.data.get('ownedChatFrames', []).hasAny(['chat_frame_celestial_dragon']) || hasApprovedVipLevel(4))
         )
+      )
       );
     }
 
@@ -783,7 +794,10 @@ service cloud.firestore {
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'pkHost1Score',
             'pkHost2Score',
-            'activeUserCount'
+            'activeUserCount',
+            'roomFollowerCount',
+            'roomActivityXp',
+            'roomLevel'
           ]) &&
           (
             !('pkHost1Score' in request.resource.data.diff(resource.data).affectedKeys()) ||
@@ -804,6 +818,27 @@ service cloud.firestore {
             (
               request.resource.data.activeUserCount is int &&
               request.resource.data.activeUserCount >= 0
+            )
+          ) &&
+          (
+            !('roomFollowerCount' in request.resource.data.diff(resource.data).affectedKeys()) ||
+            (
+              request.resource.data.roomFollowerCount is int &&
+              request.resource.data.roomFollowerCount >= 0
+            )
+          ) &&
+          (
+            !('roomActivityXp' in request.resource.data.diff(resource.data).affectedKeys()) ||
+            (
+              request.resource.data.roomActivityXp is number &&
+              request.resource.data.roomActivityXp >= resource.data.get('roomActivityXp', 0)
+            )
+          ) &&
+          (
+            !('roomLevel' in request.resource.data.diff(resource.data).affectedKeys()) ||
+            (
+              request.resource.data.roomLevel is int &&
+              request.resource.data.roomLevel >= resource.data.get('roomLevel', 1)
             )
           )
         )
@@ -889,6 +924,20 @@ service cloud.firestore {
           ) &&
           isValidEventLeaderboardEntry(request.resource.data, uid);
         allow delete: if isAuthenticated() && (request.auth.uid == uid || isAdmin());
+      }
+
+      // Room Followers
+      match /followers/{followerId} {
+        allow read: if isAuthenticated();
+        allow create, update: if isAuthenticated() &&
+          (request.auth.uid == followerId || isAdmin()) &&
+          request.resource.data.get('uid', followerId) == followerId;
+        allow delete: if isAuthenticated() && (
+          request.auth.uid == followerId ||
+          isAdmin() ||
+          get(/databases/$(database)/documents/rooms/$(roomId)).data.get('hostUid', '') == request.auth.uid ||
+          get(/databases/$(database)/documents/rooms/$(roomId)).data.get('hostId', '') == request.auth.uid
+        );
       }
     }
 

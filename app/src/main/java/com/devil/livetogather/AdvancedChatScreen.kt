@@ -88,7 +88,25 @@ fun Advanced1v1ChatScreen(
         listOf(currentUserId, partner.uid).sorted().joinToString("_")
     }
 
-    // Real-Time Live Partner State & Room Presence Tracker
+    // Real-Time Live Current User & Partner State Tracker
+    var liveCurrentUser by remember(currentUserId) { mutableStateOf(currentUser) }
+    LaunchedEffect(currentUser) {
+        liveCurrentUser = currentUser
+    }
+    DisposableEffect(currentUserId) {
+        if (currentUserId.isBlank()) return@DisposableEffect onDispose {}
+        val listener = db.collection("users").document(currentUserId).addSnapshotListener { snap, _ ->
+            if (snap != null && snap.exists()) {
+                val u = parseUserProfileFromDoc(snap)
+                if (u != null) {
+                    liveCurrentUser = u
+                    onUpdateCurrentUser(u)
+                }
+            }
+        }
+        onDispose { listener.remove() }
+    }
+
     var livePartner by remember(partner.uid) { mutableStateOf(partner) }
     DisposableEffect(partner.uid) {
         if (partner.uid.isBlank()) return@DisposableEffect onDispose {}
@@ -937,7 +955,8 @@ fun Advanced1v1ChatScreen(
                                 Button(
                                     onClick = {
                                         if (isSubmittingUnlockGift) return@Button
-                                        if (currentUser.diamonds < giftToSend.diamondPrice) {
+                                        val effectiveDiamonds = maxOf(liveCurrentUser.diamonds, currentUser.diamonds)
+                                        if (effectiveDiamonds < giftToSend.diamondPrice) {
                                             Toast.makeText(context, "Insufficient diamonds! Need ${giftToSend.diamondPrice} 💎", Toast.LENGTH_LONG).show()
                                             return@Button
                                         }
@@ -945,7 +964,7 @@ fun Advanced1v1ChatScreen(
                                         ChatMediaEngine.unlockFirstMessageWithGift(
                                             db = db,
                                             matchId = matchId,
-                                            sender = currentUser,
+                                            sender = liveCurrentUser.copy(diamonds = effectiveDiamonds),
                                             receiver = partner,
                                             giftDiamonds = giftToSend.diamondPrice
                                         ) { success, msg ->
@@ -2143,7 +2162,8 @@ fun Advanced1v1ChatScreen(
 
                                 Button(
                                     onClick = {
-                                        if (currentUser.diamonds < totalCost) {
+                                        val effectiveDiamonds = maxOf(liveCurrentUser.diamonds, currentUser.diamonds)
+                                        if (effectiveDiamonds < totalCost) {
                                             Toast.makeText(context, "Insufficient diamonds! Need %,d 💎".format(totalCost), Toast.LENGTH_SHORT).show()
                                             return@Button
                                         }
@@ -2151,11 +2171,12 @@ fun Advanced1v1ChatScreen(
 
                                         // Deduct from sender & increment wealth XP
                                         val nowTs = System.currentTimeMillis()
-                                        val newBalance = currentUser.diamonds - totalCost
-                                        val updatedSender = currentUser.copy(
+                                        val newBalance = effectiveDiamonds - totalCost
+                                        val updatedSender = liveCurrentUser.copy(
                                             diamonds = newBalance,
-                                            wealthXp = currentUser.wealthXp + (totalCost * 10L)
+                                            wealthXp = liveCurrentUser.wealthXp + (totalCost * 10L)
                                         )
+                                        liveCurrentUser = updatedSender
                                         onUpdateCurrentUser(updatedSender)
                                         db.collection("users").document(currentUserId)
                                             .update(

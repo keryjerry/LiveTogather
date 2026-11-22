@@ -159,6 +159,7 @@ fun VideoHangoutRoomDialog(
     var showEmojiTray by remember { mutableStateOf(false) }
     var activeGiftEvent by remember { mutableStateOf<GiftEvent?>(null) }
     var isFollowingHost by remember { mutableStateOf(false) }
+    var hostFollowerCount by remember(room.id) { mutableStateOf(0) }
     var showFollowCelebrationDialog by remember { mutableStateOf(false) }
     var showAllViewersDialog by remember { mutableStateOf(false) }
     var pendingVideoInvite by remember { mutableStateOf<Map<String, Any>?>(null) }
@@ -527,13 +528,15 @@ fun VideoHangoutRoomDialog(
     }
 
     // 6. User Diamonds, Wealth & Per-Room Stay Real-Time Listener
-    LaunchedEffect(currentUser.uid, room.id) {
-        if (currentUser.uid.isNotBlank()) {
-            val safeRoomKey = RoomLevelUpEngine.sanitizeRoomKey(room.id)
-            db.collection("users").document(currentUser.uid)
-                .addSnapshotListener { snap, _ ->
-                    if (snap != null && snap.exists()) {
-                        userDiamonds = snap.getLong("diamonds") ?: 0L
+    DisposableEffect(currentUser.uid, room.id) {
+        if (currentUser.uid.isBlank()) {
+            return@DisposableEffect onDispose {}
+        }
+        val safeRoomKey = RoomLevelUpEngine.sanitizeRoomKey(room.id)
+        val userReg = db.collection("users").document(currentUser.uid)
+            .addSnapshotListener { snap, _ ->
+                if (snap != null && snap.exists()) {
+                    userDiamonds = snap.getLong("diamonds") ?: snap.getLong("coins") ?: 0L
                         activeUserFrame = snap.getString("activeFrame") ?: ""
                         userHasRecharged = snap.getBoolean("hasRecharged") ?: false
                         userRechargeCount = snap.getLong("rechargeCount")?.toInt() ?: 0
@@ -568,7 +571,7 @@ fun VideoHangoutRoomDialog(
                         userOwnedFrames = (snap.get("ownedFrames") as? List<String>) ?: emptyList()
                     }
                 }
-        }
+        onDispose { userReg.remove() }
     }
 
     // Live Room Time Tracking, Per-Room 5-Minute Level-Up Engine & Free 1-Hour Guest Limit
@@ -613,13 +616,43 @@ fun VideoHangoutRoomDialog(
     }
 
     // 7. Room Follow State Listener (Separate from User Followers — strictly scoped to rooms/{roomId}/followers)
-    LaunchedEffect(room.id, currentUserId) {
-        if (room.id.isNotBlank() && currentUserId.isNotBlank()) {
+    DisposableEffect(room.id, currentUserId) {
+        hostFollowerCount = 0
+        isFollowingHost = false
+        if (room.id.isBlank()) {
+            return@DisposableEffect onDispose {}
+        }
+        val followReg = if (currentUserId.isNotBlank()) {
             db.collection("rooms").document(room.id)
                 .collection("followers").document(currentUserId)
                 .addSnapshotListener { snap, _ ->
                     isFollowingHost = snap != null && snap.exists()
                 }
+        } else null
+        val countReg = db.collection("rooms").document(room.id)
+            .collection("followers")
+            .addSnapshotListener { snapshot, _ ->
+                if (snapshot != null) {
+                    val realFollowers = snapshot.documents.filter { doc ->
+                        val id = doc.id
+                        id.isNotBlank() &&
+                            !id.startsWith("companion_", ignoreCase = true) &&
+                            !id.startsWith("dummy_", ignoreCase = true) &&
+                            !id.startsWith("seed_", ignoreCase = true) &&
+                            !id.startsWith("bot_", ignoreCase = true)
+                    }
+                    if (hostFollowerCount != realFollowers.size) {
+                        hostFollowerCount = realFollowers.size
+                        if (isUserHost) {
+                            db.collection("rooms").document(room.id)
+                                .update("roomFollowerCount", realFollowers.size)
+                        }
+                    }
+                }
+            }
+        onDispose {
+            followReg?.remove()
+            countReg.remove()
         }
     }
 
@@ -828,8 +861,11 @@ fun VideoHangoutRoomDialog(
         if (isFollowingHost) {
             followDoc.delete().addOnSuccessListener {
                 isFollowingHost = false
+                hostFollowerCount = (hostFollowerCount - 1).coerceAtLeast(0)
                 db.collection("rooms").document(room.id).update("roomFollowerCount", FieldValue.increment(-1))
                 Toast.makeText(context, "Unfollowed Room", Toast.LENGTH_SHORT).show()
+            }.addOnFailureListener { err ->
+                Toast.makeText(context, "Unfollow failed: ${err.localizedMessage ?: "Permission error"}", Toast.LENGTH_SHORT).show()
             }
         } else {
             val record = FollowerRecord(
@@ -840,9 +876,12 @@ fun VideoHangoutRoomDialog(
             )
             followDoc.set(record).addOnSuccessListener {
                 isFollowingHost = true
+                hostFollowerCount += 1
                 showFollowCelebrationDialog = true
                 db.collection("rooms").document(room.id).update("roomFollowerCount", FieldValue.increment(1))
                 Toast.makeText(context, "⭐ Followed Room!", Toast.LENGTH_SHORT).show()
+            }.addOnFailureListener { err ->
+                Toast.makeText(context, "Follow failed: ${err.localizedMessage ?: "Permission error"}", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -1077,7 +1116,7 @@ fun VideoHangoutRoomDialog(
                                             modifier = Modifier.weight(1f, fill = false)
                                         )
                                         Text(
-                                            text = " • ID: $displayRoomId",
+                                            text = " • ID: $displayRoomId • 👥 $hostFollowerCount",
                                             color = Color(0xFFC084FC),
                                             fontSize = 8.5.sp,
                                             fontWeight = FontWeight.SemiBold
@@ -1105,7 +1144,7 @@ fun VideoHangoutRoomDialog(
                                         )
                                         .clickable {
                                             if (isUserHost) {
-                                                Toast.makeText(context, "👑 Your Live Room", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, "👑 Your Live Room • 👥 $hostFollowerCount Room Followers", Toast.LENGTH_SHORT).show()
                                             } else {
                                                 toggleFollowHost()
                                             }

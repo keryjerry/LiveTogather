@@ -2709,9 +2709,27 @@ fun RoomInfoOnlyDialog(
                     liveFollowerCount = realDocs.size
                     followersList = realDocs.mapNotNull { doc ->
                         try {
-                            doc.toObject(FollowerRecord::class.java)
+                            val parsed = doc.toObject(FollowerRecord::class.java)
+                            if (parsed != null) {
+                                parsed.copy(
+                                    uid = parsed.uid.ifBlank { doc.id },
+                                    name = parsed.name.ifBlank { doc.getString("name") ?: "Member" }
+                                )
+                            } else {
+                                FollowerRecord(
+                                    uid = doc.id,
+                                    name = doc.getString("name") ?: "Member",
+                                    photo = doc.getString("photo") ?: "",
+                                    timestamp = doc.getLong("timestamp") ?: System.currentTimeMillis()
+                                )
+                            }
                         } catch (_: Exception) {
-                            null
+                            FollowerRecord(
+                                uid = doc.id,
+                                name = doc.getString("name") ?: "Member",
+                                photo = doc.getString("photo") ?: "",
+                                timestamp = doc.getLong("timestamp") ?: System.currentTimeMillis()
+                            )
                         }
                     }
                 }

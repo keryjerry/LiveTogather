@@ -59,7 +59,9 @@ object GiftTransactionService {
             // --- STEP C: PROCESS SENDER DATA & BALANCE CHECKS ---
             val senderName = senderSnapshot.getString("name") ?: "Member"
             val senderPhoto = senderSnapshot.getString("photo") ?: ""
-            val currentDiamonds = senderSnapshot.getLong("diamonds") ?: 0L
+            val currentDiamonds = senderSnapshot.getLong("diamonds")
+                ?: senderSnapshot.getLong("coins")
+                ?: 0L
             val currentWealthXp = senderSnapshot.getLong("wealthXp") ?: 0L
 
             var newSenderDiamonds = currentDiamonds
